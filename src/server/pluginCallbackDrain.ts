@@ -8,7 +8,9 @@ export class PluginCallbackDrain {
       () => undefined,
     );
     this.pending.add(settled);
-    void settled.then(() => { this.pending.delete(settled); });
+    void settled.then(() => {
+      this.pending.delete(settled);
+    });
   }
 
   async waitForSettled(timeoutMs: number, label: string): Promise<void> {

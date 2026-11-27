@@ -23,11 +23,16 @@ const COUNTDOWN_TICK_MS = 1_000;
 /** Header status label for a closed extension dialog. */
 export function extensionDialogCloseLabel(reason: ExtensionDialogCloseReason): string {
   switch (reason) {
-    case "answered": return "Answered";
-    case "cancelled": return "Cancelled";
-    case "timeout": return "Timed out";
-    case "aborted": return "Aborted";
-    case "session-ended": return "Session ended";
+    case "answered":
+      return "Answered";
+    case "cancelled":
+      return "Cancelled";
+    case "timeout":
+      return "Timed out";
+    case "aborted":
+      return "Aborted";
+    case "session-ended":
+      return "Session ended";
   }
 }
 
@@ -42,10 +47,14 @@ export function extensionDialogCloseSummary(closed: ClosedExtensionDialog): stri
       if (typeof answer === "boolean") return `Answered: ${answer ? "Yes" : "No"}`;
       return answer === "" ? "Answered with an empty response." : `Answered: ${answer}`;
     }
-    case "cancelled": return "Dismissed without an answer.";
-    case "timeout": return "No answer was given before the dialog timed out.";
-    case "aborted": return "The run ended before this dialog was answered.";
-    case "session-ended": return "The session ended before this dialog was answered.";
+    case "cancelled":
+      return "Dismissed without an answer.";
+    case "timeout":
+      return "No answer was given before the dialog timed out.";
+    case "aborted":
+      return "The run ended before this dialog was answered.";
+    case "session-ended":
+      return "The session ended before this dialog was answered.";
   }
 }
 
@@ -139,12 +148,14 @@ export class ExtensionDialogCard extends LitElement {
       <article class="ui-transcript-surface card open-card" aria-labelledby="extension-dialog-heading">
         <header class="ui-transcript-card-header card-header">
           <h2 id="extension-dialog-heading">${dialog.title}</h2>
-          ${countdown === undefined
-            ? null
-            // Decorative only — no live region: a polite region would queue one
-            // announcement per second. The daemon-owned dialog.closed event is
-            // the real signal, and the settled card announces the outcome.
-            : html`<span class="ui-transcript-card-status header-status countdown">${countdown}</span>`}
+          ${
+            countdown === undefined
+              ? null
+              : // Decorative only — no live region: a polite region would queue one
+                // announcement per second. The daemon-owned dialog.closed event is
+                // the real signal, and the settled card announces the outcome.
+                html`<span class="ui-transcript-card-status header-status countdown">${countdown}</span>`
+          }
         </header>
         ${this.renderOpenBody(dialog)}
       </article>
@@ -161,9 +172,15 @@ export class ExtensionDialogCard extends LitElement {
     return html`
       ${dialog.message === undefined ? null : html`<p class="dialog-message">${dialog.message}</p>`}
       <footer class="dialog-footer">
-        <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => { this.cancelDialog(dialog); }}>Cancel</button>
-        <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => { this.answerDialog(dialog, false); }}>No</button>
-        <button class="ui-button ui-button--primary primary-action" type="button" ?disabled=${this.closing} @click=${() => { this.answerDialog(dialog, true); }}>Yes</button>
+        <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => {
+          this.cancelDialog(dialog);
+        }}>Cancel</button>
+        <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => {
+          this.answerDialog(dialog, false);
+        }}>No</button>
+        <button class="ui-button ui-button--primary primary-action" type="button" ?disabled=${this.closing} @click=${() => {
+          this.answerDialog(dialog, true);
+        }}>Yes</button>
       </footer>
     `;
   }
@@ -171,19 +188,27 @@ export class ExtensionDialogCard extends LitElement {
   private renderSelectBody(dialog: PendingExtensionDialog): TemplateResult {
     return html`
       <div class="dialog-options" role="group" aria-label="Choices">
-        ${(dialog.options ?? []).map((option) => html`
-          <button class="ui-button option-button" type="button" ?disabled=${this.closing} @click=${() => { this.answerDialog(dialog, option); }}>${option}</button>
-        `)}
+        ${(dialog.options ?? []).map(
+          (option) => html`
+          <button class="ui-button option-button" type="button" ?disabled=${this.closing} @click=${() => {
+            this.answerDialog(dialog, option);
+          }}>${option}</button>
+        `,
+        )}
       </div>
       <footer class="dialog-footer">
-        <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => { this.cancelDialog(dialog); }}>Cancel</button>
+        <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => {
+          this.cancelDialog(dialog);
+        }}>Cancel</button>
       </footer>
     `;
   }
 
   private renderInputBody(dialog: PendingExtensionDialog): TemplateResult {
     return html`
-      <form class="dialog-input-form" @submit=${(event: SubmitEvent) => { this.submitInput(event, dialog); }}>
+      <form class="dialog-input-form" @submit=${(event: SubmitEvent) => {
+        this.submitInput(event, dialog);
+      }}>
         <input
           class="ui-input dialog-input"
           type="text"
@@ -193,10 +218,14 @@ export class ExtensionDialogCard extends LitElement {
           maxlength=${String(EXTENSION_DIALOG_INPUT_MAX_LENGTH)}
           .value=${this.inputValue}
           ?disabled=${this.closing}
-          @input=${(event: Event) => { this.changeInput(event); }}
+          @input=${(event: Event) => {
+            this.changeInput(event);
+          }}
         />
         <footer class="dialog-footer">
-          <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => { this.cancelDialog(dialog); }}>Cancel</button>
+          <button class="ui-button ui-button--compact secondary-action" type="button" ?disabled=${this.closing} @click=${() => {
+            this.cancelDialog(dialog);
+          }}>Cancel</button>
           <button class="ui-button ui-button--primary primary-action" type="submit" ?disabled=${this.closing}>${this.closing ? "Sending…" : "Send"}</button>
         </footer>
       </form>
@@ -212,7 +241,9 @@ export class ExtensionDialogCard extends LitElement {
         </header>
         <p class="closed-summary">${extensionDialogCloseSummary(closed)}</p>
         <footer class="dialog-footer">
-          <button class="ui-button ui-button--compact secondary-action" type="button" @click=${() => { this.dismissClosed(closed); }}>Dismiss</button>
+          <button class="ui-button ui-button--compact secondary-action" type="button" @click=${() => {
+            this.dismissClosed(closed);
+          }}>Dismiss</button>
         </footer>
       </article>
     `;
@@ -267,7 +298,9 @@ export class ExtensionDialogCard extends LitElement {
     const needsTick = this.isConnected && this.outcome === undefined && this.dialog?.timeoutAt !== undefined;
     if (needsTick && this.countdownTimer === undefined) {
       this.countdownNow = Date.now();
-      this.countdownTimer = window.setInterval(() => { this.countdownNow = Date.now(); }, COUNTDOWN_TICK_MS);
+      this.countdownTimer = window.setInterval(() => {
+        this.countdownNow = Date.now();
+      }, COUNTDOWN_TICK_MS);
       return;
     }
     if (!needsTick) this.stopCountdownTimer();
@@ -279,7 +312,12 @@ export class ExtensionDialogCard extends LitElement {
     this.countdownTimer = undefined;
   }
 
-  static override styles = [uiButtonStyles, uiFormStyles, uiTranscriptStyles, uiTranscriptCardStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiFormStyles,
+    uiTranscriptStyles,
+    uiTranscriptCardStyles,
+    css`
     :host {
       display: block;
       box-sizing: border-box;
@@ -338,7 +376,8 @@ export class ExtensionDialogCard extends LitElement {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
     }
-  `];
+  `,
+  ];
 }
 
 declare global {

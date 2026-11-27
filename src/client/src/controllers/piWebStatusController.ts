@@ -41,7 +41,8 @@ export class PiWebStatusController {
     if (existing?.machineId === machineId) return existing.promise;
 
     const requestSequence = ++this.requestSequence;
-    const promise = this.api.checkForUpdates(machineId)
+    const promise = this.api
+      .checkForUpdates(machineId)
       .then((piWebStatus) => {
         if (!this.isCurrent(machineId, requestSequence)) return;
         this.setState({ piWebStatus });
@@ -64,5 +65,6 @@ export class PiWebStatusController {
 
 function throwForUnsuccessfulReleaseCheck(status: PiWebStatusResponse): void {
   if (status.release.error !== undefined) throw new Error(`PI WEB update check failed: ${status.release.error}`);
-  if (status.release.skipped === true) throw new Error("PI WEB update check was skipped because remote version checks are disabled by offline/version-check settings");
+  if (status.release.skipped === true)
+    throw new Error("PI WEB update check was skipped because remote version checks are disabled by offline/version-check settings");
 }

@@ -46,5 +46,9 @@ test("a Durable Chat runs the Workbench extensions: identity, shell activity, /t
   await send(page, "/quota-check bogus");
   await expect(chat(page).getByText("Usage: /quota-check [repair]").first()).toBeVisible();
   await page.reload();
-  await expect(chat(page).getByText(/done after write/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/done after write/)
+      .first(),
+  ).toBeVisible();
 });

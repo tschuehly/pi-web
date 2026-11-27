@@ -1,8 +1,21 @@
 import { LitElement, css, html, nothing } from "lit";
 import { nativeDirectoryPicker } from "../nativeHost";
 import { customElement, property, state } from "lit/decorators.js";
-import { applyInterfaceScale, INTERFACE_SCALE_CSS_PROPERTY, INTERFACE_SCALE_STEPS, parseInterfaceScale, readStoredInterfaceScale, writeStoredInterfaceScale } from "../interfaceScale";
-import { applyPresentationProfile, builtInPresentationProfile, readStoredPresentationProfile, writeStoredPresentationProfile, type BuiltInPresentationProfileId } from "../presentationProfiles";
+import {
+  applyInterfaceScale,
+  INTERFACE_SCALE_CSS_PROPERTY,
+  INTERFACE_SCALE_STEPS,
+  parseInterfaceScale,
+  readStoredInterfaceScale,
+  writeStoredInterfaceScale,
+} from "../interfaceScale";
+import {
+  applyPresentationProfile,
+  builtInPresentationProfile,
+  readStoredPresentationProfile,
+  writeStoredPresentationProfile,
+  type BuiltInPresentationProfileId,
+} from "../presentationProfiles";
 import type { QualifiedThemeContribution, QualifiedThemePairContribution } from "../plugins/types";
 import { findThemePairForTheme, type ThemePreference } from "../theme";
 
@@ -44,7 +57,9 @@ export class WorkbenchSettingsPanel extends LitElement {
 
   // ponytail: a live-repositioning popover needs a resize observer; closing on resize is
   // the smaller fix and the anchored position only goes stale while the panel is open.
-  private readonly onWindowResize = (): void => { this.close(); };
+  private readonly onWindowResize = (): void => {
+    this.close();
+  };
 
   override disconnectedCallback(): void {
     document.removeEventListener("click", this.onDocumentClick);
@@ -55,15 +70,21 @@ export class WorkbenchSettingsPanel extends LitElement {
 
   override render() {
     return html`
-      ${this.noTrigger ? nothing : html`<button
+      ${
+        this.noTrigger
+          ? nothing
+          : html`<button
         class="trigger"
         type="button"
         aria-haspopup="dialog"
         aria-expanded=${this.open}
         title="Workbench settings"
         aria-label="Workbench settings"
-        @click=${() => { this.toggle(); }}
-      >⚙</button>`}
+        @click=${() => {
+          this.toggle();
+        }}
+      >⚙</button>`
+      }
       ${this.open ? this.renderPopover() : nothing}
     `;
   }
@@ -73,49 +94,78 @@ export class WorkbenchSettingsPanel extends LitElement {
     const pair = currentTheme === undefined ? undefined : findThemePairForTheme(this.themePairs, currentTheme.id);
     const currentScheme = currentTheme?.colorScheme;
     return html`
-      <div class="popover" role="dialog" aria-label="Workbench settings" style="top: ${String(this.anchorTop)}px; right: ${String(this.anchorRight)}px; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - ${String(this.anchorTop)}px - 12px);" @keydown=${(event: KeyboardEvent) => { this.onPopoverKeyDown(event); }}>
+      <div class="popover" role="dialog" aria-label="Workbench settings" style="top: ${String(this.anchorTop)}px; right: ${String(this.anchorRight)}px; max-height: calc(var(--pi-workbench-viewport-height, 100vh) - ${String(this.anchorTop)}px - 12px);" @keydown=${(
+        event: KeyboardEvent,
+      ) => {
+        this.onPopoverKeyDown(event);
+      }}>
         <fieldset>
           <legend>Theme</legend>
           <label class="checkbox">
-            <input type="checkbox" .checked=${this.themePreference.auto} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.setAuto(event.target.checked); }}>
+            <input type="checkbox" .checked=${this.themePreference.auto} @change=${(event: Event) => {
+              if (event.target instanceof HTMLInputElement) this.setAuto(event.target.checked);
+            }}>
             Follow system theme
           </label>
-          ${pair === undefined ? nothing : html`
+          ${
+            pair === undefined
+              ? nothing
+              : html`
             <div role="radiogroup" aria-label="Theme appearance">
               <label class="radio">
-                <input type="radio" name="theme-scheme" .checked=${!this.themePreference.auto && currentScheme === "light"} @change=${() => { this.setScheme(pair, "light"); }}>
+                <input type="radio" name="theme-scheme" .checked=${!this.themePreference.auto && currentScheme === "light"} @change=${() => {
+                  this.setScheme(pair, "light");
+                }}>
                 Light
               </label>
               <label class="radio">
-                <input type="radio" name="theme-scheme" .checked=${!this.themePreference.auto && currentScheme === "dark"} @change=${() => { this.setScheme(pair, "dark"); }}>
+                <input type="radio" name="theme-scheme" .checked=${!this.themePreference.auto && currentScheme === "dark"} @change=${() => {
+                  this.setScheme(pair, "dark");
+                }}>
                 Dark
               </label>
             </div>
-          `}
+          `
+          }
         </fieldset>
         <fieldset>
           <legend><label for="workbench-settings-scale">Interface scale</label></legend>
-          <select id="workbench-settings-scale" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) this.setScale(Number(event.target.value)); }}>
+          <select id="workbench-settings-scale" @change=${(event: Event) => {
+            if (event.target instanceof HTMLSelectElement) this.setScale(Number(event.target.value));
+          }}>
             ${INTERFACE_SCALE_STEPS.map((step) => html`<option value=${String(step)} .selected=${step === this.scale}>${Math.round(step * 100)}%</option>`)}
           </select>
         </fieldset>
         <fieldset>
           <legend><label for="workbench-settings-profile">Presentation</label></legend>
-          <select id="workbench-settings-profile" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) this.setProfile(event.target.value === "compact" ? "compact" : "comfortable"); }}>
+          <select id="workbench-settings-profile" @change=${(event: Event) => {
+            if (event.target instanceof HTMLSelectElement) this.setProfile(event.target.value === "compact" ? "compact" : "comfortable");
+          }}>
             <option value="comfortable" .selected=${this.profileId === "comfortable"}>Comfortable</option>
             <option value="compact" .selected=${this.profileId === "compact"}>Compact</option>
           </select>
         </fieldset>
-        ${this.sleepHost() === undefined ? nothing : html`
+        ${
+          this.sleepHost() === undefined
+            ? nothing
+            : html`
           <fieldset>
             <legend>System sleep (battery and AC)</legend>
             <p class="sleep-status" role="status" aria-live="polite">${this.sleepPending ? "Changing system sleep setting…" : this.sleepDisabled === undefined ? "Checking system sleep setting…" : this.sleepDisabled ? "System sleep disabled" : "System sleep enabled"}</p>
-            <button type="button" ?disabled=${this.sleepPending || this.sleepDisabled === undefined} @click=${() => { void this.changeSleep(); }}>${this.sleepDisabled === true ? "Enable system sleep" : "Disable system sleep"}</button>
+            <button type="button" ?disabled=${this.sleepPending || this.sleepDisabled === undefined} @click=${() => {
+              void this.changeSleep();
+            }}>${this.sleepDisabled === true ? "Enable system sleep" : "Disable system sleep"}</button>
             <small>This setting persists after quitting or restarting the Mac. To restore sleep outside Workbench: sudo /usr/bin/pmset -a disablesleep 0</small>
-            ${this.sleepChangeError !== "" ? html`<p role="alert" class="sleep-error">${this.sleepChangeError} ${this.sleepDisabled === undefined ? "Current state could not be verified; Settings will retry." : "Current state was reread."}</p>`
-              : this.sleepError === "" ? nothing : html`<p role="alert" class="sleep-error">${this.sleepError}</p>`}
+            ${
+              this.sleepChangeError !== ""
+                ? html`<p role="alert" class="sleep-error">${this.sleepChangeError} ${this.sleepDisabled === undefined ? "Current state could not be verified; Settings will retry." : "Current state was reread."}</p>`
+                : this.sleepError === ""
+                  ? nothing
+                  : html`<p role="alert" class="sleep-error">${this.sleepError}</p>`
+            }
           </fieldset>
-        `}
+        `
+        }
       </div>
     `;
   }
@@ -128,7 +178,10 @@ export class WorkbenchSettingsPanel extends LitElement {
   }
 
   private toggle(): void {
-    if (this.open) { this.close(); return; }
+    if (this.open) {
+      this.close();
+      return;
+    }
     this.anchor = undefined;
     this.show();
   }
@@ -144,7 +197,9 @@ export class WorkbenchSettingsPanel extends LitElement {
       this.sleepError = "";
       this.sleepChangeError = "";
       void this.readSleep();
-      this.sleepPoll = setInterval(() => { if (!this.sleepPending) void this.readSleep(); }, 5000);
+      this.sleepPoll = setInterval(() => {
+        if (!this.sleepPending) void this.readSleep();
+      }, 5000);
     }
     void this.updateComplete.then(() => {
       this.renderRoot.querySelector<HTMLElement>(".popover input, .popover select")?.focus();
@@ -205,7 +260,8 @@ export class WorkbenchSettingsPanel extends LitElement {
     const host = this.sleepHost();
     if (host?.setSleepDisabled === undefined || this.sleepPending || this.sleepDisabled === undefined) return;
     const target = !this.sleepDisabled;
-    if (!window.confirm(`${target ? "Disable" : "Enable"} system sleep on battery and AC? This setting persists after Workbench quits and after a reboot.`)) return;
+    if (!window.confirm(`${target ? "Disable" : "Enable"} system sleep on battery and AC? This setting persists after Workbench quits and after a reboot.`))
+      return;
     this.sleepPending = true;
     this.sleepError = "";
     this.sleepChangeError = "";
@@ -217,10 +273,13 @@ export class WorkbenchSettingsPanel extends LitElement {
     } catch (error) {
       const detail = String(error);
       this.sleepDisabled = undefined;
-      this.sleepChangeError = detail.includes("SLEEP_CONTROL_USER_CANCELLED:") ? "System sleep change cancelled."
-        : detail.includes("SLEEP_CONTROL_STATE_UNVERIFIED:") ? "System sleep may have changed."
-        : detail.includes("SLEEP_CONTROL_TIMEOUT:") ? "System sleep change timed out; the setting may have changed."
-        : `System sleep change failed: ${detail}.`;
+      this.sleepChangeError = detail.includes("SLEEP_CONTROL_USER_CANCELLED:")
+        ? "System sleep change cancelled."
+        : detail.includes("SLEEP_CONTROL_STATE_UNVERIFIED:")
+          ? "System sleep may have changed."
+          : detail.includes("SLEEP_CONTROL_TIMEOUT:")
+            ? "System sleep change timed out; the setting may have changed."
+            : `System sleep change failed: ${detail}.`;
     } finally {
       this.sleepPending = false;
       if (this.open && this.sleepChangeError !== "") await this.readSleep();

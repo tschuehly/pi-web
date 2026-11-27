@@ -21,7 +21,13 @@ function page(start: number, total: number, messages: unknown[]): RawMessagePage
 describe("ChatTranscriptStore", () => {
   it("hydrates a visible transcript from cached raw history", () => {
     const cache = new MemoryChatHistoryCache();
-    cache.write("s1", page(0, 2, [{ role: "user", content: "hi" }, { role: "assistant", content: "hello" }]));
+    cache.write(
+      "s1",
+      page(0, 2, [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "hello" },
+      ]),
+    );
 
     expect(new ChatTranscriptStore(cache).cachedView("s1")).toEqual({
       messages: [
@@ -36,11 +42,19 @@ describe("ChatTranscriptStore", () => {
 
   it("replaces incompatible cached snapshots even when the cache adapter cannot remove entries", () => {
     const cache = new MemoryChatHistoryCache();
-    cache.write("s1", page(1, 4, [
-      { role: "user", content: "old-a" }, { role: "assistant", content: "old-b" }, { role: "user", content: "old-c" },
-    ]));
+    cache.write(
+      "s1",
+      page(1, 4, [
+        { role: "user", content: "old-a" },
+        { role: "assistant", content: "old-b" },
+        { role: "user", content: "old-c" },
+      ]),
+    );
     const store = new ChatTranscriptStore(cache);
-    const current = page(1, 3, [{ role: "user", content: "new-a" }, { role: "assistant", content: "new-b" }]);
+    const current = page(1, 3, [
+      { role: "user", content: "new-a" },
+      { role: "assistant", content: "new-b" },
+    ]);
 
     const view = store.replaceHistory("s1", current);
 
@@ -52,11 +66,14 @@ describe("ChatTranscriptStore", () => {
   it("tracks the raw page end separately from normalized display messages", () => {
     const store = new ChatTranscriptStore(new MemoryChatHistoryCache());
 
-    const view = store.replaceHistory("s1", page(0, 3, [
-      { role: "user", content: "run the tool" },
-      { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "src/app.ts" } }] },
-      { role: "toolResult", toolCallId: "tool-1", toolName: "read", content: [{ type: "text", text: "ok" }] },
-    ]));
+    const view = store.replaceHistory(
+      "s1",
+      page(0, 3, [
+        { role: "user", content: "run the tool" },
+        { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "src/app.ts" } }] },
+        { role: "toolResult", toolCallId: "tool-1", toolName: "read", content: [{ type: "text", text: "ok" }] },
+      ]),
+    );
 
     expect(view.messages).toHaveLength(2);
     expect(view.messagePageStart).toBe(0);
@@ -67,8 +84,14 @@ describe("ChatTranscriptStore", () => {
   it("keeps live streamed transcript state out of the raw history cache", () => {
     const cache = new MemoryChatHistoryCache();
     const store = new ChatTranscriptStore(cache);
-    const initial = page(0, 2, [{ role: "user", content: "hi" }, { role: "assistant", content: "hel" }]);
-    const updated = page(1, 3, [{ role: "assistant", content: "hello" }, { role: "user", content: "next" }]);
+    const initial = page(0, 2, [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "hel" },
+    ]);
+    const updated = page(1, 3, [
+      { role: "assistant", content: "hello" },
+      { role: "user", content: "next" },
+    ]);
 
     let visible = store.replaceHistory("s1", initial).messages;
     visible = store.applyLiveEvent(visible, { type: "assistant.delta", text: "lo" }) ?? visible;

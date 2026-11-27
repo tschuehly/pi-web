@@ -5,7 +5,11 @@ test("fitted terminal rows and columns stay inside the visible inset after resiz
   await expect(page.locator("body")).toHaveAttribute("data-ready", "true");
   const stage = page.locator("fixture-terminal-panel .terminal-stage");
   const screen = page.locator("fixture-terminal-panel .xterm-screen");
-  for (const size of [{ width: 800, height: 350 }, { width: 803, height: 357 }, { width: 390, height: 667 }]) {
+  for (const size of [
+    { width: 800, height: 350 },
+    { width: 803, height: 357 },
+    { width: 390, height: 667 },
+  ]) {
     await page.setViewportSize(size);
     await expect(async () => {
       const stageBox = await stage.boundingBox();

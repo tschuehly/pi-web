@@ -1,9 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { TerminalCommandRun } from "../../shared/apiTypes.js";
-import {
-  parseWorkspaceRemovalRequest,
-  WORKSPACE_REMOVAL_REQUEST_BODY_MAX_BYTES,
-} from "../../shared/workspaceRemovalProtocol.js";
+import { parseWorkspaceRemovalRequest, WORKSPACE_REMOVAL_REQUEST_BODY_MAX_BYTES } from "../../shared/workspaceRemovalProtocol.js";
 import { requestCancellation } from "../requestCancellation.js";
 import type { Project } from "../types.js";
 import { workspaceRemovalHttpStatus } from "../workspaces/workspaceRemovalService.js";
@@ -13,12 +10,7 @@ export interface WorkspaceRemovalProjectReader {
 }
 
 export interface WorkspaceRemover {
-  remove(
-    project: Project,
-    workspaceId: string,
-    precondition: string,
-    signal: AbortSignal,
-  ): Promise<TerminalCommandRun>;
+  remove(project: Project, workspaceId: string, precondition: string, signal: AbortSignal): Promise<TerminalCommandRun>;
 }
 
 export interface WorkspaceRemovalRouteDependencies {
@@ -33,11 +25,7 @@ export interface WorkspaceRemovalRouteDependencies {
 }
 
 /** Internal sessiond endpoint for host-orchestrated provider workspace removal. */
-export function registerWorkspaceRemovalRoutes(
-  app: FastifyInstance,
-  dependencies: WorkspaceRemovalRouteDependencies,
-  prefix = "/workspace-removals",
-): void {
+export function registerWorkspaceRemovalRoutes(app: FastifyInstance, dependencies: WorkspaceRemovalRouteDependencies, prefix = "/workspace-removals"): void {
   app.delete<{ Params: { projectId: string; workspaceId: string }; Body: unknown }>(
     `${prefix}/projects/:projectId/workspaces/:workspaceId`,
     { bodyLimit: WORKSPACE_REMOVAL_REQUEST_BODY_MAX_BYTES },
@@ -59,12 +47,7 @@ export function registerWorkspaceRemovalRoutes(
 
       const cancellation = requestCancellation(request, reply);
       try {
-        return await dependencies.removals.remove(
-          project,
-          request.params.workspaceId,
-          precondition,
-          cancellation.signal,
-        );
+        return await dependencies.removals.remove(project, request.params.workspaceId, precondition, cancellation.signal);
       } catch (error) {
         return await removalRequestFailed(reply, error);
       } finally {

@@ -1,7 +1,15 @@
 import { Readable } from "node:stream";
 import { describe, expect, it, vi, type MockedFunction } from "vitest";
 import { RemoteMachineRequestError, type MachineClient } from "./machines/machineClient.js";
-import { PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS, PLUGIN_BACKEND_FEDERATION_TIMEOUT_MS, SESSION_TREE_FORK_PROXY_TIMEOUT_MS, SESSION_TREE_NAVIGATION_PROXY_TIMEOUT_MS, WORKSPACE_FILE_FEDERATION_TIMEOUT_MS, WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES, WORKSPACE_REMOVAL_FEDERATION_TIMEOUT_MS } from "../shared/federatedRoutes.js";
+import {
+  PI_PACKAGE_MUTATION_PROXY_TIMEOUT_MS,
+  PLUGIN_BACKEND_FEDERATION_TIMEOUT_MS,
+  SESSION_TREE_FORK_PROXY_TIMEOUT_MS,
+  SESSION_TREE_NAVIGATION_PROXY_TIMEOUT_MS,
+  WORKSPACE_FILE_FEDERATION_TIMEOUT_MS,
+  WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES,
+  WORKSPACE_REMOVAL_FEDERATION_TIMEOUT_MS,
+} from "../shared/federatedRoutes.js";
 import { PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES } from "../shared/pluginBackendProtocol.js";
 import { MAX_INLINE_PREVIEW_BYTES } from "../shared/workspaceFiles.js";
 import { appTestContext, fakeRemoteClient, registerAppTestHooks } from "./app.testSupport.js";
@@ -25,11 +33,13 @@ describe("buildApp remote machine proxy routes", () => {
     const add = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = add.json<{ id: string }>();
     const selection = { models: [{ provider: "remote-provider", id: "remote-model", name: "Remote Chat", contextWindow: 32000, reasoning: false }] };
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify(selection)]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify(selection)]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/models` });
@@ -41,13 +51,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies allowlisted remote HTTP routes through the selected machine", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json", connection: "close" },
-      body: Readable.from([JSON.stringify([{ id: "p1", name: "Remote Project", path: "/repo", createdAt: "now" }])]),
-    }));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json", connection: "close" },
+        body: Readable.from([JSON.stringify([{ id: "p1", name: "Remote Project", path: "/repo", createdAt: "now" }])]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects?active=true` });
@@ -59,13 +75,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote workspace search with cursor and a cancellable bounded hop", async () => {
-    const added = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const added = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = added.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ paths: ["src/App.ts"], cursor: "42" })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ paths: ["src/App.ts"], cursor: "42" })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/search?q=App&cursor=10` });
     expect(response.statusCode).toBe(200);
@@ -79,17 +101,19 @@ describe("buildApp remote machine proxy routes", () => {
     const add = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = add.json<{ id: string }>();
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0x00, 0xc3, 0x28]);
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: {
-        "content-type": "image/png",
-        "content-length": String(bytes.length),
-        "cache-control": "private, max-age=31536000, immutable",
-        "x-content-type-options": "nosniff",
-        "set-cookie": "must-not-cross=1",
-      },
-      body: Readable.from([bytes.subarray(0, 4), bytes.subarray(4)]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: {
+          "content-type": "image/png",
+          "content-length": String(bytes.length),
+          "cache-control": "private, max-age=31536000, immutable",
+          "x-content-type-options": "nosniff",
+          "set-cookie": "must-not-cross=1",
+        },
+        body: Readable.from([bytes.subarray(0, 4), bytes.subarray(4)]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const mediaId = "a".repeat(64);
     const response = await appTestContext.app.inject({ url: `/api/machines/${remote.id}/sessions/s1/media/${mediaId}?cwd=%2Frepo` });
@@ -107,11 +131,13 @@ describe("buildApp remote machine proxy routes", () => {
   it("forwards an encoded targeted session listing and the remote's explicit not-found", async () => {
     const add = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
     const remote = add.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 404,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ error: "Session not found" })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 404,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ error: "Session not found" })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const response = await appTestContext.app.inject({ url: `/api/machines/${remote.id}/sessions?cwd=%2Frepo&sessionId=s%20%2F%3F%26x` });
     expect(response.statusCode).toBe(404);
@@ -121,13 +147,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("preserves the force-refresh query when proxying update checks", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ ok: true })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ ok: true })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web/status?refresh=1` });
@@ -138,13 +170,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote Pi package routes and gives package mutations a longer timeout", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const listResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-packages` });
@@ -160,13 +198,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("forwards remote session tree navigation with the model-operation timeout", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const navigationBody = { cwd: "/repo", targetId: "entry-1", expectedLeafId: "leaf-1", summary: { mode: "default" } };
 
@@ -182,13 +226,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("forwards remote session tree forks with the model-operation timeout", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const forkBody = { cwd: "/repo", entryId: "entry-1", expectedLeafId: "leaf-1" };
 
@@ -204,13 +254,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies the paired backend route with a bounded cancellable deadline", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const payload = { revision: "server-r1", input: { cards: ["alpha"], includeClosed: false } };
 
@@ -233,14 +289,26 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("maps an old remote paired-backend route to an explicit lifecycle compatibility error", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
-      request: vi.fn<MachineClient["request"]>(() => Promise.resolve({
-        statusCode: 404,
-        headers: { "content-type": "application/json" },
-        body: Readable.from([JSON.stringify({ statusCode: 404, error: "Not Found", message: "Route POST:/api/paired-plugin-backends/tools/projects/p1/workspaces/w1/status not found" })]),
-      })),
+      request: vi.fn<MachineClient["request"]>(() =>
+        Promise.resolve({
+          statusCode: 404,
+          headers: { "content-type": "application/json" },
+          body: Readable.from([
+            JSON.stringify({
+              statusCode: 404,
+              error: "Not Found",
+              message: "Route POST:/api/paired-plugin-backends/tools/projects/p1/workspaces/w1/status not found",
+            }),
+          ]),
+        }),
+      ),
     });
 
     const response = await appTestContext.app.inject({
@@ -258,14 +326,20 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("preserves a package peer's legitimate resource 404", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
-      request: vi.fn<MachineClient["request"]>(() => Promise.resolve({
-        statusCode: 404,
-        headers: { "content-type": "application/json" },
-        body: Readable.from([JSON.stringify({ error: "Not Found", code: "workspace-resource-not-found", detail: "Card was removed" })]),
-      })),
+      request: vi.fn<MachineClient["request"]>(() =>
+        Promise.resolve({
+          statusCode: 404,
+          headers: { "content-type": "application/json" },
+          body: Readable.from([JSON.stringify({ error: "Not Found", code: "workspace-resource-not-found", detail: "Card was removed" })]),
+        }),
+      ),
     });
 
     const response = await appTestContext.app.inject({
@@ -279,13 +353,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("stops oversized federated plugin backend responses at the gateway", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([Buffer.alloc(PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES + 1, "x")]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([Buffer.alloc(PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES + 1, "x")]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({
@@ -304,27 +384,35 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote workspace effective upload config through the existing federated workspace route", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const remoteWorkspaces = [{
-      id: "w1",
-      projectId: "p1",
-      path: "/repo",
-      label: "main",
-      isMain: true,
-      effectiveConfig: { uploads: { defaultFolder: "remote-project-uploads" } },
-    }];
+    const remoteWorkspaces = [
+      {
+        id: "w1",
+        projectId: "p1",
+        path: "/repo",
+        label: "main",
+        isMain: true,
+        effectiveConfig: { uploads: { defaultFolder: "remote-project-uploads" } },
+      },
+    ];
     const remoteResolution = {
       status: "folder",
       projectId: "p1",
       workspaces: remoteWorkspaces,
       diagnostics: [{ code: "probe-failed", message: "Optional provider unavailable", tier: "primary", pluginId: "optional" }],
     };
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify(remoteResolution)]),
-    }));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify(remoteResolution)]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces` });
@@ -335,26 +423,35 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("overrides missing or weaker remote HTML preview security headers while preserving safe metadata", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const body = "<script>window.opener.location = '/stolen'</script>";
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: {
-        "content-type": "application/octet-stream",
-        "content-length": String(Buffer.byteLength(body)),
-        "content-disposition": "inline; filename=\"attacker.html\"",
-        "content-security-policy": "default-src * 'unsafe-inline' 'unsafe-eval'",
-        "cache-control": "private, max-age=42",
-        "last-modified": "Wed, 05 Aug 2026 10:00:00 GMT",
-        etag: "\"remote-etag\"",
-        "set-cookie": "session=secret",
-      },
-      body: Readable.from([body]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: {
+          "content-type": "application/octet-stream",
+          "content-length": String(Buffer.byteLength(body)),
+          "content-disposition": 'inline; filename="attacker.html"',
+          "content-security-policy": "default-src * 'unsafe-inline' 'unsafe-eval'",
+          "cache-control": "private, max-age=42",
+          "last-modified": "Wed, 05 Aug 2026 10:00:00 GMT",
+          etag: '"remote-etag"',
+          "set-cookie": "session=secret",
+        },
+        body: Readable.from([body]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
-    const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=${encodeURIComponent("report.html")}` });
+    const response = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=${encodeURIComponent("report.html")}`,
+    });
     const policy = workspaceFilePreviewResponsePolicy("report.html");
 
     expect(response.statusCode).toBe(200);
@@ -364,7 +461,7 @@ describe("buildApp remote machine proxy routes", () => {
     expect(response.headers["x-content-type-options"]).toBe(policy.contentTypeOptions);
     expect(response.headers["cache-control"]).toBe("private, max-age=42");
     expect(response.headers["last-modified"]).toBe("Wed, 05 Aug 2026 10:00:00 GMT");
-    expect(response.headers.etag).toBe("\"remote-etag\"");
+    expect(response.headers.etag).toBe('"remote-etag"');
     expect(response.headers["content-length"]).toBe(String(Buffer.byteLength(body)));
     expect(response.headers["set-cookie"]).toBeUndefined();
     expect(response.body).toBe(body);
@@ -373,23 +470,35 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("enforces exact remote SVG and PDF policies instead of upstream active-content headers", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><image href="https://attacker.test/pixel.png" /></svg>`;
     const pdf = "%PDF-1.4\n%mock\n";
-    const request = vi.fn<MachineClient["request"]>((_method, path) => Promise.resolve({
-      statusCode: 200,
-      headers: {
-        "content-type": "text/html",
-        "content-disposition": "inline; filename=\"attacker.html\"",
-        "content-security-policy": "default-src * 'unsafe-inline' 'unsafe-eval'",
-      },
-      body: Readable.from([path.includes("spec.pdf") ? pdf : svg]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((_method, path) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: {
+          "content-type": "text/html",
+          "content-disposition": 'inline; filename="attacker.html"',
+          "content-security-policy": "default-src * 'unsafe-inline' 'unsafe-eval'",
+        },
+        body: Readable.from([path.includes("spec.pdf") ? pdf : svg]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
-    for (const fixture of [{ path: "diagram.svg", body: svg }, { path: "spec.pdf", body: pdf }]) {
-      const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=${encodeURIComponent(fixture.path)}` });
+    for (const fixture of [
+      { path: "diagram.svg", body: svg },
+      { path: "spec.pdf", body: pdf },
+    ]) {
+      const response = await appTestContext.app.inject({
+        method: "GET",
+        url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=${encodeURIComponent(fixture.path)}`,
+      });
       const policy = workspaceFilePreviewResponsePolicy(fixture.path);
       expect(response.statusCode).toBe(200);
       expect(response.headers["content-type"]).toBe(policy.contentType);
@@ -405,22 +514,31 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("keeps remote preview errors readable while neutralizing hostile response headers", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const body = JSON.stringify({ error: "Missing file <script>alert(1)</script>" });
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 404,
-      headers: {
-        "content-type": "text/html",
-        "content-disposition": "attachment; filename=\"active.html\"",
-        "content-security-policy": "default-src * 'unsafe-inline'",
-        "x-content-type-options": "sniff",
-      },
-      body: Readable.from([body]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 404,
+        headers: {
+          "content-type": "text/html",
+          "content-disposition": 'attachment; filename="active.html"',
+          "content-security-policy": "default-src * 'unsafe-inline'",
+          "x-content-type-options": "sniff",
+        },
+        body: Readable.from([body]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
-    const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=report.html` });
+    const response = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=report.html`,
+    });
     const policy = workspaceFilePreviewErrorResponsePolicy();
 
     expect(response.statusCode).toBe(404);
@@ -433,7 +551,11 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("hardens preview requests the gateway rejects before contacting the remote", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const request = vi.fn<MachineClient["request"]>(() => Promise.reject(new Error("remote must not be contacted")));
     appTestContext.remoteClient = fakeRemoteClient({ request });
@@ -451,20 +573,26 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("forces remote downloads to safe attachments with the requested filename", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const path = String.raw`C:\reports\résumé's.pdf`;
     const query = new URLSearchParams({ path, download: "1" }).toString();
     const body = "%PDF-1.4\n%mock\n";
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: {
-        "content-type": "application/pdf",
-        "content-disposition": "inline; filename=\"wrong.pdf\"",
-        "content-security-policy": "default-src *",
-      },
-      body: Readable.from([body]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-disposition": 'inline; filename="wrong.pdf"',
+          "content-security-policy": "default-src *",
+        },
+        body: Readable.from([body]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?${query}` });
@@ -481,19 +609,31 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("stops oversized remote inline previews at the gateway while leaving downloads uncapped", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const chunk = Buffer.alloc(1024 * 1024, 0x61);
     const oversizedChunks = Math.ceil(MAX_INLINE_PREVIEW_BYTES / chunk.byteLength) + 1;
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "image/png", "content-length": "4" },
-      body: Readable.from(Array.from({ length: oversizedChunks }, () => chunk)),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "image/png", "content-length": "4" },
+        body: Readable.from(Array.from({ length: oversizedChunks }, () => chunk)),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
-    const inlineResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=huge.png` });
-    const downloadResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=huge.png&download=1` });
+    const inlineResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=huge.png`,
+    });
+    const downloadResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=huge.png&download=1`,
+    });
 
     expect(inlineResponse.statusCode).toBe(502);
     expect(inlineResponse.headers["content-type"]).toContain("application/json");
@@ -504,10 +644,18 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("releases the remote preview connection when the client disconnects", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     // A remote body that never ends: only inbound cancellation can release it.
-    const upstream = new Readable({ read() { /* stays open until destroyed */ } });
+    const upstream = new Readable({
+      read() {
+        /* stays open until destroyed */
+      },
+    });
     upstream.push(Buffer.alloc(8));
     const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({ statusCode: 200, headers: { "content-type": "image/png" }, body: upstream }));
     appTestContext.remoteClient = fakeRemoteClient({ request });
@@ -515,25 +663,38 @@ describe("buildApp remote machine proxy routes", () => {
     const address = await appTestContext.app.listen({ port: 0, host: "127.0.0.1" });
     const controller = new AbortController();
     const pending = fetch(`${address}/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=diagram.svg`, { signal: controller.signal });
-    await vi.waitFor(() => { expect(request).toHaveBeenCalled(); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalled();
+    });
     controller.abort();
 
     await expect(pending).rejects.toThrow();
-    await vi.waitFor(() => { expect(upstream.destroyed).toBe(true); });
+    await vi.waitFor(() => {
+      expect(upstream.destroyed).toBe(true);
+    });
   });
 
   it("advertises the bounded preview length instead of a remote content-length claim", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const body = "<h1>Report</h1>";
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "text/html", "content-length": "99999" },
-      body: Readable.from([body]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "text/html", "content-length": "99999" },
+        body: Readable.from([body]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
-    const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=report.html` });
+    const response = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/file/preview?path=report.html`,
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-length"]).toBe(String(Buffer.byteLength(body)));
@@ -541,14 +702,20 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("stops oversized federated workspace-file JSON responses at the gateway", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const upstream = Readable.from([Buffer.alloc(WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES + 1, "x")]);
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: upstream,
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: upstream,
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({
@@ -568,15 +735,25 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("times out a stalled federated workspace-file body after response headers", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const upstream = new Readable({ read() { /* remains open until the response deadline destroys it */ } });
+    const upstream = new Readable({
+      read() {
+        /* remains open until the response deadline destroys it */
+      },
+    });
     upstream.push(Buffer.from("{"));
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: upstream,
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: upstream,
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     vi.useFakeTimers();
@@ -585,7 +762,9 @@ describe("buildApp remote machine proxy routes", () => {
         method: "GET",
         url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/tree?path=src`,
       });
-      await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce(); });
+      await vi.waitFor(() => {
+        expect(request).toHaveBeenCalledOnce();
+      });
       await vi.advanceTimersByTimeAsync(WORKSPACE_FILE_FEDERATION_TIMEOUT_MS);
       const response = await pending;
 
@@ -601,37 +780,62 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("destroys a stalled federated workspace-file body when the browser disconnects", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const upstream = new Readable({ read() { /* remains open until inbound cancellation */ } });
+    const upstream = new Readable({
+      read() {
+        /* remains open until inbound cancellation */
+      },
+    });
     upstream.push(Buffer.from("{"));
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: upstream,
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: upstream,
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const address = await appTestContext.app.listen({ port: 0, host: "127.0.0.1" });
     const controller = new AbortController();
     const pending = fetch(`${address}/api/machines/${remote.id}/projects/p1/workspaces/w1/tree?path=src`, { signal: controller.signal });
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledOnce();
+    });
     controller.abort();
 
     await expect(pending).rejects.toThrow();
-    await vi.waitFor(() => { expect(upstream.destroyed).toBe(true); });
+    await vi.waitFor(() => {
+      expect(upstream.destroyed).toBe(true);
+    });
   });
 
   it("cancels an admitted remote workspace upload when the browser disconnects", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     let upstreamSignal: AbortSignal | undefined;
-    const request = vi.fn<MachineClient["request"]>((_method, _path, _body, options) => new Promise((_resolve, reject) => {
-      upstreamSignal = options?.signal;
-      options?.signal?.addEventListener("abort", () => {
-        reject(new RemoteMachineRequestError("Remote machine request cancelled", 502));
-      }, { once: true });
-    }));
+    const request = vi.fn<MachineClient["request"]>(
+      (_method, _path, _body, options) =>
+        new Promise((_resolve, reject) => {
+          upstreamSignal = options?.signal;
+          options?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new RemoteMachineRequestError("Remote machine request cancelled", 502));
+            },
+            { once: true },
+          );
+        }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const address = await appTestContext.app.listen({ port: 0, host: "127.0.0.1" });
@@ -642,23 +846,33 @@ describe("buildApp remote machine proxy routes", () => {
       body: Buffer.alloc(64, 0x61),
       signal: controller.signal,
     });
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledOnce();
+    });
     controller.abort();
 
     await expect(pending).rejects.toThrow();
-    await vi.waitFor(() => { expect(upstreamSignal?.aborted).toBe(true); });
+    await vi.waitFor(() => {
+      expect(upstreamSignal?.aborted).toBe(true);
+    });
     expect(request.mock.calls[0]?.[3]).toMatchObject({ timeoutMs: WORKSPACE_FILE_FEDERATION_TIMEOUT_MS });
   });
 
   it("proxies remote workspace file writes as raw request bodies", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const payload = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-    const request = vi.fn<MachineClient["request"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ path: "image.png", size: payload.length, modifiedAt: "now", created: true })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ path: "image.png", size: payload.length, modifiedAt: "now", created: true })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({
@@ -680,18 +894,28 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote workspace trust reads and writes through the allowlisted route", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const trustBody = { trusted: false };
 
     const readResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/trust` });
-    const writeResponse = await appTestContext.app.inject({ method: "PUT", url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/trust`, payload: trustBody });
+    const writeResponse = await appTestContext.app.inject({
+      method: "PUT",
+      url: `/api/machines/${remote.id}/projects/p1/workspaces/w1/trust`,
+      payload: trustBody,
+    });
 
     expect(readResponse.statusCode).toBe(200);
     expect(readResponse.json()).toEqual({ method: "GET", path: "/api/projects/p1/workspaces/w1/trust" });
@@ -702,13 +926,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote workspace removal with its bounded cancellation policy", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const deleteBody = { precondition: "v1.confirmed" };
@@ -720,24 +950,26 @@ describe("buildApp remote machine proxy routes", () => {
 
     expect(deleteWorkspaceResponse.json()).toEqual({ method: "DELETE", path: "/api/projects/p1/workspaces/w1" });
     const deletionRequest = request.mock.calls.find((call) => call[0] === "DELETE");
-    expect(deletionRequest?.slice(0, 3)).toEqual([
-      "DELETE",
-      "/api/projects/p1/workspaces/w1",
-      deleteBody,
-    ]);
+    expect(deletionRequest?.slice(0, 3)).toEqual(["DELETE", "/api/projects/p1/workspaces/w1", deleteBody]);
     expect(deletionRequest?.[3]?.timeoutMs).toBe(WORKSPACE_REMOVAL_FEDERATION_TIMEOUT_MS);
     expect(deletionRequest?.[3]?.signal).toBeInstanceOf(AbortSignal);
     expect(deletionRequest?.[3]?.signal?.aborted).toBe(false);
   });
 
   it("proxies remote session reloads through the selected machine", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ reloaded: true })]),
-    }));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ reloaded: true })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "POST", url: `/api/machines/${remote.id}/sessions/s1/reload`, payload: { cwd: "/repo" } });
@@ -748,21 +980,38 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies only the four allowlisted remote notification HTTP routes", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const catalog = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/sessions/notifications` });
-    const inbox = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/sessions/${encodeURIComponent("s 1")}/notifications?cwd=${encodeURIComponent("/repo one")}` });
+    const inbox = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/${remote.id}/sessions/${encodeURIComponent("s 1")}/notifications?cwd=${encodeURIComponent("/repo one")}`,
+    });
     const dismissBody = { cwd: "/repo one", daemonInstanceId: "daemon-test", notificationId: "notice-1" };
-    const dismiss = await appTestContext.app.inject({ method: "POST", url: `/api/machines/${remote.id}/sessions/${encodeURIComponent("s 1")}/notifications/dismiss`, payload: dismissBody });
+    const dismiss = await appTestContext.app.inject({
+      method: "POST",
+      url: `/api/machines/${remote.id}/sessions/${encodeURIComponent("s 1")}/notifications/dismiss`,
+      payload: dismissBody,
+    });
     const dismissAllBody = { cwd: "/repo one", daemonInstanceId: "daemon-test", throughOrder: 7, throughOverflowWatermark: 2 };
-    const dismissAll = await appTestContext.app.inject({ method: "POST", url: `/api/machines/${remote.id}/sessions/${encodeURIComponent("s 1")}/notifications/dismiss-all`, payload: dismissAllBody });
+    const dismissAll = await appTestContext.app.inject({
+      method: "POST",
+      url: `/api/machines/${remote.id}/sessions/${encodeURIComponent("s 1")}/notifications/dismiss-all`,
+      payload: dismissAllBody,
+    });
     const wrongMethod = await appTestContext.app.inject({ method: "DELETE", url: `/api/machines/${remote.id}/sessions/s1/notifications` });
 
     expect([catalog.statusCode, inbox.statusCode, dismiss.statusCode, dismissAll.statusCode]).toEqual([200, 200, 200, 200]);
@@ -775,13 +1024,19 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote server notice reads and dismissals through the allowlisted routes", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn<MachineClient["request"]>((method, path, body) => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify({ method, path, body })]),
-    }));
+    const request = vi.fn<MachineClient["request"]>((method, path, body) =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify({ method, path, body })]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const snapshot = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/notices` });
@@ -795,14 +1050,20 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("proxies remote session queue clearing through the allowlisted route", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const status = { sessionId: "s1", pendingMessageCount: 0, queuedMessages: [] };
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: Readable.from([JSON.stringify(status)]),
-    }));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: Readable.from([JSON.stringify(status)]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "POST", url: `/api/machines/${remote.id}/sessions/s1/queue/clear`, payload: { cwd: "/repo" } });
@@ -813,7 +1074,11 @@ describe("buildApp remote machine proxy routes", () => {
   });
 
   it("forwards remote JSON request bodies and normalizes remote timeouts", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const request = vi.fn(() => Promise.reject(new RemoteMachineRequestError("timed out", 504)));
     appTestContext.remoteClient = fakeRemoteClient({ request });

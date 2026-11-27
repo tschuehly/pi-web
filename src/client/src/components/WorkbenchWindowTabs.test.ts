@@ -5,36 +5,57 @@ import type { SessionStatus } from "../api";
 import { emptyWindow, focusChat, openChat, type WindowChat, type WindowStore, type WorkbenchWindow } from "../workbenchWindows";
 import { chatTabStatus, endedOutside, WorkbenchWindowTabs, type ChatTabCloseDetail, type ChatTabSelectDetail } from "./WorkbenchWindowTabs";
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 const release = { id: "release", title: "Release" };
-const chat = (sessionId: string, workstream?: { id: string; title: string }): WindowChat => ({ sessionId, title: `Chat ${sessionId}`, machineId: "local", workstream });
+const chat = (sessionId: string, workstream?: { id: string; title: string }): WindowChat => ({
+  sessionId,
+  title: `Chat ${sessionId}`,
+  machineId: "local",
+  workstream,
+});
 
 function workingSet(focused: string): WorkbenchWindow {
-  const store = [chat("a1", release), chat("a2", release), chat("x")].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") });
+  const store = [chat("a1", release), chat("a2", release), chat("x")].reduce<WindowStore>((next, item) => openChat(next, "w", item), {
+    w: emptyWindow("Window 1"),
+  });
   const window = focusChat(store, "w", focused)["w"];
   if (window === undefined) throw new Error("missing window");
   return { ...window, layout: "tabs" };
 }
 
-async function mount(selected: string | undefined, window = workingSet(selected ?? "a1")): Promise<{ tabs: WorkbenchWindowTabs; root: ShadowRoot; events: string[] }> {
+async function mount(
+  selected: string | undefined,
+  window = workingSet(selected ?? "a1"),
+): Promise<{ tabs: WorkbenchWindowTabs; root: ShadowRoot; events: string[] }> {
   const tabs = new WorkbenchWindowTabs();
   tabs.workingSet = window;
   tabs.selected = selected;
   tabs.statuses = { a1: "running", a2: "needs" };
   const events: string[] = [];
-  tabs.addEventListener("chat-tab-select", (event) => { if (isSelect(event)) events.push(`select ${event.detail.sessionId}`); });
-  tabs.addEventListener("chat-tab-close", (event) => { if (isClose(event)) events.push(`close ${event.detail.sessionIds.join(",")}`); });
-  tabs.addEventListener("window-home", () => { events.push("home"); });
+  tabs.addEventListener("chat-tab-select", (event) => {
+    if (isSelect(event)) events.push(`select ${event.detail.sessionId}`);
+  });
+  tabs.addEventListener("chat-tab-close", (event) => {
+    if (isClose(event)) events.push(`close ${event.detail.sessionIds.join(",")}`);
+  });
+  tabs.addEventListener("window-home", () => {
+    events.push("home");
+  });
   document.body.append(tabs);
   await tabs.updateComplete;
   if (tabs.shadowRoot === null) throw new Error("no shadow root");
   return { tabs, root: tabs.shadowRoot, events };
 }
 
-const isSelect = (event: Event): event is CustomEvent<ChatTabSelectDetail> => event instanceof CustomEvent && typeof Reflect.get(Object(event.detail), "sessionId") === "string";
-const isClose = (event: Event): event is CustomEvent<ChatTabCloseDetail> => event instanceof CustomEvent && Array.isArray(Reflect.get(Object(event.detail), "sessionIds"));
-const keydown = (element: Element | null | undefined, key: string) => element?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+const isSelect = (event: Event): event is CustomEvent<ChatTabSelectDetail> =>
+  event instanceof CustomEvent && typeof Reflect.get(Object(event.detail), "sessionId") === "string";
+const isClose = (event: Event): event is CustomEvent<ChatTabCloseDetail> =>
+  event instanceof CustomEvent && Array.isArray(Reflect.get(Object(event.detail), "sessionIds"));
+const keydown = (element: Element | null | undefined, key: string) =>
+  element?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
 
 describe("window tabs", () => {
   it("shows one Chat as a slim bar: its status, title and Workstream, its tools and Add, but no tab or layout switch", async () => {
@@ -54,10 +75,23 @@ describe("window tabs", () => {
   it("shows Workstreams on top and the selected Workstream's Chats beneath, with status dots", async () => {
     const { root } = await mount("a2");
 
-    expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")])).toEqual([["Release", "true"], ["Chat x", "false"]]);
+    expect(
+      [...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")]),
+    ).toEqual([
+      ["Release", "true"],
+      ["Chat x", "false"],
+    ]);
     expect(root.querySelector(".workstream-tab .count")?.textContent).toBe("2");
-    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected"), tab.querySelector(".dot")?.getAttribute("aria-label")]))
-      .toEqual([["Chat a1", "false", "Working"], ["Chat a2", "true", "Needs you"]]);
+    expect(
+      [...root.querySelectorAll(".lower .chat-tab")].map((tab) => [
+        tab.querySelector(".title")?.textContent,
+        tab.getAttribute("aria-selected"),
+        tab.querySelector(".dot")?.getAttribute("aria-label"),
+      ]),
+    ).toEqual([
+      ["Chat a1", "false", "Working"],
+      ["Chat a2", "true", "Needs you"],
+    ]);
   });
 
   it("shows a Chat's open-question count in place of its dot, updating live", async () => {
@@ -131,13 +165,16 @@ describe("window tabs", () => {
   });
 
   it("ends the first row in the slotted Chat tools and the actions, the tabs of a lone Workstream's Chats tinted", async () => {
-    const releaseOnly = [chat("a1", release), chat("a2", release)].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
+    const releaseOnly = [chat("a1", release), chat("a2", release)].reduce<WindowStore>((next, item) => openChat(next, "w", item), {
+      w: emptyWindow("Window 1"),
+    })["w"];
     if (releaseOnly !== undefined) releaseOnly.layout = "tabs";
     const { root } = await mount("a1", releaseOnly);
     const bar = root.querySelector(".bar");
 
     expect(root.querySelector(".workstreams")).toBeNull();
-    const rowOf = (row: Element | null | undefined) => [...row?.children ?? []].map((child) => child.matches("slot") ? `slot ${child.getAttribute("name") ?? ""}` : child.className);
+    const rowOf = (row: Element | null | undefined) =>
+      [...(row?.children ?? [])].map((child) => (child.matches("slot") ? `slot ${child.getAttribute("name") ?? ""}` : child.className));
     expect(rowOf(bar)).toEqual(["tabs chats", "slot tools", "actions"]);
     expect([...root.querySelectorAll(".chat-tab")].map((tab) => tab.classList.contains("tinted"))).toEqual([true, true]);
     expect(root.querySelector<HTMLElement>(".chat-tab")?.style.getPropertyValue("--ws")).not.toBe("");
@@ -152,12 +189,20 @@ describe("window tabs", () => {
 
   it("puts Chats without a Workstream on top as their own tabs, and drops the second row for a single-Chat tab", async () => {
     const docs = { id: "docs", title: "Docs" };
-    const window = [chat("a1", release), chat("d1", docs), chat("x"), chat("y")].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") })["w"];
+    const window = [chat("a1", release), chat("d1", docs), chat("x"), chat("y")].reduce<WindowStore>((next, item) => openChat(next, "w", item), {
+      w: emptyWindow("Window 1"),
+    })["w"];
     if (window !== undefined) window.layout = "tabs";
     const { root, events } = await mount("x", window);
 
-    expect([...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")]))
-      .toEqual([["Release", "false"], ["Docs", "false"], ["Chat x", "true"], ["Chat y", "false"]]);
+    expect(
+      [...root.querySelectorAll(".workstreams [role=tab]")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("aria-selected")]),
+    ).toEqual([
+      ["Release", "false"],
+      ["Docs", "false"],
+      ["Chat x", "true"],
+      ["Chat y", "false"],
+    ]);
     expect(root.textContent).not.toContain("No Workstream");
     expect(root.querySelector(".tabs.lower")).toBeNull();
 
@@ -175,7 +220,10 @@ describe("window tabs", () => {
 
   it("caps every tab between 120px and 200px, its full title as the tooltip, with the dot and \u00d7 always shown", async () => {
     const { root } = await mount("a1");
-    const css = [WorkbenchWindowTabs.styles].flat().map((style) => "cssText" in style ? style.cssText : "").join("\n");
+    const css = [WorkbenchWindowTabs.styles]
+      .flat()
+      .map((style) => ("cssText" in style ? style.cssText : ""))
+      .join("\n");
 
     expect(css).toMatch(/\.workstream-tab, \.chat-tab \{[^}]*min-width: 120px; max-width: 200px;[^}]*overflow: hidden/);
     expect(css).toMatch(/\.title \{[^}]*text-overflow: ellipsis/);
@@ -200,9 +248,15 @@ describe("moving Chats", () => {
     readonly data = new Map<string, string>();
     effectAllowed = "";
     dropEffect = "none";
-    get types(): string[] { return [...this.data.keys()]; }
-    setData(type: string, value: string): void { this.data.set(type, value); }
-    getData(type: string): string { return this.data.get(type) ?? ""; }
+    get types(): string[] {
+      return [...this.data.keys()];
+    }
+    setData(type: string, value: string): void {
+      this.data.set(type, value);
+    }
+    getData(type: string): string {
+      return this.data.get(type) ?? "";
+    }
   }
   const drag = (type: string, transfer: FakeTransfer, init: MouseEventInit = {}) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
@@ -211,9 +265,14 @@ describe("moving Chats", () => {
   };
   const details: unknown[] = [];
   const record = (tabs: WorkbenchWindowTabs) => {
-    for (const type of ["chat-tab-menu", "chat-tab-drop", "chat-tab-drag-out"]) tabs.addEventListener(type, (event) => { if (event instanceof CustomEvent) details.push([type, event.detail]); });
+    for (const type of ["chat-tab-menu", "chat-tab-drop", "chat-tab-drag-out"])
+      tabs.addEventListener(type, (event) => {
+        if (event instanceof CustomEvent) details.push([type, event.detail]);
+      });
   };
-  afterEach(() => { details.length = 0; });
+  afterEach(() => {
+    details.length = 0;
+  });
 
   it("opens a move menu for a Chat or a whole Workstream", async () => {
     const { tabs, root } = await mount("a1");
@@ -259,7 +318,11 @@ describe("moving Chats", () => {
 
     expect(details).toEqual([["chat-tab-drag-out", { windowId: "w1", sessionIds: ["a1"] }]]);
     const frame = { screenX: 100, screenY: 50, outerWidth: 800, outerHeight: 600 };
-    expect([endedOutside({ screenX: 500, screenY: 300 }, frame), endedOutside({ screenX: 99, screenY: 300 }, frame), endedOutside({ screenX: 500, screenY: 651 }, frame)]).toEqual([false, true, true]);
+    expect([
+      endedOutside({ screenX: 500, screenY: 300 }, frame),
+      endedOutside({ screenX: 99, screenY: 300 }, frame),
+      endedOutside({ screenX: 500, screenY: 651 }, frame),
+    ]).toEqual([false, true, true]);
   });
 });
 
@@ -285,7 +348,9 @@ describe("grid bar", () => {
     const base = workingSet("x");
     const { root } = await mount(undefined, { ...base, layout: "grid" });
     const layoutEvents: string[] = [];
-    root.host.addEventListener("window-layout", (event) => { if (event instanceof CustomEvent) layoutEvents.push(String(Reflect.get(Object(event.detail), "layout"))); });
+    root.host.addEventListener("window-layout", (event) => {
+      if (event instanceof CustomEvent) layoutEvents.push(String(Reflect.get(Object(event.detail), "layout")));
+    });
 
     expect(root.querySelector(".workstream-tab")).toBeNull();
     expect(root.querySelector(".window-name")?.textContent).toBe("Window 1");
@@ -298,10 +363,28 @@ describe("grid bar", () => {
 });
 
 describe("chat tab status", () => {
-  const status = (patch: Partial<SessionStatus>): SessionStatus => ({ sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0, ...patch });
+  const status = (patch: Partial<SessionStatus>): SessionStatus => ({
+    sessionId: "s",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+    ...patch,
+  });
 
   it("ranks needs you over working over done over idle", () => {
-    const ask = { askId: "q", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Why", questions: [] };
+    const ask = {
+      askId: "q",
+      askedAt: "2026-10-19T10:00:00.000Z",
+      updatedAt: "2026-10-19T10:00:00.000Z",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      context: "Why",
+      questions: [],
+    };
     expect(chatTabStatus(status({ isStreaming: true, pendingAsks: [ask] }), true)).toBe("needs");
     expect(chatTabStatus(status({ isStreaming: true }), true)).toBe("running");
     expect(chatTabStatus(status({}), true)).toBe("done");
@@ -327,18 +410,27 @@ describe("chat tab status", () => {
 });
 
 describe("tab row as the macOS title bar", () => {
-  afterEach(() => { delete window.piWebNative; });
+  afterEach(() => {
+    delete window.piWebNative;
+  });
 
   it("claims the title bar while its row shows, drags or zooms from empty space only, and releases it when removed", async () => {
     const calls: string[] = [];
     window.piWebNative = {
       pickDirectory: () => Promise.resolve(null),
-      setTabsInTitlebar: (shown) => { calls.push(`titlebar ${String(shown)}`); },
-      dragWindow: () => { calls.push("drag"); },
-      zoomWindow: () => { calls.push("zoom"); },
+      setTabsInTitlebar: (shown) => {
+        calls.push(`titlebar ${String(shown)}`);
+      },
+      dragWindow: () => {
+        calls.push("drag");
+      },
+      zoomWindow: () => {
+        calls.push("zoom");
+      },
     };
     const { tabs, root } = await mount("a1");
-    const press = (element: Element | null, detail: number) => element?.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail, bubbles: true, composed: true }));
+    const press = (element: Element | null, detail: number) =>
+      element?.dispatchEvent(new MouseEvent("mousedown", { button: 0, detail, bubbles: true, composed: true }));
 
     press(root.querySelector(".bar"), 1);
     press(root.querySelector(".tabs"), 2);
@@ -353,24 +445,35 @@ describe("tab row as the macOS title bar", () => {
 describe("tab short names", () => {
   it("shows a Chat's and a Workstream's short name, the full title as tooltip, and renames either on double-click", async () => {
     const short = { ...release, shortTitle: "Rel" };
-    const store = [{ ...chat("a1", short), shortName: "First" }, chat("a2", short), { ...chat("x"), shortName: "Loose" }].reduce<WindowStore>((next, item) => openChat(next, "w", item), { w: emptyWindow("Window 1") });
+    const store = [{ ...chat("a1", short), shortName: "First" }, chat("a2", short), { ...chat("x"), shortName: "Loose" }].reduce<WindowStore>(
+      (next, item) => openChat(next, "w", item),
+      { w: emptyWindow("Window 1") },
+    );
     const window = focusChat(store, "w", "a1")["w"];
     if (window === undefined) throw new Error("missing window");
     const { tabs, root } = await mount("a1", { ...window, layout: "tabs" });
     const renames: unknown[] = [];
-    tabs.addEventListener("tab-rename", (event) => { if (event instanceof CustomEvent) renames.push(event.detail); });
+    tabs.addEventListener("tab-rename", (event) => {
+      if (event instanceof CustomEvent) renames.push(event.detail);
+    });
     const answers = ["Release", null, ""];
     const prompt = vi.fn<(message?: string, current?: string) => string | null>(() => answers.shift() ?? null);
     vi.stubGlobal("prompt", prompt);
 
     expect([...root.querySelectorAll(".workstreams [role=tab] .title")].map((title) => title.textContent)).toEqual(["Rel", "Loose"]);
-    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("title")])).toEqual([["First", "Workstream: Release · Chat a1"], ["Chat a2", "Workstream: Release · Chat a2"]]);
+    expect([...root.querySelectorAll(".lower .chat-tab")].map((tab) => [tab.querySelector(".title")?.textContent, tab.getAttribute("title")])).toEqual([
+      ["First", "Workstream: Release · Chat a1"],
+      ["Chat a2", "Workstream: Release · Chat a2"],
+    ]);
     root.querySelector(".workstream-tab")?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     root.querySelector('.lower [data-session="a1"]')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     root.querySelector('.lower [data-session="a2"]')?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
 
     expect(prompt.mock.calls.map((call) => call[1])).toEqual(["Rel", "First", ""]);
-    expect(renames).toEqual([{ workstreamId: "release", name: "Release" }, { sessionId: "a2", name: "" }]);
+    expect(renames).toEqual([
+      { workstreamId: "release", name: "Release" },
+      { sessionId: "a2", name: "" },
+    ]);
     vi.unstubAllGlobals();
   });
 });

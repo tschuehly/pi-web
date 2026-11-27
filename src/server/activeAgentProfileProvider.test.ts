@@ -1,18 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ActiveAgentProfileDescriptor } from "../shared/apiTypes.js";
 import type { SessionDaemonRequestClient } from "../sessiond/sessionDaemonClient.js";
-import {
-  ActiveAgentProfileAccessError,
-  requireActiveAgentProfile,
-  SessionDaemonActiveAgentProfileProvider,
-} from "./activeAgentProfileProvider.js";
+import { ActiveAgentProfileAccessError, requireActiveAgentProfile, SessionDaemonActiveAgentProfileProvider } from "./activeAgentProfileProvider.js";
 
 const firstProfile = activeProfile("/state/first");
 const secondProfile = activeProfile("/state/second");
 
 describe("SessionDaemonActiveAgentProfileProvider", () => {
   it("queries sessiond on every read and observes a new daemon profile epoch", async () => {
-    const request = vi.fn<SessionDaemonRequestClient["request"]>()
+    const request = vi
+      .fn<SessionDaemonRequestClient["request"]>()
       .mockResolvedValueOnce(runtimeResponse(firstProfile))
       .mockResolvedValueOnce(runtimeResponse(secondProfile));
     const provider = new SessionDaemonActiveAgentProfileProvider({ request });

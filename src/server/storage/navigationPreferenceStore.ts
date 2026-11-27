@@ -67,9 +67,9 @@ function parseScope(value: unknown): NavigationPreferenceScope {
 
 function scopeKey(scope: NavigationPreferenceScope): string {
   // Tuple encoding avoids collisions for opaque IDs containing separators.
-  return JSON.stringify(scope.kind === "projects" ? [scope.kind]
-    : scope.kind === "workspaces" ? [scope.kind, scope.projectId]
-      : [scope.kind, scope.projectId, scope.workspaceId]);
+  return JSON.stringify(
+    scope.kind === "projects" ? [scope.kind] : scope.kind === "workspaces" ? [scope.kind, scope.projectId] : [scope.kind, scope.projectId, scope.workspaceId],
+  );
 }
 
 /** Web/API-owned managed state. IDs are opaque: do not query sessiond or prune offline/stale entries. */

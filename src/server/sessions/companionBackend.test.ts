@@ -5,7 +5,13 @@ import { createCompanionBackend, type ServerPluginPeerRequestContextV5, type Ser
 import { PluginBackendRegistry } from "../plugins/pluginBackendRegistry.js";
 import type { ServerPluginPairedBackendContribution } from "../plugins/serverPluginRuntime.js";
 import { bindCompanionBackend } from "./companionBackend.js";
-import { PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS, PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES, PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES, serializePluginBackendChannelDataEnvelope, serializePluginBackendChannelReadyEnvelope } from "../../shared/pluginBackendProtocol.js";
+import {
+  PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS,
+  PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES,
+  PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES,
+  serializePluginBackendChannelDataEnvelope,
+  serializePluginBackendChannelReadyEnvelope,
+} from "../../shared/pluginBackendProtocol.js";
 
 const project = { id: "p", name: "Host project", path: resolvePath("/host"), createdAt: "2026-01-01" };
 const workspace = { id: "w", projectId: "p", path: resolvePath("/host/work"), label: "Host workspace", isMain: false };
@@ -13,8 +19,14 @@ const workspace = { id: "w", projectId: "p", path: resolvePath("/host/work"), la
 function fixture(backend: ServerPluginPeerV5, apiVersion: 3 | 5 = 5, options: { channelCallbackTimeoutMs?: number } = {}) {
   const bus = createEventBus();
   const contribution: ServerPluginPairedBackendContribution = {
-    apiVersion, pluginId: "paired", moduleRevision: "r1", pluginName: "Paired",
-    packageRoot: "/plugin", source: "test", scope: "local", backend,
+    apiVersion,
+    pluginId: "paired",
+    moduleRevision: "r1",
+    pluginName: "Paired",
+    packageRoot: "/plugin",
+    source: "test",
+    scope: "local",
+    backend,
   };
   const requireProject = vi.fn((id: string) => {
     if (id !== project.id) throw new Error("Project not found");
@@ -82,12 +94,20 @@ describe("bindCompanionBackend", () => {
   });
 
   it("snapshots request and channel input before asynchronous project resolution", async () => {
-    const f = fixture({ request: ({ input }) => input, openChannel: ({ input, send }) => {
-      send(input);
-      return { receive: vi.fn() };
-    } });
+    const f = fixture({
+      request: ({ input }) => input,
+      openChannel: ({ input, send }) => {
+        send(input);
+        return { receive: vi.fn() };
+      },
+    });
     let resolveProject!: (value: typeof project) => void;
-    f.requireProject.mockImplementation(() => new Promise((resolve) => { resolveProject = resolve; }));
+    f.requireProject.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveProject = resolve;
+        }),
+    );
     const peer = f.discover().forScope({ kind: "project", projectId: "p" });
     const input = { title: "original" };
     const pending = peer.request?.("read", input);
@@ -107,20 +127,26 @@ describe("bindCompanionBackend", () => {
 
   it("buffers opening server frames until success, preserving snapshots and order", async () => {
     let started!: () => void;
-    const openingStarted = new Promise<void>((resolve) => { started = resolve; });
+    const openingStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let release!: () => void;
-    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let send!: (data: JsonValue) => void;
-    const f = fixture({ openChannel: async (context) => {
-      send = context.send;
-      const frame = { title: "original" };
-      send(frame);
-      frame.title = "changed";
-      started();
-      await blocked;
-      send("second");
-      return { receive: vi.fn() };
-    } });
+    const f = fixture({
+      openChannel: async (context) => {
+        send = context.send;
+        const frame = { title: "original" };
+        send(frame);
+        frame.title = "changed";
+        started();
+        await blocked;
+        send("second");
+        return { receive: vi.fn() };
+      },
+    });
     const onData = vi.fn();
     try {
       const opening = f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData });
@@ -133,20 +159,30 @@ describe("bindCompanionBackend", () => {
       expect(onData.mock.calls).toEqual([[{ title: "original" }], ["second"], ["third"]]);
       channel?.close();
       await channel?.closed;
-    } finally { release(); f.detach(); await f.registry.closeAll(); }
+    } finally {
+      release();
+      f.detach();
+      await f.registry.closeAll();
+    }
   });
 
   it("discards server frames when opening fails after sending", async () => {
     let started!: () => void;
-    const openingStarted = new Promise<void>((resolve) => { started = resolve; });
+    const openingStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let release!: () => void;
-    const blocked = new Promise<void>((resolve) => { release = resolve; });
-    const f = fixture({ openChannel: async ({ send }) => {
-      send("must not escape");
-      started();
-      await blocked;
-      throw new Error("open failed after send");
-    } });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const f = fixture({
+      openChannel: async ({ send }) => {
+        send("must not escape");
+        started();
+        await blocked;
+        throw new Error("open failed after send");
+      },
+    });
     const onData = vi.fn();
     try {
       const opening = f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData });
@@ -156,7 +192,11 @@ describe("bindCompanionBackend", () => {
       release();
       await rejected;
       expect(onData).not.toHaveBeenCalled();
-    } finally { release(); f.detach(); await f.registry.closeAll(); }
+    } finally {
+      release();
+      f.detach();
+      await f.registry.closeAll();
+    }
   });
 
   it.each([
@@ -165,18 +205,26 @@ describe("bindCompanionBackend", () => {
   ])("bounds pre-ready server frames by $label like the browser transport", async ({ data }) => {
     const bytes = Buffer.byteLength(serializePluginBackendChannelDataEnvelope(data), "utf8");
     const readyBytes = Buffer.byteLength(serializePluginBackendChannelReadyEnvelope(), "utf8");
-    const accepted = Math.min(PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES - 1,
-      Math.floor((PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES - readyBytes) / bytes));
+    const accepted = Math.min(
+      PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES - 1,
+      Math.floor((PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES - readyBytes) / bytes),
+    );
     for (const overflow of [false, true]) {
       const close = vi.fn();
-      const f = fixture({ openChannel: ({ send }) => {
-        for (let index = 0; index < accepted; index++) send(data);
-        if (overflow) {
-          // Even a plugin swallowing the send error cannot publish a failed open.
-          try { send(data); } catch { /* Registry retains the send failure. */ }
-        }
-        return { receive: vi.fn(), close };
-      } });
+      const f = fixture({
+        openChannel: ({ send }) => {
+          for (let index = 0; index < accepted; index++) send(data);
+          if (overflow) {
+            // Even a plugin swallowing the send error cannot publish a failed open.
+            try {
+              send(data);
+            } catch {
+              /* Registry retains the send failure. */
+            }
+          }
+          return { receive: vi.fn(), close };
+        },
+      });
       const onData = vi.fn();
       try {
         const opening = f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData });
@@ -189,24 +237,35 @@ describe("bindCompanionBackend", () => {
           channel?.close();
           await channel?.closed;
         }
-      } finally { f.detach(); await f.registry.closeAll(); }
+      } finally {
+        f.detach();
+        await f.registry.closeAll();
+      }
       expect(close).toHaveBeenCalledOnce();
     }
   });
 
   it("closes a ready channel rather than rejecting open when a buffered data consumer throws", async () => {
     const close = vi.fn();
-    const f = fixture({ openChannel: ({ send }) => {
-      send("one"); send("two");
-      return { receive: vi.fn(), close };
-    } });
-    const onData = vi.fn(() => { throw new Error("consumer failed"); });
+    const f = fixture({
+      openChannel: ({ send }) => {
+        send("one");
+        send("two");
+        return { receive: vi.fn(), close };
+      },
+    });
+    const onData = vi.fn(() => {
+      throw new Error("consumer failed");
+    });
     try {
       const channel = await f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData });
       await expect(channel?.closed).resolves.toMatchObject({ wasClean: false, error: { code: "protocol-error", message: "consumer failed" } });
       expect(onData).toHaveBeenCalledOnce();
       expect(close).toHaveBeenCalledOnce();
-    } finally { f.detach(); await f.registry.closeAll(); }
+    } finally {
+      f.detach();
+      await f.registry.closeAll();
+    }
   });
 
   it.each([
@@ -217,20 +276,26 @@ describe("bindCompanionBackend", () => {
     const channel = await f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData: vi.fn() });
     if (channel === undefined) throw new Error("Expected channel");
     for (let index = 0; index < accepted; index++) channel.send(data);
-    expect(() => { channel.send(data); }).toThrow("queue is full");
+    expect(() => {
+      channel.send(data);
+    }).toThrow("queue is full");
     await expect(channel.closed).resolves.toMatchObject({ code: 1008, wasClean: false });
     f.detach();
   });
 
   it("cancels requests, revokes retained facades, and leaves unrelated event connections intact", async () => {
     let started!: () => void;
-    const ready = new Promise<void>((resolve) => { started = resolve; });
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let signal: AbortSignal | undefined;
-    const f = fixture({ request: (context) => {
-      signal = context.signal;
-      started();
-      return new Promise(vi.fn());
-    } });
+    const f = fixture({
+      request: (context) => {
+        signal = context.signal;
+        started();
+        return new Promise(vi.fn());
+      },
+    });
     const backend = f.discover();
     const peer = backend.forScope({ kind: "machine" });
     const pending = peer.request?.("wait", null);
@@ -238,7 +303,8 @@ describe("bindCompanionBackend", () => {
     await ready;
     const message = vi.fn();
     f.bus.on("other", message);
-    f.detach(); f.detach();
+    f.detach();
+    f.detach();
     await rejected;
     expect(signal?.aborted).toBe(true);
     expect(() => backend.forScope({ kind: "machine" })).toThrow("detached");
@@ -253,7 +319,9 @@ describe("bindCompanionBackend", () => {
     const f = fixture({ request });
     const controller = new AbortController();
     controller.abort(new Error("caller cancelled"));
-    await expect(f.discover().forScope({ kind: "project", projectId: "p" }).request?.("read", null, { signal: controller.signal })).rejects.toThrow("caller cancelled");
+    await expect(f.discover().forScope({ kind: "project", projectId: "p" }).request?.("read", null, { signal: controller.signal })).rejects.toThrow(
+      "caller cancelled",
+    );
     expect(f.requireProject).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
     f.detach();
@@ -263,7 +331,12 @@ describe("bindCompanionBackend", () => {
     const request = vi.fn(() => null);
     const f = fixture({ request });
     let resolveProject!: (value: typeof project) => void;
-    f.requireProject.mockImplementation(() => new Promise((resolve) => { resolveProject = resolve; }));
+    f.requireProject.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveProject = resolve;
+        }),
+    );
     const controller = new AbortController();
     const pending = f.discover().forScope({ kind: "project", projectId: "p" }).request?.("read", null, { signal: controller.signal });
     const rejected = expect(pending).rejects.toThrow("cancelled");
@@ -277,16 +350,22 @@ describe("bindCompanionBackend", () => {
 
   it("cancels channel opening and cleans up a late plugin result", async () => {
     let started!: () => void;
-    const ready = new Promise<void>((resolve) => { started = resolve; });
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let release!: () => void;
-    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const close = vi.fn();
-    const f = fixture({ openChannel: async ({ send }) => {
-      send("discard on cancellation");
-      started();
-      await blocked;
-      return { receive: vi.fn(), close };
-    } });
+    const f = fixture({
+      openChannel: async ({ send }) => {
+        send("discard on cancellation");
+        started();
+        await blocked;
+        return { receive: vi.fn(), close };
+      },
+    });
     const peer = f.discover().forScope({ kind: "machine" });
     if (peer.openChannel === undefined) throw new Error("Expected channels");
     const onData = vi.fn();
@@ -297,7 +376,9 @@ describe("bindCompanionBackend", () => {
     f.detach();
     await rejected;
     release();
-    await vi.waitFor(() => { expect(close).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(close).toHaveBeenCalledOnce();
+    });
     expect(onData).not.toHaveBeenCalled();
   });
 
@@ -305,41 +386,55 @@ describe("bindCompanionBackend", () => {
     const receive = vi.fn<(data: JsonValue, signal: AbortSignal) => void>();
     const close = vi.fn();
     let signal: AbortSignal | undefined;
-    const f = fixture({ openChannel: (context) => {
-      signal = context.signal;
-      context.send("ready");
-      return { receive, close };
-    } });
+    const f = fixture({
+      openChannel: (context) => {
+        signal = context.signal;
+        context.send("ready");
+        return { receive, close };
+      },
+    });
     const peer = f.discover().forScope({ kind: "workspace", projectId: "p", workspaceId: "w" });
     expect(peer).not.toHaveProperty("request");
     if (peer.openChannel === undefined) throw new Error("Expected channels");
     const onData = vi.fn();
     const channel = await peer.openChannel("watch", null, { onData });
     expect(onData).toHaveBeenCalledWith("ready");
-    channel.send("one"); channel.send("two");
-    await vi.waitFor(() => { expect(receive).toHaveBeenCalledTimes(2); });
+    channel.send("one");
+    channel.send("two");
+    await vi.waitFor(() => {
+      expect(receive).toHaveBeenCalledTimes(2);
+    });
     expect(receive.mock.calls.map(([data]) => data)).toEqual(["one", "two"]);
     f.detach();
     await expect(channel.closed).resolves.toMatchObject({ wasClean: false });
     expect(signal?.aborted).toBe(true);
     expect(close).toHaveBeenCalledOnce();
-    expect(() => { channel.send("late"); }).toThrow("closed");
+    expect(() => {
+      channel.send("late");
+    }).toThrow("closed");
   });
 
   it("drains accepted frames and their replies before a clean close", async () => {
     const receive = vi.fn();
     const close = vi.fn();
-    const f = fixture({ openChannel: ({ send }) => ({
-      receive: (frame) => { receive(frame); send(frame); },
-      close,
-    }) });
+    const f = fixture({
+      openChannel: ({ send }) => ({
+        receive: (frame) => {
+          receive(frame);
+          send(frame);
+        },
+        close,
+      }),
+    });
     const onData = vi.fn();
     const channel = await f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData });
     if (channel === undefined) throw new Error("Expected channel");
     channel.send("one");
     channel.send("two");
     channel.close("done");
-    expect(() => { channel.send("late"); }).toThrow("closed");
+    expect(() => {
+      channel.send("late");
+    }).toThrow("closed");
     await expect(channel.closed).resolves.toMatchObject({ code: 1000, wasClean: true });
     expect(receive.mock.calls).toEqual([["one"], ["two"]]);
     expect(onData.mock.calls).toEqual([["one"], ["two"]]);
@@ -350,13 +445,29 @@ describe("bindCompanionBackend", () => {
   it("waits for an in-flight receive on clean close and bounds its drain", async () => {
     vi.useFakeTimers();
     let received!: () => void;
-    const started = new Promise<void>((resolve) => { received = resolve; });
-    let release!: () => void;
-    const blocked = new Promise<void>((resolve) => { release = resolve; });
-    const close = vi.fn();
-    const f = fixture({ openChannel: () => ({ receive: () => { received(); return blocked; }, close }) }, 5, {
-      channelCallbackTimeoutMs: PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS * 2,
+    const started = new Promise<void>((resolve) => {
+      received = resolve;
     });
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const close = vi.fn();
+    const f = fixture(
+      {
+        openChannel: () => ({
+          receive: () => {
+            received();
+            return blocked;
+          },
+          close,
+        }),
+      },
+      5,
+      {
+        channelCallbackTimeoutMs: PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS * 2,
+      },
+    );
     try {
       const channel = await f.discover().forScope({ kind: "machine" }).openChannel?.("watch", null, { onData: vi.fn() });
       if (channel === undefined) throw new Error("Expected channel");
@@ -378,7 +489,14 @@ describe("bindCompanionBackend", () => {
 
   it("propagates receive failures and cleans channels on caller cancellation and clean close", async () => {
     const close = vi.fn();
-    const f = fixture({ openChannel: () => ({ receive: () => { throw new Error("bad frame"); }, close }) });
+    const f = fixture({
+      openChannel: () => ({
+        receive: () => {
+          throw new Error("bad frame");
+        },
+        close,
+      }),
+    });
     const peer = f.discover().forScope({ kind: "machine" });
     if (peer.openChannel === undefined) throw new Error("Expected channels");
     const failed = await peer.openChannel("watch", null, { onData: vi.fn() });
@@ -389,7 +507,8 @@ describe("bindCompanionBackend", () => {
     controller.abort();
     await expect(cancelled.closed).resolves.toMatchObject({ wasClean: false });
     const clean = await peer.openChannel("watch", null, { onData: vi.fn() });
-    clean.close("done"); clean.close();
+    clean.close("done");
+    clean.close();
     await expect(clean.closed).resolves.toEqual({ code: 1000, reason: "done", wasClean: true });
     expect(close).toHaveBeenCalledTimes(3);
     f.detach();

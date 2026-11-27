@@ -34,20 +34,22 @@ import { ProjectService } from "./projects/projectService.js";
 import { ProjectLifecycleService } from "./projects/projectLifecycleService.js";
 import { registerProjectMutationRoutes } from "./sessiond/projectMutationRoutes.js";
 import { ProjectStore, projectStorePath } from "./storage/projectStore.js";
-import {
-  eligibleWorkspaceProviderContributions,
-  WorkspaceProviderRegistry,
-} from "./workspaces/workspaceProviderRegistry.js";
+import { eligibleWorkspaceProviderContributions, WorkspaceProviderRegistry } from "./workspaces/workspaceProviderRegistry.js";
 import { sessiondSocketPath } from "../sessiond/config.js";
 import { claimSessiondSocketPath, releaseSessiondSocketPath, sessiondSocketIdentity } from "./sessiond/sessiondSocketOwnership.js";
-import {
-  PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
-  PI_WEB_HOST_PI_SESSION_EVENTS_CAPABILITY,
-  PI_WEB_HOST_WORKSPACES_CAPABILITY,
-} from "../server-plugin-api.js";
+import { PI_WEB_HOST_PI_SESSIONS_CAPABILITY, PI_WEB_HOST_PI_SESSION_EVENTS_CAPABILITY, PI_WEB_HOST_WORKSPACES_CAPABILITY } from "../server-plugin-api.js";
 import { getPiWebRuntimeComponent } from "./piWebStatus.js";
 import { PI_WEB_CAPABILITIES, SESSIOND_RUNTIME_CAPABILITIES } from "../shared/capabilities.js";
-import { agentSessionDirEnvOverride, effectivePiWebConfig, maxUploadBytes, offlineModeEnabled, piWebDataDir, sessionArchiveDirectory, PI_CODING_AGENT_DIR_ENV, PI_CODING_AGENT_SESSION_DIR_ENV } from "../config.js";
+import {
+  agentSessionDirEnvOverride,
+  effectivePiWebConfig,
+  maxUploadBytes,
+  offlineModeEnabled,
+  piWebDataDir,
+  sessionArchiveDirectory,
+  PI_CODING_AGENT_DIR_ENV,
+  PI_CODING_AGENT_SESSION_DIR_ENV,
+} from "../config.js";
 import { createFilePiWebConfigService } from "./configRoutes.js";
 import { createActiveAgentProfileDescriptor } from "../sessiond/activeAgentProfile.js";
 import { loadServerPluginRecoveryConfig } from "../serverPluginRecovery.js";
@@ -72,14 +74,8 @@ import { createServerPluginWorkspacesCapabilityFactory } from "./plugins/serverP
 import { createServerPluginCatalogCapabilityFactory } from "./plugins/serverPluginCatalogCapability.js";
 import { PI_WEB_HOST_CATALOG_CAPABILITY } from "../shared/pluginCatalogTypes.js";
 import { registerPluginCatalogRoutes } from "./sessiond/pluginCatalogRoutes.js";
-import {
-  REQUIRED_TERMINAL_SERVICE_CAPABILITY,
-  unavailableRequiredTerminalService,
-} from "./terminals/requiredTerminalService.js";
-import {
-  eligiblePluginBackendContributions,
-  PluginBackendRegistry,
-} from "./plugins/pluginBackendRegistry.js";
+import { REQUIRED_TERMINAL_SERVICE_CAPABILITY, unavailableRequiredTerminalService } from "./terminals/requiredTerminalService.js";
+import { eligiblePluginBackendContributions, PluginBackendRegistry } from "./plugins/pluginBackendRegistry.js";
 import { runSessionDaemonShutdown } from "./sessiond/sessionDaemonShutdown.js";
 import { sessionServiceDependencies } from "./sessiond/sessionServiceDependencies.js";
 import { PiSessionEventConnections } from "./sessions/piSessionEventConnections.js";
@@ -123,10 +119,7 @@ if (deprecatedAgentInputs.length > 0) {
   app.log.warn({ deprecatedAgentInputs }, "deprecated agent configuration inputs detected; support will be removed in a future release");
 }
 if (serverPluginRecovery.safeStartDiagnostic !== undefined) {
-  app.log.error(
-    { component: "server-plugins", configPath: serverPluginRecovery.path },
-    serverPluginRecovery.safeStartDiagnostic,
-  );
+  app.log.error({ component: "server-plugins", configPath: serverPluginRecovery.path }, serverPluginRecovery.safeStartDiagnostic);
 }
 await app.register(fastifyWebsocket);
 installPluginBackendChannelWebSocketPayloadLimit(app.websocketServer);
@@ -142,7 +135,9 @@ const serverPluginCatalog = new PiWebPluginCatalog({
   cwd: process.cwd(),
   agentDir: activeAgentProfile.dir,
   configProvider: () => config,
-  warningSink: (message) => { app.log.warn({ component: "server-plugins" }, message); },
+  warningSink: (message) => {
+    app.log.warn({ component: "server-plugins" }, message);
+  },
 });
 
 let runtimeShutdown: (() => Promise<void>) | undefined;
@@ -158,8 +153,12 @@ async function requestShutdown(signal: NodeJS.Signals): Promise<void> {
   app.log.info({ signal }, "shutting down session daemon");
   await runtimeShutdown();
 }
-process.once("SIGINT", (signal) => { void requestShutdown(signal); });
-process.once("SIGTERM", (signal) => { void requestShutdown(signal); });
+process.once("SIGINT", (signal) => {
+  void requestShutdown(signal);
+});
+process.once("SIGTERM", (signal) => {
+  void requestShutdown(signal);
+});
 
 // Agent-executed processes (bash tool, terminals, subsessions) are spawned from
 // this process and inherit its environment. The scrub removes only the keys
@@ -178,8 +177,10 @@ app.log.info({ scrubbedEnvKeys }, "daemon-only environment keys hidden from agen
 // grace for it to release first. The web/API process of this instance shares
 // the data directory but never claims it.
 if (daemonEnvironment["PI_WEB_FIXTURE_PENDING_ASK_MANIFEST"] !== undefined) {
-  if (daemonEnvironment["PI_CODING_AGENT_DIR"] !== activeAgentProfile.dir
-    || agentSessionDirEnvOverride(daemonEnvironment) !== daemonEnvironment["PI_CODING_AGENT_SESSION_DIR"]) {
+  if (
+    daemonEnvironment["PI_CODING_AGENT_DIR"] !== activeAgentProfile.dir
+    || agentSessionDirEnvOverride(daemonEnvironment) !== daemonEnvironment["PI_CODING_AGENT_SESSION_DIR"]
+  ) {
     throw new Error("Pending ask fixture requires explicitly owned active agent and session directories");
   }
   const { validateControlledPendingAskFixture } = await import("./controlledPendingAskFixture.js");
@@ -216,14 +217,15 @@ async function createSessionDaemonRuntime() {
   // an obsolete copy. Failures remain non-fatal and are logged per package.
   // Trial instances share the owner's real agent profile (one auth.json and lock) and set this to "0" so
   // their bundled package paths never land in its settings.json; see pi-workbench docs/contracts/harness.md.
-  if (process.env["PI_WEB_PI_PACKAGE_AUTO_INSTALL"] !== "0") await reconcileAutoInstallablePiPackages({
-    profileDir: activeAgentProfile.dir,
-    ...createAutoInstallPiPackageProfile(activeAgentProfile.dir),
-    dismissalChecker: new PiPackageDismissalStore(piPackageDismissalStorePath(daemonEnvironment)),
-    logger: app.log,
-  }).catch((error: unknown) => {
-    app.log.warn({ err: error }, "Pi package auto-install reconciliation failed unexpectedly; continuing without it");
-  });
+  if (process.env["PI_WEB_PI_PACKAGE_AUTO_INSTALL"] !== "0")
+    await reconcileAutoInstallablePiPackages({
+      profileDir: activeAgentProfile.dir,
+      ...createAutoInstallPiPackageProfile(activeAgentProfile.dir),
+      dismissalChecker: new PiPackageDismissalStore(piPackageDismissalStorePath(daemonEnvironment)),
+      logger: app.log,
+    }).catch((error: unknown) => {
+      app.log.warn({ err: error }, "Pi package auto-install reconciliation failed unexpectedly; continuing without it");
+    });
   const eventHub = new SessionEventHub();
   const serverNotices = new ServerNoticeService(new ServerNoticeStore(), eventHub);
   const projects = new ProjectService(new ProjectStore(projectStorePath(daemonEnvironment)));
@@ -243,9 +245,16 @@ async function createSessionDaemonRuntime() {
         return typeof address === "object" && address !== null ? address.port : undefined;
       },
     }),
-    noticeSink: (source, input) => { serverNotices.record({ ...input, source }); },
+    noticeSink: (source, input) => {
+      serverNotices.record({ ...input, source });
+    },
     dataDir: piWebDataDir(daemonEnvironment),
-    lateHostCapabilities: [PI_WEB_HOST_WORKSPACES_CAPABILITY, PI_WEB_HOST_PI_SESSIONS_CAPABILITY, PI_WEB_HOST_PI_SESSION_EVENTS_CAPABILITY, PI_WEB_HOST_CATALOG_CAPABILITY],
+    lateHostCapabilities: [
+      PI_WEB_HOST_WORKSPACES_CAPABILITY,
+      PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
+      PI_WEB_HOST_PI_SESSION_EVENTS_CAPABILITY,
+      PI_WEB_HOST_CATALOG_CAPABILITY,
+    ],
   });
   let sessionsForFailedConstruction: PiSessionService | undefined;
   let durableChatsForFailedConstruction: DurableChatService | undefined;
@@ -262,7 +271,9 @@ async function createSessionDaemonRuntime() {
     // Activity and status are mutually dependent by design: the record notifies
     // the projection, the projection reads the record. The notification runs
     // long after both are constructed.
-    const workspaceActivity = new WorkspaceActivityService(() => { machineStatus.notifyChanged(); });
+    const workspaceActivity = new WorkspaceActivityService(() => {
+      machineStatus.notifyChanged();
+    });
     const auth = await AuthService.create({ agentDir: activeAgentProfile.dir, logger: app.log });
     // Capture providers registered by global extensions while the runtime is
     // still mutable, then freeze every later extension-provider mutation before
@@ -278,7 +289,9 @@ async function createSessionDaemonRuntime() {
       offline: offlineModeEnabled(daemonEnvironment),
     });
     catalogRefresher.start();
-    auth.subscribe(() => { catalogRefresher.requestRefresh(); });
+    auth.subscribe(() => {
+      catalogRefresher.requestRefresh();
+    });
     // Only dependency-ready providers can define the aggregate topology. The
     // runtime has already rejected any staged provider that depends on late
     // host authority as a cycle, so this snapshot cannot omit a future owner.
@@ -298,7 +311,11 @@ async function createSessionDaemonRuntime() {
       activity: workspaceActivity,
       unread: unreadStore,
       attribution: statusAttribution,
-      publisher: { publish: (snapshot) => { eventHub.publishRealtime({ type: "machine.status", status: snapshot }); } },
+      publisher: {
+        publish: (snapshot) => {
+          eventHub.publishRealtime({ type: "machine.status", status: snapshot });
+        },
+      },
       logger: app.log,
     });
     // Every global subscriber is handed the current projection on connect, so a
@@ -307,7 +324,9 @@ async function createSessionDaemonRuntime() {
     const workspaceChanges = new WorkspaceChangeNotifier({
       attribution: statusAttribution,
       status: machineStatus,
-      publish: (event) => { eventHub.publishRealtime(event); },
+      publish: (event) => {
+        eventHub.publishRealtime(event);
+      },
     });
     const projectLifecycle: ProjectLifecycleService = new ProjectLifecycleService({
       projects,
@@ -325,117 +344,142 @@ async function createSessionDaemonRuntime() {
     const spawnTargets = config.spawnSessions ? new ProjectScopedSpawnTargetResolver(projectWorkspaceDeps) : undefined;
     // A plugin may open a session during activation. Install discovery before
     // session_start, but publish backend authority only after startup health.
-    let companionOptions: {
-      backends: PluginBackendRegistry;
-      contributions: ReturnType<typeof serverPlugins.pairedBackendContributions>;
-      projects: ProjectService;
-    } | undefined = undefined;
-    const sessionEvents = new PiSessionEventConnections((bus) => bindCompanionBackend(bus, () => {
-      if (companionOptions === undefined) throw new Error("PI WEB companion backends are not ready during daemon startup");
-      return companionOptions;
-    }));
+    let companionOptions:
+      | {
+          backends: PluginBackendRegistry;
+          contributions: ReturnType<typeof serverPlugins.pairedBackendContributions>;
+          projects: ProjectService;
+        }
+      | undefined = undefined;
+    const sessionEvents = new PiSessionEventConnections((bus) =>
+      bindCompanionBackend(bus, () => {
+        if (companionOptions === undefined) throw new Error("PI WEB companion backends are not ready during daemon startup");
+        return companionOptions;
+      }),
+    );
     // Opt-in Durable Chats (Phase B trial): only with a configured host entry; otherwise routes see the legacy service.
     const durableHostEntry = daemonEnvironment["PI_WEB_DURABLE_HOST"];
     const durableLocator = durableHostEntry === undefined || durableHostEntry === "" ? undefined : new SessionRuntimeLocator(piWebDataDir(daemonEnvironment));
     // Both runtimes record launches and notifications in the daemon's one store each.
     const workstreamLaunchStore = new WorkstreamLaunchStore(join(piWebDataDir(daemonEnvironment), "workstream-launches"));
-    const sessions = new PiSessionService(eventHub, sessionServiceDependencies({
-      // Durable Chats share the unread catalog, so cwd reconciliation keeps theirs.
-      externalSessionIds: (cwd) => durableLocator?.all().filter((record) => record.cwd === cwd).map((record) => record.id) ?? [],
-      modelRuntime: auth.runtime,
-      sessionEvents,
-      agentDir: activeAgentProfile.dir,
-      archiveStore: new SessionArchiveStore(defaultSessionArchiveFilePath(daemonEnvironment), sessionArchiveDirectory(daemonEnvironment, config)),
-      workstreamLaunchStore,
-      interruptedTurnsFile: join(piWebDataDir(daemonEnvironment), "interrupted-turns.json"),
-      workspaceActivity,
-      logger: app.log,
-      ...(spawnTargets === undefined ? {} : { spawnTargets }),
-      subsessionsEnabled: config.subsessions,
-      askUserEnabled: config.askUser,
-      config: configService,
-      appendSystemPromptSections: [
-        // Sessions always run nested in this daemon, so they always get the
-        // session environment facts; Docker deployments add their container
-        // facts on top. Resolved once here, from the captured daemon
-        // environment, because the deployment cannot change while the daemon
-        // runs.
-        ...sessionEnvironmentPromptSections({
-          env: daemonEnvironment,
-          enabled: config.environmentFacts,
-        }),
-        ...dockerEnvironmentPromptSections({
-          env: daemonEnvironment,
-          enabled: config.environmentFacts,
-          logger: app.log,
-        }),
-      ],
-      extensionDialogsTimeoutMs: config.extensionDialogsTimeoutMs,
-      notificationStore,
-      unreadStore,
-      onUnreadChanged: (hasNewCompletion) => {
-        machineStatus.notifyChanged();
-        if (hasNewCompletion) projectLifecycle.scheduleCleanup();
-      },
-      catalogRefreshStatus: catalogRefresher,
-      sessionManager: createPiSessionManagerGateway({
+    const sessions = new PiSessionService(
+      eventHub,
+      sessionServiceDependencies({
+        // Durable Chats share the unread catalog, so cwd reconciliation keeps theirs.
+        externalSessionIds: (cwd) =>
+          durableLocator
+            ?.all()
+            .filter((record) => record.cwd === cwd)
+            .map((record) => record.id) ?? [],
+        modelRuntime: auth.runtime,
+        sessionEvents,
         agentDir: activeAgentProfile.dir,
-        env: daemonEnvironment,
+        archiveStore: new SessionArchiveStore(defaultSessionArchiveFilePath(daemonEnvironment), sessionArchiveDirectory(daemonEnvironment, config)),
+        workstreamLaunchStore,
+        interruptedTurnsFile: join(piWebDataDir(daemonEnvironment), "interrupted-turns.json"),
+        workspaceActivity,
+        logger: app.log,
+        ...(spawnTargets === undefined ? {} : { spawnTargets }),
+        subsessionsEnabled: config.subsessions,
+        askUserEnabled: config.askUser,
+        config: configService,
+        appendSystemPromptSections: [
+          // Sessions always run nested in this daemon, so they always get the
+          // session environment facts; Docker deployments add their container
+          // facts on top. Resolved once here, from the captured daemon
+          // environment, because the deployment cannot change while the daemon
+          // runs.
+          ...sessionEnvironmentPromptSections({
+            env: daemonEnvironment,
+            enabled: config.environmentFacts,
+          }),
+          ...dockerEnvironmentPromptSections({
+            env: daemonEnvironment,
+            enabled: config.environmentFacts,
+            logger: app.log,
+          }),
+        ],
+        extensionDialogsTimeoutMs: config.extensionDialogsTimeoutMs,
+        notificationStore,
+        unreadStore,
+        onUnreadChanged: (hasNewCompletion) => {
+          machineStatus.notifyChanged();
+          if (hasNewCompletion) projectLifecycle.scheduleCleanup();
+        },
+        catalogRefreshStatus: catalogRefresher,
+        sessionManager: createPiSessionManagerGateway({
+          agentDir: activeAgentProfile.dir,
+          env: daemonEnvironment,
+        }),
       }),
-    }));
+    );
     sessionsForFailedConstruction = sessions;
-    const durableHostOptions: DurableHostOptions | undefined = durableHostEntry === undefined || durableHostEntry === "" ? undefined : {
-      entry: durableHostEntry,
-      webPort: config.port ?? 8504,
-      // A new Chat's model: PI_WEB_DURABLE_MODEL, else the active profile's default model, as for legacy Chats.
-      model: (cwd) => durableDefaultModel(cwd, activeAgentProfile.dir, daemonEnvironment),
-      // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
-      agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
-      // Trials and tests: offer the scripted model next to the Claude models.
-      scripted: daemonEnvironment["PI_WEB_DURABLE_SCRIPTED"] === "1",
-      // A new Chat's thinking level comes from the active profile's settings, as for legacy Chats.
-      thinkingLevel: (cwd, model) => durableThinkingLevel(cwd, activeAgentProfile.dir, model),
-    };
+    const durableHostOptions: DurableHostOptions | undefined =
+      durableHostEntry === undefined || durableHostEntry === ""
+        ? undefined
+        : {
+            entry: durableHostEntry,
+            webPort: config.port ?? 8504,
+            // A new Chat's model: PI_WEB_DURABLE_MODEL, else the active profile's default model, as for legacy Chats.
+            model: (cwd) => durableDefaultModel(cwd, activeAgentProfile.dir, daemonEnvironment),
+            // The host reads only the Claude subscription login (auth.json, under Pi's own lock) from this directory.
+            agentDir: daemonEnvironment["PI_WEB_DURABLE_AGENT_DIR"] ?? activeAgentProfile.dir,
+            // Trials and tests: offer the scripted model next to the Claude models.
+            scripted: daemonEnvironment["PI_WEB_DURABLE_SCRIPTED"] === "1",
+            // A new Chat's thinking level comes from the active profile's settings, as for legacy Chats.
+            thinkingLevel: (cwd, model) => durableThinkingLevel(cwd, activeAgentProfile.dir, model),
+          };
     // Phase C1: with a launchd label prefix (the Durable instance: com.pi-workbench.durable-host; trials and tests:
     // com.pi-workbench.durable-trial.host), each family's host is its own launchd job that outlives this daemon.
     // Without one, the daemon forks its hosts over IPC, as unit tests and the e2e fleet's host wrappers expect.
     const durableLabelPrefix = daemonEnvironment["PI_WEB_DURABLE_HOST_LAUNCHD"];
-    const durableChats = durableHostOptions === undefined || durableLocator === undefined ? undefined : new DurableChatService({
-      locator: durableLocator,
-      events: eventHub,
-      launch: durableLabelPrefix === undefined || durableLabelPrefix === "" ? forkDurableHost(durableHostOptions) : launchdDurableHost({
-        ...durableHostOptions,
-        labelPrefix: durableLabelPrefix,
-        hostsDir: daemonEnvironment["PI_WEB_DURABLE_HOST_DIR"] ?? join(piWebDataDir(daemonEnvironment), "hosts"),
-        locator: durableLocator,
-      }),
-      storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
-      // The same Pi loader as legacy Chats, against the daemon's active agent profile.
-      resources: (cwd, contributed) => loadDurableChatResources(cwd, activeAgentProfile.dir, contributed),
-      config: configService,
-      unread: (sessionId, cwd, change) => sessions.observeExternalSession(sessionId, cwd, change),
-      notifications: notificationStore,
-      launches: workstreamLaunchStore,
-      logger: app.log,
-      // Seamless upgrade B, off by default: pinned Chats restart on current host code by themselves at a safe moment.
-      autoUpgrade: daemonEnvironment["PI_WEB_DURABLE_AUTO_UPGRADE"] === "1",
-      ...(spawnTargets === undefined ? {} : { spawnTargets }),
-      // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
-      cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
-      enabledModels: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getEnabledModels(),
-      confirm: nativeConfirm(),
-    });
+    const durableChats =
+      durableHostOptions === undefined || durableLocator === undefined
+        ? undefined
+        : new DurableChatService({
+            locator: durableLocator,
+            events: eventHub,
+            launch:
+              durableLabelPrefix === undefined || durableLabelPrefix === ""
+                ? forkDurableHost(durableHostOptions)
+                : launchdDurableHost({
+                    ...durableHostOptions,
+                    labelPrefix: durableLabelPrefix,
+                    hostsDir: daemonEnvironment["PI_WEB_DURABLE_HOST_DIR"] ?? join(piWebDataDir(daemonEnvironment), "hosts"),
+                    locator: durableLocator,
+                  }),
+            storesDir: join(piWebDataDir(daemonEnvironment), "durable"),
+            // The same Pi loader as legacy Chats, against the daemon's active agent profile.
+            resources: (cwd, contributed) => loadDurableChatResources(cwd, activeAgentProfile.dir, contributed),
+            config: configService,
+            unread: (sessionId, cwd, change) => sessions.observeExternalSession(sessionId, cwd, change),
+            notifications: notificationStore,
+            launches: workstreamLaunchStore,
+            logger: app.log,
+            // Seamless upgrade B, off by default: pinned Chats restart on current host code by themselves at a safe moment.
+            autoUpgrade: daemonEnvironment["PI_WEB_DURABLE_AUTO_UPGRADE"] === "1",
+            ...(spawnTargets === undefined ? {} : { spawnTargets }),
+            // As a legacy Chat's session reads it: Pi's setting for the workspace under the active profile.
+            cacheMissNotices: { enabled: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getShowCacheMissNotices(), models: auth.runtime },
+            enabledModels: (cwd) => SettingsManager.create(cwd, activeAgentProfile.dir).getEnabledModels(),
+            confirm: nativeConfirm(),
+          });
     durableChatsForFailedConstruction = durableChats;
     // Hosts that outlived the previous daemon (launchd) get their connection back now, not at the Chat's next read.
     void durableChats?.reattach();
-    const routeSessions = durableChats === undefined ? sessions : createRuntimeRoutedSessionService(sessions, durableChats, daemonEnvironment["PI_WEB_DURABLE_DEFAULT"] === "1" ? "durable" : undefined);
+    const routeSessions =
+      durableChats === undefined
+        ? sessions
+        : createRuntimeRoutedSessionService(sessions, durableChats, daemonEnvironment["PI_WEB_DURABLE_DEFAULT"] === "1" ? "durable" : undefined);
     // Test-only opt-in for a separate daemon whose state and socket are inside
     // a controlled fixture root. No route can create an ask in a live daemon.
     if (daemonEnvironment["PI_WEB_FIXTURE_PENDING_ASK_MANIFEST"] !== undefined) {
       const { openControlledPendingAskFixture } = await import("./controlledPendingAskFixture.js");
       await openControlledPendingAskFixture(sessions, daemonEnvironment);
     }
-    auth.subscribe((change) => { sessions.applyAuthChange(change); });
+    auth.subscribe((change) => {
+      sessions.applyAuthChange(change);
+    });
     // Current workspace authority and session ownership become available at
     // one atomic late boundary, so no dependent can start against a partial host.
     await serverPlugins.resumeWithHostCapabilityFactories([
@@ -445,12 +489,12 @@ async function createSessionDaemonRuntime() {
       createServerPluginPiSessionEventsCapabilityFactory({ projects, workspaces: workspaceProviders, sessions }),
     ]);
     const providerPluginIdSet = new Set(providerPluginIds);
-    const remainingActivePluginIds = serverPlugins.healthRecords()
+    const remainingActivePluginIds = serverPlugins
+      .healthRecords()
       .filter(({ pluginId, state }) => state === "active" && !providerPluginIdSet.has(pluginId))
       .map(({ pluginId }) => pluginId);
     const remainingHealth = await serverPlugins.inspectHealth(remainingActivePluginIds);
-    const pluginHealth = Object.freeze([...providerHealth, ...remainingHealth]
-      .sort((left, right) => left.pluginId.localeCompare(right.pluginId)));
+    const pluginHealth = Object.freeze([...providerHealth, ...remainingHealth].sort((left, right) => left.pluginId.localeCompare(right.pluginId)));
     const backendContributions = eligiblePluginBackendContributions(serverPlugins.pairedBackendContributions(), pluginHealth);
     const pluginBackends = new PluginBackendRegistry({
       contributions: backendContributions,
@@ -466,12 +510,15 @@ async function createSessionDaemonRuntime() {
     );
     // Render current state immediately; stale unread is collected in the background.
     machineStatus.notifyChanged();
-    const terminals = serverPlugins.safeStartLevel() === "none"
-      ? unavailableRequiredTerminalService()
-      : serverPlugins.resolve(REQUIRED_TERMINAL_SERVICE_CAPABILITY);
+    const terminals =
+      serverPlugins.safeStartLevel() === "none" ? unavailableRequiredTerminalService() : serverPlugins.resolve(REQUIRED_TERMINAL_SERVICE_CAPABILITY);
     terminals.bindActivitySink({
-      updateTerminal: (terminal) => { workspaceActivity.updateTerminal(terminal); },
-      removeTerminal: (terminalId, cwd) => { workspaceActivity.removeTerminal(terminalId, cwd); },
+      updateTerminal: (terminal) => {
+        workspaceActivity.updateTerminal(terminal);
+      },
+      removeTerminal: (terminalId, cwd) => {
+        workspaceActivity.removeTerminal(terminalId, cwd);
+      },
     });
     const workspaceRemovals = new WorkspaceRemovalService(workspaceProviders, terminals, { notices: serverNotices });
     const runtimeComponent = Object.freeze({
@@ -479,7 +526,11 @@ async function createSessionDaemonRuntime() {
       // the captured pre-scrub daemon environment and the config snapshot this
       // daemon actually honors, so it stays accurate for this daemon lifetime
       // and clears only when the inputs are removed and the daemon restarts.
-      ...getPiWebRuntimeComponent("sessiond", durableChats === undefined ? SESSIOND_RUNTIME_CAPABILITIES : [...SESSIOND_RUNTIME_CAPABILITIES, PI_WEB_CAPABILITIES.durableChats], deprecatedAgentInputs),
+      ...getPiWebRuntimeComponent(
+        "sessiond",
+        durableChats === undefined ? SESSIOND_RUNTIME_CAPABILITIES : [...SESSIOND_RUNTIME_CAPABILITIES, PI_WEB_CAPABILITIES.durableChats],
+        deprecatedAgentInputs,
+      ),
       activeAgentProfile,
     });
     let disposed = false;
@@ -487,7 +538,9 @@ async function createSessionDaemonRuntime() {
       if (disposed) return;
       disposed = true;
       // Durable hosts close their stores first; admitted work stays pending and reopens paused.
-      await durableChats?.dispose().catch((error: unknown) => { app.log.error({ err: error }, "Durable Chat hosts did not close cleanly"); });
+      await durableChats?.dispose().catch((error: unknown) => {
+        app.log.error({ err: error }, "Durable Chat hosts did not close cleanly");
+      });
       await runSessionDaemonShutdown({
         logger: app.log,
         dependencies: {
@@ -505,7 +558,9 @@ async function createSessionDaemonRuntime() {
           workspaceRemovals,
           closeServer: () => app.close(),
         },
-        onFailure: () => { process.exitCode = 1; },
+        onFailure: () => {
+          process.exitCode = 1;
+        },
       });
       // Release last: the daemon owns the instance state until everything that
       // writes it is down. Best-effort; a leftover marker goes stale and the
@@ -513,7 +568,29 @@ async function createSessionDaemonRuntime() {
       await stateOwnership.release();
     };
     projectLifecycle.scheduleCleanup(); // One delayed pass for existing persisted unread, if any.
-    return { durableChats, eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, unreadStore, activeAgentProfile, runtimeComponent, catalogRefresher, serverPlugins, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals, shutdown };
+    return {
+      durableChats,
+      eventHub,
+      machineStatus,
+      statusAttribution,
+      workspaceChanges,
+      projectLifecycle,
+      auth,
+      sessions,
+      routeSessions,
+      serverNotices,
+      unreadStore,
+      activeAgentProfile,
+      runtimeComponent,
+      catalogRefresher,
+      serverPlugins,
+      projects,
+      workspaceProviders,
+      pluginBackends,
+      workspaceProviderRuntime,
+      workspaceRemovals,
+      shutdown,
+    };
   } catch (error) {
     await projectLifecycleForFailedConstruction?.closeAll();
     await durableChatsForFailedConstruction?.dispose().catch(() => undefined);
@@ -531,7 +608,24 @@ async function createSessionDaemonRuntime() {
   }
 }
 
-function registerSessionDaemonRoutes({ durableChats, eventHub, machineStatus, statusAttribution, workspaceChanges, projectLifecycle, auth, sessions, routeSessions, serverNotices, runtimeComponent, projects, workspaceProviders, pluginBackends, workspaceProviderRuntime, workspaceRemovals }: SessionDaemonRuntime): void {
+function registerSessionDaemonRoutes({
+  durableChats,
+  eventHub,
+  machineStatus,
+  statusAttribution,
+  workspaceChanges,
+  projectLifecycle,
+  auth,
+  sessions,
+  routeSessions,
+  serverNotices,
+  runtimeComponent,
+  projects,
+  workspaceProviders,
+  pluginBackends,
+  workspaceProviderRuntime,
+  workspaceRemovals,
+}: SessionDaemonRuntime): void {
   registerProjectMutationRoutes(app, projectLifecycle);
   registerPluginCatalogRoutes(app, { projects, workspaces: workspaceProviders, sessions });
   registerMachineStatusRoutes(app, machineStatus);
@@ -548,7 +642,9 @@ function registerSessionDaemonRoutes({ durableChats, eventHub, machineStatus, st
   registerPairedPluginBackendRoutes(app, {
     projects,
     backends: pluginBackends,
-    onWorkspacesMutated: () => { statusAttribution.invalidate(); },
+    onWorkspacesMutated: () => {
+      statusAttribution.invalidate();
+    },
   });
   registerPluginBackendChannelRoutes(app, { projects, backends: pluginBackends });
   registerWorkspaceRemovalRoutes(app, {
@@ -598,7 +694,9 @@ async function listenSessionDaemon({ shutdown, projects, workspaceProviders, ses
     await claimSessiondSocketPath(path);
     await app.listen({ path });
     const identity = sessiondSocketIdentity(path);
-    process.on("exit", () => { releaseSessiondSocketPath(path, identity); });
+    process.on("exit", () => {
+      releaseSessiondSocketPath(path, identity);
+    });
   }
   // Maintain integrations only once the notification ingress is usable, including
   // the actual bound address of an ephemeral TCP listener. Authority reads stay

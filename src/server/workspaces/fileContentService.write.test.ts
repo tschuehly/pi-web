@@ -70,9 +70,19 @@ describe("writeWorkspaceFile", () => {
     const version = (await readWorkspaceFile(root, "notes.md")).version;
     if (version === undefined) throw new Error("Expected a file version");
 
-    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
-      beforeCommit: async () => { await writeFile(target, "external"); },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "notes.md",
+        Buffer.from("mine"),
+        { expectedVersion: version },
+        {
+          beforeCommit: async () => {
+            await writeFile(target, "external");
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(target, "utf8")).resolves.toBe("external");
   });
 
@@ -81,9 +91,19 @@ describe("writeWorkspaceFile", () => {
     const target = join(root, "notes.md");
     await writeFile(target, "original");
 
-    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), {}, {
-      beforeCommit: async () => { await writeFile(target, "external"); },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "notes.md",
+        Buffer.from("mine"),
+        {},
+        {
+          beforeCommit: async () => {
+            await writeFile(target, "external");
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(target, "utf8")).resolves.toBe("external");
   });
 
@@ -97,9 +117,20 @@ describe("writeWorkspaceFile", () => {
     const version = (await readWorkspaceFile(root, "notes.md")).version;
     if (version === undefined) throw new Error("Expected a file version");
 
-    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
-      beforeCommit: async () => { await unlink(target); await symlink(victim, target); },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "notes.md",
+        Buffer.from("mine"),
+        { expectedVersion: version },
+        {
+          beforeCommit: async () => {
+            await unlink(target);
+            await symlink(victim, target);
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(victim, "utf8")).resolves.toBe("untouched");
     await expect(readlink(target)).resolves.toBe(victim);
   });
@@ -113,12 +144,20 @@ describe("writeWorkspaceFile", () => {
     const version = (await readWorkspaceFile(root, "dir/notes.md")).version;
     if (version === undefined) throw new Error("Expected a file version");
 
-    await expect(writeWorkspaceFile(root, "dir/notes.md", Buffer.from("mine"), { expectedVersion: version }, {
-      beforeCommit: async () => {
-        await rename(join(root, "dir"), join(root, "saved-dir"));
-        await symlink(outside, join(root, "dir"));
-      },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "dir/notes.md",
+        Buffer.from("mine"),
+        { expectedVersion: version },
+        {
+          beforeCommit: async () => {
+            await rename(join(root, "dir"), join(root, "saved-dir"));
+            await symlink(outside, join(root, "dir"));
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(join(outside, "notes.md"), "utf8")).resolves.toBe("original");
     expect((await readdir(outside)).sort()).toEqual(["notes.md"]);
   });
@@ -130,12 +169,20 @@ describe("writeWorkspaceFile", () => {
     await writeFile(join(root, "dir", "notes.md"), "original");
     await writeFile(join(outside, "notes.md"), "untouched");
 
-    await expect(writeWorkspaceFile(root, "dir/notes.md", Buffer.from("mine"), {}, {
-      afterDisplacement: async () => {
-        await rename(join(root, "dir"), join(root, "saved-dir"));
-        await symlink(outside, join(root, "dir"));
-      },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "dir/notes.md",
+        Buffer.from("mine"),
+        {},
+        {
+          afterDisplacement: async () => {
+            await rename(join(root, "dir"), join(root, "saved-dir"));
+            await symlink(outside, join(root, "dir"));
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(join(outside, "notes.md"), "utf8")).resolves.toBe("untouched");
     expect((await readdir(outside)).sort()).toEqual(["notes.md"]);
     await expect(readFile(join(root, "saved-dir", "notes.md"), "utf8")).resolves.toBe("original");
@@ -146,12 +193,20 @@ describe("writeWorkspaceFile", () => {
     const outside = await createTempWorkspace("pi-web-outside-");
     await mkdir(join(root, "dir"));
 
-    await expect(writeWorkspaceFile(root, "dir/new.md", Buffer.from("mine"), {}, {
-      beforeCommit: async () => {
-        await rename(join(root, "dir"), join(root, "saved-dir"));
-        await symlink(outside, join(root, "dir"));
-      },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "dir/new.md",
+        Buffer.from("mine"),
+        {},
+        {
+          beforeCommit: async () => {
+            await rename(join(root, "dir"), join(root, "saved-dir"));
+            await symlink(outside, join(root, "dir"));
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     expect(await readdir(outside)).toEqual([]);
     expect(await readdir(join(root, "saved-dir"))).toEqual([]);
   });
@@ -172,9 +227,19 @@ describe("writeWorkspaceFile", () => {
     const version = (await readWorkspaceFile(root, "notes.md")).version;
     if (version === undefined) throw new Error("Expected a file version");
 
-    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
-      afterDisplacement: async () => { await writeFile(target, "external"); },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "notes.md",
+        Buffer.from("mine"),
+        { expectedVersion: version },
+        {
+          afterDisplacement: async () => {
+            await writeFile(target, "external");
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(target, "utf8")).resolves.toBe("external");
     const backups = (await readdir(root)).filter((name) => name.startsWith(".pi-web-backup-"));
     expect(backups).toHaveLength(1);
@@ -188,13 +253,21 @@ describe("writeWorkspaceFile", () => {
     const target = join(root, "notes.md");
     await writeFile(target, "original");
 
-    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), {}, {
-      afterDisplacement: async () => {
-        const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
-        if (backup === undefined) throw new Error("Expected displaced entry");
-        await writeFile(join(root, backup, "original"), "external");
-      },
-    })).rejects.toThrow(WorkspaceFileConflictError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "notes.md",
+        Buffer.from("mine"),
+        {},
+        {
+          afterDisplacement: async () => {
+            const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
+            if (backup === undefined) throw new Error("Expected displaced entry");
+            await writeFile(join(root, backup, "original"), "external");
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileConflictError);
     await expect(readFile(target, "utf8")).resolves.toBe("external");
   });
 
@@ -205,13 +278,21 @@ describe("writeWorkspaceFile", () => {
     const version = (await readWorkspaceFile(root, "notes.md")).version;
     if (version === undefined) throw new Error("Expected a file version");
 
-    await expect(writeWorkspaceFile(root, "notes.md", Buffer.from("mine"), { expectedVersion: version }, {
-      afterInstallation: async () => {
-        const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
-        if (backup === undefined) throw new Error("Expected displaced entry");
-        await writeFile(join(root, backup, "original"), "external");
-      },
-    })).rejects.toThrow(WorkspaceFileOutcomeUnknownError);
+    await expect(
+      writeWorkspaceFile(
+        root,
+        "notes.md",
+        Buffer.from("mine"),
+        { expectedVersion: version },
+        {
+          afterInstallation: async () => {
+            const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
+            if (backup === undefined) throw new Error("Expected displaced entry");
+            await writeFile(join(root, backup, "original"), "external");
+          },
+        },
+      ),
+    ).rejects.toThrow(WorkspaceFileOutcomeUnknownError);
     await expect(readFile(target, "utf8")).resolves.toBe("mine");
     const backup = (await readdir(root)).find((name) => name.startsWith(".pi-web-backup-"));
     if (backup === undefined) throw new Error("Expected retained backup");

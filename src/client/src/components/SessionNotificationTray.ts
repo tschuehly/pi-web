@@ -3,10 +3,20 @@ import { LitElement, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import {
-  notificationAnnouncementLabel, notificationDismissLabel, notificationFocusTargetAfterDismiss,
-  notificationInboxOverflowLabel, notificationInboxTotalCount, notificationMessageTruncationLabel,
-  notificationSeverityLabel, notificationTargetKey, notificationTrayHeading, notificationTrayIsCollapsed,
-  setNotificationTrayCollapsed, type NotificationFocusTarget, type SelectedSessionNotificationView, type SessionNotificationTarget,
+  notificationAnnouncementLabel,
+  notificationDismissLabel,
+  notificationFocusTargetAfterDismiss,
+  notificationInboxOverflowLabel,
+  notificationInboxTotalCount,
+  notificationMessageTruncationLabel,
+  notificationSeverityLabel,
+  notificationTargetKey,
+  notificationTrayHeading,
+  notificationTrayIsCollapsed,
+  setNotificationTrayCollapsed,
+  type NotificationFocusTarget,
+  type SelectedSessionNotificationView,
+  type SessionNotificationTarget,
 } from "../sessionNotifications";
 import { uiButtonStyles, uiToolbarStyles } from "./ui/controlStyles";
 import { sessionNotificationTrayStyles } from "./sessionNotificationTrayStyles";
@@ -14,10 +24,13 @@ import { sessionNotificationTrayStyles } from "./sessionNotificationTrayStyles";
 const timestampFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
 function isNotificationTarget(value: unknown): value is SessionNotificationTarget {
-  return typeof value === "object" && value !== null
+  return (
+    typeof value === "object"
+    && value !== null
     && typeof Reflect.get(value, "machineId") === "string"
     && typeof Reflect.get(value, "cwd") === "string"
-    && typeof Reflect.get(value, "sessionId") === "string";
+    && typeof Reflect.get(value, "sessionId") === "string"
+  );
 }
 
 function renderNotificationMessage(message: string, truncated: boolean) {
@@ -30,7 +43,11 @@ function renderNotificationMessage(message: string, truncated: boolean) {
     // Even trailing punctuation could be part of a URL cut off by the byte limit.
     if (truncated && end === message.length) continue;
     let url = message.slice(start, end).replace(/[.,!?:;]+$/u, "");
-    for (const [open, close] of [["(", ")"], ["[", "]"], ["{", "}"]] as const) {
+    for (const [open, close] of [
+      ["(", ")"],
+      ["[", "]"],
+      ["{", "}"],
+    ] as const) {
       while (url.endsWith(close) && url.split(close).length > url.split(open).length) {
         url = url.slice(0, -1).replace(/[.,!?:;]+$/u, "");
       }
@@ -72,8 +89,11 @@ export class SessionNotificationTray extends LitElement {
   protected override willUpdate(changed: Map<string, unknown>): void {
     const previous = changed.get("notificationInbox");
     const current = this.notificationInbox;
-    if (changed.has("sessionId") || (changed.has("notificationInbox")
-      && (!isNotificationTarget(previous) || current === undefined || notificationTargetKey(previous) !== notificationTargetKey(current)))) {
+    if (
+      changed.has("sessionId")
+      || (changed.has("notificationInbox")
+        && (!isNotificationTarget(previous) || current === undefined || notificationTargetKey(previous) !== notificationTargetKey(current)))
+    ) {
       this.pendingNotificationFocus = undefined;
       this.retainedEmptyNotificationTrayTargetKey = undefined;
     }
@@ -94,9 +114,13 @@ export class SessionNotificationTray extends LitElement {
 
   private hasVisibleTray(): boolean {
     const inbox = this.notificationInbox;
-    return inbox?.sessionId === this.sessionId
-      && (notificationInboxTotalCount(inbox) > 0 || inbox.pendingDismissedIds.size > 0 || inbox.dismissAllPending
-        || this.retainedEmptyNotificationTrayTargetKey === notificationTargetKey(inbox));
+    return (
+      inbox?.sessionId === this.sessionId
+      && (notificationInboxTotalCount(inbox) > 0
+        || inbox.pendingDismissedIds.size > 0
+        || inbox.dismissAllPending
+        || this.retainedEmptyNotificationTrayTargetKey === notificationTargetKey(inbox))
+    );
   }
 
   override render() {
@@ -109,17 +133,25 @@ export class SessionNotificationTray extends LitElement {
     const collapsed = notificationTrayIsCollapsed(this.collapsedNotificationTargetKeys, inbox);
     const toggleLabel = collapsed ? "Expand notifications" : "Collapse notifications";
     return html`
-      <section class=${`notification-tray${collapsed ? " collapsed" : ""}`} role="region" aria-labelledby="session-notifications-heading" @focusout=${(event: FocusEvent) => { this.releaseEmptyNotificationTray(event); }}>
+      <section class=${`notification-tray${collapsed ? " collapsed" : ""}`} role="region" aria-labelledby="session-notifications-heading" @focusout=${(
+        event: FocusEvent,
+      ) => {
+        this.releaseEmptyNotificationTray(event);
+      }}>
         <header class="notification-header" data-notification-focus="header" tabindex="-1">
           <strong class="notification-heading" id="session-notifications-heading">${notificationTrayHeading(inbox)}</strong>
           <div class="ui-toolbar notification-header-actions">
             <div class="ui-toolbar-group">
               <button type="button" class="ui-button notification-clear" aria-label="Clear all notifications" title="Clear all notifications"
                 ?disabled=${inbox.dismissAllPending || notificationInboxTotalCount(inbox) === 0 || this.onDismissAllNotifications === undefined}
-                @click=${() => { this.dismissAllNotifications(); }}>Clear</button>
+                @click=${() => {
+                  this.dismissAllNotifications();
+                }}>Clear</button>
               <button type="button" class="ui-button ui-button--icon notification-toggle" aria-label=${toggleLabel} title=${toggleLabel}
                 aria-expanded=${String(!collapsed)} aria-controls="session-notification-list"
-                @click=${() => { this.collapsedNotificationTargetKeys = setNotificationTrayCollapsed(this.collapsedNotificationTargetKeys, inbox, !collapsed); }}>
+                @click=${() => {
+                  this.collapsedNotificationTargetKeys = setNotificationTrayCollapsed(this.collapsedNotificationTargetKeys, inbox, !collapsed);
+                }}>
                 <svg class=${`notification-icon notification-disclosure-icon${collapsed ? "" : " expanded"}`} viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"></path></svg>
               </button>
             </div>
@@ -127,7 +159,8 @@ export class SessionNotificationTray extends LitElement {
         </header>
         <div class="notification-list" id="session-notification-list" ?hidden=${collapsed}>
           ${inbox.discardedCount === 0 ? null : html`<p class="notification-overflow">${notificationInboxOverflowLabel(inbox.discardedCount)}</p>`}
-          ${inbox.notifications.map((notification) => html`
+          ${inbox.notifications.map(
+            (notification) => html`
             <article class=${`notification-row ${notification.severity}`} data-notification-id=${notification.id} tabindex="-1">
               <div class="notification-metadata">
                 <strong class="notification-severity">${notificationSeverityLabel(notification.severity)}</strong>
@@ -139,11 +172,14 @@ export class SessionNotificationTray extends LitElement {
               <button type="button" class="ui-button ui-button--compact ui-button--icon notification-row-dismiss"
                 aria-label=${notificationDismissLabel(notification)} title="Dismiss notification"
                 ?disabled=${inbox.pendingDismissedIds.has(notification.id) || inbox.dismissAllPending || this.onDismissNotification === undefined}
-                @click=${() => { this.dismissNotification(notification.id); }}>
+                @click=${() => {
+                  this.dismissNotification(notification.id);
+                }}>
                 <svg class="notification-icon notification-close-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12"></path><path d="M18 6 6 18"></path></svg>
               </button>
             </article>
-          `)}
+          `,
+          )}
         </div>
       </section>`;
   }
@@ -153,8 +189,16 @@ export class SessionNotificationTray extends LitElement {
     const polite = announcements.filter((announcement) => announcement.severity !== "error");
     const assertive = announcements.filter((announcement) => announcement.severity === "error");
     return html`
-      <div class="visually-hidden notification-live" aria-live="polite" aria-atomic="false">${repeat(polite, (announcement) => announcement.id, (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationAnnouncementLabel(announcement)}</span>`)}</div>
-      <div class="visually-hidden notification-live" aria-live="assertive" aria-atomic="false">${repeat(assertive, (announcement) => announcement.id, (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationAnnouncementLabel(announcement)}</span>`)}</div>`;
+      <div class="visually-hidden notification-live" aria-live="polite" aria-atomic="false">${repeat(
+        polite,
+        (announcement) => announcement.id,
+        (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationAnnouncementLabel(announcement)}</span>`,
+      )}</div>
+      <div class="visually-hidden notification-live" aria-live="assertive" aria-atomic="false">${repeat(
+        assertive,
+        (announcement) => announcement.id,
+        (announcement) => html`<span data-announcement-id=${announcement.id}>${notificationAnnouncementLabel(announcement)}</span>`,
+      )}</div>`;
   }
 
   private dismissNotification(notificationId: string): void {
@@ -183,8 +227,8 @@ export class SessionNotificationTray extends LitElement {
     // Removing the activated row can emit focusout before updated() moves focus.
     if (this.pendingNotificationFocus !== undefined) return;
     const inbox = this.notificationInbox;
-    if (inbox !== undefined && this.retainedEmptyNotificationTrayTargetKey === notificationTargetKey(inbox)
-      && notificationInboxTotalCount(inbox) === 0) this.retainedEmptyNotificationTrayTargetKey = undefined;
+    if (inbox !== undefined && this.retainedEmptyNotificationTrayTargetKey === notificationTargetKey(inbox) && notificationInboxTotalCount(inbox) === 0)
+      this.retainedEmptyNotificationTrayTargetKey = undefined;
   }
 
   private focusPendingNotificationTarget(): void {
@@ -194,9 +238,13 @@ export class SessionNotificationTray extends LitElement {
     if (pending === undefined || inbox === undefined || notificationTargetKey(inbox) !== pending.chatKey) return;
     if (pending.focusTarget.kind === "notification") {
       const notificationId = pending.focusTarget.notificationId;
-      const row = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-notification-id]"))
-        .find((candidate) => candidate.dataset["notificationId"] === notificationId);
-      if (row !== undefined) { row.focus(); return; }
+      const row = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-notification-id]")).find(
+        (candidate) => candidate.dataset["notificationId"] === notificationId,
+      );
+      if (row !== undefined) {
+        row.focus();
+        return;
+      }
     }
     if (notificationInboxTotalCount(inbox) === 0) this.retainedEmptyNotificationTrayTargetKey = pending.chatKey;
     this.renderRoot.querySelector<HTMLElement>("[data-notification-focus='header']")?.focus();

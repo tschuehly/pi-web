@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { PiPackageInfo } from "../../api";
-import { canUpdateAllPiPackages, friendlyPiPackageErrorMessage, isPiPackageOperationPending, normalizePiPackageSource, piPackageFilteredLabel, piPackageMutationFollowUpMessage, piPackagesResponseAfterMutation, piPackageScopeLabel, piPackageSourceValidationMessage, piPackageTargetContext, piPackageTargetLabel, piPackageUpdateDisabledReason, shouldRefreshGatewayPluginsAfterPiPackageMutation, updateAllPiPackagesDisabledReason, type PiPackageTargetContext } from "./piPackageSettings";
+import {
+  canUpdateAllPiPackages,
+  friendlyPiPackageErrorMessage,
+  isPiPackageOperationPending,
+  normalizePiPackageSource,
+  piPackageFilteredLabel,
+  piPackageMutationFollowUpMessage,
+  piPackagesResponseAfterMutation,
+  piPackageScopeLabel,
+  piPackageSourceValidationMessage,
+  piPackageTargetContext,
+  piPackageTargetLabel,
+  piPackageUpdateDisabledReason,
+  shouldRefreshGatewayPluginsAfterPiPackageMutation,
+  updateAllPiPackagesDisabledReason,
+  type PiPackageTargetContext,
+} from "./piPackageSettings";
 
 const userPackage: PiPackageInfo = { source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" };
 const projectPackage: PiPackageInfo = { source: "../project-tools", scope: "project", filtered: true };
@@ -63,7 +79,12 @@ describe("Pi package settings helpers", () => {
   });
 
   it("carries a mutation's refreshed installable-known-package suggestions forward, omitting the field when absent", () => {
-    const suggestion = { id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" };
+    const suggestion = {
+      id: "@jmfederico/pi-relay",
+      label: "Relays",
+      description: "Relay method prompts and skill.",
+      source: "/pi-web/dist/pi-packages/relays",
+    };
 
     expect(piPackagesResponseAfterMutation({ packages: [userPackage], installableKnownPackages: [suggestion] })).toEqual({
       packages: [userPackage],
@@ -74,7 +95,9 @@ describe("Pi package settings helpers", () => {
 
   it("turns remote transport failures into package-management guidance", () => {
     expect(friendlyPiPackageErrorMessage("Not Found", remoteTarget)).toBe("Not Found");
-    expect(friendlyPiPackageErrorMessage("Remote machine unavailable", remoteTarget)).toBe("Could not reach Lab Mac for Pi package management. Check the machine connection and try again.");
+    expect(friendlyPiPackageErrorMessage("Remote machine unavailable", remoteTarget)).toBe(
+      "Could not reach Lab Mac for Pi package management. Check the machine connection and try again.",
+    );
     expect(friendlyPiPackageErrorMessage("Remote machine timeout", remoteTarget)).toContain("may still be running remotely");
     expect(friendlyPiPackageErrorMessage("Not Found", localTarget)).toBe("Not Found");
   });

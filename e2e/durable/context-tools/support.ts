@@ -19,24 +19,27 @@ export type Message = { role?: string; source?: string; customType?: string; con
 const opened = new Set<string>();
 
 export const test = base.extend<{ fleet: void }>({
-  fleet: [async ({ page }, use, info) => {
-    await mock.reset();
-    await settings({ compaction: { enabled: true, keepRecentTokens: 1 }, defaultProjectTrust: "always" });
-    await use();
-    const journalPath = info.outputPath("mock-journal.json");
-    await writeFile(journalPath, JSON.stringify(await mock.journal(), null, 2));
-    await info.attach("mock-journal", { path: journalPath, contentType: "application/json" });
-    for (const id of opened) {
-      for (const route of ["status", "transcript-snapshot"]) {
-        const response = await page.request.get(url(id, route));
-        const evidence = info.outputPath(`${id}-${route}.json`);
-        await writeFile(evidence, await response.body());
-        await info.attach(`${id}-${route}`, { path: evidence, contentType: "application/json" });
+  fleet: [
+    async ({ page }, use, info) => {
+      await mock.reset();
+      await settings({ compaction: { enabled: true, keepRecentTokens: 1 }, defaultProjectTrust: "always" });
+      await use();
+      const journalPath = info.outputPath("mock-journal.json");
+      await writeFile(journalPath, JSON.stringify(await mock.journal(), null, 2));
+      await info.attach("mock-journal", { path: journalPath, contentType: "application/json" });
+      for (const id of opened) {
+        for (const route of ["status", "transcript-snapshot"]) {
+          const response = await page.request.get(url(id, route));
+          const evidence = info.outputPath(`${id}-${route}.json`);
+          await writeFile(evidence, await response.body());
+          await info.attach(`${id}-${route}`, { path: evidence, contentType: "application/json" });
+        }
+        await page.request.post(url(id, "stop"), { data: { cwd: project() } });
       }
-      await page.request.post(url(id, "stop"), { data: { cwd: project() } });
-    }
-    opened.clear();
-  }, { auto: true }],
+      opened.clear();
+    },
+    { auto: true },
+  ],
 });
 
 export async function settings(patch: Record<string, unknown>): Promise<void> {
@@ -48,12 +51,12 @@ export const url = (id: string, route: string) => `${api()}api/sessions/${encode
 export async function status(page: Page, id: string): Promise<SessionStatus> {
   const response = await page.request.get(url(id, "status"));
   expect(response.ok()).toBe(true);
-  return await response.json() as SessionStatus;
+  return (await response.json()) as SessionStatus;
 }
 export async function messages(page: Page, id: string): Promise<Message[]> {
   const response = await page.request.get(url(id, "messages"));
   expect(response.ok()).toBe(true);
-  const value = await response.json() as Message[] | { messages: Message[] };
+  const value = (await response.json()) as Message[] | { messages: Message[] };
   return Array.isArray(value) ? value : value.messages;
 }
 export async function command(page: Page, id: string, text: string): Promise<void> {
@@ -66,10 +69,12 @@ export async function send(page: Page, text: string): Promise<void> {
   await page.getByRole("button", { name: /^(Send message|Queue follow-up|Queue message)$/ }).click();
 }
 export async function idle(page: Page, id: string): Promise<void> {
-  await expect.poll(async () => {
-    const s = await status(page, id);
-    return s.isStreaming || s.isCompacting;
-  }).toBe(false);
+  await expect
+    .poll(async () => {
+      const s = await status(page, id);
+      return s.isStreaming || s.isCompacting;
+    })
+    .toBe(false);
 }
 export async function chooseModel(page: Page, model: { provider: string; id: string } = MOCK_CLAUDE_MODEL): Promise<void> {
   await page.getByRole("button", { name: /^Model: / }).click();
@@ -83,7 +88,9 @@ export async function createChat(page: Page, durable = true): Promise<string> {
   await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
   const id = new URL(page.url()).searchParams.get("session")!;
   opened.add(id);
-  await page.goto(`${api()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"]!, session: id, view: "chat" })}`);
+  await page.goto(
+    `${api()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"]!, session: id, view: "chat" })}`,
+  );
   await chooseModel(page);
   return id;
 }
@@ -98,26 +105,36 @@ export function text(value: unknown): string {
   return JSON.stringify(value);
 }
 export async function rendered(page: Page): Promise<string> {
-  return chat(page).first().evaluate((root) => {
-    const walk = (node: Node): string => node.nodeType === Node.TEXT_NODE ? node.textContent ?? "" : [...(node instanceof Element && node.shadowRoot ? node.shadowRoot.childNodes : []), ...node.childNodes].map(walk).join(" ");
-    return walk(root);
-  });
+  return chat(page)
+    .first()
+    .evaluate((root) => {
+      const walk = (node: Node): string =>
+        node.nodeType === Node.TEXT_NODE
+          ? (node.textContent ?? "")
+          : [...(node instanceof Element && node.shadowRoot ? node.shadowRoot.childNodes : []), ...node.childNodes].map(walk).join(" ");
+      return walk(root);
+    });
 }
 /** Every kill is scoped by BOTH this harness's workspace and this Chat's UUID; never pgrep a shared host path. */
 export async function killHost(page: Page, id: string): Promise<void> {
-  const hosts = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n")
+  const hosts = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" })
+    .split("\n")
     .filter((line) => line.includes(`--session-id ${id}`) && line.includes(`--cwd ${project()}`) && line.includes(`--store ${root()}/data/durable/`));
   expect(hosts).toHaveLength(1);
   const pid = Number(hosts[0]!.trim().split(/\s/)[0]);
   process.kill(pid, "SIGKILL");
   // Observe exit before requesting the replacement; the concurrent kill/status IPC crash is reported separately.
-  await expect.poll(() => {
-    try { process.kill(pid, 0); return false; }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
-      throw error;
-    }
-  }).toBe(true);
+  await expect
+    .poll(() => {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
+        throw error;
+      }
+    })
+    .toBe(true);
   await expect.poll(async () => (await page.request.get(url(id, "status"))).ok()).toBe(true);
   await page.reload();
   await expect(editor(page)).toBeVisible();

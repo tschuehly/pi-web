@@ -34,7 +34,10 @@ export class NavigationDialog extends LitElement {
 
   protected override willUpdate(changed: PropertyValues) {
     if (changed.has("selectedTab")) {
-      this.selectedIndex = Math.max(0, this.filteredTabs().findIndex((tab) => tab.id === this.selectedTab));
+      this.selectedIndex = Math.max(
+        0,
+        this.filteredTabs().findIndex((tab) => tab.id === this.selectedTab),
+      );
     }
     this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.filteredTabs().length - 1));
   }
@@ -49,7 +52,9 @@ export class NavigationDialog extends LitElement {
     return html`
       <modal-surface .label=${"Navigation"} .initialFocus=${"input"} .onClose=${this.onClose} @keydown=${this.navigateDestinations}>
         <header class="ui-dialog-header">
-          <input class="ui-dialog-search" aria-label="Search navigation" aria-describedby="navigation-selection" placeholder="Search navigation..." .value=${this.query} @input=${(event: Event) => {
+          <input class="ui-dialog-search" aria-label="Search navigation" aria-describedby="navigation-selection" placeholder="Search navigation..." .value=${this.query} @input=${(
+            event: Event,
+          ) => {
             if (event.target instanceof HTMLInputElement) {
               this.query = event.target.value;
               this.selectedIndex = 0;
@@ -62,21 +67,32 @@ export class NavigationDialog extends LitElement {
         <p>Pin destinations to the tab bars. Removing the last pin shows all tabs.</p>
         <nav class="options ui-selection-list" aria-label="Destinations">
           ${tabs.length === 0 ? html`<div class="empty ui-dialog-empty">No destinations found.</div>` : nothing}
-          ${tabs.map((tab, index) => html`
+          ${tabs.map(
+            (tab, index) => html`
             <div class="destination ui-selection-row">
-              <button class=${`destination-button ui-button ui-selection-option ${index === this.selectedIndex ? "selected" : ""}`} aria-current=${tab.id === this.selectedTab ? "page" : nothing} aria-pressed=${String(tab.id === this.selectedTab)} ${scrollWhenSelected(index === this.selectedIndex, tab.id)} @focus=${() => { this.selectedIndex = index; }} @click=${() => { this.select(tab); }}>${tab.label}</button>
+              <button class=${`destination-button ui-button ui-selection-option ${index === this.selectedIndex ? "selected" : ""}`} aria-current=${tab.id === this.selectedTab ? "page" : nothing} aria-pressed=${String(tab.id === this.selectedTab)} ${scrollWhenSelected(index === this.selectedIndex, tab.id)} @focus=${() => {
+                this.selectedIndex = index;
+              }} @click=${() => {
+                this.select(tab);
+              }}>${tab.label}</button>
               <button type="button" class="pin-button ui-button ui-button--icon" aria-label=${`Pin ${tab.label}`} title=${isNavigationPinned(tab.id, this.preferences.pinnedIds) ? `Unpin ${tab.label}` : `Pin ${tab.label}`} aria-pressed=${String(isNavigationPinned(tab.id, this.preferences.pinnedIds))} @click=${() => {
-                this.onPreferencesChange?.({ ...this.preferences, pinnedIds: toggleNavigationPin(tab.id, this.preferences.pinnedIds, this.pinUniverse ?? this.tabs.map((item) => item.id)) });
+                this.onPreferencesChange?.({
+                  ...this.preferences,
+                  pinnedIds: toggleNavigationPin(tab.id, this.preferences.pinnedIds, this.pinUniverse ?? this.tabs.map((item) => item.id)),
+                });
               }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill=${isNavigationPinned(tab.id, this.preferences.pinnedIds) ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7Z"></path><path d="M12 16v6"></path>
                 </svg>
               </button>
             </div>
-          `)}
+          `,
+          )}
         </nav>
         <footer class="ui-dialog-footer">
-          <button class="ui-button" @click=${() => { this.onPreferencesChange?.({ ...this.preferences, pinnedIds: [] }); }}>Show all tabs</button>
+          <button class="ui-button" @click=${() => {
+            this.onPreferencesChange?.({ ...this.preferences, pinnedIds: [] });
+          }}>Show all tabs</button>
           <div class="mobile-navigation" role="group" aria-label="Mobile navigation">
             <span>Mobile navigation</span>
             <div class="toggle-options ui-toolbar">
@@ -99,16 +115,25 @@ export class NavigationDialog extends LitElement {
     if (target instanceof HTMLInputElement) {
       const tabs = this.filteredTabs();
       switch (event.key) {
-        case "ArrowDown": this.selectedIndex = tabs.length > 0 ? (this.selectedIndex + 1) % tabs.length : 0; break;
-        case "ArrowUp": this.selectedIndex = tabs.length > 0 ? (this.selectedIndex + tabs.length - 1) % tabs.length : 0; break;
-        case "Home": this.selectedIndex = 0; break;
-        case "End": this.selectedIndex = Math.max(0, tabs.length - 1); break;
+        case "ArrowDown":
+          this.selectedIndex = tabs.length > 0 ? (this.selectedIndex + 1) % tabs.length : 0;
+          break;
+        case "ArrowUp":
+          this.selectedIndex = tabs.length > 0 ? (this.selectedIndex + tabs.length - 1) % tabs.length : 0;
+          break;
+        case "Home":
+          this.selectedIndex = 0;
+          break;
+        case "End":
+          this.selectedIndex = Math.max(0, tabs.length - 1);
+          break;
         case "Enter": {
           const tab = tabs[this.selectedIndex];
           if (tab !== undefined) this.select(tab);
           break;
         }
-        default: return;
+        default:
+          return;
       }
       event.preventDefault();
       event.stopPropagation();
@@ -121,11 +146,20 @@ export class NavigationDialog extends LitElement {
     if (index < 0) return;
     let next: number;
     switch (event.key) {
-      case "ArrowDown": next = (index + 1) % buttons.length; break;
-      case "ArrowUp": next = (index + buttons.length - 1) % buttons.length; break;
-      case "Home": next = 0; break;
-      case "End": next = buttons.length - 1; break;
-      default: return;
+      case "ArrowDown":
+        next = (index + 1) % buttons.length;
+        break;
+      case "ArrowUp":
+        next = (index + buttons.length - 1) % buttons.length;
+        break;
+      case "Home":
+        next = 0;
+        break;
+      case "End":
+        next = buttons.length - 1;
+        break;
+      default:
+        return;
     }
     event.preventDefault();
     event.stopPropagation();
@@ -133,7 +167,11 @@ export class NavigationDialog extends LitElement {
     buttons[next]?.scrollIntoView({ block: "nearest" });
   };
 
-  static override styles = [uiDialogStyles, uiSelectionStyles, uiToolbarStyles, css`
+  static override styles = [
+    uiDialogStyles,
+    uiSelectionStyles,
+    uiToolbarStyles,
+    css`
     @layer pi-web-base {
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     footer { justify-content: space-between; flex-wrap: wrap; }
@@ -144,5 +182,6 @@ export class NavigationDialog extends LitElement {
     .pin-button[aria-pressed="true"] svg { color: var(--pi-accent); }
     .mobile-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 12px; }
     }
-  `];
+  `,
+  ];
 }

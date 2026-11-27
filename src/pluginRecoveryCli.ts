@@ -51,12 +51,13 @@ These commands edit config offline and never contact the session daemon or impor
 Changes take effect after a manual session-daemon restart unless --restart can restart it automatically.`;
 }
 
-export function runPluginRecoveryCli(
-  args: readonly string[],
-  dependencies: PluginRecoveryCliDependencies,
-): void {
+export function runPluginRecoveryCli(args: readonly string[], dependencies: PluginRecoveryCliDependencies): void {
   const command = parsePluginRecoveryCommand(args);
-  const writeLine = dependencies.writeLine ?? ((line) => { console.log(line); });
+  const writeLine =
+    dependencies.writeLine
+    ?? ((line) => {
+      console.log(line);
+    });
   if (command.kind === "help") {
     for (const line of pluginRecoveryHelp().split("\n")) writeLine(line);
     return;
@@ -197,18 +198,11 @@ function restartPlanFor(
   return dependencies.restartPlan({ configPath, explicitConfigPath: explicitConfigPath !== undefined });
 }
 
-function reportRecoveryDiagnostic(
-  diagnostic: string | undefined,
-  writeLine: (line: string) => void,
-): void {
+function reportRecoveryDiagnostic(diagnostic: string | undefined, writeLine: (line: string) => void): void {
   if (diagnostic !== undefined) writeLine(`Warning: ${diagnostic}`);
 }
 
-function reportRestart(
-  performRestart: boolean,
-  plan: SessionDaemonRestartPlan,
-  writeLine: (line: string) => void,
-): void {
+function reportRestart(performRestart: boolean, plan: SessionDaemonRestartPlan, writeLine: (line: string) => void): void {
   if (performRestart && plan.kind === "automatic" && plan.perform !== undefined) {
     plan.perform();
     writeLine("Session daemon restart requested. Active sessions owned by that daemon may stop.");

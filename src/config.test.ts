@@ -2,7 +2,26 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_ATTACHMENT_FOLDER, DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS, DEFAULT_MAX_UPLOAD_BYTES, DEFAULT_UPLOADS_FOLDER, AGENT_SESSION_DIR_ENV_KEYS, agentSessionDirEnvOverride, askUserEnabled, detectDeprecatedAgentInputs, effectiveAgentConfig, environmentFactsEnabled, effectivePiWebConfig, loadPiWebConfig, maxUploadBytes, offlineModeEnabled, savePiWebConfig, sessionArchiveDirectory, spawnSessionsEnabled, subsessionsEnabled } from "./config.js";
+import {
+  DEFAULT_ATTACHMENT_FOLDER,
+  DEFAULT_EXTENSION_DIALOGS_TIMEOUT_MS,
+  DEFAULT_MAX_UPLOAD_BYTES,
+  DEFAULT_UPLOADS_FOLDER,
+  AGENT_SESSION_DIR_ENV_KEYS,
+  agentSessionDirEnvOverride,
+  askUserEnabled,
+  detectDeprecatedAgentInputs,
+  effectiveAgentConfig,
+  environmentFactsEnabled,
+  effectivePiWebConfig,
+  loadPiWebConfig,
+  maxUploadBytes,
+  offlineModeEnabled,
+  savePiWebConfig,
+  sessionArchiveDirectory,
+  spawnSessionsEnabled,
+  subsessionsEnabled,
+} from "./config.js";
 
 import { KNOWN_THINKING_LEVELS } from "./shared/thinkingLevels.js";
 
@@ -29,10 +48,13 @@ describe("sessionArchive config", () => {
     expect(loadPiWebConfig(testOptions()).config).not.toHaveProperty("sessionArchive");
   });
 
-  it.each([null, [], "archive", { unknown: true }, { directory: "" }, { directory: "   " }, { directory: 1 }, { directory: null }, { directory: "a\u0000b" }])("rejects invalid archive config %j", async (sessionArchive) => {
-    await writeFile(configPath, JSON.stringify({ sessionArchive }), "utf8");
-    expect(() => loadPiWebConfig(testOptions())).toThrow("PI WEB config sessionArchive");
-  });
+  it.each([null, [], "archive", { unknown: true }, { directory: "" }, { directory: "   " }, { directory: 1 }, { directory: null }, { directory: "a\u0000b" }])(
+    "rejects invalid archive config %j",
+    async (sessionArchive) => {
+      await writeFile(configPath, JSON.stringify({ sessionArchive }), "utf8");
+      expect(() => loadPiWebConfig(testOptions())).toThrow("PI WEB config sessionArchive");
+    },
+  );
 
   it("resolves the default, config, and environment destinations against the process cwd", () => {
     const env = { PI_WEB_DATA_DIR: "state" };
@@ -47,7 +69,16 @@ describe("sessionArchive config", () => {
 });
 
 describe("sessionNaming config", () => {
-  it.each([{}, { model: "provider/model" }, { maxTokens: 24 }, { timeoutMs: 1 }, { timeoutMs: 10000 }, { timeoutMs: 2147483647 }, { model: "provider/org/model", maxTokens: Number.MAX_SAFE_INTEGER }, ...KNOWN_THINKING_LEVELS.map((thinkingLevel) => ({ thinkingLevel }))])("round-trips overrides %j without adding defaults", (sessionNaming) => {
+  it.each([
+    {},
+    { model: "provider/model" },
+    { maxTokens: 24 },
+    { timeoutMs: 1 },
+    { timeoutMs: 10000 },
+    { timeoutMs: 2147483647 },
+    { model: "provider/org/model", maxTokens: Number.MAX_SAFE_INTEGER },
+    ...KNOWN_THINKING_LEVELS.map((thinkingLevel) => ({ thinkingLevel })),
+  ])("round-trips overrides %j without adding defaults", (sessionNaming) => {
     savePiWebConfig({ sessionNaming }, testOptions());
     expect(loadPiWebConfig(testOptions()).config.sessionNaming).toEqual(sessionNaming);
     expect(effectivePiWebConfig(testOptions()).config.sessionNaming).toEqual(sessionNaming);
@@ -66,7 +97,10 @@ describe("sessionNaming config", () => {
   });
 
   it.each([
-    null, [], "provider/model", { unknown: true },
+    null,
+    [],
+    "provider/model",
+    { unknown: true },
     ...["", "model", "/model", "provider/", " provider/model", "provider/model ", "provider /model", 42, null].map((model) => ({ model })),
     ...[0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, "24", null].map((maxTokens) => ({ maxTokens })),
     ...["", "ultra", "MINIMAL", " minimal ", null, false, 42, {}, []].map((thinkingLevel) => ({ thinkingLevel })),
@@ -108,11 +142,32 @@ describe("PI WEB config persistence", () => {
   });
 
   it("preserves unrelated config keys while replacing managed keys", async () => {
-    await writeFile(configPath, `${JSON.stringify({ host: "old", port: 8504, allowedHosts: true, plugins: { info: { enabled: false } }, pathAccess: { allowedPaths: ["/old"] }, uploads: { defaultFolder: "old" }, attachments: { defaultFolder: "old-attachments" }, serverPlugins: { safeStart: "none" }, future: { enabled: true } }, null, 2)}\n`, "utf8");
+    await writeFile(
+      configPath,
+      `${JSON.stringify({ host: "old", port: 8504, allowedHosts: true, plugins: { info: { enabled: false } }, pathAccess: { allowedPaths: ["/old"] }, uploads: { defaultFolder: "old" }, attachments: { defaultFolder: "old-attachments" }, serverPlugins: { safeStart: "none" }, future: { enabled: true } }, null, 2)}\n`,
+      "utf8",
+    );
 
-    savePiWebConfig({ port: 9000, allowedHosts: [], pathAccess: { allowedPaths: ["/new"] }, uploads: { defaultFolder: "new" }, attachments: { defaultFolder: "new-attachments" } }, testOptions());
+    savePiWebConfig(
+      {
+        port: 9000,
+        allowedHosts: [],
+        pathAccess: { allowedPaths: ["/new"] },
+        uploads: { defaultFolder: "new" },
+        attachments: { defaultFolder: "new-attachments" },
+      },
+      testOptions(),
+    );
 
-    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ serverPlugins: { safeStart: "none" }, future: { enabled: true }, port: 9000, allowedHosts: [], pathAccess: { allowedPaths: ["/new"] }, uploads: { defaultFolder: "new" }, attachments: { defaultFolder: "new-attachments" } });
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      serverPlugins: { safeStart: "none" },
+      future: { enabled: true },
+      port: 9000,
+      allowedHosts: [],
+      pathAccess: { allowedPaths: ["/new"] },
+      uploads: { defaultFolder: "new" },
+      attachments: { defaultFolder: "new-attachments" },
+    });
   });
 
   it("preserves the theme default across unrelated saves and allows removing it", async () => {
@@ -224,7 +279,9 @@ describe("PI WEB config persistence", () => {
   });
 
   it("attributes agent directory resolution failures to the input that supplied the directory", () => {
-    expect(() => effectiveAgentConfig({ PI_WEB_AGENT_DIR: "relative/web", PI_CODING_AGENT_DIR: "relative/pi" })).toThrow("PI_WEB_AGENT_DIR must be a host-absolute path");
+    expect(() => effectiveAgentConfig({ PI_WEB_AGENT_DIR: "relative/web", PI_CODING_AGENT_DIR: "relative/pi" })).toThrow(
+      "PI_WEB_AGENT_DIR must be a host-absolute path",
+    );
     expect(() => effectiveAgentConfig({ PI_CODING_AGENT_DIR: "relative/pi" })).toThrow("PI_CODING_AGENT_DIR must be a host-absolute path");
     expect(() => effectiveAgentConfig({}, { agent: { dir: "relative/config" } })).toThrow("agent.dir must be a host-absolute path");
   });
@@ -263,7 +320,9 @@ describe("PI WEB config persistence", () => {
 
   it("orders session directory env overrides with the deprecated alias first", () => {
     expect(AGENT_SESSION_DIR_ENV_KEYS).toEqual(["PI_WEB_AGENT_SESSION_DIR", "PI_CODING_AGENT_SESSION_DIR"]);
-    expect(agentSessionDirEnvOverride({ PI_WEB_AGENT_SESSION_DIR: join(tempDir, "web-sessions"), PI_CODING_AGENT_SESSION_DIR: join(tempDir, "pi-sessions") })).toBe(join(tempDir, "web-sessions"));
+    expect(
+      agentSessionDirEnvOverride({ PI_WEB_AGENT_SESSION_DIR: join(tempDir, "web-sessions"), PI_CODING_AGENT_SESSION_DIR: join(tempDir, "pi-sessions") }),
+    ).toBe(join(tempDir, "web-sessions"));
     expect(agentSessionDirEnvOverride({ PI_CODING_AGENT_SESSION_DIR: join(tempDir, "pi-sessions") })).toBe(join(tempDir, "pi-sessions"));
     expect(agentSessionDirEnvOverride({})).toBeUndefined();
   });
@@ -271,11 +330,16 @@ describe("PI WEB config persistence", () => {
   it("detects deprecated agent inputs from the environment and config", () => {
     expect(detectDeprecatedAgentInputs({})).toEqual([]);
     expect(detectDeprecatedAgentInputs({ PI_WEB_AGENT_COMMAND: "", PI_WEB_AGENT_DIR: "" })).toEqual([]);
-    expect(detectDeprecatedAgentInputs({
-      PI_WEB_AGENT_COMMAND: "acme-agent",
-      PI_WEB_AGENT_DIR: "/state/acme",
-      PI_WEB_AGENT_SESSION_DIR: "/state/acme/sessions",
-    }, { agent: { command: "acme-agent", dir: "/state/acme" } })).toEqual([
+    expect(
+      detectDeprecatedAgentInputs(
+        {
+          PI_WEB_AGENT_COMMAND: "acme-agent",
+          PI_WEB_AGENT_DIR: "/state/acme",
+          PI_WEB_AGENT_SESSION_DIR: "/state/acme/sessions",
+        },
+        { agent: { command: "acme-agent", dir: "/state/acme" } },
+      ),
+    ).toEqual([
       { source: "environment", name: "PI_WEB_AGENT_COMMAND" },
       { source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" },
       { source: "environment", name: "PI_WEB_AGENT_SESSION_DIR", replacement: "PI_CODING_AGENT_SESSION_DIR" },
@@ -302,8 +366,12 @@ describe("PI WEB config persistence", () => {
     const original = { agent: { command: "acme-agent", dir: join(tempDir, "agent"), futureSetting: true } };
     await writeFile(configPath, `${JSON.stringify(original, null, 2)}\n`, "utf8");
 
-    expect(() => loadPiWebConfig(testOptions())).toThrow('PI WEB config agent accepts only the deprecated keys "command" and "dir"; unknown key "futureSetting"');
-    expect(() => savePiWebConfig({ port: 9000 }, testOptions())).toThrow('PI WEB config agent accepts only the deprecated keys "command" and "dir"; unknown key "futureSetting"');
+    expect(() => loadPiWebConfig(testOptions())).toThrow(
+      'PI WEB config agent accepts only the deprecated keys "command" and "dir"; unknown key "futureSetting"',
+    );
+    expect(() => savePiWebConfig({ port: 9000 }, testOptions())).toThrow(
+      'PI WEB config agent accepts only the deprecated keys "command" and "dir"; unknown key "futureSetting"',
+    );
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual(original);
   });
 

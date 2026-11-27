@@ -7,13 +7,7 @@ import { markCachedNewSessionInfo } from "../cachedNewSessions";
 import { isArchivableSessionInfo, isTransientNewSessionInfo } from "../sessionPersistence";
 // Legacy bulk-toolbar tests retain their narrow template inspection seam;
 // row actions use the DOM so keyed directives are exercised.
-import {
-  isTemplateEventHandler,
-  isTemplateResult,
-  templateStrings,
-  templateValues,
-  type TemplateEventHandler,
-} from "../templateInspection.testSupport";
+import { isTemplateEventHandler, isTemplateResult, templateStrings, templateValues, type TemplateEventHandler } from "../templateInspection.testSupport";
 import { installPopoverFake } from "./anchoredPopup.testSupport";
 installPopoverFake();
 import { SessionList, sessionRowActivityKind, sessionRowsForCurrentTree, sessionRowUnread, unreadSessionCount } from "./SessionList";
@@ -234,9 +228,7 @@ describe("sessionRowsForCurrentTree", () => {
     const parent = { ...session("parent"), archived: true, archivedAt: "2026-06-09T00:00:00.000Z" };
     const detachedChild = session("child");
 
-    expect(rowSummaries(sessionRowsForCurrentTree([parent, detachedChild]))).toEqual([
-      { id: "child", depth: 0, hasMissingParent: false },
-    ]);
+    expect(rowSummaries(sessionRowsForCurrentTree([parent, detachedChild]))).toEqual([{ id: "child", depth: 0, hasMissingParent: false }]);
   });
 
   it("nests a child whose recorded parent path differs only by a trailing separator", () => {
@@ -254,9 +246,7 @@ describe("sessionRowsForCurrentTree", () => {
   it("still marks unavailable parents when the parent record is missing", () => {
     const child = session("child", { parentSessionPath: "/sessions/missing.jsonl" });
 
-    expect(rowSummaries(sessionRowsForCurrentTree([child]))).toEqual([
-      { id: "child", depth: 0, hasMissingParent: true },
-    ]);
+    expect(rowSummaries(sessionRowsForCurrentTree([child]))).toEqual([{ id: "child", depth: 0, hasMissingParent: true }]);
   });
 });
 
@@ -359,7 +349,6 @@ function findOptionalTemplateWithStaticText(value: unknown, text: string): Templ
   }
   return undefined;
 }
-
 
 function sessionStatus(sessionId: string, overrides: Partial<SessionStatus> = {}): SessionStatus {
   return {

@@ -47,12 +47,20 @@ async function readMarker(): Promise<SessiondStateOwnershipRecord> {
   return parsed;
 }
 
-function collectingLogger(): { entries: { level: string; message: string }[]; info: (d: Record<string, unknown>, m: string) => void; warn: (d: Record<string, unknown>, m: string) => void } {
+function collectingLogger(): {
+  entries: { level: string; message: string }[];
+  info: (d: Record<string, unknown>, m: string) => void;
+  warn: (d: Record<string, unknown>, m: string) => void;
+} {
   const entries: { level: string; message: string }[] = [];
   return {
     entries,
-    info: (_details, message) => { entries.push({ level: "info", message }); },
-    warn: (_details, message) => { entries.push({ level: "warn", message }); },
+    info: (_details, message) => {
+      entries.push({ level: "info", message });
+    },
+    warn: (_details, message) => {
+      entries.push({ level: "warn", message });
+    },
   };
 }
 
@@ -104,7 +112,9 @@ describe("claimSessiondStateOwnership", () => {
     const logger = collectingLogger();
     // The simulated owner exits and its shutdown removes the marker shortly
     // after the claim starts waiting.
-    const ownerReleases = setTimeout(() => { void rm(markerPath, { force: true }); }, 60);
+    const ownerReleases = setTimeout(() => {
+      void rm(markerPath, { force: true });
+    }, 60);
 
     const ownership = await claimSessiondStateOwnership({
       env: env(),
@@ -129,7 +139,9 @@ describe("claimSessiondStateOwnership", () => {
       graceMs: 250,
       pollIntervalMs: 20,
     }).then(
-      () => { throw new Error("expected the claim to fail"); },
+      () => {
+        throw new Error("expected the claim to fail");
+      },
       (error: unknown) => error,
     );
 
@@ -170,13 +182,15 @@ describe("claimSessiondStateOwnership", () => {
 
 describe("parseOwnershipRecord", () => {
   it("parses a record and tolerates unknown fields", () => {
-    const parsed = parseOwnershipRecord(JSON.stringify({
-      pid: 123,
-      startedAt: "2026-01-01T00:00:00.000Z",
-      processStartTime: "4567",
-      endpoint: "/data/pi-web/sessiond.sock",
-      futureField: { anything: true },
-    }));
+    const parsed = parseOwnershipRecord(
+      JSON.stringify({
+        pid: 123,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        processStartTime: "4567",
+        endpoint: "/data/pi-web/sessiond.sock",
+        futureField: { anything: true },
+      }),
+    );
 
     expect(parsed).toEqual({
       pid: 123,

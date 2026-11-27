@@ -40,14 +40,16 @@ function createWorkspaceProvider(): WorkspaceProvider {
     },
     async list(project: ProjectInput, signal: AbortSignal): Promise<ProviderWorkspace[]> {
       signal.throwIfAborted();
-      return [{
-        key: "main",
-        path: project.path,
-        label: project.name,
-        isMain: true,
-        // This object is visible to every browser script and API consumer.
-        publicMetadata: { kind: "example", marker: markerPath },
-      }];
+      return [
+        {
+          key: "main",
+          path: project.path,
+          label: project.name,
+          isMain: true,
+          // This object is visible to every browser script and API consumer.
+          publicMetadata: { kind: "example", marker: markerPath },
+        },
+      ];
     },
   };
 }
@@ -61,8 +63,5 @@ function requestSummary(pluginId: string, context: ServerPluginPeerRequestContex
 }
 
 function isMissingFile(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "code" in error
-    && Reflect.get(error, "code") === "ENOENT";
+  return typeof error === "object" && error !== null && "code" in error && Reflect.get(error, "code") === "ENOENT";
 }

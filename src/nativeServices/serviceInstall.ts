@@ -26,18 +26,13 @@ export type NativeServiceInstallFailure =
   | { kind: "plan-resolution"; failures: readonly NativeServicePlanFailure[] }
   | { kind: "plan-validation"; failures: readonly NativeServicePlanValidationFailure[] };
 
-export type NativeServiceInstallResult =
-  | { ok: true; plan: NativeServicePlan }
-  | { ok: false; failure: NativeServiceInstallFailure };
+export type NativeServiceInstallResult = { ok: true; plan: NativeServicePlan } | { ok: false; failure: NativeServiceInstallFailure };
 
 export function nativeServiceInstallFailureNeedsPathAdvice(failure: NativeServiceInstallFailure): boolean {
   if (failure.kind === "plan-resolution") {
-    return failure.failures.every((item) => item.kind === "executable-unavailable")
-      && failure.failures.length > 0;
+    return failure.failures.every((item) => item.kind === "executable-unavailable") && failure.failures.length > 0;
   }
-  return failure.failures.some((item) =>
-    item.kind === "prerequisite-unsatisfied"
-    && nativeServicePrerequisiteNeedsPathAdvice(item.prerequisite));
+  return failure.failures.some((item) => item.kind === "prerequisite-unsatisfied" && nativeServicePrerequisiteNeedsPathAdvice(item.prerequisite));
 }
 
 /**

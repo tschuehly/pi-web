@@ -34,7 +34,7 @@ export function projectTranscriptMarkdown(
   const projected = content.map((part: unknown) => {
     if (!isRecord(part)) return part;
     const type = part["type"];
-    const text = type === "text" ? part["text"] : type === "thinking" && role === "assistant" ? part["thinking"] ?? part["text"] : undefined;
+    const text = type === "text" ? part["text"] : type === "thinking" && role === "assistant" ? (part["thinking"] ?? part["text"]) : undefined;
     if (typeof text !== "string") return part;
     const displayText = transform(text, type === "thinking" ? "assistant-thinking" : role);
     if (displayText === text) return part;

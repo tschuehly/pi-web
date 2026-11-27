@@ -9,15 +9,7 @@ import type {
   WorkspaceRemovalPresentation,
 } from "./shared/pluginApiTypes.js";
 
-export type {
-  JsonObject,
-  JsonPrimitive,
-  JsonValue,
-  PluginCapability,
-  PluginCapabilityProvision,
-  WorkspaceProviderMetadata,
-  WorkspaceRemovalPresentation,
-};
+export type { JsonObject, JsonPrimitive, JsonValue, PluginCapability, PluginCapabilityProvision, WorkspaceProviderMetadata, WorkspaceRemovalPresentation };
 
 export {
   PI_WEB_HOST_CATALOG_CAPABILITY,
@@ -34,16 +26,17 @@ export {
  * Throws synchronously outside PI WEB or when the paired backend is unavailable.
  * Extensions are trusted in-process code, not a sandbox.
  */
-export function createCompanionBackend(
-  events: { emit(channel: string, data: unknown): void },
-  pluginId: string,
-): PluginBackend {
+export function createCompanionBackend(events: { emit(channel: string, data: unknown): void }, pluginId: string): PluginBackend {
   let backend: PluginBackend | undefined;
   let failure: Error | undefined;
   events.emit("pi-web:companion-backend:discover", {
     pluginId,
     accept: (discover: () => PluginBackend) => {
-      try { backend = discover(); } catch (error) { failure = error instanceof Error ? error : new Error(String(error)); }
+      try {
+        backend = discover();
+      } catch (error) {
+        failure = error instanceof Error ? error : new Error(String(error));
+      }
     },
   });
   if (failure !== undefined) throw failure;
@@ -532,10 +525,16 @@ function snapshotPiWebHostPiSessionEventsV1(value: unknown): PiWebHostPiSessionE
         on: (channel: string, handler: (data: unknown) => void | Promise<void>): (() => void) => {
           const unsubscribe: unknown = Reflect.apply(on, connection, [channel, handler]);
           if (typeof unsubscribe !== "function") throw new Error("Invalid PI event unsubscribe function");
-          return () => { Reflect.apply(unsubscribe, undefined, []); };
+          return () => {
+            Reflect.apply(unsubscribe, undefined, []);
+          };
         },
-        emit: (channel: string, data: unknown): void => { Reflect.apply(emit, connection, [channel, data]); },
-        close: (): void => { Reflect.apply(close, connection, []); },
+        emit: (channel: string, data: unknown): void => {
+          Reflect.apply(emit, connection, [channel, data]);
+        },
+        close: (): void => {
+          Reflect.apply(close, connection, []);
+        },
       });
     },
   });
@@ -617,10 +616,7 @@ function snapshotPiWebHostWorkspaceSelection(value: unknown): PiWebHostWorkspace
   return Object.freeze({ projectId, workspaceId });
 }
 
-function snapshotPiWebHostWorkspaceAuthority(
-  value: unknown,
-  requested: PiWebHostWorkspaceSelection,
-): PiWebHostWorkspaceAuthority {
+function snapshotPiWebHostWorkspaceAuthority(value: unknown, requested: PiWebHostWorkspaceSelection): PiWebHostWorkspaceAuthority {
   if (!isPublicJsonObject(value)) throw new Error("PI WEB host workspaces capability v1 must return an authority object");
   const project = snapshotPiWebHostProject(Reflect.get(value, "project"));
   const workspace = snapshotPiWebHostWorkspace(Reflect.get(value, "workspace"));
@@ -669,9 +665,7 @@ function snapshotPiWebHostWorkspaceProvider(value: unknown): WorkspaceProviderMe
   }
   const capabilities = Object.freeze({ remove });
   const metadataValue: unknown = Reflect.get(value, "metadata");
-  const metadata = metadataValue === undefined
-    ? undefined
-    : clonePublicJsonObject(metadataValue, "workspace provider metadata");
+  const metadata = metadataValue === undefined ? undefined : clonePublicJsonObject(metadataValue, "workspace provider metadata");
   return Object.freeze({ pluginId, capabilities, ...(metadata === undefined ? {} : { metadata }) });
 }
 
@@ -680,11 +674,7 @@ function clonePublicJsonObject(value: unknown, label: string): JsonObject {
   return clonePublicJsonRecord(value, new Set<object>(), label);
 }
 
-function clonePublicJsonRecord(
-  value: Record<string, unknown>,
-  ancestors: Set<object>,
-  label: string,
-): JsonObject {
+function clonePublicJsonRecord(value: Record<string, unknown>, ancestors: Set<object>, label: string): JsonObject {
   if (ancestors.has(value)) throw new Error(`PI WEB host workspaces capability v1 ${label} must not contain cycles`);
   ancestors.add(value);
   try {
@@ -769,9 +759,7 @@ function publicStringExceedsUtf8ByteLimit(value: string, maxBytes: number): bool
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  return (typeof value === "object" && value !== null) || typeof value === "function"
-    ? typeof Reflect.get(value, "then") === "function"
-    : false;
+  return (typeof value === "object" && value !== null) || typeof value === "function" ? typeof Reflect.get(value, "then") === "function" : false;
 }
 
 function isPublicJsonObject(value: unknown): value is Record<string, unknown> {

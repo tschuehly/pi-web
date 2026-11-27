@@ -61,25 +61,22 @@ export interface PluginBackendChannelRouteDependencies {
 }
 
 /** Sessiond-owned endpoint for one scoped, revision-paired plugin channel. */
-export function registerPluginBackendChannelRoutes(
-  app: FastifyInstance,
-  dependencies: PluginBackendChannelRouteDependencies,
-  prefix = "",
-): void {
-  for (const path of PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS) app.get<{ Params: PluginBackendChannelRouteParams }>(
-    `${prefix}${path}`,
-    {
-      websocket: true,
-      onRequest(request, _reply, done) {
-        markPluginBackendChannelUpgradeRequest(request.raw);
-        done();
+export function registerPluginBackendChannelRoutes(app: FastifyInstance, dependencies: PluginBackendChannelRouteDependencies, prefix = ""): void {
+  for (const path of PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS)
+    app.get<{ Params: PluginBackendChannelRouteParams }>(
+      `${prefix}${path}`,
+      {
+        websocket: true,
+        onRequest(request, _reply, done) {
+          markPluginBackendChannelUpgradeRequest(request.raw);
+          done();
+        },
       },
-    },
-    (socket, request) => {
-      const controller = new PluginBackendChannelSocketController(socket, request.params, dependencies, app.log);
-      controller.start();
-    },
-  );
+      (socket, request) => {
+        const controller = new PluginBackendChannelSocketController(socket, request.params, dependencies, app.log);
+        controller.start();
+      },
+    );
 }
 
 class PluginBackendChannelSocketController {
@@ -136,9 +133,13 @@ class PluginBackendChannelSocketController {
         projectId: this.params.projectId,
         workspaceId: this.params.workspaceId,
       });
-      this.admission.signal.addEventListener("abort", () => {
-        void this.fail("shutdown", "Plugin backend channels are shutting down", 1012);
-      }, { once: true });
+      this.admission.signal.addEventListener(
+        "abort",
+        () => {
+          void this.fail("shutdown", "Plugin backend channels are shutting down", 1012);
+        },
+        { once: true },
+      );
     } catch (error) {
       if (error instanceof PluginBackendChannelError) {
         void this.fail(error.code, error.message, error.closeCode);
@@ -191,15 +192,20 @@ class PluginBackendChannelSocketController {
         throw new PluginBackendChannelError("invalid-scope", 1008, boundedErrorMessage(error), { cause: error });
       }
       const project = this.params.projectId === undefined ? undefined : await this.dependencies.projects.requireProject(this.params.projectId);
-      const session = await this.dependencies.backends.openChannel({
-        pluginId: this.params.pluginId,
-        moduleRevision: revision,
-        scope,
-        project,
-        workspaceId: this.params.workspaceId,
-        operation: this.params.operation,
-        input,
-      }, this.writer, this.lifetime.signal, this.admission);
+      const session = await this.dependencies.backends.openChannel(
+        {
+          pluginId: this.params.pluginId,
+          moduleRevision: revision,
+          scope,
+          project,
+          workspaceId: this.params.workspaceId,
+          operation: this.params.operation,
+          input,
+        },
+        this.writer,
+        this.lifetime.signal,
+        this.admission,
+      );
       this.session = session;
       if (this.state === "closed") {
         await session.close(1001, "Browser disconnected during channel open");
@@ -244,7 +250,14 @@ class PluginBackendChannelSocketController {
         this.startIncomingDrain();
       }
     };
-    void task.then(() => { finish(true); }, () => { finish(false); });
+    void task.then(
+      () => {
+        finish(true);
+      },
+      () => {
+        finish(false);
+      },
+    );
   }
 
   private async drainIncoming(): Promise<void> {
@@ -286,7 +299,10 @@ class PluginBackendChannelSocketController {
     try {
       await this.session?.close(closeCode, message);
     } catch (error) {
-      this.logger.error({ err: error, pluginId: this.params.pluginId, operation: this.params.operation }, "plugin backend channel cleanup failed after transport failure");
+      this.logger.error(
+        { err: error, pluginId: this.params.pluginId, operation: this.params.operation },
+        "plugin backend channel cleanup failed after transport failure",
+      );
     } finally {
       try {
         await this.writer.close(closeCode, message, { terminateImmediately: this.admission === undefined });
@@ -304,15 +320,14 @@ class PluginBackendChannelSocketController {
     if (code === 1000 && this.state === "ready") {
       this.state = "draining-close";
       try {
-        await withTimeout(
-          this.awaitIncomingDrain(),
-          PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS,
-          "Plugin backend channel accepted receive drain",
-        );
+        await withTimeout(this.awaitIncomingDrain(), PLUGIN_BACKEND_CHANNEL_DRAIN_TIMEOUT_MS, "Plugin backend channel accepted receive drain");
       } catch (error) {
         cleanupCode = 1011;
         cleanupReason = `Plugin backend channel accepted receive drain failed: ${boundedErrorMessage(error)}`;
-        this.logger.error({ err: error, pluginId: this.params.pluginId, operation: this.params.operation }, "plugin backend channel receive drain failed after clean disconnect");
+        this.logger.error(
+          { err: error, pluginId: this.params.pluginId, operation: this.params.operation },
+          "plugin backend channel receive drain failed after clean disconnect",
+        );
       }
     }
     if (this.channelIsClosed()) return;
@@ -323,7 +338,10 @@ class PluginBackendChannelSocketController {
     try {
       await this.session?.close(cleanupCode, cleanupReason);
     } catch (error) {
-      this.logger.error({ err: error, pluginId: this.params.pluginId, operation: this.params.operation }, "plugin backend channel cleanup failed after disconnect");
+      this.logger.error(
+        { err: error, pluginId: this.params.pluginId, operation: this.params.operation },
+        "plugin backend channel cleanup failed after disconnect",
+      );
     } finally {
       this.admission?.release();
     }
@@ -347,7 +365,10 @@ class ChannelRouteWriter implements PluginBackendChannelTransport {
   private closing = false;
   private closePromise: Promise<void> | undefined;
 
-  constructor(private readonly socket: WebSocket, onFailure: (error: unknown) => void) {
+  constructor(
+    private readonly socket: WebSocket,
+    onFailure: (error: unknown) => void,
+  ) {
     this.sender = createBoundedTextWebSocketSender(socket, {
       maxBytes: PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES,
       onOverflow: onFailure,
@@ -363,8 +384,10 @@ class ChannelRouteWriter implements PluginBackendChannelTransport {
     }
     const bytes = utf8ByteLength(text);
     const readyBytes = utf8ByteLength(serializePluginBackendChannelReadyEnvelope());
-    if (this.pending.length >= PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES - 1
-      || this.pendingBytes + bytes + readyBytes > PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES) {
+    if (
+      this.pending.length >= PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES - 1
+      || this.pendingBytes + bytes + readyBytes > PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES
+    ) {
       throw new Error("Plugin backend channel plugin queue limit was exceeded");
     }
     this.pending.push({ text, bytes });
@@ -382,11 +405,7 @@ class ChannelRouteWriter implements PluginBackendChannelTransport {
     }
   }
 
-  close(
-    code: number,
-    reason: string,
-    options: { terminateImmediately?: boolean } = {},
-  ): Promise<void> {
+  close(code: number, reason: string, options: { terminateImmediately?: boolean } = {}): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     if (code === 1000) this.ready();
     this.closing = true;
@@ -394,11 +413,7 @@ class ChannelRouteWriter implements PluginBackendChannelTransport {
     return this.closePromise;
   }
 
-  private async performClose(
-    code: number,
-    reason: string,
-    options: { terminateImmediately?: boolean },
-  ): Promise<void> {
+  private async performClose(code: number, reason: string, options: { terminateImmediately?: boolean }): Promise<void> {
     if (code === 1000) {
       try {
         await this.sender.drain();
@@ -429,13 +444,14 @@ class ChannelRouteWriter implements PluginBackendChannelTransport {
 }
 
 function decodeTextFrame(data: RawData): string {
-  const bytes = typeof data === "string"
-    ? new TextEncoder().encode(data)
-    : data instanceof ArrayBuffer
-      ? new Uint8Array(data)
-      : Array.isArray(data)
-        ? Buffer.concat(data)
-        : data;
+  const bytes =
+    typeof data === "string"
+      ? new TextEncoder().encode(data)
+      : data instanceof ArrayBuffer
+        ? new Uint8Array(data)
+        : Array.isArray(data)
+          ? Buffer.concat(data)
+          : data;
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
@@ -450,7 +466,9 @@ function decodeCloseReason(reason: Buffer): string {
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => { reject(new Error(`${label} timed out after ${String(timeoutMs)}ms`)); }, timeoutMs);
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${String(timeoutMs)}ms`));
+    }, timeoutMs);
     timer.unref();
   });
   try {

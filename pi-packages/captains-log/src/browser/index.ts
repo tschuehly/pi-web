@@ -4,7 +4,9 @@ import { renderCaptainPanel, selectedSourceSession } from "./panel.js";
 import { LOG_CHANNEL, isCaptainServerFrame, type CaptainClientFrame } from "./channelProtocol.js";
 
 const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse(value) {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Invalid PI WEB stylesheet integration capability v1");
@@ -14,17 +16,30 @@ const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCap
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "subscribe" in value && typeof value.subscribe === "function"
-    && "createController" in value && typeof value.createController === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+  );
 }
 
 interface PanelState {
-  entries: LogEntry[]; selected?: LogEntry; status: string;
+  entries: LogEntry[];
+  selected?: LogEntry;
+  status: string;
   notice?: string;
-  connecting: boolean; channel?: PluginPeerChannel; controller?: AbortController;
-  pending?: string; revision: number; readRevision: number; updates: Map<string, LogEntry>;
+  connecting: boolean;
+  channel?: PluginPeerChannel;
+  controller?: AbortController;
+  pending?: string;
+  revision: number;
+  readRevision: number;
+  updates: Map<string, LogEntry>;
 }
 const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
   apiVersion: 4,
@@ -33,40 +48,48 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
   activate({ html, runtimePluginId, lifetimeSignal }) {
     let stylesheetIntegration: StylesheetIntegrationCapabilityV1 | undefined;
     if (!customElements.get("captains-log-lifetime")) {
-      customElements.define("captains-log-lifetime", class extends HTMLElement {
-        mount?: () => void;
-        unmount?: () => void;
-        private currentScope: unknown;
-        private integration: StylesheetIntegrationCapabilityV1 | undefined;
-        private releaseStyles: (() => void) | undefined;
-        set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
-          if (this.integration === value) return;
-          this.releaseStyles?.();
-          this.releaseStyles = undefined;
-          this.integration = value;
-          this.registerStyles();
-        }
-        private registerStyles() {
-          if (!this.isConnected || this.releaseStyles !== undefined) return;
-          const root = this.getRootNode();
-          // Reuse the host panel root without creating another rendering boundary.
-          if (root instanceof ShadowRoot) this.releaseStyles = this.integration?.registerRoot(root, { sharedUi: true });
-        }
-        set scope(value: unknown) {
-          if (value === this.currentScope) return;
-          this.currentScope = value;
-          if (this.isConnected) queueMicrotask(() => { if (this.isConnected) this.mount?.(); });
-        }
-        connectedCallback() {
-          this.registerStyles();
-          queueMicrotask(() => { if (this.isConnected) this.mount?.(); });
-        }
-        disconnectedCallback() {
-          this.releaseStyles?.();
-          this.releaseStyles = undefined;
-          this.unmount?.();
-        }
-      });
+      customElements.define(
+        "captains-log-lifetime",
+        class extends HTMLElement {
+          mount?: () => void;
+          unmount?: () => void;
+          private currentScope: unknown;
+          private integration: StylesheetIntegrationCapabilityV1 | undefined;
+          private releaseStyles: (() => void) | undefined;
+          set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
+            if (this.integration === value) return;
+            this.releaseStyles?.();
+            this.releaseStyles = undefined;
+            this.integration = value;
+            this.registerStyles();
+          }
+          private registerStyles() {
+            if (!this.isConnected || this.releaseStyles !== undefined) return;
+            const root = this.getRootNode();
+            // Reuse the host panel root without creating another rendering boundary.
+            if (root instanceof ShadowRoot) this.releaseStyles = this.integration?.registerRoot(root, { sharedUi: true });
+          }
+          set scope(value: unknown) {
+            if (value === this.currentScope) return;
+            this.currentScope = value;
+            if (this.isConnected)
+              queueMicrotask(() => {
+                if (this.isConnected) this.mount?.();
+              });
+          }
+          connectedCallback() {
+            this.registerStyles();
+            queueMicrotask(() => {
+              if (this.isConnected) this.mount?.();
+            });
+          }
+          disconnectedCallback() {
+            this.releaseStyles?.();
+            this.releaseStyles = undefined;
+            this.unmount?.();
+          }
+        },
+      );
     }
     const states = new Map<string, PanelState>();
     let current: PanelState | undefined;
@@ -77,9 +100,12 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
       delete state.channel;
       delete state.controller;
       state.connecting = false;
-      if (state.pending !== undefined) state.status = "Channel closed. Admission is uncertain; reconnect before retrying. Questions are never resent automatically.";
+      if (state.pending !== undefined)
+        state.status = "Channel closed. Admission is uncertain; reconnect before retrying. Questions are never resent automatically.";
     }
-    const stopAll = () => { for (const state of states.values()) stop(state); };
+    const stopAll = () => {
+      for (const state of states.values()) stop(state);
+    };
     lifetimeSignal.addEventListener("abort", stopAll, { once: true });
     function stateFor(context: WorkspacePanelContext): PanelState {
       const key = JSON.stringify([context.machine.id, context.workspace.projectId, context.workspace.id]);
@@ -88,7 +114,10 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
         state = { entries: [], status: "Connecting to Captain's Log…", connecting: false, revision: 0, readRevision: 0, updates: new Map() };
         states.set(key, state);
       }
-      if (current !== state) { if (current) stop(current); current = state; }
+      if (current !== state) {
+        if (current) stop(current);
+        current = state;
+      }
       return state;
     }
     function upsert(state: PanelState, entry: LogEntry) {
@@ -108,14 +137,15 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
         const entry: unknown = await context.peer.request("read", id, { signal: state.controller?.signal ?? lifetimeSignal });
         if (revision !== state.revision || readRevision !== state.readRevision || lifetimeSignal.aborted) return;
         if (!isLogEntry(entry)) throw new Error("Invalid Captain record");
-        const record = state.updates.get(id) !== before ? state.updates.get(id) ?? entry : entry;
+        const record = state.updates.get(id) !== before ? (state.updates.get(id) ?? entry) : entry;
         state.selected = record;
         state.updates.set(id, record);
-        state.entries = state.entries.map((item) => item.id === id ? record : item);
+        state.entries = state.entries.map((item) => (item.id === id ? record : item));
         context.host.requestRender();
       } catch (error) {
         if (revision !== state.revision || readRevision !== state.readRevision || lifetimeSignal.aborted) return;
-        state.status = String(error); context.host.requestRender();
+        state.status = String(error);
+        context.host.requestRender();
       }
     }
     async function connect(context: WorkspacePanelContext, state: PanelState) {
@@ -135,29 +165,42 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
           signal: controller.signal,
           onData(data) {
             if (!live()) return;
-            if (!isCaptainServerFrame(data)) { state.status = "Invalid Captain channel frame"; stop(state); context.host.requestRender(); return; }
+            if (!isCaptainServerFrame(data)) {
+              state.status = "Invalid Captain channel frame";
+              stop(state);
+              context.host.requestRender();
+              return;
+            }
             if (data.type === "admitted" && data.requestId === state.pending) {
               delete state.pending;
               state.status = `Backend admitted ${data.id}; admission is not completion.`;
             } else if (data.type === "rejected" && data.requestId === state.pending) {
-              delete state.pending; state.status = data.message; state.notice = data.message;
+              delete state.pending;
+              state.status = data.message;
+              state.notice = data.message;
             } else if (data.type === "entry") {
               upsert(state, data.entry);
-              state.status = data.saved && data.entry.status !== "running" ? `Backend saved ${data.entry.status} roundtrip.` : `Captain: ${data.entry.stages.at(-1) ?? data.entry.status}`;
+              state.status =
+                data.saved && data.entry.status !== "running"
+                  ? `Backend saved ${data.entry.status} roundtrip.`
+                  : `Captain: ${data.entry.stages.at(-1) ?? data.entry.status}`;
             } else if (data.type === "text") {
               const entry = state.updates.get(data.id);
               if (entry) {
                 // Host channel payloads are deeply frozen; accumulate in a new owned record.
                 const updated = { ...entry, text: (entry.text + data.text).slice(0, MAX_FINDINGS) };
                 state.updates.set(data.id, updated);
-                state.entries = state.entries.map((item) => item.id === data.id ? updated : item);
+                state.entries = state.entries.map((item) => (item.id === data.id ? updated : item));
                 if (state.selected?.id === data.id) state.selected = updated;
               }
             }
             context.host.requestRender();
           },
         });
-        if (!live()) { channel.close(); return; }
+        if (!live()) {
+          channel.close();
+          return;
+        }
         state.channel = channel;
         void channel.closed.then((closed) => {
           if (!live()) return;
@@ -169,7 +212,9 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
         const result: unknown = await context.peer.request("list", null, { signal: controller.signal });
         if (!live()) return;
         if (!Array.isArray(result) || !result.every(isLogEntry)) throw new Error("Invalid Captain snapshot");
-        state.entries = [...state.updates.values(), ...result.filter((entry) => entry.sourceSessionId !== undefined && !state.updates.has(entry.id))].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        state.entries = [...state.updates.values(), ...result.filter((entry) => entry.sourceSessionId !== undefined && !state.updates.has(entry.id))].sort(
+          (a, b) => b.createdAt.localeCompare(a.createdAt),
+        );
         delete state.pending;
         const id = state.selected?.id ?? state.entries[0]?.id;
         if (id !== undefined && state.entries.some((entry) => entry.id === id)) {
@@ -184,19 +229,32 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
         context.host.requestRender();
       } catch (error) {
         if (!live()) return;
-        stop(state); state.status = `${String(error)}. Reconnect explicitly; no translation was resent.`;
+        stop(state);
+        state.status = `${String(error)}. Reconnect explicitly; no translation was resent.`;
         context.host.requestRender();
       }
     }
     function translate(context: WorkspacePanelContext, state: PanelState) {
       const source = selectedSourceSession(context);
-      if (!source || !state.channel || state.connecting || state.pending !== undefined || lifetimeSignal.aborted || state.entries.some((entry) => entry.status === "running" || entry.sessionId === source.id)) return;
+      if (
+        !source
+        || !state.channel
+        || state.connecting
+        || state.pending !== undefined
+        || lifetimeSignal.aborted
+        || state.entries.some((entry) => entry.status === "running" || entry.sessionId === source.id)
+      )
+        return;
       state.pending = crypto.randomUUID();
       delete state.notice;
       state.status = `Translation queued for source session ${source.id}; waiting for backend admission.`;
       const frame: CaptainClientFrame = { type: "translate", requestId: state.pending, sourceSessionId: source.id };
-      try { state.channel.send(frame); }
-      catch (error) { stop(state); state.status = `${String(error)}. Admission is uncertain; reconnect before retrying.`; }
+      try {
+        state.channel.send(frame);
+      } catch (error) {
+        stop(state);
+        state.status = `${String(error)}. Admission is uncertain; reconnect before retrying.`;
+      }
       context.host.requestRender();
     }
     return {
@@ -204,33 +262,58 @@ const plugin: Extract<PiWebPlugin, { apiVersion: 4 }> = {
         stylesheetIntegration = capabilities.resolve(stylesheetIntegrationCapability);
       },
       contributions: {
-        actions: [{
-          id: "summon", title: "Open pirate translator", group: "Captain's Log",
-          enabled: ({ state }) => Boolean(state.selectedWorkspace),
-          run: ({ selectWorkspaceTool }) => { selectWorkspaceTool(`${runtimePluginId}:log`); },
-        }],
-        workspacePanels: [{
-          id: "log", title: "Captain's Log",
-          render(context) {
-            const state = stateFor(context);
-            const source = selectedSourceSession(context);
-            return html`<captains-log-lifetime .stylesheetIntegration=${stylesheetIntegration} .mount=${() => { void connect(context, state); }} .unmount=${() => { stop(state); }} .scope=${state}>
+        actions: [
+          {
+            id: "summon",
+            title: "Open pirate translator",
+            group: "Captain's Log",
+            enabled: ({ state }) => Boolean(state.selectedWorkspace),
+            run: ({ selectWorkspaceTool }) => {
+              selectWorkspaceTool(`${runtimePluginId}:log`);
+            },
+          },
+        ],
+        workspacePanels: [
+          {
+            id: "log",
+            title: "Captain's Log",
+            render(context) {
+              const state = stateFor(context);
+              const source = selectedSourceSession(context);
+              return html`<captains-log-lifetime .stylesheetIntegration=${stylesheetIntegration} .mount=${() => {
+                void connect(context, state);
+              }} .unmount=${() => {
+                stop(state);
+              }} .scope=${state}>
               ${renderCaptainPanel(html, {
                 ...state,
                 connected: state.channel !== undefined && context.peer?.openChannel !== undefined,
                 pending: state.pending !== undefined,
                 machineName: context.machine.name,
                 ...(source ? { source } : {}),
-                onTranslate() { translate(context, state); },
-                onReconnect() { void connect(context, state); },
-                onRead(id) { void readEntry(context, state, id); },
+                onTranslate() {
+                  translate(context, state);
+                },
+                onReconnect() {
+                  void connect(context, state);
+                },
+                onRead(id) {
+                  void readEntry(context, state, id);
+                },
                 onOpenSource(sessionId) {
-                  void context.navigate({ machineId: context.machine.id, projectId: context.workspace.projectId, workspaceId: context.workspace.id, sessionId, view: "chat" });
+                  void context.navigate({
+                    machineId: context.machine.id,
+                    projectId: context.workspace.projectId,
+                    workspaceId: context.workspace.id,
+                    sessionId,
+                    view: "chat",
+                  });
                 },
               })}
             </captains-log-lifetime>`;
+            },
           },
-        }],
+        ],
       },
       dispose() {
         stopAll();

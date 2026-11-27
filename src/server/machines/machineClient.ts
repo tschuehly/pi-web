@@ -47,14 +47,20 @@ const BLOCKED_CONFIGURED_HEADER_NAMES = new Set([
 ]);
 
 export class RemoteMachineRequestError extends Error {
-  constructor(message: string, readonly statusCode: 502 | 504) {
+  constructor(
+    message: string,
+    readonly statusCode: 502 | 504,
+  ) {
     super(message);
     this.name = "RemoteMachineRequestError";
   }
 }
 
 export class RemoteMachineClient implements MachineClient {
-  constructor(private readonly machine: Pick<StoredMachine, "baseUrl" | "token" | "headers">, private readonly fetchImpl: typeof fetch = fetch) {}
+  constructor(
+    private readonly machine: Pick<StoredMachine, "baseUrl" | "token" | "headers">,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {}
 
   async request(method: string, path: string, body?: unknown, options: MachineRequestOptions = {}): Promise<MachineHttpResponse> {
     const response = await this.fetchResponse(method, path, body, options);
@@ -91,7 +97,9 @@ export class RemoteMachineClient implements MachineClient {
     else options.signal?.addEventListener("abort", abortFromParent, { once: true });
 
     const timeoutError = new RemoteMachineRequestError("Remote machine request timed out", 504);
-    const timeout = setTimeout(() => { controller.abort(timeoutError); }, options.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => {
+      controller.abort(timeoutError);
+    }, options.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS);
     timeout.unref();
     try {
       const requestBody = serializeRequestBody(method, body);
@@ -147,13 +155,15 @@ export class RemoteMachineClient implements MachineClient {
 
 export function validateConfiguredMachineHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
   if (headers === undefined) return undefined;
-  return Object.fromEntries(Object.entries(headers).map(([key, value]) => {
-    const name = key.trim();
-    if (name === "") throw new Error("Machine header names must not be empty");
-    if (typeof value !== "string") throw new Error("Machine headers must be strings");
-    if (BLOCKED_CONFIGURED_HEADER_NAMES.has(name.toLowerCase())) throw new Error(`Machine header is not allowed: ${name}`);
-    return [name, value];
-  }));
+  return Object.fromEntries(
+    Object.entries(headers).map(([key, value]) => {
+      const name = key.trim();
+      if (name === "") throw new Error("Machine header names must not be empty");
+      if (typeof value !== "string") throw new Error("Machine headers must be strings");
+      if (BLOCKED_CONFIGURED_HEADER_NAMES.has(name.toLowerCase())) throw new Error(`Machine header is not allowed: ${name}`);
+      return [name, value];
+    }),
+  );
 }
 
 function filterConfiguredHeaders(headers: Record<string, string> | undefined): Record<string, string> {
@@ -186,12 +196,14 @@ function defaultContentTypeForBody(body: unknown): string {
 }
 
 function isRawRequestBody(body: unknown): body is NonNullable<RequestInit["body"]> {
-  return typeof body === "string"
+  return (
+    typeof body === "string"
     || body instanceof URLSearchParams
     || body instanceof Blob
     || body instanceof FormData
     || body instanceof ReadableStream
-    || body instanceof ArrayBuffer;
+    || body instanceof ArrayBuffer
+  );
 }
 
 function copyArrayBufferView(view: ArrayBufferView): ArrayBuffer {

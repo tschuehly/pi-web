@@ -45,9 +45,7 @@ describe("workspace notification CLI", () => {
 
     await runWorkspaceNotificationCli(["notify", "--project", projectId, "--plugin", pluginId], { client });
 
-    expect(client.request).toHaveBeenCalledWith(
-      "POST", `/workspace-notifications/projects/${encodeURIComponent(projectId)}`, { pluginId }, expect.anything(),
-    );
+    expect(client.request).toHaveBeenCalledWith("POST", `/workspace-notifications/projects/${encodeURIComponent(projectId)}`, { pluginId }, expect.anything());
   });
 
   it.each([
@@ -68,18 +66,16 @@ describe("workspace notification CLI", () => {
     expect(process.env).toEqual(env);
   });
 
-  it.each([
-    { args: [] },
-    { args: ["help"] },
-    { args: ["--help"] },
-    { args: ["notify", "-h"] },
-  ])("prints help without contacting the daemon: $args", async ({ args }) => {
-    const createClient = vi.fn<(options: SessionDaemonClientOptions) => SessionDaemonRequestClient>();
-    const writeLine = vi.fn();
-    await runWorkspaceNotificationCli(args, { createClient, writeLine });
-    expect(createClient).not.toHaveBeenCalled();
-    expect(writeLine).toHaveBeenCalledWith("Usage: pi-web workspaces notify --project <projectId> --plugin <pluginId>");
-  });
+  it.each([{ args: [] }, { args: ["help"] }, { args: ["--help"] }, { args: ["notify", "-h"] }])(
+    "prints help without contacting the daemon: $args",
+    async ({ args }) => {
+      const createClient = vi.fn<(options: SessionDaemonClientOptions) => SessionDaemonRequestClient>();
+      const writeLine = vi.fn();
+      await runWorkspaceNotificationCli(args, { createClient, writeLine });
+      expect(createClient).not.toHaveBeenCalled();
+      expect(writeLine).toHaveBeenCalledWith("Usage: pi-web workspaces notify --project <projectId> --plugin <pluginId>");
+    },
+  );
 
   it.each([
     { args: ["refresh", "--project=p", "--plugin=provider"] },
@@ -145,15 +141,24 @@ describe("workspace notification CLI", () => {
     vi.useFakeTimers();
     const controller = new AbortController();
     vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-      setTimeout(() => { controller.abort(); }, ms);
+      setTimeout(() => {
+        controller.abort();
+      }, ms);
       return controller.signal;
     });
     const client: SessionDaemonRequestClient = {
-      request: (_method, _path, _body, options) => new Promise((_resolve, reject) => {
-        const signal = options?.signal;
-        if (signal === undefined) throw new Error("No notification deadline supplied");
-        signal.addEventListener("abort", () => { reject(new Error("notification deadline reached")); }, { once: true });
-      }),
+      request: (_method, _path, _body, options) =>
+        new Promise((_resolve, reject) => {
+          const signal = options?.signal;
+          if (signal === undefined) throw new Error("No notification deadline supplied");
+          signal.addEventListener(
+            "abort",
+            () => {
+              reject(new Error("notification deadline reached"));
+            },
+            { once: true },
+          );
+        }),
     };
 
     const result = expect(runWorkspaceNotificationCli(validArgs, { client })).rejects.toThrow("notification deadline reached");

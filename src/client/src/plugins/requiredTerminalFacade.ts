@@ -1,5 +1,13 @@
 import type { TerminalCommandRun, TerminalCommandRunStatus, Workspace } from "../api";
-import type { ContributionQueryValue, PluginCapability, PluginPeer, QualifiedContributionId, WorkspacePanelTerminal, WorkspacePluginBinding, WorkspaceTerminalCommandInput } from "./types";
+import type {
+  ContributionQueryValue,
+  PluginCapability,
+  PluginPeer,
+  QualifiedContributionId,
+  WorkspacePanelTerminal,
+  WorkspacePluginBinding,
+  WorkspaceTerminalCommandInput,
+} from "./types";
 
 export interface WorkspaceContributionNavigationV1 {
   readonly contributionId: QualifiedContributionId;
@@ -74,8 +82,11 @@ export function snapshotRequiredTerminalBrowserFacade(value: unknown): RequiredT
         throw new Error("Required Terminal browser facade returned an invalid workspace terminal");
       }
       return Object.freeze({
-        open: (options?: { terminalId?: string | undefined }) => { Reflect.apply(open, terminal, [options]); },
-        runCommand: (input: WorkspaceTerminalCommandInput) => Promise.resolve(Reflect.apply(runCommand, terminal, [input])).then(requireTerminalCommandRunHandle),
+        open: (options?: { terminalId?: string | undefined }) => {
+          Reflect.apply(open, terminal, [options]);
+        },
+        runCommand: (input: WorkspaceTerminalCommandInput) =>
+          Promise.resolve(Reflect.apply(runCommand, terminal, [input])).then(requireTerminalCommandRunHandle),
       });
     },
     async listCommandRuns(query) {
@@ -114,7 +125,8 @@ function requireTerminalCommandRun(value: unknown): TerminalCommandRun {
   const exitCode = optionalFiniteNumber(value["exitCode"]);
   const startedAt = optionalString(value["startedAt"]);
   const completedAt = optionalString(value["completedAt"]);
-  if (typeof value["id"] !== "string"
+  if (
+    typeof value["id"] !== "string"
     || typeof value["origin"] !== "string"
     || typeof value["projectId"] !== "string"
     || typeof value["workspaceId"] !== "string"
@@ -126,7 +138,8 @@ function requireTerminalCommandRun(value: unknown): TerminalCommandRun {
     || typeof value["createdAt"] !== "string"
     || startedAt === invalidOptionalField
     || completedAt === invalidOptionalField
-    || !isStringRecord(value["metadata"])) {
+    || !isStringRecord(value["metadata"])
+  ) {
     throw invalidCommandRun();
   }
   return {

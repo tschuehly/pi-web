@@ -53,10 +53,15 @@ describe("attachmentsToInlineImages", () => {
     vi.mocked(resizeImage).mockResolvedValueOnce(firstResized).mockResolvedValueOnce(secondResized);
     vi.mocked(formatDimensionNote).mockReturnValueOnce("[Image dimensions changed.]").mockReturnValueOnce(undefined);
 
-    await expect(attachmentsToInlineImages([
-      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: firstInput.toString("base64"), name: "first.png" },
-      { kind: "image", reference: "[PIC_3]", mimeType: "image/jpeg", data: secondInput.toString("base64"), name: "second.jpg" },
-    ], false)).resolves.toEqual([
+    await expect(
+      attachmentsToInlineImages(
+        [
+          { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: firstInput.toString("base64"), name: "first.png" },
+          { kind: "image", reference: "[PIC_3]", mimeType: "image/jpeg", data: secondInput.toString("base64"), name: "second.jpg" },
+        ],
+        false,
+      ),
+    ).resolves.toEqual([
       { image: { type: "image", data: "first-resized", mimeType: "image/webp" }, dimensionNote: "[Image dimensions changed.]" },
       { image: { type: "image", data: "second-resized", mimeType: "image/jpeg" } },
     ]);
@@ -66,18 +71,25 @@ describe("attachmentsToInlineImages", () => {
 
   it("rejects the delivery instead of shifting later references when conversion omits an image", async () => {
     vi.mocked(resizeImage).mockResolvedValueOnce(null);
-    await expect(attachmentsToInlineImages([
-      { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 },
-    ], true)).rejects.toThrow("Image conversion failed for [PIC_2]");
+    await expect(attachmentsToInlineImages([{ kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 }], true)).rejects.toThrow(
+      "Image conversion failed for [PIC_2]",
+    );
   });
 
   it("retains legacy omission behavior when references were assigned server-side", async () => {
-    vi.mocked(resizeImage).mockResolvedValueOnce(null).mockResolvedValueOnce(resizedImage({ data: "surviving" }));
+    vi.mocked(resizeImage)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(resizedImage({ data: "surviving" }));
     vi.mocked(formatDimensionNote).mockReturnValueOnce(undefined);
-    await expect(attachmentsToInlineImages([
-      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 },
-      { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 },
-    ], false)).resolves.toEqual([{ image: { type: "image", data: "surviving", mimeType: "image/png" } }]);
+    await expect(
+      attachmentsToInlineImages(
+        [
+          { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 },
+          { kind: "image", reference: "[PIC_2]", mimeType: "image/png", data: pngBase64 },
+        ],
+        false,
+      ),
+    ).resolves.toEqual([{ image: { type: "image", data: "surviving", mimeType: "image/png" } }]);
   });
 });
 
@@ -152,16 +164,8 @@ describe("saveAttachmentsToWorkspace", () => {
 
   it("does not overwrite an existing attachment name", async () => {
     const fixedNow = () => new Date("2026-06-13T12:05:01.123Z");
-    const first = await saveAttachmentsToWorkspace(
-      workspace,
-      [{ kind: "file", mimeType: "text/plain", data: "QUJD", name: "note.txt" }],
-      { now: fixedNow },
-    );
-    const second = await saveAttachmentsToWorkspace(
-      workspace,
-      [{ kind: "file", mimeType: "text/plain", data: "REVG", name: "note.txt" }],
-      { now: fixedNow },
-    );
+    const first = await saveAttachmentsToWorkspace(workspace, [{ kind: "file", mimeType: "text/plain", data: "QUJD", name: "note.txt" }], { now: fixedNow });
+    const second = await saveAttachmentsToWorkspace(workspace, [{ kind: "file", mimeType: "text/plain", data: "REVG", name: "note.txt" }], { now: fixedNow });
 
     expect(second[0]?.path).not.toBe(first[0]?.path);
     expect(second[0]?.path.endsWith("-1-note-2.txt")).toBe(true);
@@ -170,24 +174,18 @@ describe("saveAttachmentsToWorkspace", () => {
   });
 
   it("rejects unsafe custom folders", async () => {
-    await expect(saveAttachmentsToWorkspace(
-      workspace,
-      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }],
-      { folder: "/tmp/uploads" },
-    )).rejects.toThrow(/Absolute paths/);
-    await expect(saveAttachmentsToWorkspace(
-      workspace,
-      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }],
-      { folder: "../uploads" },
-    )).rejects.toThrow(/Path traversal/);
+    await expect(
+      saveAttachmentsToWorkspace(workspace, [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }], { folder: "/tmp/uploads" }),
+    ).rejects.toThrow(/Absolute paths/);
+    await expect(
+      saveAttachmentsToWorkspace(workspace, [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }], { folder: "../uploads" }),
+    ).rejects.toThrow(/Path traversal/);
   });
 
   it("honors a custom folder", async () => {
-    const saved = await saveAttachmentsToWorkspace(
-      workspace,
-      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }],
-      { folder: "uploads/images" },
-    );
+    const saved = await saveAttachmentsToWorkspace(workspace, [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: pngBase64 }], {
+      folder: "uploads/images",
+    });
     expect(saved[0]?.path.startsWith("uploads/images/")).toBe(true);
   });
 
@@ -197,10 +195,9 @@ describe("saveAttachmentsToWorkspace", () => {
     await mkdir(join(workspace, ".pi-web"));
     await symlink(outside, join(workspace, ".pi-web", "attachments"), "dir");
 
-    await expect(saveAttachmentsToWorkspace(
-      workspace,
-      [{ kind: "file", mimeType: "text/plain", data: "QUJD", name: "note.txt" }],
-    )).rejects.toThrow(/Path escapes workspace/);
+    await expect(saveAttachmentsToWorkspace(workspace, [{ kind: "file", mimeType: "text/plain", data: "QUJD", name: "note.txt" }])).rejects.toThrow(
+      /Path escapes workspace/,
+    );
     await expect(readdir(outside)).resolves.toEqual([]);
   });
 

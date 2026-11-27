@@ -5,7 +5,19 @@ import { describe, expect, it, vi } from "vitest";
 import { createPiSessionManagerGateway } from "./piSessionManagerGateway.js";
 import { PiSessionService, type PiAgentSession, type PiSessionRuntime, type ResolvedSessionFile } from "./piSessionService.js";
 import { SessionNotificationStore } from "./sessionNotificationStore.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime, type RuntimeCreator, type SessionGateway } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+  type RuntimeCreator,
+  type SessionGateway,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -33,7 +45,9 @@ function boundNotify(fake: { calls: { bindExtensions: unknown[] } }, index = -1)
     throw new Error("Expected bound extension UI context");
   }
   const uiContext = bindings.uiContext;
-  return (message: string, type?: "info" | "warning" | "error") => { uiContext.notify(message, type); };
+  return (message: string, type?: "info" | "warning" | "error") => {
+    uiContext.notify(message, type);
+  };
 }
 
 function hasNotify(value: unknown): value is { notify(message: string, type?: "info" | "warning" | "error"): void } {
@@ -42,7 +56,9 @@ function hasNotify(value: unknown): value is { notify(message: string, type?: "i
 
 function currentNotify(fake: { session: Pick<PiAgentSession, "extensionRunner"> }) {
   const uiContext = fake.session.extensionRunner.getUIContext();
-  return (message: string, type?: "info" | "warning" | "error") => { uiContext.notify(message, type); };
+  return (message: string, type?: "info" | "warning" | "error") => {
+    uiContext.notify(message, type);
+  };
 }
 
 describe("PiSessionService lifecycle, listing, and reload", () => {
@@ -80,7 +96,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     expect(session).toMatchObject({ id: "session-1", cwd: "/workspace", messageCount: 0 });
     expect(service.activeCount()).toBe(1);
     expect(hub.globalEvents.some((event) => event.type === "status.update" && event.status.sessionId === "session-1")).toBe(true);
-    expect(hub.globalEvents.some((event) => event.type === "session.created" && event.session.id === "session-1" && event.session.cwd === "/workspace")).toBe(true);
+    expect(hub.globalEvents.some((event) => event.type === "session.created" && event.session.id === "session-1" && event.session.cwd === "/workspace")).toBe(
+      true,
+    );
 
     await service.dispose();
     expect(fake.calls.abort).toBe(1);
@@ -96,7 +114,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     try {
       service = new PiSessionService(hub, {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime: runtimeCreator(fake.runtime),
         sessionManager: sessionGateway([]),
         heartbeatIntervalMs: 60_000,
@@ -227,11 +245,13 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       getBranch: () => staleBranch,
     });
     const fake = fakeRuntime(sessionId, { sessionFile: `/sessions/${sessionId}.jsonl`, sessionManager: runtimeManager });
-    const open = vi.fn(() => fakeSessionManager("/workspace", {
-      getSessionId: () => sessionId,
-      getSessionFile: () => `/sessions/${sessionId}.jsonl`,
-      getBranch: () => diskBranch,
-    }));
+    const open = vi.fn(() =>
+      fakeSessionManager("/workspace", {
+        getSessionId: () => sessionId,
+        getSessionFile: () => `/sessions/${sessionId}.jsonl`,
+        getBranch: () => diskBranch,
+      }),
+    );
     const gateway: SessionGateway = {
       create: () => fakeSessionManager(),
       list: () => Promise.resolve([sessionRecord(sessionId)]),
@@ -256,13 +276,13 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       messages: [{ role: "user", content: "before" }],
       total: 1,
     });
-    diskBranch = [
-      ...staleBranch,
-      { type: "message", message: { role: "assistant", content: "after" } },
-    ];
+    diskBranch = [...staleBranch, { type: "message", message: { role: "assistant", content: "after" } }];
 
     await expect(service.messages(sessionRef(sessionId))).resolves.toMatchObject({
-      messages: [{ role: "user", content: "before" }, { role: "assistant", content: "after" }],
+      messages: [
+        { role: "user", content: "before" },
+        { role: "assistant", content: "after" },
+      ],
       total: 2,
     });
     expect(fake.calls.abort).toBe(0);
@@ -386,9 +406,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       }),
     });
     let resolvedPath: string | undefined = undefined;
-    const resolveSessionFile = vi.fn(() => Promise.resolve(
-      resolvedPath === undefined ? undefined : { id: sessionId, cwd: "/workspace", path: resolvedPath },
-    ));
+    const resolveSessionFile = vi.fn(() => Promise.resolve(resolvedPath === undefined ? undefined : { id: sessionId, cwd: "/workspace", path: resolvedPath }));
     const readBranch = vi.fn(() => Promise.resolve(diskBranch));
     const gateway: SessionGateway = {
       create: () => fakeSessionManager(),
@@ -442,7 +460,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     const sessionId = "becomes-active-session";
     let streaming = false;
     let finishResolve: ((match: ResolvedSessionFile) => void) | undefined;
-    const resolved = new Promise<ResolvedSessionFile>((resolve) => { finishResolve = resolve; });
+    const resolved = new Promise<ResolvedSessionFile>((resolve) => {
+      finishResolve = resolve;
+    });
     let gated = false;
     const runtimeBranch = [{ type: "message", message: { role: "user", content: "live runtime" } }];
     const fake = fakeRuntime(sessionId, {
@@ -460,7 +480,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       list: () => Promise.resolve([sessionRecord(sessionId)]),
       listAll: () => Promise.resolve([sessionRecord(sessionId)]),
       invalidateSessionFile: () => undefined,
-      resolveSessionFile: () => gated ? resolved : Promise.resolve({ id: sessionId, cwd: "/workspace", path: `/sessions/${sessionId}.jsonl` }),
+      resolveSessionFile: () => (gated ? resolved : Promise.resolve({ id: sessionId, cwd: "/workspace", path: `/sessions/${sessionId}.jsonl` })),
       readBranch,
       open: () => fake.session.sessionManager,
     };
@@ -478,7 +498,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     readBranch.mockClear();
     gated = true;
     const messages = service.messages(sessionRef(sessionId));
-    await vi.waitFor(() => { expect(finishResolve).toBeTypeOf("function"); });
+    await vi.waitFor(() => {
+      expect(finishResolve).toBeTypeOf("function");
+    });
     streaming = true;
     finishResolve?.({ id: sessionId, cwd: "/workspace", path: `/sessions/${sessionId}.jsonl` });
 
@@ -505,10 +527,12 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
         getBranch: () => runtimeBranch,
       }),
     });
-    const open = vi.fn(() => fakeSessionManager("/workspace", {
-      getSessionId: () => sessionId,
-      getBranch: () => [{ type: "message", message: { role: "user", content: "external disk" } }],
-    }));
+    const open = vi.fn(() =>
+      fakeSessionManager("/workspace", {
+        getSessionId: () => sessionId,
+        getBranch: () => [{ type: "message", message: { role: "user", content: "external disk" } }],
+      }),
+    );
     const gateway: SessionGateway = {
       create: () => fakeSessionManager(),
       list: () => Promise.resolve([sessionRecord(sessionId)]),
@@ -554,9 +578,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       }),
     });
     const list = vi.fn(() => Promise.reject(new Error("opening one session must not list its workspace")));
-    const resolveSessionFile = vi.fn((refCwd: string, refId: string) => Promise.resolve(
-      sessionId === refId ? { id: sessionId, cwd: refCwd, path: `/sessions/${sessionId}.jsonl` } : undefined,
-    ));
+    const resolveSessionFile = vi.fn((refCwd: string, refId: string) =>
+      Promise.resolve(sessionId === refId ? { id: sessionId, cwd: refCwd, path: `/sessions/${sessionId}.jsonl` } : undefined),
+    );
     const open = vi.fn(() => fakeSessionManager());
     const gateway: SessionGateway = {
       create: () => fakeSessionManager(),
@@ -596,8 +620,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     const sessionId = "abc123";
     const sessionDir = await mkdtemp(join(tmpdir(), "pi-web-exact-id-"));
     const workspace = await mkdtemp(join(tmpdir(), "pi-web-exact-id-workspace-"));
-    const header = (id: string) =>
-      `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: workspace })}\n`;
+    const header = (id: string) => `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: workspace })}\n`;
     const exactPath = join(sessionDir, `2026-01-01T00-00-00-000Z_${sessionId}.jsonl`);
     await writeFile(exactPath, header(sessionId), "utf8");
     await writeFile(join(sessionDir, `2026-01-02T00-00-00-000Z_${sessionId}-extended.jsonl`), header(`${sessionId}-extended`), "utf8");
@@ -678,9 +701,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     const createAgentRuntime: RuntimeCreator = () => {
       const runtime = runtimes[createCalls];
       createCalls += 1;
-      return runtime === undefined
-        ? Promise.reject(new Error("unexpected runtime creation"))
-        : Promise.resolve(runtime);
+      return runtime === undefined ? Promise.reject(new Error("unexpected runtime creation")) : Promise.resolve(runtime);
     };
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
@@ -743,7 +764,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     const statusPromise = service.status(sessionRef(sessionId));
     await createStarted.promise;
     let disposeSettled = false;
-    const disposePromise = service.dispose().then(() => { disposeSettled = true; });
+    const disposePromise = service.dispose().then(() => {
+      disposeSettled = true;
+    });
     await new Promise<void>((resolve) => setImmediate(resolve));
     const settledWhileOpening = disposeSettled;
     runtimeResult.resolve(fake.runtime);
@@ -768,7 +791,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       return bindReplacementExtensions(bindings);
     };
     let rebindSession: ((session: PiAgentSession) => Promise<void>) | undefined;
-    fake.runtime.setRebindSession = (callback) => { rebindSession = callback; };
+    fake.runtime.setRebindSession = (callback) => {
+      rebindSession = callback;
+    };
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
@@ -831,9 +856,12 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "ctx-stats" }];
     fake.session.bindExtensions = (bindings) => {
       const uiContext = bindings.uiContext;
-      extensionNotify = uiContext === undefined
-        ? undefined
-        : (message, type) => { uiContext.notify(message, type); };
+      extensionNotify =
+        uiContext === undefined
+          ? undefined
+          : (message, type) => {
+              uiContext.notify(message, type);
+            };
       extensionMode = bindings.mode;
       return Promise.resolve();
     };
@@ -899,7 +927,10 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
     notify("error", "error");
     expect(service.notificationInbox(sessionRef("filtered-notices"))).toMatchObject({
       summary: { retainedCount: 2, discardedCount: 0, highestSeverity: "error", inboxRevision: before.summary.inboxRevision + 1 },
-      notifications: [{ message: "error", severity: "error" }, { message: "warning", severity: "warning" }],
+      notifications: [
+        { message: "error", severity: "error" },
+        { message: "warning", severity: "warning" },
+      ],
     });
     expect(hub.sessionEvents.filter(({ event }) => event.type === "notifications.inbox")).toHaveLength(2);
     expect(hub.notificationSummaryEvents).toHaveLength(summaryCount + 1);
@@ -1057,7 +1088,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       },
     });
     let rebindSession: ((session: PiAgentSession) => Promise<void>) | undefined;
-    first.runtime.setRebindSession = (callback) => { rebindSession = callback; };
+    first.runtime.setRebindSession = (callback) => {
+      rebindSession = callback;
+    };
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
@@ -1094,7 +1127,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       return Promise.reject(new Error("replacement bind failed"));
     };
     let rebindSession: ((session: PiAgentSession) => Promise<void>) | undefined;
-    first.runtime.setRebindSession = (callback) => { rebindSession = callback; };
+    first.runtime.setRebindSession = (callback) => {
+      rebindSession = callback;
+    };
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
@@ -1136,7 +1171,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       });
       service = new PiSessionService(hub, {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime: runtimeCreator(fake.runtime),
         sessionManager: sessionGateway([sessionRecord("idle-session")]),
         heartbeatIntervalMs: 1_000,
@@ -1146,9 +1181,7 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       hub.globalEvents.length = 0;
       listener?.({ type: "agent_start" });
 
-      const activityPhases = () => hub.globalEvents
-        .filter((event) => event.type === "activity.update")
-        .map((event) => event.activity.phase);
+      const activityPhases = () => hub.globalEvents.filter((event) => event.type === "activity.update").map((event) => event.activity.phase);
       expect(activityPhases()).toEqual(["active"]);
 
       fake.session.isStreaming = false;
@@ -1197,16 +1230,19 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       archiveStore: {
         list: () => Promise.resolve([{ sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-01T00:00:00.000Z" }]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("archive should not be called when listing"); },
+        archive: () => {
+          throw new Error("archive should not be called when listing");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
       },
       sessionManager: {
         create: () => fakeSessionManager(),
-        list: () => Promise.resolve([
-          { ...sessionRecord("active"), messageCount: 1, firstMessage: "hello", allMessagesText: "hello" },
-          { ...sessionRecord("archived"), messageCount: 2, firstMessage: "bye", allMessagesText: "bye" },
-        ]),
+        list: () =>
+          Promise.resolve([
+            { ...sessionRecord("active"), messageCount: 1, firstMessage: "hello", allMessagesText: "hello" },
+            { ...sessionRecord("archived"), messageCount: 2, firstMessage: "bye", allMessagesText: "bye" },
+          ]),
         listAll: () => Promise.resolve([]),
         invalidateSessionFile: () => undefined,
         resolveSessionFile: () => Promise.resolve(undefined),
@@ -1225,26 +1261,48 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
   });
 
   it("orders archives by activity using index metadata and legacy fallbacks without opening files", async () => {
-    const open = vi.fn(() => { throw new Error("listing must not open archived files"); });
+    const open = vi.fn(() => {
+      throw new Error("listing must not open archived files");
+    });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       archiveStore: {
-        list: () => Promise.resolve([
-          { sessionId: "old", cwd: "/workspace", archivedAt: "2026-01-05T00:00:00.000Z", originalPath: "/sessions/old.jsonl", archivePath: "/archive/old.jsonl", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", messageCount: 2, firstMessage: "old" },
-          { sessionId: "new", cwd: "/workspace", archivedAt: "2026-01-03T00:00:00.000Z", originalPath: "/sessions/new.jsonl", archivePath: "/archive/new.jsonl", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-03T00:00:00.000Z", messageCount: 2, firstMessage: "new" },
-          { sessionId: "legacy", cwd: "/workspace", archivedAt: "2026-01-04T00:00:00.000Z" },
-        ]),
+        list: () =>
+          Promise.resolve([
+            {
+              sessionId: "old",
+              cwd: "/workspace",
+              archivedAt: "2026-01-05T00:00:00.000Z",
+              originalPath: "/sessions/old.jsonl",
+              archivePath: "/archive/old.jsonl",
+              created: "2026-01-01T00:00:00.000Z",
+              modified: "2026-01-01T00:00:00.000Z",
+              messageCount: 2,
+              firstMessage: "old",
+            },
+            {
+              sessionId: "new",
+              cwd: "/workspace",
+              archivedAt: "2026-01-03T00:00:00.000Z",
+              originalPath: "/sessions/new.jsonl",
+              archivePath: "/archive/new.jsonl",
+              created: "2026-01-01T00:00:00.000Z",
+              modified: "2026-01-03T00:00:00.000Z",
+              messageCount: 2,
+              firstMessage: "new",
+            },
+            { sessionId: "legacy", cwd: "/workspace", archivedAt: "2026-01-04T00:00:00.000Z" },
+          ]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("listing must not archive"); },
+        archive: () => {
+          throw new Error("listing must not archive");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
       },
       sessionManager: {
-        ...sessionGateway([
-          sessionRecord("active"),
-          { ...sessionRecord("legacy"), modified: new Date("2026-01-02T00:00:00.000Z") },
-        ]),
+        ...sessionGateway([sessionRecord("active"), { ...sessionRecord("legacy"), modified: new Date("2026-01-02T00:00:00.000Z") }]),
         open,
       },
       heartbeatIntervalMs: 60_000,
@@ -1266,7 +1324,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       archiveStore: {
         list: () => Promise.resolve([{ sessionId: archived.id, cwd: archived.cwd, archivedAt: "2026-01-04T00:00:00.000Z" }]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("archive should not be called when listing"); },
+        archive: () => {
+          throw new Error("archive should not be called when listing");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
       },
@@ -1290,9 +1350,24 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       archiveStore: {
-        list: () => Promise.resolve([{ sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", originalPath: "/sessions/archived.jsonl", archivePath: "/archive/archived.jsonl", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:01:00.000Z", messageCount: 2, firstMessage: "bye" }]),
+        list: () =>
+          Promise.resolve([
+            {
+              sessionId: "archived",
+              cwd: "/workspace",
+              archivedAt: "2026-01-02T00:00:00.000Z",
+              originalPath: "/sessions/archived.jsonl",
+              archivePath: "/archive/archived.jsonl",
+              created: "2026-01-01T00:00:00.000Z",
+              modified: "2026-01-01T00:01:00.000Z",
+              messageCount: 2,
+              firstMessage: "bye",
+            },
+          ]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("archive should not be called for moved records"); },
+        archive: () => {
+          throw new Error("archive should not be called for moved records");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
       },
@@ -1316,7 +1391,6 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
 
     await service.dispose();
   });
-
 
   it("keeps notifications on abort but clears and unregisters them on stop", async () => {
     const hub = new CapturingSessionEventHub();
@@ -1359,13 +1433,18 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
 
     await expect(service.runCommand(sessionRef("runtime-reload-session"), "/reload")).resolves.toEqual({
       type: "done",
-      message: "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes.",
+      message:
+        "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes.",
     });
 
     expect(fake.calls.reload).toBe(1);
     expect(fake.calls.abort).toBe(0);
     expect(fake.calls.dispose).toBe(0);
-    expect(hub.globalEvents.some((event) => event.type === "activity.update" && event.activity.sessionId === "runtime-reload-session" && event.activity.label === "resources reloaded")).toBe(true);
+    expect(
+      hub.globalEvents.some(
+        (event) => event.type === "activity.update" && event.activity.sessionId === "runtime-reload-session" && event.activity.label === "resources reloaded",
+      ),
+    ).toBe(true);
     expect(hub.globalEvents.some((event) => event.type === "status.update" && event.status.sessionId === "runtime-reload-session")).toBe(true);
 
     await service.dispose();
@@ -1444,7 +1523,11 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       summary: { retainedCount: 1, highestSeverity: "error" },
       notifications: [{ message: "replacement startup", severity: "error" }],
     });
-    expect(hub.sessionEvents.some(({ event }) => event.type === "notifications.inbox" && event.delta.kind === "added" && event.delta.notification.message === "old shutdown")).toBe(true);
+    expect(
+      hub.sessionEvents.some(
+        ({ event }) => event.type === "notifications.inbox" && event.delta.kind === "added" && event.delta.notification.message === "old shutdown",
+      ),
+    ).toBe(true);
     await service.dispose();
   });
 
@@ -1546,9 +1629,12 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       modelRuntime: testModelRuntime,
       archiveStore: {
         list: () => Promise.resolve([]),
-        get: (sessionId) => Promise.resolve(sessionId === "archived"
-          ? { sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/archived.jsonl" }
-          : undefined),
+        get: (sessionId) =>
+          Promise.resolve(
+            sessionId === "archived"
+              ? { sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/archived.jsonl" }
+              : undefined,
+          ),
         archive: () => Promise.resolve({ sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z" }),
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(true),
@@ -1568,9 +1654,24 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       archiveStore: {
-        list: () => Promise.resolve([{ sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", originalPath: "/sessions/archived.jsonl", archivePath: "/archive/archived.jsonl", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:01:00.000Z", messageCount: 2, firstMessage: "bye" }]),
+        list: () =>
+          Promise.resolve([
+            {
+              sessionId: "archived",
+              cwd: "/workspace",
+              archivedAt: "2026-01-02T00:00:00.000Z",
+              originalPath: "/sessions/archived.jsonl",
+              archivePath: "/archive/archived.jsonl",
+              created: "2026-01-01T00:00:00.000Z",
+              modified: "2026-01-01T00:01:00.000Z",
+              messageCount: 2,
+              firstMessage: "bye",
+            },
+          ]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("archive should not be called for moved records"); },
+        archive: () => {
+          throw new Error("archive should not be called for moved records");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
       },
@@ -1586,7 +1687,9 @@ describe("PiSessionService lifecycle, listing, and reload", () => {
         applySessionStatus: () => undefined,
         applySessionActivity: () => undefined,
         removeSession: () => undefined,
-        reconcileSessionActivity: (cwd, sessionIds) => { reconciliations.push({ cwd, sessionIds: [...sessionIds] }); },
+        reconcileSessionActivity: (cwd, sessionIds) => {
+          reconciliations.push({ cwd, sessionIds: [...sessionIds] });
+        },
       },
       heartbeatIntervalMs: 60_000,
     });

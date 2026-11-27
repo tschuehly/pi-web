@@ -8,12 +8,20 @@ export default defineConfig([
     ignores: ["dist/**", "node_modules/**", "plugins/*/dist/**"],
   },
   {
-    files: ["src/**/*.ts", "extensions/**/*.ts", "pi-web-plugins/**/*.ts", "pi-packages/**/*.ts", "plugins/**/*.ts", "vite.config.ts", "vitest.config.ts", "vitest.artifacts.config.ts", "playwright.config.ts", "playwright.browser.config.ts", "test-fixtures/browser/**/*.ts"],
-    extends: [
-      js.configs.recommended,
-      tseslint.configs.strictTypeChecked,
-      tseslint.configs.stylisticTypeChecked,
+    files: [
+      "src/**/*.ts",
+      "extensions/**/*.ts",
+      "pi-web-plugins/**/*.ts",
+      "pi-packages/**/*.ts",
+      "plugins/**/*.ts",
+      "vite.config.ts",
+      "vitest.config.ts",
+      "vitest.artifacts.config.ts",
+      "playwright.config.ts",
+      "playwright.browser.config.ts",
+      "test-fixtures/browser/**/*.ts",
     ],
+    extends: [js.configs.recommended, tseslint.configs.strictTypeChecked, tseslint.configs.stylisticTypeChecked],
     languageOptions: {
       globals: {
         ...globals.browser,

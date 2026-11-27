@@ -6,7 +6,14 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { defineConfig, normalizePath } from "vite";
 import { effectivePiWebConfig } from "./src/config";
-import { DEPLOYMENT_MANIFEST_CONTENT_TYPE, DEPLOYMENT_MANIFEST_PATH, createDeploymentFlavorResolver, deploymentIdentityAssetForPath, deploymentManifestForFlavor, isDeploymentIdentityAssetPath } from "./src/server/deploymentIdentity";
+import {
+  DEPLOYMENT_MANIFEST_CONTENT_TYPE,
+  DEPLOYMENT_MANIFEST_PATH,
+  createDeploymentFlavorResolver,
+  deploymentIdentityAssetForPath,
+  deploymentManifestForFlavor,
+  isDeploymentIdentityAssetPath,
+} from "./src/server/deploymentIdentity";
 import { detectPiWebInstallation } from "./src/server/piWebStatus";
 
 const { config } = effectivePiWebConfig();

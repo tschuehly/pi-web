@@ -55,7 +55,13 @@ export function promptSlashMentions(text: string, knownNames?: ReadonlySet<strin
         if (inlineCodeRun !== 0) continue;
         if (char === '"' || (char === "'" && !/\w/.test(line[i - 1] ?? ""))) {
           // Unpaired prose quotes must not hide later directives.
-          if (line.slice(i + 1).split("").some((next, index) => next === char && line[i + 1 + index - 1] !== "\\")) quote = char;
+          if (
+            line
+              .slice(i + 1)
+              .split("")
+              .some((next, index) => next === char && line[i + 1 + index - 1] !== "\\")
+          )
+            quote = char;
           if (quote !== undefined) continue;
         }
         if (char !== "/" || (i > 0 && !/\s/.test(line.charAt(i - 1)))) continue;

@@ -12,9 +12,7 @@ describe("shortcut preferences", () => {
   });
 
   it("overrides action shortcuts by action id", () => {
-    expect(applyShortcutPreferences([
-      action({ id: "core:view.chat", shortcut: "mod+1" }),
-    ], { "core:view.chat": "mod+shift+1" })).toEqual([
+    expect(applyShortcutPreferences([action({ id: "core:view.chat", shortcut: "mod+1" })], { "core:view.chat": "mod+shift+1" })).toEqual([
       action({ id: "core:view.chat", shortcut: "mod+shift+1" }),
     ]);
   });
@@ -28,31 +26,27 @@ describe("shortcut preferences", () => {
   });
 
   it("removes shortcuts with null preferences", () => {
-    expect(applyShortcutPreferences([
-      action({ id: "core:view.chat", shortcut: "mod+1" }),
-    ], { "core:view.chat": null })).toEqual([
+    expect(applyShortcutPreferences([action({ id: "core:view.chat", shortcut: "mod+1" })], { "core:view.chat": null })).toEqual([
       action({ id: "core:view.chat" }),
     ]);
   });
 
   it("keeps only active shortcuts when applying preferences for display", () => {
-    expect(applyActiveShortcutPreferences([
-      action({ id: "core:z", title: "Later", shortcut: "mod+k" }),
-      action({ id: "core:a", title: "Earlier", shortcut: "mod+k" }),
-    ], undefined)).toEqual([
-      action({ id: "core:z", title: "Later" }),
-      action({ id: "core:a", title: "Earlier", shortcut: "mod+k" }),
-    ]);
+    expect(
+      applyActiveShortcutPreferences(
+        [action({ id: "core:z", title: "Later", shortcut: "mod+k" }), action({ id: "core:a", title: "Earlier", shortcut: "mod+k" })],
+        undefined,
+      ),
+    ).toEqual([action({ id: "core:z", title: "Later" }), action({ id: "core:a", title: "Earlier", shortcut: "mod+k" })]);
   });
 
   it("hides default shortcut labels shadowed by user-defined shortcuts", () => {
-    expect(applyActiveShortcutPreferences([
-      action({ id: "core:a", title: "Default", shortcut: "mod+1" }),
-      action({ id: "core:z", title: "Custom", shortcut: "mod+2" }),
-    ], { "core:z": "mod+1" })).toEqual([
-      action({ id: "core:a", title: "Default" }),
-      action({ id: "core:z", title: "Custom", shortcut: "mod+1" }),
-    ]);
+    expect(
+      applyActiveShortcutPreferences(
+        [action({ id: "core:a", title: "Default", shortcut: "mod+1" }), action({ id: "core:z", title: "Custom", shortcut: "mod+2" })],
+        { "core:z": "mod+1" },
+      ),
+    ).toEqual([action({ id: "core:a", title: "Default" }), action({ id: "core:z", title: "Custom", shortcut: "mod+1" })]);
   });
 });
 

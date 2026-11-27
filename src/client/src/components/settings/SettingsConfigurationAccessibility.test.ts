@@ -48,7 +48,9 @@ describe("configuration accessibility and activation guidance", () => {
     const toggle = panel.shadowRoot?.querySelector<HTMLInputElement>("input");
     if (toggle === null || toggle === undefined) throw new Error("Plugin toggle missing");
     toggle.click();
-    await vi.waitFor(() => { expect(panel.error).toBe("Could not save plugin settings"); });
+    await vi.waitFor(() => {
+      expect(panel.error).toBe("Could not save plugin settings");
+    });
     await panel.updateComplete;
     expect(toggle.checked).toBe(true);
   });
@@ -81,7 +83,9 @@ describe("configuration accessibility and activation guidance", () => {
     const toggle = panel.shadowRoot?.querySelector<HTMLInputElement>("#spawn-sessions");
     if (toggle === null || toggle === undefined) throw new Error("Agent permission missing");
     toggle.click();
-    await vi.waitFor(() => { expect(panel.error).toBe("Could not save agent permissions"); });
+    await vi.waitFor(() => {
+      expect(panel.error).toBe("Could not save agent permissions");
+    });
     await panel.updateComplete;
     expect(toggle.checked).toBe(true);
   });
@@ -101,7 +105,9 @@ describe("configuration accessibility and activation guidance", () => {
     if (select === null || select === undefined) throw new Error("Send behavior missing");
     select.value = "followUp";
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    await vi.waitFor(() => { expect(panel.error).toBe("Could not save send behavior"); });
+    await vi.waitFor(() => {
+      expect(panel.error).toBe("Could not save send behavior");
+    });
     await panel.updateComplete;
     expect(select.value).toBe("steer");
   });
@@ -138,7 +144,9 @@ describe("configuration accessibility and activation guidance", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await panel.updateComplete;
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    await vi.waitFor(() => { expect(panel.onInstallPackage).toHaveBeenCalledWith("npm:example"); });
+    await vi.waitFor(() => {
+      expect(panel.onInstallPackage).toHaveBeenCalledWith("npm:example");
+    });
     await panel.updateComplete;
     expect(input.value).toBe("npm:example");
     expect(input.getAttribute("aria-invalid")).toBe("false");

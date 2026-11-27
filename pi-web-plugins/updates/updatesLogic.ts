@@ -57,8 +57,7 @@ export function shouldShowUpdatesPanel(state: PluginRuntimeState | undefined, hi
   if (hint.dockerMode !== undefined) return true;
   if (messageCount(state) > 0) return true;
   if (status === undefined) return false;
-  return isSelfManagedInstallation(status.components.web.installation)
-    || isSelfManagedInstallation(status.components.sessiond.installation);
+  return isSelfManagedInstallation(status.components.web.installation) || isSelfManagedInstallation(status.components.sessiond.installation);
 }
 
 export function fallbackDockerStatus(hint: UpdatesRuntimeHint, generatedAt = "federated status unavailable"): PiWebStatusResponse | undefined {
@@ -82,12 +81,14 @@ export function fallbackDockerStatus(hint: UpdatesRuntimeHint, generatedAt = "fe
       restartSessiond: `${commandPrefix} restart-sessiond`,
       status: `${commandPrefix} status`,
     },
-    messages: [{
-      id: "docker-status-compatibility",
-      severity: "info",
-      title: "Docker update commands available",
-      body: "This Updates plugin was loaded from a Docker PI WEB runtime, but the gateway has not provided Docker-aware status details yet. The Docker maintenance commands below are still available.",
-    }],
+    messages: [
+      {
+        id: "docker-status-compatibility",
+        severity: "info",
+        title: "Docker update commands available",
+        body: "This Updates plugin was loaded from a Docker PI WEB runtime, but the gateway has not provided Docker-aware status details yet. The Docker maintenance commands below are still available.",
+      },
+    ],
   };
 }
 

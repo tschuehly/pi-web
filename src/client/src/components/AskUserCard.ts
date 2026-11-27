@@ -145,7 +145,10 @@ export class AskUserCard extends LitElement {
     }
     // A context the user cleared with a partial send is absent: his new edit is made against "".
     const context = this.ask?.context ?? "";
-    this.editedContext = this.ask === undefined || this.draftSessionId === "" || this.outcome !== undefined ? undefined : loadAskContext(this.draftSessionId, this.ask.askId, context);
+    this.editedContext =
+      this.ask === undefined || this.draftSessionId === "" || this.outcome !== undefined
+        ? undefined
+        : loadAskContext(this.draftSessionId, this.ask.askId, context);
     this.confirmingPartialSubmit = false;
     this.submitting = false;
     this.inlineEdits = {};
@@ -154,7 +157,8 @@ export class AskUserCard extends LitElement {
     this.hiddenImagesRefused = false;
     const focusIndex = this.focusAfterRevision;
     this.focusAfterRevision = undefined;
-    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0) void this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
+    if (focusIndex !== undefined && this.ask !== undefined && this.ask.questions.length > 0)
+      void this.focusQuestion(Math.min(focusIndex, this.ask.questions.length - 1));
   }
 
   override render(): TemplateResult | null {
@@ -178,30 +182,55 @@ export class AskUserCard extends LitElement {
             <time datetime=${ask.updatedAt} title=${ask.updatedAt}>${updatedAgo(ask.updatedAt)}</time>
             ${ask.turnsSinceUpdate > ASK_USER_STALE_TURNS ? html`<span class="stale" title=${`${String(ask.turnsSinceUpdate)} agent turns without an update`}>may be stale</span>` : null}
           </span>
-          ${contextOnly ? null : html`<span class="header-status" role="status" aria-live="polite" aria-atomic="true">
+          ${
+            contextOnly
+              ? null
+              : html`<span class="header-status" role="status" aria-live="polite" aria-atomic="true">
             ${count} of ${visible.length} answered
-          </span>`}
+          </span>`
+          }
           <slot name="actions"></slot>
         </header>
         ${this.renderContextEditor(ask.context)}
-        <form class="ask-form" @submit=${(event: SubmitEvent) => { this.handleSubmit(event, ask); }}>
-          ${contextOnly ? null : html`<div class="questions">
-            ${repeat(visible, (question) => question.id, (question, shown) => html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`)}
-          </div>`}
+        <form class="ask-form" @submit=${(event: SubmitEvent) => {
+          this.handleSubmit(event, ask);
+        }}>
+          ${
+            contextOnly
+              ? null
+              : html`<div class="questions">
+            ${repeat(
+              visible,
+              (question) => question.id,
+              (question, shown) =>
+                html`${shown === 0 ? null : html`<hr class="question-separator" />`}${this.renderQuestion(ask, question, ask.questions.indexOf(question), shown + 1, visible.length > 1)}`,
+            )}
+          </div>`
+          }
           <footer class="form-footer">
             <div class="note-column">
               ${this.renderWithImages(NOTE, "the note", html`<ask-markdown-field class="ask-note" .label=${"Note for the whole set"} .placeholderText=${"Note for the whole set (optional)"} .value=${this.note} @ask-field-input=${this.changeNote}></ask-markdown-field>`)}
             </div>
-            ${this.confirmingPartialSubmit && unanswered.length > 0
-              ? html`${this.renderHiddenImages(ask)}${this.renderPartialSubmitConfirmation(ask, unanswered)}`
-              : html`
+            ${
+              this.confirmingPartialSubmit && unanswered.length > 0
+                ? html`${this.renderHiddenImages(ask)}${this.renderPartialSubmitConfirmation(ask, unanswered)}`
+                : html`
                   ${this.renderHiddenImages(ask)}
-                  <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked; }} />Keep context open</label>
-                  ${ask.approval === true ? html`<button class="approve" type="button" title="Approve the context (your edited version, if you changed it) and send the answers; unanswered questions close too" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask, true); }}>Approve</button>` : null}
+                  <label class="keep-context"><input type="checkbox" .checked=${this.keepContextOpen} @change=${(event: Event) => {
+                    if (event.currentTarget instanceof HTMLInputElement) this.keepContextOpen = event.currentTarget.checked;
+                  }} />Keep context open</label>
+                  ${
+                    ask.approval === true
+                      ? html`<button class="approve" type="button" title="Approve the context (your edited version, if you changed it) and send the answers; unanswered questions close too" ?disabled=${this.submitting} @click=${() => {
+                          void this.submitAnswers(ask, true);
+                        }}>Approve</button>`
+                      : null
+                  }
                   <button class="primary-action" type="submit" ?disabled=${this.submitting || (contextOnly && this.note.trim() === "" && this.contextSubmission().context === undefined && (ownEntry(this.images, askImageTargetKey(NOTE))?.length ?? 0) === 0)}>
                     ${this.submitting ? "Sending…" : contextOnly ? "Send note" : "Send answers"}
                   </button>
-                `}
+                `
+            }
           </footer>
         </form>
       </article>
@@ -211,7 +240,9 @@ export class AskUserCard extends LitElement {
   /** The model's explanation for the question set, rendered like Chat Markdown; a record marks the user's edit of it. */
   private renderContext(context: string | undefined, edited = false): TemplateResult | null {
     if (edited && context === "") return html`<p class="context-edited">Context cleared by you</p>`;
-    return context === undefined ? null : html`
+    return context === undefined
+      ? null
+      : html`
       ${edited ? html`<p class="context-edited">Context edited by you</p>` : null}
       <formatted-text class="ask-context" fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${context}></formatted-text>
     `;
@@ -225,10 +256,16 @@ export class AskUserCard extends LitElement {
     // An absent context (cleared by a partial send) stays an empty field the user can write a new one into.
     const text = this.editedContext ?? context ?? "";
     if (this.contextFolded && text.trim() !== "") {
-      const line = text.split("\n").map((each) => each.replace(/^[\s#>*+-]+/u, "").trim()).find((each) => each !== "") ?? "";
+      const line =
+        text
+          .split("\n")
+          .map((each) => each.replace(/^[\s#>*+-]+/u, "").trim())
+          .find((each) => each !== "") ?? "";
       return html`
         <div class="ask-context">
-          <button class="context-folded" type="button" aria-expanded="false" title="Show the context" @click=${() => { this.contextFolded = false; }}>
+          <button class="context-folded" type="button" aria-expanded="false" title="Show the context" @click=${() => {
+            this.contextFolded = false;
+          }}>
             <span class="context-folded-label">Context</span><span class="context-folded-line">${line}</span>
           </button>
         </div>
@@ -237,12 +274,16 @@ export class AskUserCard extends LitElement {
     return html`
       <div class="ask-context">
         <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .renderFences=${true} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
-        ${this.editedContext === undefined ? null : html`
+        ${
+          this.editedContext === undefined
+            ? null
+            : html`
           <div class="context-actions">
             <span class="context-edited">Edited</span>
             <button class="revert-edit" type="button" title="Restore the agent's context" @click=${this.revertContext}>${UNDO_ICON}Revert</button>
           </div>
-        `}
+        `
+        }
       </div>
     `;
   }
@@ -256,7 +297,9 @@ export class AskUserCard extends LitElement {
     // The edited row holds the Custom text itself, so Custom and its own textarea step aside while it lasts.
     const inlineEdit = customSelected ? ownEntry(this.inlineEdits, question.id)?.value : undefined;
     const inputType = question.multiple === true ? "checkbox" : "radio";
-    const customField = customSelected && inlineEdit === undefined ? html`
+    const customField =
+      customSelected && inlineEdit === undefined
+        ? html`
       <div class="other-answer">
         <span aria-hidden="true">Custom answer</span>
         <ask-markdown-field
@@ -264,10 +307,13 @@ export class AskUserCard extends LitElement {
           .label=${"Custom answer"}
           .historyKey=${this.historyKey(question)}
           .value=${answer?.otherText ?? ""}
-          @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
+          @ask-field-input=${(event: Event) => {
+            this.changeOtherText(question, event);
+          }}
         ></ask-markdown-field>
       </div>
-    ` : null;
+    `
+        : null;
     const customChoice = html`
       <label class="option other-option">
         <input
@@ -275,7 +321,9 @@ export class AskUserCard extends LitElement {
           name=${this.questionGroupName(ask, question)}
           value="__pi_web_other__"
           .checked=${customSelected && inlineEdit === undefined}
-          @change=${(event: Event) => { this.changeOther(question, index, event); }}
+          @change=${(event: Event) => {
+            this.changeOther(question, index, event);
+          }}
         />
         ${this.renderOptionCopy({ label: "Custom" })}
       </label>
@@ -293,9 +341,15 @@ export class AskUserCard extends LitElement {
           <span>${question.question} <code class="question-ref" title="Reference for this question">${askQuestionRef(ask.askId, question.id)}</code></span>
         </legend>
         ${this.renderDetail(question.detail, detailId)}
-        ${(question.kind ?? "choice") !== "choice" ? this.renderTypedField(question, index, answer) : html`
+        ${
+          (question.kind ?? "choice") !== "choice"
+            ? this.renderTypedField(question, index, answer)
+            : html`
         <div class="options">
-          ${question.options.map((option) => option.value === inlineEdit ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "") : html`
+          ${question.options.map((option) =>
+            option.value === inlineEdit
+              ? this.renderInlineEdit(question, index, option.label, answer?.otherText ?? "")
+              : html`
             <div class="option-row">
               <label class="option">
                 <input
@@ -303,7 +357,9 @@ export class AskUserCard extends LitElement {
                   name=${this.questionGroupName(ask, question)}
                   value=${option.value}
                   .checked=${answer?.values.includes(option.value) === true}
-                  @change=${(event: Event) => { this.changeOption(question, option.value, event); }}
+                  @change=${(event: Event) => {
+                    this.changeOption(question, option.value, event);
+                  }}
                 />
                 ${this.renderOptionCopy(option)}
               </label>
@@ -312,18 +368,28 @@ export class AskUserCard extends LitElement {
                 type="button"
                 aria-label="Edit this answer"
                 title="Edit this answer"
-                @click=${() => { this.editOption(question, index, option.value, option.detail === undefined ? option.label : `${option.label}\n${option.detail}`); }}
+                @click=${() => {
+                  this.editOption(question, index, option.value, option.detail === undefined ? option.label : `${option.label}\n${option.detail}`);
+                }}
               >${PENCIL_ICON}</button>
             </div>
-          `)}
+          `,
+          )}
           ${freeTextOnly ? customField : customChoice}
         </div>
-        `}
-        ${sendOne ? html`
+        `
+        }
+        ${
+          sendOne
+            ? html`
           <div class="question-actions">
-            <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => { this.submitOne(ask, question, index); }}>Send</button>
+            <button class="send-one" type="button" ?disabled=${!answered || this.submitting} title="Send just this answer now; the other questions stay open" @click=${() => {
+              this.submitOne(ask, question, index);
+            }}>Send</button>
           </div>
-        ` : null}
+        `
+            : null
+        }
       </fieldset>
     `;
   }
@@ -348,13 +414,20 @@ export class AskUserCard extends LitElement {
       return html`
         <div class="boolean-field">
           <label class=${`typed-field switch${(words ?? "").trim() === "" ? "" : " overridden"}`}>
-            <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { values: [], value: event.currentTarget.checked, ...(words === undefined ? {} : { otherText: words }) }); }} />
+            <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => {
+              if (event.currentTarget instanceof HTMLInputElement)
+                this.setAnswer(question, { values: [], value: event.currentTarget.checked, ...(words === undefined ? {} : { otherText: words }) });
+            }} />
             <span class="switch-track" aria-hidden="true"></span>
             <span class="switch-state" aria-hidden="true">${askBooleanLabel(question, on)}</span>
           </label>
-          ${words === undefined
-            ? html`<button class="answer-in-words" type="button" @click=${() => { this.setAnswer(question, { ...keep(), otherText: "" }); void this.focusWords(index); }}>Answer in words</button>`
-            : html`<input
+          ${
+            words === undefined
+              ? html`<button class="answer-in-words" type="button" @click=${() => {
+                  this.setAnswer(question, { ...keep(), otherText: "" });
+                  void this.focusWords(index);
+                }}>Answer in words</button>`
+              : html`<input
                 id=${`${id}-words`}
                 class="boolean-words"
                 type="text"
@@ -362,8 +435,12 @@ export class AskUserCard extends LitElement {
                 placeholder="Answer in words"
                 maxlength=${String(ASK_USER_OTHER_TEXT_MAX_LENGTH)}
                 .value=${words}
-                @input=${(event: Event) => { if (event.currentTarget instanceof HTMLInputElement) this.setAnswer(question, { ...keep(), otherText: event.currentTarget.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) }); }}
-              />`}
+                @input=${(event: Event) => {
+                  if (event.currentTarget instanceof HTMLInputElement)
+                    this.setAnswer(question, { ...keep(), otherText: event.currentTarget.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
+                }}
+              />`
+          }
         </div>
       `;
     }
@@ -372,12 +449,14 @@ export class AskUserCard extends LitElement {
     const errorId = error === undefined ? undefined : `${id}-error`;
     const change = (event: Event): void => {
       const input = event.currentTarget;
-      if (input instanceof HTMLInputElement || input instanceof AskMarkdownField) this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
+      if (input instanceof HTMLInputElement || input instanceof AskMarkdownField)
+        this.setAnswer(question, { values: [], value: input.value.slice(0, ASK_USER_OTHER_TEXT_MAX_LENGTH) });
     };
     const maxLength = String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH);
-    const field = question.kind === "text" && question.multiline === true
-          ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .historyKey=${this.historyKey(question)} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
-          : html`<input
+    const field =
+      question.kind === "text" && question.multiline === true
+        ? html`<ask-markdown-field id=${id} class=${error === undefined ? "" : "invalid"} .label=${question.question} .maxLength=${question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH} .invalid=${error !== undefined} .describedBy=${errorId} .historyKey=${this.historyKey(question)} .value=${raw} @ask-field-input=${change}></ask-markdown-field>`
+        : html`<input
               id=${id}
               type=${question.kind === "number" ? "number" : question.kind === "date" ? "date" : "text"}
               aria-label=${question.question}
@@ -415,17 +494,29 @@ export class AskUserCard extends LitElement {
           .label=${`Custom answer, edited from ${label}`}
           .historyKey=${this.historyKey(question)}
           .value=${text}
-          @ask-field-input=${(event: Event) => { this.changeOtherText(question, event); }}
-          @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this.revertEdit(question, index); } }}
+          @ask-field-input=${(event: Event) => {
+            this.changeOtherText(question, event);
+          }}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              this.revertEdit(question, index);
+            }
+          }}
         ></ask-markdown-field>
-        <button class="revert-edit" type="button" title="Revert to the option (Esc)" @click=${() => { this.revertEdit(question, index); }}>${UNDO_ICON}Revert</button>
+        <button class="revert-edit" type="button" title="Revert to the option (Esc)" @click=${() => {
+          this.revertEdit(question, index);
+        }}>${UNDO_ICON}Revert</button>
       </div>
     `;
   }
 
   /** A question's Markdown detail, in body text like the context. */
   private renderDetail(detail: string | undefined, id?: string): TemplateResult | null {
-    return detail === undefined ? null : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
+    return detail === undefined
+      ? null
+      : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .text=${detail}></formatted-text>`;
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {
@@ -433,15 +524,23 @@ export class AskUserCard extends LitElement {
       <div class="partial-confirmation" role="group" aria-label="Confirm partial answers">
         <p>
           <strong>Send without answering:</strong>
-          ${unanswered.map((question, index) => html`${index === 0 ? " " : ", "}<button
+          ${unanswered.map(
+            (question, index) => html`${index === 0 ? " " : ", "}<button
             class="question-jump"
             type="button"
-            @click=${() => { void this.focusQuestion(ask.questions.indexOf(question)); }}
-          >${question.question}</button>`)}${unanswered.at(-1)?.question.trimEnd().endsWith("?") === true ? "" : "?"}
+            @click=${() => {
+              void this.focusQuestion(ask.questions.indexOf(question));
+            }}
+          >${question.question}</button>`,
+          )}${unanswered.at(-1)?.question.trimEnd().endsWith("?") === true ? "" : "?"}
         </p>
         <div class="confirmation-actions">
-          <button class="secondary-action" type="button" @click=${() => { this.keepEditing(ask, unanswered); }}>Keep editing</button>
-          <button class="primary-action send-anyway" type="button" ?disabled=${this.submitting} @click=${() => { void this.submitAnswers(ask); }}>
+          <button class="secondary-action" type="button" @click=${() => {
+            this.keepEditing(ask, unanswered);
+          }}>Keep editing</button>
+          <button class="primary-action send-anyway" type="button" ?disabled=${this.submitting} @click=${() => {
+            void this.submitAnswers(ask);
+          }}>
             ${this.submitting ? "Sending…" : "Send anyway"}
           </button>
         </div>
@@ -450,16 +549,23 @@ export class AskUserCard extends LitElement {
   }
 
   private renderRecord(outcome: AskUserOutcome): TemplateResult {
-    const recordLabel = outcome.partial === true
-      ? `${outcome.answeredCount === 1 ? "Answer" : "Answers"} sent · others still open`
-      : outcome.approved === true ? "Approved"
-      : { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
+    const recordLabel =
+      outcome.partial === true
+        ? `${outcome.answeredCount === 1 ? "Answer" : "Answers"} sent · others still open`
+        : outcome.approved === true
+          ? "Approved"
+          : { submitted: "Answers sent", superseded: "Superseded", cancelled: "Cancelled", withdrawn: "Withdrawn" }[outcome.reason];
     // Superseded and withdrawn explain their status, so that line stays in view; the summary only repeats the answers.
-    const statusLine = outcome.reason === "superseded"
-      ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
-      : outcome.reason === "withdrawn" ? "The agent withdrew these questions." : undefined;
+    const statusLine =
+      outcome.reason === "superseded"
+        ? "A newer question set replaced this one. Draft answers shown below were not sent to the model."
+        : outcome.reason === "withdrawn"
+          ? "The agent withdrew these questions."
+          : undefined;
     const context = this.renderContext(outcome.editedContext ?? outcome.context, outcome.editedContext !== undefined);
-    const details = outcome.questions.flatMap((record, index) => record.question.detail === undefined ? [] : [this.renderQuestionDetailRecord(record, index)]);
+    const details = outcome.questions.flatMap((record, index) =>
+      record.question.detail === undefined ? [] : [this.renderQuestionDetailRecord(record, index)],
+    );
     const full = context !== null || details.length > 0 || statusLine === undefined;
     return html`
       <article class="ui-transcript-surface card record-card" aria-labelledby="ask-user-record-heading">
@@ -474,14 +580,18 @@ export class AskUserCard extends LitElement {
         </ol>
         ${outcome.note === undefined && !(outcome.images ?? []).some((image) => image.target.kind === "note") ? null : html`<section class="record-question record-note"><h3>Note</h3>${outcome.note === undefined ? null : html`<p class="other-record-text">${outcome.note}</p>`}${this.renderRecordImages(outcome, NOTE)}</section>`}
         ${this.recordImages?.some((src) => src !== undefined) === true ? html`<pi-web-image-gallery-dialog></pi-web-image-gallery-dialog>` : null}
-        ${full ? html`
+        ${
+          full
+            ? html`
           <details class="record-full">
             <summary>Show full questions</summary>
             ${context}
             ${statusLine === undefined ? html`<p class="record-summary">${outcome.summary}</p>` : null}
             ${details}
           </details>
-        ` : null}
+        `
+            : null
+        }
       </article>
     `;
   }
@@ -489,22 +599,27 @@ export class AskUserCard extends LitElement {
   /** One compact line: number, question, then its answer as text. */
   private renderQuestionRecord(outcome: AskUserOutcome, record: AskUserQuestionRecord, index: number): TemplateResult {
     const answer = this.displayedRecordAnswer(outcome, record);
-    const parts = answer === undefined ? [] : [
-      ...answer.values.map((value) => this.optionLabel(record.question, value)),
-      ...(answer.otherText === undefined ? [] : [`Custom: ${answer.otherText}`]),
-      ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? askBooleanLabel(record.question, answer.value) : String(answer.value)]),
-    ];
+    const parts =
+      answer === undefined
+        ? []
+        : [
+            ...answer.values.map((value) => this.optionLabel(record.question, value)),
+            ...(answer.otherText === undefined ? [] : [`Custom: ${answer.otherText}`]),
+            ...(answer.value === undefined ? [] : [typeof answer.value === "boolean" ? askBooleanLabel(record.question, answer.value) : String(answer.value)]),
+          ];
     return html`
       <li class="record-line">
         <span class="question-number">${String(index + 1)}.</span>
         <span class="record-line-copy">
           <span class="record-line-question">${record.question.question}</span>
           <span aria-hidden="true"> — </span>
-          ${record.skipped === true
-            ? html`<span class="unanswered-record">Skipped · condition not met</span>`
-            : answer === undefined
-            ? html`<span class="unanswered-record">Unanswered</span>`
-            : html`<span class="record-answer other-record-text">${parts.join(", ")}</span>${answer.fromDraft ? html` <span class="draft-note">Draft answer · not sent</span>` : null}`}
+          ${
+            record.skipped === true
+              ? html`<span class="unanswered-record">Skipped · condition not met</span>`
+              : answer === undefined
+                ? html`<span class="unanswered-record">Unanswered</span>`
+                : html`<span class="record-answer other-record-text">${parts.join(", ")}</span>${answer.fromDraft ? html` <span class="draft-note">Draft answer · not sent</span>` : null}`
+          }
           ${this.renderRecordImages(outcome, { kind: "question", id: record.question.id }, record.revision)}
         </span>
       </li>
@@ -534,22 +649,47 @@ export class AskUserCard extends LitElement {
     const images = ownEntry(this.images, key) ?? [];
     const accept = SUPPORTED_IMAGE_MIME_TYPES.join(",");
     return html`
-      <div class="with-images" @paste=${{ capture: true, handleEvent: (event: ClipboardEvent) => { this.pasteImages(target, event); } }} @dragover=${(event: DragEvent) => { if (event.dataTransfer !== null && dataTransferHasFiles(event.dataTransfer)) event.preventDefault(); }} @drop=${{ capture: true, handleEvent: (event: DragEvent) => { this.dropImages(target, event); } }}>
+      <div class="with-images" @paste=${{
+        capture: true,
+        handleEvent: (event: ClipboardEvent) => {
+          this.pasteImages(target, event);
+        },
+      }} @dragover=${(event: DragEvent) => {
+        if (event.dataTransfer !== null && dataTransferHasFiles(event.dataTransfer)) event.preventDefault();
+      }} @drop=${{
+        capture: true,
+        handleEvent: (event: DragEvent) => {
+          this.dropImages(target, event);
+        },
+      }}>
         <div class="field-row">
           ${field}
-          <button class="attach-image" type="button" title=${`Attach images to ${label}`} aria-label=${`Attach images to ${label}`} @click=${(event: Event) => { const picker = event.currentTarget instanceof HTMLElement ? event.currentTarget.nextElementSibling : null; if (picker instanceof HTMLInputElement) picker.click(); }}>${renderAttachIcon()}</button>
-          <input type="file" accept=${accept} multiple hidden @change=${(event: Event) => { this.pickImages(target, event); }} />
+          <button class="attach-image" type="button" title=${`Attach images to ${label}`} aria-label=${`Attach images to ${label}`} @click=${(event: Event) => {
+            const picker = event.currentTarget instanceof HTMLElement ? event.currentTarget.nextElementSibling : null;
+            if (picker instanceof HTMLInputElement) picker.click();
+          }}>${renderAttachIcon()}</button>
+          <input type="file" accept=${accept} multiple hidden @change=${(event: Event) => {
+            this.pickImages(target, event);
+          }} />
         </div>
-        ${images.length === 0 ? null : html`
+        ${
+          images.length === 0
+            ? null
+            : html`
           <div class="answer-images" data-target=${key} aria-label=${`Images on ${label}`}>
-            ${images.map((image) => html`
+            ${images.map(
+              (image) => html`
               <span class="answer-image">
                 <img src=${`data:${image.mimeType};base64,${image.data}`} alt=${image.name ?? "attached image"} />
-                <button class="answer-image-remove" type="button" title="Remove image" aria-label=${`Remove image ${image.name ?? ""}`.trim()} @click=${() => { this.removeImage(target, image.id); }}>×</button>
+                <button class="answer-image-remove" type="button" title="Remove image" aria-label=${`Remove image ${image.name ?? ""}`.trim()} @click=${() => {
+                  this.removeImage(target, image.id);
+                }}>×</button>
               </span>
-            `)}
+            `,
+            )}
           </div>
-        `}
+        `
+        }
         ${this.imageError === undefined || key !== this.imageErrorTarget ? null : html`<p class="field-error" role="alert">${this.imageError}</p>`}
       </div>
     `;
@@ -563,7 +703,7 @@ export class AskUserCard extends LitElement {
     if (!this.hiddenImagesRefused) return null;
     const visible = new Set(visibleQuestions(ask.questions, this.answers).map((question) => question.id));
     const hidden = ask.questions.flatMap((question) => {
-      const images = visible.has(question.id) ? [] : ownEntry(this.images, askImageTargetKey({ kind: "question", id: question.id })) ?? [];
+      const images = visible.has(question.id) ? [] : (ownEntry(this.images, askImageTargetKey({ kind: "question", id: question.id })) ?? []);
       return images.length === 0 ? [] : [{ question, images }];
     });
     if (hidden.length === 0) return null;
@@ -571,12 +711,18 @@ export class AskUserCard extends LitElement {
       <div class="stranded-images" role="alert">
         <p class="field-error">Add an answer or remove the image: ${hidden.map(({ question }) => question.question).join(", ")} is hidden by an earlier answer</p>
         <div class="answer-images">
-          ${hidden.flatMap(({ question, images }) => images.map((image) => html`
+          ${hidden.flatMap(({ question, images }) =>
+            images.map(
+              (image) => html`
             <span class="answer-image">
               <img src=${`data:${image.mimeType};base64,${image.data}`} alt=${image.name ?? "attached image"} />
-              <button class="answer-image-remove" type="button" title="Remove image" aria-label=${`Remove image ${image.name ?? ""} from ${question.question}`.replace(/\s+/gu, " ")} @click=${() => { this.removeImage({ kind: "question", id: question.id }, image.id); }}>×</button>
+              <button class="answer-image-remove" type="button" title="Remove image" aria-label=${`Remove image ${image.name ?? ""} from ${question.question}`.replace(/\s+/gu, " ")} @click=${() => {
+                this.removeImage({ kind: "question", id: question.id }, image.id);
+              }}>×</button>
             </span>
-          `))}
+          `,
+            ),
+          )}
         </div>
       </div>
     `;
@@ -588,20 +734,34 @@ export class AskUserCard extends LitElement {
    */
   private renderRecordImages(outcome: AskUserOutcome, target: AskUserImageTarget, revision?: string): TemplateResult | null {
     const all = outcome.images ?? [];
-    const own = all.flatMap((image, index) => image.revision === revision && sameAskImageTarget(image.target, target) ? [{ image, src: this.recordImages?.[index] }] : []);
+    const own = all.flatMap((image, index) =>
+      image.revision === revision && sameAskImageTarget(image.target, target) ? [{ image, src: this.recordImages?.[index] }] : [],
+    );
     if (own.length === 0) return null;
     return html`
       <span class="answer-images" data-target=${askImageTargetKey(target)}>
-        ${own.map(({ image, src }) => src === undefined
-          ? html`<span class="answer-image-missing" title="Image not loaded here (sent with an earlier answer, or images are off)">${image.name ?? "image"}</span>`
-          : html`<button class="answer-image-open" type="button" title=${`Open ${image.name ?? "image"}`} @click=${() => { this.openRecordImage(src); }}><img src=${src} alt=${image.name ?? `${image.reference} attached image`} /></button>`)}
+        ${own.map(({ image, src }) =>
+          src === undefined
+            ? html`<span class="answer-image-missing" title="Image not loaded here (sent with an earlier answer, or images are off)">${image.name ?? "image"}</span>`
+            : html`<button class="answer-image-open" type="button" title=${`Open ${image.name ?? "image"}`} @click=${() => {
+                this.openRecordImage(src);
+              }}><img src=${src} alt=${image.name ?? `${image.reference} attached image`} /></button>`,
+        )}
       </span>
     `;
   }
 
   private openRecordImage(src: string): void {
-    const entries = (this.recordImages ?? []).flatMap((each, index) => each === undefined ? [] : [{ src: each, alt: this.outcome?.images?.[index]?.name ?? "attached image" }]);
-    this.renderRoot.querySelector<ImageGalleryDialog>("pi-web-image-gallery-dialog")?.show(entries, Math.max(0, entries.findIndex((entry) => entry.src === src)));
+    const entries = (this.recordImages ?? []).flatMap((each, index) =>
+      each === undefined ? [] : [{ src: each, alt: this.outcome?.images?.[index]?.name ?? "attached image" }],
+    );
+    this.renderRoot.querySelector<ImageGalleryDialog>("pi-web-image-gallery-dialog")?.show(
+      entries,
+      Math.max(
+        0,
+        entries.findIndex((entry) => entry.src === src),
+      ),
+    );
   }
 
   /** Which field the last image error belongs to, so it shows under that field alone. */
@@ -640,14 +800,25 @@ export class AskUserCard extends LitElement {
     const room = MAX_PROMPT_ATTACHMENTS - Object.values(this.images).reduce((sum, each) => sum + each.length, 0);
     const kept = images.slice(0, Math.max(0, room));
     this.imageErrorTarget = askImageTargetKey(target);
-    this.imageError = error ?? (images.length < attachments.length ? "Only JPEG, PNG, GIF or WebP images can be attached here."
-      : kept.length < images.length ? `At most ${String(MAX_PROMPT_ATTACHMENTS)} images per question set.` : undefined);
+    this.imageError =
+      error
+      ?? (images.length < attachments.length
+        ? "Only JPEG, PNG, GIF or WebP images can be attached here."
+        : kept.length < images.length
+          ? `At most ${String(MAX_PROMPT_ATTACHMENTS)} images per question set.`
+          : undefined);
     if (error === READ_FAILURE_MESSAGE && kept.length === 0) return;
-    this.setImages(target, [...(ownEntry(this.images, askImageTargetKey(target)) ?? []), ...kept.map((each) => ({ id: `ask-image-${String(++this.imageSeq)}`, target, mimeType: each.mimeType, data: each.data, name: each.name }))]);
+    this.setImages(target, [
+      ...(ownEntry(this.images, askImageTargetKey(target)) ?? []),
+      ...kept.map((each) => ({ id: `ask-image-${String(++this.imageSeq)}`, target, mimeType: each.mimeType, data: each.data, name: each.name })),
+    ]);
   }
 
   private removeImage(target: AskUserImageTarget, id: string): void {
-    this.setImages(target, (ownEntry(this.images, askImageTargetKey(target)) ?? []).filter((image) => image.id !== id));
+    this.setImages(
+      target,
+      (ownEntry(this.images, askImageTargetKey(target)) ?? []).filter((image) => image.id !== id),
+    );
     this.imageError = undefined;
   }
 
@@ -660,13 +831,23 @@ export class AskUserCard extends LitElement {
   private loadImages(): Record<string, readonly StagedAskImage[]> {
     const ask = this.ask;
     if (ask === undefined || this.outcome !== undefined || this.draftSessionId === "") return {};
-    const targets: AskUserImageTarget[] = [NOTE, ...ask.questions.filter((question) => question.kind === "text").map((question) => ({ kind: "question" as const, id: question.id }))];
+    const targets: AskUserImageTarget[] = [
+      NOTE,
+      ...ask.questions.filter((question) => question.kind === "text").map((question) => ({ kind: "question" as const, id: question.id })),
+    ];
     return Object.fromEntries(targets.map((target) => [askImageTargetKey(target), loadAskImages(askImageKey(this.draftSessionId, ask.askId, target))]));
   }
 
   /** The images a send carries, of `targets` in their order: `[PIC_n]` numbers follow it. */
   private imagesFor(targets: readonly AskUserImageTarget[]): Pick<AskUserSubmission, "images"> {
-    const images = targets.flatMap((target) => (ownEntry(this.images, askImageTargetKey(target)) ?? []).map(({ mimeType, data, name }) => ({ target, mimeType, data, ...(name === undefined ? {} : { name }) })));
+    const images = targets.flatMap((target) =>
+      (ownEntry(this.images, askImageTargetKey(target)) ?? []).map(({ mimeType, data, name }) => ({
+        target,
+        mimeType,
+        data,
+        ...(name === undefined ? {} : { name }),
+      })),
+    );
     return images.length === 0 ? {} : { images };
   }
 
@@ -679,9 +860,7 @@ export class AskUserCard extends LitElement {
       return;
     }
     const current = ownEntry(this.answers, question.id);
-    const values = input.checked
-      ? [...new Set([...(current?.values ?? []), value])]
-      : (current?.values ?? []).filter((selected) => selected !== value);
+    const values = input.checked ? [...new Set([...(current?.values ?? []), value])] : (current?.values ?? []).filter((selected) => selected !== value);
     this.setAnswer(question, {
       values,
       ...(current?.otherText === undefined ? {} : { otherText: current.otherText }),
@@ -700,7 +879,7 @@ export class AskUserCard extends LitElement {
         ...(input.checked ? { otherText: current?.otherText ?? "" } : {}),
       });
     } else if (input.checked) {
-      this.setAnswer(question, { values: [], otherText: this.isOtherSelected(question, current) ? current?.otherText ?? "" : "" });
+      this.setAnswer(question, { values: [], otherText: this.isOtherSelected(question, current) ? (current?.otherText ?? "") : "" });
     }
     if (input.checked) void this.focusOtherInput(index);
   }
@@ -799,9 +978,18 @@ export class AskUserCard extends LitElement {
     const submission = toSubmission(ask.questions, this.answers);
     // A closing send carries only answered (so shown) questions' images; any other staged one would be lost with the set.
     const sendable = new Set([NOTE, ...questionTargets(submission.answers)].map(askImageTargetKey));
-    const stranded = Object.entries(this.images).filter(([key, images]) => !sendable.has(key) && images.length > 0).map(([key]) => key);
+    const stranded = Object.entries(this.images)
+      .filter(([key, images]) => !sendable.has(key) && images.length > 0)
+      .map(([key]) => key);
     if (this.refuseStranded(ask, stranded)) return Promise.resolve(false);
-    return this.send(ask, { ...submission, ...(note === "" ? {} : { note }), ...this.contextSubmission(), revision: ask.revision, ...(approved ? { approved } : {}), ...this.imagesFor([...questionTargets(submission.answers), NOTE]) });
+    return this.send(ask, {
+      ...submission,
+      ...(note === "" ? {} : { note }),
+      ...this.contextSubmission(),
+      revision: ask.revision,
+      ...(approved ? { approved } : {}),
+      ...this.imagesFor([...questionTargets(submission.answers), NOTE]),
+    });
   }
 
   /** True when `stranded` image targets refuse the send: a shown field takes the message under it; hidden ones are listed in the send bar. */
@@ -859,7 +1047,7 @@ export class AskUserCard extends LitElement {
         if (!sent) this.focusAfterRevision = undefined;
         else if (!this.keepContextOpen) this.contextFolded = true;
         // Sent images leave memory; the record shows them from the answers message.
-        const sentTargets = sent ? submission.images?.map((image) => image.target) ?? [] : [];
+        const sentTargets = sent ? (submission.images?.map((image) => image.target) ?? []) : [];
         if (this.draftSessionId !== "") for (const target of sentTargets) saveAskImages(askImageKey(this.draftSessionId, askId, target), []);
         const sentKeys = new Set(sentTargets.map(askImageTargetKey));
         if (sentKeys.size > 0 && this.ask?.askId === askId) this.images = Object.fromEntries(Object.entries(this.images).filter(([key]) => !sentKeys.has(key)));
@@ -909,7 +1097,10 @@ export class AskUserCard extends LitElement {
     if (index < 0) return Promise.resolve();
     return this.updateComplete.then(() => {
       // A set of the context alone has no question to focus: its first action (Approve) takes focus.
-      if (this.ask?.questions.length === 0) { this.renderRoot.querySelector<HTMLElement>(".approve, .form-footer .primary-action")?.focus({ preventScroll }); return; }
+      if (this.ask?.questions.length === 0) {
+        this.renderRoot.querySelector<HTMLElement>(".approve, .form-footer .primary-action")?.focus({ preventScroll });
+        return;
+      }
       const fieldset = this.renderRoot.querySelector<HTMLElement>(`#${this.questionFieldsetId(index)}`);
       const firstControl = fieldset?.querySelector<HTMLElement>("input, ask-markdown-field");
       (firstControl ?? fieldset)?.focus({ preventScroll });

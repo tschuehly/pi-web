@@ -5,7 +5,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PiWebConfigValues } from "../../shared/apiTypes.js";
 import type { PiWebConfigService } from "../configRoutes.js";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 const ATTACHMENTS = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
@@ -72,7 +81,10 @@ describe("PiSessionService saveAttachments", () => {
   it("lets the project-local config override the global default folder", async () => {
     const service = createService(fakeConfigRead({ attachments: { defaultFolder: "global-attachments" } }));
     await mkdir(join(workspace, ".pi-web"), { recursive: true });
-    await writeFile(join(workspace, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, attachments: { defaultFolder: "project-attachments" } }, null, 2)}\n`);
+    await writeFile(
+      join(workspace, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, attachments: { defaultFolder: "project-attachments" } }, null, 2)}\n`,
+    );
 
     await expectSavedPath(service, undefined, "project-attachments");
   });
@@ -86,7 +98,10 @@ describe("PiSessionService saveAttachments", () => {
   it("lets an explicit request folder win over the session cwd's own project-local config", async () => {
     const service = createService(fakeConfigRead({ attachments: { defaultFolder: "global-attachments" } }));
     await mkdir(join(workspace, ".pi-web"), { recursive: true });
-    await writeFile(join(workspace, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, attachments: { defaultFolder: "cwd-local-attachments" } }, null, 2)}\n`);
+    await writeFile(
+      join(workspace, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, attachments: { defaultFolder: "cwd-local-attachments" } }, null, 2)}\n`,
+    );
 
     // The composer resolves the effective folder from the owning project's
     // config and sends it explicitly, so a secondary (worktree) workspace —

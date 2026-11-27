@@ -18,52 +18,50 @@ interface PluginBackendProxyParams {
 
 /** Browser-facing package-paired route; package and workspace authority stay in sessiond. */
 export function registerPairedPluginBackendProxyRoutes(app: FastifyInstance, daemon: SessionDaemonRequestClient): void {
-  for (const path of PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS) app.post<{ Params: PluginBackendProxyParams; Body: unknown }>(
-    `/api${path}`,
-    { bodyLimit: PLUGIN_BACKEND_REQUEST_BODY_MAX_BYTES },
-    async (request, reply) => {
-      const path = daemonPluginBackendPath(request.params);
-      const cancellation = requestCancellation(request, reply);
-      try {
-        let upstream: Awaited<ReturnType<SessionDaemonRequestClient["request"]>>;
+  for (const path of PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS)
+    app.post<{ Params: PluginBackendProxyParams; Body: unknown }>(
+      `/api${path}`,
+      { bodyLimit: PLUGIN_BACKEND_REQUEST_BODY_MAX_BYTES },
+      async (request, reply) => {
+        const path = daemonPluginBackendPath(request.params);
+        const cancellation = requestCancellation(request, reply);
         try {
-          upstream = await daemon.request("POST", path, request.body, { signal: cancellation.signal });
-        } catch (error) {
-          return await reply.code(502).send({
-            error: `Session daemon unavailable: ${errorMessage(error)}`,
-            code: "daemon-unavailable",
-            pluginId: request.params.pluginId,
-            operation: request.params.operation,
-          });
-        }
+          let upstream: Awaited<ReturnType<SessionDaemonRequestClient["request"]>>;
+          try {
+            upstream = await daemon.request("POST", path, request.body, { signal: cancellation.signal });
+          } catch (error) {
+            return await reply.code(502).send({
+              error: `Session daemon unavailable: ${errorMessage(error)}`,
+              code: "daemon-unavailable",
+              pluginId: request.params.pluginId,
+              operation: request.params.operation,
+            });
+          }
 
-        if (upstream.body === "" || utf8ByteLength(upstream.body) > PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES) {
-          return await daemonProtocolError(reply, request.params, "Session daemon plugin backend returned an invalid response size");
-        }
+          if (upstream.body === "" || utf8ByteLength(upstream.body) > PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES) {
+            return await daemonProtocolError(reply, request.params, "Session daemon plugin backend returned an invalid response size");
+          }
 
-        let body: unknown;
-        try {
-          body = JSON.parse(upstream.body);
-        } catch {
-          return await daemonProtocolError(reply, request.params, "Session daemon plugin backend returned invalid JSON");
-        }
-        if (isUnknownPluginBackendRoute(upstream.statusCode, body)) {
-          return await daemonProtocolError(
-            reply,
-            request.params,
-            "Session daemon does not support plugin backend requests; restart or upgrade the session daemon",
-          );
-        }
+          let body: unknown;
+          try {
+            body = JSON.parse(upstream.body);
+          } catch {
+            return await daemonProtocolError(reply, request.params, "Session daemon plugin backend returned invalid JSON");
+          }
+          if (isUnknownPluginBackendRoute(upstream.statusCode, body)) {
+            return await daemonProtocolError(
+              reply,
+              request.params,
+              "Session daemon does not support plugin backend requests; restart or upgrade the session daemon",
+            );
+          }
 
-        return await reply
-          .code(upstream.statusCode)
-          .type("application/json; charset=utf-8")
-          .send(upstream.body);
-      } finally {
-        cancellation.dispose();
-      }
-    },
-  );
+          return await reply.code(upstream.statusCode).type("application/json; charset=utf-8").send(upstream.body);
+        } finally {
+          cancellation.dispose();
+        }
+      },
+    );
 }
 
 function daemonPluginBackendPath(params: PluginBackendProxyParams): string {

@@ -64,7 +64,9 @@ export function resolveAgentHttpIdleTimeoutMs({ agentDir, cwd }: AgentHttpDispat
 // listener only prevents EventEmitter's unhandled "error" special case from
 // crashing the daemon. `Dispatcher`'s typed event overloads hide the generic
 // `EventEmitter.on`, so the listener is attached through the prototype.
-const ignoreUndiciDispatcherError = (): void => { /* keep the daemon alive; see comment above */ };
+const ignoreUndiciDispatcherError = (): void => {
+  /* keep the daemon alive; see comment above */
+};
 
 function withUndiciErrorListener<T extends Dispatcher>(dispatcher: T): T {
   EventEmitter.prototype.on.call(dispatcher, "error", ignoreUndiciDispatcherError);
@@ -79,10 +81,12 @@ function createUndiciOriginDispatcher(origin: URL, options: Pool.Options): Dispa
   if (options.connections === 1) {
     return createUndiciClient(origin, options);
   }
-  return withUndiciErrorListener(new Pool(origin, {
-    ...options,
-    factory: createUndiciClient,
-  }));
+  return withUndiciErrorListener(
+    new Pool(origin, {
+      ...options,
+      factory: createUndiciClient,
+    }),
+  );
 }
 
 /**
@@ -95,13 +99,15 @@ export function configureAgentHttpDispatcher(timeoutMs: number): void {
     throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
   }
   const normalizedTimeoutMs = Math.floor(timeoutMs);
-  const dispatcher = withUndiciErrorListener(new EnvHttpProxyAgent({
-    allowH2: false,
-    bodyTimeout: normalizedTimeoutMs,
-    headersTimeout: normalizedTimeoutMs,
-    clientFactory: createUndiciClient,
-    factory: createUndiciOriginDispatcher,
-  }));
+  const dispatcher = withUndiciErrorListener(
+    new EnvHttpProxyAgent({
+      allowH2: false,
+      bodyTimeout: normalizedTimeoutMs,
+      headersTimeout: normalizedTimeoutMs,
+      clientFactory: createUndiciClient,
+      factory: createUndiciOriginDispatcher,
+    }),
+  );
   setGlobalDispatcher(dispatcher);
 }
 

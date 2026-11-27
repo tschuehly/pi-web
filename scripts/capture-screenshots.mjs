@@ -184,7 +184,9 @@ async function selectTheme(cdp, theme) {
   const css = await readFile(join(REPO_ROOT, "src/client/src/plugins/themes", `${theme}.css`), "utf8");
   const background = css.match(/--pi-bg:\s*([^;]+);/)?.[1]?.trim();
   if (background === undefined) throw new Error(`Theme ${theme} has no background token`);
-  await evaluate(cdp, `(async () => {
+  await evaluate(
+    cdp,
+    `(async () => {
     const app = document.querySelector("pi-web-app");
     const themeId = ${JSON.stringify(`themes:${theme}`)};
     if (typeof app?.pickTheme !== "function") throw new Error("Theme selection is unavailable");
@@ -197,24 +199,38 @@ async function selectTheme(cdp, theme) {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     await document.fonts.ready;
-  })()`);
+  })()`,
+  );
   await sleep(700);
 }
 
 function createThemeAnimation(device, outputPath) {
-  const result = spawnSync("python3", ["-c", `
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
 import sys
 from PIL import Image
 frames = [Image.open(path).convert("RGB") for path in sys.argv[2:]]
 frames[0].save(sys.argv[1], save_all=True, append_images=frames[1:], duration=3000, loop=0, disposal=2)
-`, outputPath, ...SCREENSHOT_THEMES.map(theme => join(outputDir, `pi-web-${device}-${theme}.png`))], { encoding: "utf8" });
+`,
+      outputPath,
+      ...SCREENSHOT_THEMES.map((theme) => join(outputDir, `pi-web-${device}-${theme}.png`)),
+    ],
+    { encoding: "utf8" },
+  );
   if (result.status !== 0) {
-    throw new Error(`Unable to generate the ${device} animation. Install Python 3 and Pillow (python3 -m pip install Pillow). ${result.error?.message ?? result.stderr}`);
+    throw new Error(
+      `Unable to generate the ${device} animation. Install Python 3 and Pillow (python3 -m pip install Pillow). ${result.error?.message ?? result.stderr}`,
+    );
   }
 }
 
 async function selectPreviewImage(cdp) {
-  await evaluate(cdp, `(async () => {
+  await evaluate(
+    cdp,
+    `(async () => {
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const app = document.querySelector("pi-web-app");
     if (!app) throw new Error("pi-web-app not found");
@@ -252,11 +268,14 @@ async function selectPreviewImage(cdp) {
       await sleep(100);
     }
     throw new Error("Timed out waiting for image preview");
-  })()`);
+  })()`,
+  );
 }
 
 async function waitForApp(cdp) {
-  await evaluate(cdp, `new Promise((resolve, reject) => {
+  await evaluate(
+    cdp,
+    `new Promise((resolve, reject) => {
     const start = Date.now();
     const visibleText = () => {
       const app = document.querySelector("pi-web-app");
@@ -277,7 +296,8 @@ async function waitForApp(cdp) {
       setTimeout(check, 100);
     };
     check();
-  })`);
+  })`,
+  );
 }
 
 async function waitForDocumentFonts(cdp) {
@@ -353,12 +373,14 @@ async function writeDemoSession(sessionDir, cwd) {
       timestamp: iso(ms + 2000),
       message: {
         role: "assistant",
-        content: [{
-          type: "toolCall",
-          id: "call_demo_screenshot",
-          name: "bash",
-          arguments: { command: `capture-browser-screenshot https://pi-web.dev ${DEMO_FILE}` },
-        }],
+        content: [
+          {
+            type: "toolCall",
+            id: "call_demo_screenshot",
+            name: "bash",
+            arguments: { command: `capture-browser-screenshot https://pi-web.dev ${DEMO_FILE}` },
+          },
+        ],
         api: "openai-codex-responses",
         provider: "openai-codex",
         model: "gpt-5.5",
@@ -572,9 +594,12 @@ class CDP {
       const cleanupListener = () => {
         clearTimeout(timer);
         const listeners = this.listeners.get(method) ?? [];
-        this.listeners.set(method, listeners.filter((candidate) => candidate !== listener));
+        this.listeners.set(
+          method,
+          listeners.filter((candidate) => candidate !== listener),
+        );
       };
-      this.listeners.set(method, [...this.listeners.get(method) ?? [], listener]);
+      this.listeners.set(method, [...(this.listeners.get(method) ?? []), listener]);
     });
   }
 
@@ -627,7 +652,9 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/capture-screenshots.mjs [--output-dir docs/assets] [--site-url https://pi-web.dev/] [--keep-temp] [--chrome-bin /path/to/chrome]\n\nCaptures desktop, tablet, and mobile scenes each in PI WEB Dark, PI WEB Light, Paper, and Graphite, plus legacy dark screenshots and a hard-cut GIF for each device (3 seconds per theme). Requires Chromium, Python 3, and Pillow. Uses an isolated temporary instance.`);
+      console.log(
+        `Usage: node scripts/capture-screenshots.mjs [--output-dir docs/assets] [--site-url https://pi-web.dev/] [--keep-temp] [--chrome-bin /path/to/chrome]\n\nCaptures desktop, tablet, and mobile scenes each in PI WEB Dark, PI WEB Light, Paper, and Graphite, plus legacy dark screenshots and a hard-cut GIF for each device (3 seconds per theme). Requires Chromium, Python 3, and Pillow. Uses an isolated temporary instance.`,
+      );
       process.exit(0);
     }
     if (arg === "--keep-temp") {

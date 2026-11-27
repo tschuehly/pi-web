@@ -9,7 +9,20 @@ export async function openControlledPendingAskFixture(sessions: Pick<PiSessionSe
   // then share the same runtime and the service's daemon-memory ask store.
   const status = await sessions.status(ref);
   if (status.sessionId !== ref.id) throw new Error("Controlled fixture session identity mismatch");
-  await sessions.openAsk({ sessionId: ref.id, context: "Controlled fixture question.", questions: [{ id: "fixture-choice", question: "Which controlled fixture answer?", options: [{ value: "one", label: "One" }, { value: "two", label: "Two" }] }] });
+  await sessions.openAsk({
+    sessionId: ref.id,
+    context: "Controlled fixture question.",
+    questions: [
+      {
+        id: "fixture-choice",
+        question: "Which controlled fixture answer?",
+        options: [
+          { value: "one", label: "One" },
+          { value: "two", label: "Two" },
+        ],
+      },
+    ],
+  });
 }
 
 export async function validateControlledPendingAskFixture(env: NodeJS.ProcessEnv): Promise<{ id: string; cwd: string }> {
@@ -19,23 +32,45 @@ export async function validateControlledPendingAskFixture(env: NodeJS.ProcessEnv
   const agentDir = env["PI_CODING_AGENT_DIR"];
   const dataDir = env["PI_WEB_DATA_DIR"];
   const socket = env["PI_WEB_SESSIOND_SOCKET"];
-  if (root === undefined || manifest === undefined || sessionDir === undefined || agentDir === undefined || dataDir === undefined || socket === undefined
-    || ![root, manifest, sessionDir, agentDir, dataDir, socket].every(isAbsolute)) {
+  if (
+    root === undefined
+    || manifest === undefined
+    || sessionDir === undefined
+    || agentDir === undefined
+    || dataDir === undefined
+    || socket === undefined
+    || ![root, manifest, sessionDir, agentDir, dataDir, socket].every(isAbsolute)
+  ) {
     throw new Error("Pending ask fixture requires absolute owned root, manifest, agent dir, session dir, data dir, and daemon socket paths");
   }
   const ownedRoot = await realpath(root);
   if (ownedRoot === "/") throw new Error("Pending ask fixture requires a non-root owned directory");
-  for (const [name, path] of [["manifest", manifest], ["agent dir", agentDir], ["session dir", sessionDir], ["data dir", dataDir], ["daemon socket", socket]] as const) {
+  for (const [name, path] of [
+    ["manifest", manifest],
+    ["agent dir", agentDir],
+    ["session dir", sessionDir],
+    ["data dir", dataDir],
+    ["daemon socket", socket],
+  ] as const) {
     const target = name === "daemon socket" ? join(await realpath(dirname(path)), "sessiond.sock") : await realpath(path);
     const rel = relative(ownedRoot, target);
-    if (rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel)) throw new Error(`Pending ask fixture ${name} must be strictly inside its owned root`);
+    if (rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel))
+      throw new Error(`Pending ask fixture ${name} must be strictly inside its owned root`);
   }
   if (socket !== join(dirname(socket), "sessiond.sock")) throw new Error("Pending ask fixture requires its own sessiond.sock");
   const parsed: unknown = JSON.parse(await readFile(manifest, "utf8"));
-  if (typeof parsed !== "object" || parsed === null || !("anchors" in parsed) || !Array.isArray(parsed.anchors)) throw new Error("Invalid controlled fixture manifest");
+  if (typeof parsed !== "object" || parsed === null || !("anchors" in parsed) || !Array.isArray(parsed.anchors))
+    throw new Error("Invalid controlled fixture manifest");
   const anchor: unknown = parsed.anchors[0];
-  if (typeof anchor !== "object" || anchor === null || !("sessionId" in anchor) || !("cwd" in anchor)
-    || typeof anchor.sessionId !== "string" || typeof anchor.cwd !== "string") throw new Error("Missing controlled fixture anchor");
+  if (
+    typeof anchor !== "object"
+    || anchor === null
+    || !("sessionId" in anchor)
+    || !("cwd" in anchor)
+    || typeof anchor.sessionId !== "string"
+    || typeof anchor.cwd !== "string"
+  )
+    throw new Error("Missing controlled fixture anchor");
   if (anchor.sessionId !== "019c8f10-1000-7000-8000-000000000001") throw new Error("Unexpected controlled fixture session identity");
   const cwd = await realpath(anchor.cwd);
   const rel = relative(ownedRoot, cwd);

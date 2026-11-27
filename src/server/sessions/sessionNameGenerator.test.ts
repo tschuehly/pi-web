@@ -6,7 +6,18 @@ import { cleanSessionName, fallbackSessionName, generateShortSessionName, requir
 import { KNOWN_THINKING_LEVELS } from "../../shared/thinkingLevels.js";
 
 function fakeModel(): Model<Api> {
-  return { id: "fake-model", name: "Fake Model", api: "anthropic-messages", provider: "anthropic", baseUrl: "https://example.test", reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 };
+  return {
+    id: "fake-model",
+    name: "Fake Model",
+    api: "anthropic-messages",
+    provider: "anthropic",
+    baseUrl: "https://example.test",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1000,
+    maxTokens: 100,
+  };
 }
 
 function fakeAssistantMessage(overrides: Partial<AssistantMessage> = {}): AssistantMessage {
@@ -47,9 +58,9 @@ describe("sessionNameGenerator", () => {
   it("treats a skill invocation with at most a short argument as having no title text", () => {
     expect(sessionTitleInput("/skill:orient")).toBeUndefined();
     expect(sessionTitleInput("  /skill:orient brief")).toBeUndefined();
-    expect(sessionTitleInput("<skill name=\"orient\" location=\"/s/SKILL.md\">\nbody\n</skill>\n\nfull")).toBeUndefined();
+    expect(sessionTitleInput('<skill name="orient" location="/s/SKILL.md">\nbody\n</skill>\n\nfull')).toBeUndefined();
     expect(sessionTitleInput("/skill:tdd add refresh token rotation")).toBe("add refresh token rotation");
-    expect(sessionTitleInput("<skill name=\"tdd\" location=\"/s/SKILL.md\">\nbody\n</skill>\n\nadd refresh token rotation")).toBe("add refresh token rotation");
+    expect(sessionTitleInput('<skill name="tdd" location="/s/SKILL.md">\nbody\n</skill>\n\nadd refresh token rotation')).toBe("add refresh token rotation");
     expect(sessionTitleInput("Fix the login bug")).toBe("Fix the login bug");
   });
 
@@ -57,7 +68,9 @@ describe("sessionNameGenerator", () => {
     const calls: unknown[] = [];
     const stream = streamThatCompletes('Title: "Fix the bug"');
     const streamFn: StreamFn = (model, context, options) => {
-      expect(getCurrentSystemPrompt(context.messages)).toBe("Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.");
+      expect(getCurrentSystemPrompt(context.messages)).toBe(
+        "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.",
+      );
       expect(context.messages.at(-1)).toMatchObject({
         role: "user",
         content: "Create a 2-6 word title for this request:\n\nPlease fix the login bug",
@@ -70,10 +83,17 @@ describe("sessionNameGenerator", () => {
 
     expect(name).toBe("Fix the bug");
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ context: { messages: [
-      { role: "system", content: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper." },
-      { role: "user", content: "Create a 2-6 word title for this request:\n\nPlease fix the login bug" },
-    ] } });
+    expect(calls[0]).toMatchObject({
+      context: {
+        messages: [
+          {
+            role: "system",
+            content: "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.",
+          },
+          { role: "user", content: "Create a 2-6 word title for this request:\n\nPlease fix the login bug" },
+        ],
+      },
+    });
   });
 
   it.each([false, true])("keeps the default budget at 24 tokens (reasoning: %s)", async (reasoning) => {
@@ -133,18 +153,21 @@ describe("sessionNameGenerator", () => {
     expect(requireInitialSessionName("A workflow leg 2")).toBe("A workflow leg 2");
   });
 
-  it.each([undefined, null, "", " ", " padded", "padded ", "two\nlines", "control\0character", "a".repeat(61)])("rejects invalid initial names (%j)", (value) => {
-    expect(() => requireInitialSessionName(value)).toThrow("Initial session name");
-  });
+  it.each([undefined, null, "", " ", " padded", "padded ", "two\nlines", "control\0character", "a".repeat(61)])(
+    "rejects invalid initial names (%j)",
+    (value) => {
+      expect(() => requireInitialSessionName(value)).toThrow("Initial session name");
+    },
+  );
 
   it("builds a concise fallback from the first request", () => {
-    expect(fallbackSessionName("Seems like auto name for sessions is not working, I still get the first message as a name."))
-      .toBe("Seems like auto name for sessions");
+    expect(fallbackSessionName("Seems like auto name for sessions is not working, I still get the first message as a name.")).toBe(
+      "Seems like auto name for sessions",
+    );
   });
 
   it("ignores skill blocks in fallback names", () => {
-    expect(fallbackSessionName('<skill name="x" location="/x">\nDo x\n</skill>\n\nCheck the UI now'))
-      .toBe("Check the UI now");
+    expect(fallbackSessionName('<skill name="x" location="/x">\nDo x\n</skill>\n\nCheck the UI now')).toBe("Check the UI now");
   });
 
   it("skips fallback names when the first request is missing", () => {

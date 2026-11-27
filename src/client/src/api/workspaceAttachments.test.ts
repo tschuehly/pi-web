@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER,
-  effectiveWorkspaceAttachmentsFolder,
-  workspaceEffectiveAttachmentsFolder,
-} from "./workspaceAttachments";
+import { DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, effectiveWorkspaceAttachmentsFolder, workspaceEffectiveAttachmentsFolder } from "./workspaceAttachments";
 
 describe("workspace attachments folder helpers", () => {
   it("falls back to the built-in default when nothing is configured", () => {

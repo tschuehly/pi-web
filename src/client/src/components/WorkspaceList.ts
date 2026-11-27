@@ -48,11 +48,19 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
   @property({ attribute: false }) onFocusNextSection?: () => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
   @state() private openMenuWorkspaceId: string | undefined;
-  readonly actionMenu = createActionMenuController(this, () => {
-    if (this.openMenuWorkspaceId === undefined) return undefined;
-    const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-workspace-id]")].find((item) => item.dataset["workspaceId"] === this.openMenuWorkspaceId);
-    return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
-  }, () => { this.openMenuWorkspaceId = undefined; });
+  readonly actionMenu = createActionMenuController(
+    this,
+    () => {
+      if (this.openMenuWorkspaceId === undefined) return undefined;
+      const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-workspace-id]")].find(
+        (item) => item.dataset["workspaceId"] === this.openMenuWorkspaceId,
+      );
+      return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
+    },
+    () => {
+      this.openMenuWorkspaceId = undefined;
+    },
+  );
   @state() private copiedDetailKey: string | undefined;
   @state() private trustByWorkspaceId: Record<string, WorkspaceTrustState> = {};
 
@@ -66,13 +74,15 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has("workspaces") && this.focusAfterReorder?.isConnected === true) {
       const control = this.focusAfterReorder;
-      const target = control instanceof HTMLButtonElement && control.disabled
-        ? control.closest(".action-menu-panel")?.querySelector<HTMLElement>("button[data-move]:not(:disabled)")
-        : control;
+      const target =
+        control instanceof HTMLButtonElement && control.disabled
+          ? control.closest(".action-menu-panel")?.querySelector<HTMLElement>("button[data-move]:not(:disabled)")
+          : control;
       target?.focus({ preventScroll: true });
     }
     this.focusAfterReorder = undefined;
-    if (changed.has("workspaces") && this.openMenuWorkspaceId !== undefined && !this.workspaces.some((workspace) => workspace.id === this.openMenuWorkspaceId)) this.openMenuWorkspaceId = undefined;
+    if (changed.has("workspaces") && this.openMenuWorkspaceId !== undefined && !this.workspaces.some((workspace) => workspace.id === this.openMenuWorkspaceId))
+      this.openMenuWorkspaceId = undefined;
     if (changed.has("collapsed") && this.collapsed) this.openMenuWorkspaceId = undefined;
     if (this.shouldRevealSelectedRow(changed)) this.scrollSelectedIntoView();
   }
@@ -98,21 +108,35 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
     return html`
       <section>
         <h2 class="ui-toolbar">${this.renderHeading()}</h2>
-        ${this.collapsed ? null : html`
+        ${
+          this.collapsed
+            ? null
+            : html`
           <div class="list-body">
-            ${repeat(this.workspaces, (workspace) => workspace.id, (workspace, index) => {
-              const label = workspacePrimaryLabel(workspace);
-              const items = this.workspaceLabelItems(workspace);
-              return html`
+            ${repeat(
+              this.workspaces,
+              (workspace) => workspace.id,
+              (workspace, index) => {
+                const label = workspacePrimaryLabel(workspace);
+                const items = this.workspaceLabelItems(workspace);
+                return html`
                 <div
                   class=${`action-row workspace-row ${this.selected?.id === workspace.id ? "selected" : ""}`}
                   tabindex="0"
                   data-workspace-id=${workspace.id}
-                  @focusin=${(event: FocusEvent) => { this.focusedControl = event.target instanceof HTMLElement ? event.target : undefined; }}
-                  @focusout=${() => { this.focusedControl = undefined; }}
+                  @focusin=${(event: FocusEvent) => {
+                    this.focusedControl = event.target instanceof HTMLElement ? event.target : undefined;
+                  }}
+                  @focusout=${() => {
+                    this.focusedControl = undefined;
+                  }}
                   title=${label}
-                  @click=${(event: MouseEvent) => { activateSelectableRow(event, () => this.onSelect?.(workspace)); }}
-                  @keydown=${(event: KeyboardEvent) => { this.handleWorkspaceKeydown(event, workspace); }}
+                  @click=${(event: MouseEvent) => {
+                    activateSelectableRow(event, () => this.onSelect?.(workspace));
+                  }}
+                  @keydown=${(event: KeyboardEvent) => {
+                    this.handleWorkspaceKeydown(event, workspace);
+                  }}
                 >
                   <div class="action-main">
                     ${this.renderWorkspaceMain(label, items, workspace)}
@@ -120,18 +144,23 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
                   ${this.renderWorkspaceMenu(label, items, workspace, index)}
                 </div>
               `;
-            })}
+              },
+            )}
           </div>
-        `}
+        `
+        }
       </section>
     `;
   }
 
   private renderHeading() {
     if (!this.collapsible) return html`<span>Workspaces</span>`;
-    const selectedSummary = this.selected === undefined ? "No workspace selected" : `${this.selected.label}${this.selected.isMain ? " · main" : ""} · ${this.selected.path}`;
+    const selectedSummary =
+      this.selected === undefined ? "No workspace selected" : `${this.selected.label}${this.selected.isMain ? " · main" : ""} · ${this.selected.path}`;
     const selectedTitle = this.selected?.path ?? selectedSummary;
-    return html`<button class="ui-button ui-toolbar-title section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => { this.onToggleCollapsed?.(); }}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} Workspaces</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.workspaces.length}</small></button>`;
+    return html`<button class="ui-button ui-toolbar-title section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => {
+      this.onToggleCollapsed?.();
+    }}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} Workspaces</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.workspaces.length}</small></button>`;
   }
 
   private renderActivity(workspace: Workspace): TemplateResult | undefined {
@@ -147,11 +176,15 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
         <span class="workspace-primary-label">${label}</span>
         ${this.isDeleting(workspace) ? html`<span class="workspace-status">Deleting…</span>` : null}
       </span>
-      ${items.length === 0 ? null : html`
+      ${
+        items.length === 0
+          ? null
+          : html`
         <small class="workspace-secondary">
           <span class="workspace-label">${renderWorkspaceLabelInlineItems(items)}</span>
         </small>
-      `}
+      `
+      }
       ${this.renderActivity(workspace)}
     `;
   }
@@ -167,14 +200,23 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
           aria-label=${`Actions and details for ${label}`}
           aria-expanded=${String(open)}
           aria-controls=${menuId}
-          @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(workspace.id); }}
+          @click=${(event: MouseEvent) => {
+            event.stopPropagation();
+            this.toggleMenu(workspace.id);
+          }}
         >⋯</button>
-        ${open ? html`
-          <div popover="auto" class="action-menu-panel workspace-menu-panel ui-menu" id=${menuId} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+        ${
+          open
+            ? html`
+          <div popover="auto" class="action-menu-panel workspace-menu-panel ui-menu" id=${menuId} @click=${(event: MouseEvent) => {
+            event.stopPropagation();
+          }}>
             ${this.renderWorkspaceActions(workspace, index)}
             ${this.renderWorkspaceDetails(label, items, workspace)}
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
     `;
   }
@@ -184,14 +226,28 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
     const actionLabel = workspace.removal?.actionLabel ?? "Remove workspace";
     return html`
       <div class="workspace-menu-actions">
-        ${this.onMove === undefined ? null : html`
-          <button class="ui-button ui-menu-item" data-move ?disabled=${index === 0} @click=${() => { this.onMove?.(workspace, -1); }}>Move up</button>
-          <button class="ui-button ui-menu-item" data-move ?disabled=${index === this.workspaces.length - 1} @click=${() => { this.onMove?.(workspace, 1); }}>Move down</button>
-        `}
+        ${
+          this.onMove === undefined
+            ? null
+            : html`
+          <button class="ui-button ui-menu-item" data-move ?disabled=${index === 0} @click=${() => {
+            this.onMove?.(workspace, -1);
+          }}>Move up</button>
+          <button class="ui-button ui-menu-item" data-move ?disabled=${index === this.workspaces.length - 1} @click=${() => {
+            this.onMove?.(workspace, 1);
+          }}>Move down</button>
+        `
+        }
         ${this.renderTrustToggle(workspace)}
-        ${canDeleteWorkspace(workspace) ? html`
-          <button class="danger ui-button ui-menu-item" title=${deleting ? "Workspace removal in progress" : actionLabel} ?disabled=${deleting} @click=${() => { this.delete(workspace); }}>${deleting ? "Removing…" : actionLabel}</button>
-        ` : null}
+        ${
+          canDeleteWorkspace(workspace)
+            ? html`
+          <button class="danger ui-button ui-menu-item" title=${deleting ? "Workspace removal in progress" : actionLabel} ?disabled=${deleting} @click=${() => {
+            this.delete(workspace);
+          }}>${deleting ? "Removing…" : actionLabel}</button>
+        `
+            : null
+        }
       </div>
     `;
   }
@@ -212,7 +268,9 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
             aria-describedby=${trust?.error === undefined ? helpId : `${helpId} ${errorId}`}
             .checked=${trust?.trusted === true}
             ?disabled=${busy || trust?.trusted === undefined}
-            @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) void this.setTrust(workspace, event.target.checked); }}
+            @change=${(event: Event) => {
+              if (event.target instanceof HTMLInputElement) void this.setTrust(workspace, event.target.checked);
+            }}
           />
         </label>
         <div class="action-menu-description" id=${helpId}>
@@ -269,12 +327,16 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
           <dt>Path</dt>
           <dd title=${workspace.path}>${workspace.path}${this.renderDetailCopyButton(`${workspace.id}:path`, workspace.path, "Copy path")}</dd>
         </div>
-        ${items.length === 0 ? null : html`
+        ${
+          items.length === 0
+            ? null
+            : html`
           <div class="workspace-detail-row">
             <dt>Details</dt>
             <dd><span class="workspace-label">${renderWorkspaceLabelInlineItems(items)}</span></dd>
           </div>
-        `}
+        `
+        }
       </dl>
     `;
   }
@@ -283,7 +345,9 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
     const copied = this.copiedDetailKey === key;
     const label = copied ? "Copied" : action;
     return html`
-      <button type="button" class="ui-button ui-button--compact ui-button--icon detail-copy" title=${label} aria-label=${label} @click=${() => { void this.copyDetail(key, value); }}>
+      <button type="button" class="ui-button ui-button--compact ui-button--icon detail-copy" title=${label} aria-label=${label} @click=${() => {
+        void this.copyDetail(key, value);
+      }}>
         <span aria-hidden="true">${copied ? "✓" : "⧉"}</span>
       </button>
     `;
@@ -327,9 +391,24 @@ export class WorkspaceList extends LitElement implements KeyboardNavigableSectio
     }
     handleSelectableRowKeyboard(event, {
       activate: () => this.onSelect?.(workspace),
-      previousSection: this.onFocusPreviousSection === undefined ? undefined : () => { void this.onFocusPreviousSection?.(); },
-      nextSection: this.onFocusNextSection === undefined ? undefined : () => { void this.onFocusNextSection?.(); },
-      cancel: this.onCancelKeyboardNavigation === undefined ? undefined : () => { void this.onCancelKeyboardNavigation?.(); },
+      previousSection:
+        this.onFocusPreviousSection === undefined
+          ? undefined
+          : () => {
+              void this.onFocusPreviousSection?.();
+            },
+      nextSection:
+        this.onFocusNextSection === undefined
+          ? undefined
+          : () => {
+              void this.onFocusNextSection?.();
+            },
+      cancel:
+        this.onCancelKeyboardNavigation === undefined
+          ? undefined
+          : () => {
+              void this.onCancelKeyboardNavigation?.();
+            },
     });
   }
 

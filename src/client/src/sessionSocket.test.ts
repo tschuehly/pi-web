@@ -38,23 +38,27 @@ describe("notification socket guards", () => {
   it("accepts validated selected-session events and drops global notification summaries", () => {
     expect(parseSessionSocketEvent(inboxEvent())).toMatchObject({ type: "notifications.inbox", delta: { kind: "added" } });
 
-    expect(parseRealtimeSocketEvent({
-      type: "notifications.summary",
-      daemonInstanceId: "daemon-a",
-      catalogRevision: 1,
-      summary: summary(),
-    })).toBeUndefined();
+    expect(
+      parseRealtimeSocketEvent({
+        type: "notifications.summary",
+        daemonInstanceId: "daemon-a",
+        catalogRevision: 1,
+        summary: summary(),
+      }),
+    ).toBeUndefined();
   });
 
   it("ignores malformed notification events instead of widening type-only acceptance", () => {
-    expect(parseSessionSocketEvent({
-      type: "notifications.inbox",
-      daemonInstanceId: "daemon-a",
-      catalogRevision: 1,
-      summary: { ...summary(), highestSeverity: "fatal" },
-      dismissThrough: { order: 1, overflowWatermark: 0 },
-      delta: { kind: "added", notification: notification() },
-    })).toBeUndefined();
+    expect(
+      parseSessionSocketEvent({
+        type: "notifications.inbox",
+        daemonInstanceId: "daemon-a",
+        catalogRevision: 1,
+        summary: { ...summary(), highestSeverity: "fatal" },
+        dismissThrough: { order: 1, overflowWatermark: 0 },
+        delta: { kind: "added", notification: notification() },
+      }),
+    ).toBeUndefined();
   });
 
   it("accepts only strictly validated global unread deltas", () => {
@@ -64,44 +68,71 @@ describe("notification socket guards", () => {
       completionOrder: 1,
       completedAt: "2026-07-20T00:00:01.000Z",
     };
-    expect(parseRealtimeSocketEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 1,
-      sessionId: unread.sessionId,
-      cwd: unread.cwd,
-      unread,
-    })).toMatchObject({ type: "sessions.unread", unread });
-    expect(parseRealtimeSocketEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 1,
-      sessionId: "other-session",
-      cwd: unread.cwd,
-      unread,
-    })).toBeUndefined();
-    expect(parseRealtimeSocketEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 3.5,
-      sessionId: unread.sessionId,
-      cwd: unread.cwd,
-      unread: null,
-    })).toBeUndefined();
+    expect(
+      parseRealtimeSocketEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 1,
+        sessionId: unread.sessionId,
+        cwd: unread.cwd,
+        unread,
+      }),
+    ).toMatchObject({ type: "sessions.unread", unread });
+    expect(
+      parseRealtimeSocketEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 1,
+        sessionId: "other-session",
+        cwd: unread.cwd,
+        unread,
+      }),
+    ).toBeUndefined();
+    expect(
+      parseRealtimeSocketEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 3.5,
+        sessionId: unread.sessionId,
+        cwd: unread.cwd,
+        unread: null,
+      }),
+    ).toBeUndefined();
   });
 
   it("accepts only bounded, validated global attention frames", () => {
-    const event = { type: "session.attention", sessionId: "session-2", cwd: "/repo", sessionName: "Other Chat", kind: "dialog", id: "dialog-1", detail: "Continue?" };
+    const event = {
+      type: "session.attention",
+      sessionId: "session-2",
+      cwd: "/repo",
+      sessionName: "Other Chat",
+      kind: "dialog",
+      id: "dialog-1",
+      detail: "Continue?",
+    };
     expect(parseRealtimeSocketEvent(event)).toEqual(event);
     expect(parseSessionSocketEvent(event)).toBeUndefined();
     expect(parseRealtimeSocketEvent({ ...event, kind: "attention", id: "attention-1" })).toEqual({ ...event, kind: "attention", id: "attention-1" });
-    for (const invalid of [{ ...event, kind: "complete" }, { ...event, id: "" }, { ...event, detail: "x".repeat(121) }, { ...event, sessionName: 1 }, { ...event, cwd: "" }]) {
+    for (const invalid of [
+      { ...event, kind: "complete" },
+      { ...event, id: "" },
+      { ...event, detail: "x".repeat(121) },
+      { ...event, sessionName: 1 },
+      { ...event, cwd: "" },
+    ]) {
       expect(parseRealtimeSocketEvent(invalid)).toBeUndefined();
     }
   });
 
   it("carries the startup marker through the socket boundary, marker and all", () => {
-    const activity = { sessionId: "session-1", phase: "active", label: "Opening session", detail: "Starting the Pi session", at: "2026-07-20T00:00:01.000Z", startup: true };
+    const activity = {
+      sessionId: "session-1",
+      phase: "active",
+      label: "Opening session",
+      detail: "Starting the Pi session",
+      at: "2026-07-20T00:00:01.000Z",
+      startup: true,
+    };
 
     // The marker is what stops an opening session being treated as a working
     // one, so dropping it in transit would restore the defect for every frame,
@@ -113,8 +144,11 @@ describe("notification socket guards", () => {
   it("accepts validated session startup progress and drops malformed frames", () => {
     const activity = { sessionId: "session-1", phase: "active", label: "Creating session", detail: "Starting the Pi session", at: "2026-07-20T00:00:01.000Z" };
 
-    expect(parseRealtimeSocketEvent({ type: "session.startup", startupToken: "pending-session-1-abc", activity }))
-      .toMatchObject({ type: "session.startup", startupToken: "pending-session-1-abc", activity });
+    expect(parseRealtimeSocketEvent({ type: "session.startup", startupToken: "pending-session-1-abc", activity })).toMatchObject({
+      type: "session.startup",
+      startupToken: "pending-session-1-abc",
+      activity,
+    });
     expect(parseRealtimeSocketEvent({ type: "session.startup", activity })).toMatchObject({ type: "session.startup", activity });
     expect(parseRealtimeSocketEvent({ type: "session.startup", startupToken: "", activity })).toBeUndefined();
     expect(parseRealtimeSocketEvent({ type: "session.startup" })).toBeUndefined();
@@ -135,10 +169,16 @@ describe("notification socket guards", () => {
     };
 
     expect(parseSessionSocketEvent({ type: "ask.opened", ask })).toEqual({ type: "ask.opened", ask });
-    expect(parseSessionSocketEvent({ type: "ask.closed", askId: "ask-1", reason: "superseded" }))
-      .toEqual({ type: "ask.closed", askId: "ask-1", reason: "superseded" });
-    expect(parseSessionSocketEvent({ type: "ask.closed", askId: "ask-1", reason: "withdrawn" }))
-      .toEqual({ type: "ask.closed", askId: "ask-1", reason: "withdrawn" });
+    expect(parseSessionSocketEvent({ type: "ask.closed", askId: "ask-1", reason: "superseded" })).toEqual({
+      type: "ask.closed",
+      askId: "ask-1",
+      reason: "superseded",
+    });
+    expect(parseSessionSocketEvent({ type: "ask.closed", askId: "ask-1", reason: "withdrawn" })).toEqual({
+      type: "ask.closed",
+      askId: "ask-1",
+      reason: "withdrawn",
+    });
     expect(parseSessionSocketEvent({ type: "ask.opened", ask: { ...ask, questions: [] } })).toBeUndefined();
     expect(parseSessionSocketEvent({ type: "ask.opened" })).toBeUndefined();
     expect(parseSessionSocketEvent({ type: "ask.closed", askId: "ask-1", reason: "ignored" })).toBeUndefined();
@@ -157,10 +197,17 @@ describe("notification socket guards", () => {
     };
 
     expect(parseSessionSocketEvent({ type: "dialog.opened", dialog })).toEqual({ type: "dialog.opened", dialog });
-    expect(parseSessionSocketEvent({ type: "dialog.closed", dialogId: "dialog-1", reason: "answered", answer: "SQLite" }))
-      .toEqual({ type: "dialog.closed", dialogId: "dialog-1", reason: "answered", answer: "SQLite" });
-    expect(parseSessionSocketEvent({ type: "dialog.closed", dialogId: "dialog-1", reason: "timeout" }))
-      .toEqual({ type: "dialog.closed", dialogId: "dialog-1", reason: "timeout" });
+    expect(parseSessionSocketEvent({ type: "dialog.closed", dialogId: "dialog-1", reason: "answered", answer: "SQLite" })).toEqual({
+      type: "dialog.closed",
+      dialogId: "dialog-1",
+      reason: "answered",
+      answer: "SQLite",
+    });
+    expect(parseSessionSocketEvent({ type: "dialog.closed", dialogId: "dialog-1", reason: "timeout" })).toEqual({
+      type: "dialog.closed",
+      dialogId: "dialog-1",
+      reason: "timeout",
+    });
     expect(parseSessionSocketEvent({ type: "dialog.opened", dialog: { ...dialog, kind: "modal" } })).toBeUndefined();
     expect(parseSessionSocketEvent({ type: "dialog.opened" })).toBeUndefined();
     expect(parseSessionSocketEvent({ type: "dialog.closed", dialogId: "dialog-1", reason: "ignored" })).toBeUndefined();
@@ -252,7 +299,9 @@ describe("socket stream validation", () => {
     expect(parseSessionSocketEvent({ ...changed, result: { editorText: "do not apply" }, session: sessionInfoWire(), stray: true })).toEqual(changed);
     expect(parseRealtimeSocketEvent(changed)).toBeUndefined();
     expect(parseSessionSocketEvent({ type: "session.tree.navigated", result: { cancelled: false, editorText: "old result" } })).toBeUndefined();
-    expect(parseSessionSocketEvent({ type: "session.tree.forked", result: { cancelled: false, session: sessionInfoWire(), promptDraft: "old draft" } })).toBeUndefined();
+    expect(
+      parseSessionSocketEvent({ type: "session.tree.forked", result: { cancelled: false, session: sessionInfoWire(), promptDraft: "old draft" } }),
+    ).toBeUndefined();
   });
 
   it("drops malformed session stream frames instead of accepting them on type alone", () => {
@@ -288,12 +337,13 @@ describe("socket stream validation", () => {
   it("rebuilds stream frames from validated fields and carries the hub seq stamp", () => {
     // The join-time exactly-once filter reads seq, so validation must not strip
     // it; a non-numeric stamp fails open rather than dropping the frame.
-    expect(parseSessionSocketEvent({ type: "assistant.delta", text: "hi", seq: 41, bogus: "dropped" }))
-      .toEqual({ type: "assistant.delta", text: "hi", seq: 41 });
-    expect(parseSessionSocketEvent({ type: "assistant.delta", text: "hi", seq: "41" }))
-      .toEqual({ type: "assistant.delta", text: "hi" });
-    expect(parseSessionSocketEvent({ type: "assistant.delta", text: "hi" }))
-      .toEqual({ type: "assistant.delta", text: "hi" });
+    expect(parseSessionSocketEvent({ type: "assistant.delta", text: "hi", seq: 41, bogus: "dropped" })).toEqual({
+      type: "assistant.delta",
+      text: "hi",
+      seq: 41,
+    });
+    expect(parseSessionSocketEvent({ type: "assistant.delta", text: "hi", seq: "41" })).toEqual({ type: "assistant.delta", text: "hi" });
+    expect(parseSessionSocketEvent({ type: "assistant.delta", text: "hi" })).toEqual({ type: "assistant.delta", text: "hi" });
   });
 
   it("accepts the full realtime vocabulary with valid payloads", () => {
@@ -316,10 +366,12 @@ describe("socket stream validation", () => {
   it("keeps unrecognised status flags so a newer daemon's tree still arrives", () => {
     // A federated machine may run a daemon that publishes flags this browser
     // does not know; the frame must survive and still carry them.
-    expect(parseRealtimeSocketEvent({
-      type: "machine.status",
-      status: { ...machineStatusWire(), machine: { "core:working": true, "core:future": true, "core:broken": "yes" } },
-    })).toEqual({
+    expect(
+      parseRealtimeSocketEvent({
+        type: "machine.status",
+        status: { ...machineStatusWire(), machine: { "core:working": true, "core:future": true, "core:broken": "yes" } },
+      }),
+    ).toEqual({
       type: "machine.status",
       status: { ...machineStatusWire(), machine: { "core:working": true, "core:future": true } },
     });
@@ -389,7 +441,10 @@ describe("socket instance isolation", () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(error).toHaveBeenCalledExactlyOnceWith("[PI WEB] Session diagnostic", {
-        machineId: "machine-a", sessionId: target.id, cwd: target.cwd, message: "Compaction failed: HTTP 400",
+        machineId: "machine-a",
+        sessionId: target.id,
+        cwd: target.cwd,
+        message: "Compaction failed: HTTP 400",
       });
       expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "session.diagnostic", seq: 1 }));
 

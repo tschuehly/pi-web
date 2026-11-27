@@ -133,8 +133,7 @@ class PiWebRelaysPanel extends HTMLElement {
     this.contextValue = value;
     // Unrelated host renders should not rescan. A picker already starts its
     // load before publishing navigation, so adopting that route does not load twice.
-    if (previousKey === nextKey && (previousRelay === nextRelay
-      || (nextRelay !== undefined && nextRelay === this.selectedRelayPath))) return;
+    if (previousKey === nextKey && (previousRelay === nextRelay || (nextRelay !== undefined && nextRelay === this.selectedRelayPath))) return;
     this.expandedDirs = new Set();
     if (value === undefined) {
       ++this.scanToken;
@@ -164,16 +163,18 @@ class PiWebRelaysPanel extends HTMLElement {
     // own document load report a missing or unreadable target rather than
     // silently substituting another relay.
     const discovered = listing.kind === "loaded" ? listing.relays : [];
-    this.listing = requestedPath === undefined ? listing : {
-      kind: "loaded",
-      relays: discovered.some((relay) => relay.path === requestedPath) ? discovered : [
-        { name: documentName(requestedPath), path: requestedPath }, ...discovered,
-      ],
-    };
+    this.listing =
+      requestedPath === undefined
+        ? listing
+        : {
+            kind: "loaded",
+            relays: discovered.some((relay) => relay.path === requestedPath)
+              ? discovered
+              : [{ name: documentName(requestedPath), path: requestedPath }, ...discovered],
+          };
     // Default discovery remains most recently modified first.
-    const relay = this.listing.kind === "loaded"
-      ? this.listing.relays.find((candidate) => candidate.path === requestedPath) ?? this.listing.relays[0]
-      : undefined;
+    const relay =
+      this.listing.kind === "loaded" ? (this.listing.relays.find((candidate) => candidate.path === requestedPath) ?? this.listing.relays[0]) : undefined;
     this.selectedRelayPath = relay?.path;
     this.renderToolbar();
     if (relay === undefined) {
@@ -238,9 +239,9 @@ class PiWebRelaysPanel extends HTMLElement {
   }
 
   private findDirectoryChip(directoryPath: string): HTMLElement | undefined {
-    return [...this.tabStrip.querySelectorAll("button[data-directory-path]")]
-      .find((candidate): candidate is HTMLElement =>
-        candidate instanceof HTMLElement && candidate.getAttribute("data-directory-path") === directoryPath);
+    return [...this.tabStrip.querySelectorAll("button[data-directory-path]")].find(
+      (candidate): candidate is HTMLElement => candidate instanceof HTMLElement && candidate.getAttribute("data-directory-path") === directoryPath,
+    );
   }
 
   private scrollExpandedChildrenIntoView(chip: HTMLElement | undefined): void {
@@ -345,10 +346,12 @@ class PiWebRelaysPanel extends HTMLElement {
       const relay = listing.relays[0];
       return relay === undefined ? "" : `<span class="relay-name" title="${escapeAttr(relay.path)}">${escapeHtml(relay.name)}</span>`;
     }
-    const options = listing.relays.map((relay) => {
-      const selected = relay.path === this.selectedRelayPath ? " selected" : "";
-      return `<option value="${escapeAttr(relay.path)}"${selected}>${escapeHtml(relay.name)}</option>`;
-    }).join("");
+    const options = listing.relays
+      .map((relay) => {
+        const selected = relay.path === this.selectedRelayPath ? " selected" : "";
+        return `<option value="${escapeAttr(relay.path)}"${selected}>${escapeHtml(relay.name)}</option>`;
+      })
+      .join("");
     return `<select class="ui-select" data-relay-picker aria-label="Relay">${options}</select>`;
   }
 
@@ -362,9 +365,8 @@ class PiWebRelaysPanel extends HTMLElement {
       return;
     }
     this.tabStrip.hidden = false;
-    const containsActivePath = this.selectedDocumentPath === undefined
-      ? undefined
-      : collapsedAncestorOfSelectedFile(documents.tree, this.selectedDocumentPath, this.expandedDirs);
+    const containsActivePath =
+      this.selectedDocumentPath === undefined ? undefined : collapsedAncestorOfSelectedFile(documents.tree, this.selectedDocumentPath, this.expandedDirs);
     // The strip element itself persists across re-renders, so replacing its
     // buttons keeps the container's horizontal scroll position.
     this.tabStrip.innerHTML = this.renderStripNodes(documents.tree, containsActivePath);
@@ -376,12 +378,14 @@ class PiWebRelaysPanel extends HTMLElement {
    * Collapsed folders (and folders without listed children) render as a bare chip.
    */
   private renderStripNodes(nodes: RelayTreeNode[], containsActivePath: string | undefined): string {
-    return nodes.map((node) => {
-      if (node.kind === "file") return this.renderFileTab(node);
-      const chip = this.renderDirectoryChip(node, containsActivePath);
-      if (!this.expandedDirs.has(node.path) || node.children.length === 0) return chip;
-      return `<span class="directory-group ui-toolbar-group">${chip}${this.renderStripNodes(node.children, containsActivePath)}</span>`;
-    }).join("");
+    return nodes
+      .map((node) => {
+        if (node.kind === "file") return this.renderFileTab(node);
+        const chip = this.renderDirectoryChip(node, containsActivePath);
+        if (!this.expandedDirs.has(node.path) || node.children.length === 0) return chip;
+        return `<span class="directory-group ui-toolbar-group">${chip}${this.renderStripNodes(node.children, containsActivePath)}</span>`;
+      })
+      .join("");
   }
 
   private renderFileTab(file: RelayFileNode): string {
@@ -457,9 +461,7 @@ class PiWebRelaysPanel extends HTMLElement {
     if (content.binary) {
       return `<div class="empty-state"><strong>Binary file: ${escapeHtml(documentName(documentPath))}</strong><p>Binary documents have no text preview.</p></div>`;
     }
-    const truncation = content.truncated
-      ? `<div class="status info">This document is truncated — only the beginning is shown.</div>`
-      : "";
+    const truncation = content.truncated ? `<div class="status info">This document is truncated — only the beginning is shown.</div>` : "";
     if (isMarkdownDocumentPath(documentPath)) {
       return `${truncation}<div class="document markdown">${renderRelayDocumentHtml(content.content)}</div>`;
     }
@@ -491,11 +493,7 @@ function refreshIconSvg(): string {
  * collapsed ancestor walking from the relay root. Undefined when every
  * ancestor is expanded (the tab is visible) or the file is not in the tree.
  */
-export function collapsedAncestorOfSelectedFile(
-  tree: RelayTreeNode[],
-  filePath: string,
-  expandedPaths: ReadonlySet<string>,
-): string | undefined {
+export function collapsedAncestorOfSelectedFile(tree: RelayTreeNode[], filePath: string, expandedPaths: ReadonlySet<string>): string | undefined {
   let hiddenAncestor: string | undefined;
   const visit = (entries: RelayTreeNode[]): boolean => {
     for (const entry of entries) {

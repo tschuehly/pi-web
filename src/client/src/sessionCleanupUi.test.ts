@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { SessionCleanupPreviewResponse } from "./api";
-import { canRunSessionCleanup, confirmSessionCleanup, selectedSessionCleanupProjectCwds, sessionCleanupConfirmationMessage, sessionCleanupPreviewForSelectedProjects, sessionCleanupRequestKey, validateSessionCleanupDraft, type SessionCleanupDraft } from "./sessionCleanupUi";
+import {
+  canRunSessionCleanup,
+  confirmSessionCleanup,
+  selectedSessionCleanupProjectCwds,
+  sessionCleanupConfirmationMessage,
+  sessionCleanupPreviewForSelectedProjects,
+  sessionCleanupRequestKey,
+  validateSessionCleanupDraft,
+  type SessionCleanupDraft,
+} from "./sessionCleanupUi";
 
 const draft: SessionCleanupDraft = {
   archiveIdleEnabled: true,
@@ -29,9 +38,18 @@ describe("session cleanup UI helpers", () => {
   });
 
   it("validates threshold inputs before preview or execution", () => {
-    expect(validateSessionCleanupDraft({ ...draft, archiveIdleDays: "1.5" })).toEqual({ ok: false, error: "Archive idle sessions after must be a non-negative whole number of days." });
-    expect(validateSessionCleanupDraft({ ...draft, deleteArchivedDays: "-1" })).toEqual({ ok: false, error: "Delete archived sessions after must be a non-negative whole number of days." });
-    expect(validateSessionCleanupDraft({ ...draft, archiveIdleEnabled: false, deleteArchivedEnabled: false })).toEqual({ ok: false, error: "Enable at least one cleanup action." });
+    expect(validateSessionCleanupDraft({ ...draft, archiveIdleDays: "1.5" })).toEqual({
+      ok: false,
+      error: "Archive idle sessions after must be a non-negative whole number of days.",
+    });
+    expect(validateSessionCleanupDraft({ ...draft, deleteArchivedDays: "-1" })).toEqual({
+      ok: false,
+      error: "Delete archived sessions after must be a non-negative whole number of days.",
+    });
+    expect(validateSessionCleanupDraft({ ...draft, archiveIdleEnabled: false, deleteArchivedEnabled: false })).toEqual({
+      ok: false,
+      error: "Enable at least one cleanup action.",
+    });
   });
 
   it("requires a current preview before cleanup can run", () => {
@@ -40,11 +58,15 @@ describe("session cleanup UI helpers", () => {
 
     expect(canRunSessionCleanup({ draft, preview, previewRequest: validation.request })).toBe(true);
     expect(canRunSessionCleanup({ draft: { ...draft, archiveIdleDays: "31" }, preview, previewRequest: validation.request })).toBe(false);
-    expect(canRunSessionCleanup({ draft, preview: { ...preview, totals: { archiveCount: 0, deleteCount: 0 } }, previewRequest: validation.request })).toBe(false);
+    expect(canRunSessionCleanup({ draft, preview: { ...preview, totals: { archiveCount: 0, deleteCount: 0 } }, previewRequest: validation.request })).toBe(
+      false,
+    );
   });
 
   it("normalizes request keys for null, omitted disabled actions, and selected projects", () => {
-    expect(sessionCleanupRequestKey({ archiveIdleDays: 30 })).toBe(sessionCleanupRequestKey({ archiveIdleDays: 30, deleteArchivedDays: null, projectCwds: ["/repo"] }));
+    expect(sessionCleanupRequestKey({ archiveIdleDays: 30 })).toBe(
+      sessionCleanupRequestKey({ archiveIdleDays: 30, deleteArchivedDays: null, projectCwds: ["/repo"] }),
+    );
   });
 
   it("summarizes the preview for selected projects", () => {
@@ -71,10 +93,12 @@ describe("session cleanup UI helpers", () => {
 
   it("uses explicit permanent deletion copy in the confirmation message", () => {
     const confirmMessages: string[] = [];
-    expect(confirmSessionCleanup(preview, (message) => {
-      confirmMessages.push(message);
-      return true;
-    })).toBe(true);
+    expect(
+      confirmSessionCleanup(preview, (message) => {
+        confirmMessages.push(message);
+        return true;
+      }),
+    ).toBe(true);
     expect(confirmMessages[0]).toContain("permanently delete 1 archived session");
     expect(sessionCleanupConfirmationMessage(preview)).toContain("cannot be undone");
   });

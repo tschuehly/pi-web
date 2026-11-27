@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { WORKSTREAM_PALETTE, WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, setWorkstreamColorOrder, workstreamAccentColor, workstreamMonogram, workstreamPaletteIndex } from "./workstreamColor";
+import {
+  WORKSTREAM_PALETTE,
+  WORKSTREAM_TINT_PERCENTAGES,
+  WorkstreamColorController,
+  setWorkstreamColorOrder,
+  workstreamAccentColor,
+  workstreamMonogram,
+  workstreamPaletteIndex,
+} from "./workstreamColor";
 
 describe("workstreamMonogram", () => {
   it("derives a stable visible cue from one or more title words", () => {
@@ -22,7 +30,10 @@ describe("workstreamAccentColor", () => {
   });
 
   it("gives the two formerly colliding Workstreams different colours", () => {
-    setWorkstreamColorOrder([open("ws-pi-workbench-ui-dogfooding-20260921", "2026-09-21T08:00:00Z"), open("ws-studio-evidence-guided-improvement-20260831", "2026-08-31T08:00:00Z")]);
+    setWorkstreamColorOrder([
+      open("ws-pi-workbench-ui-dogfooding-20260921", "2026-09-21T08:00:00Z"),
+      open("ws-studio-evidence-guided-improvement-20260831", "2026-08-31T08:00:00Z"),
+    ]);
     expect(workstreamAccentColor("ws-pi-workbench-ui-dogfooding-20260921")).not.toBe(workstreamAccentColor("ws-studio-evidence-guided-improvement-20260831"));
   });
 

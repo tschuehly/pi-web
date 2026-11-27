@@ -17,7 +17,10 @@ export interface LoadedPiWebConfig {
   deprecatedAgentInputs: readonly DeprecatedAgentInput[];
 }
 
-export interface EffectivePiWebConfig extends Omit<PiWebConfig, "uploads" | "attachments" | "spawnSessions" | "subsessions" | "askUser" | "dockerEnvironmentFacts" | "agent" | "extensionDialogsTimeoutMs"> {
+export interface EffectivePiWebConfig extends Omit<
+  PiWebConfig,
+  "uploads" | "attachments" | "spawnSessions" | "subsessions" | "askUser" | "dockerEnvironmentFacts" | "agent" | "extensionDialogsTimeoutMs"
+> {
   uploads: NonNullable<PiWebConfig["uploads"]>;
   attachments: NonNullable<PiWebConfig["attachments"]>;
   spawnSessions: boolean;
@@ -128,7 +131,8 @@ export function detectDeprecatedAgentInputs(env: Readonly<NodeJS.ProcessEnv>, co
   const inputs: DeprecatedAgentInput[] = [];
   if (isEnvSet(env[PI_WEB_AGENT_COMMAND_ENV])) inputs.push({ source: "environment", name: PI_WEB_AGENT_COMMAND_ENV });
   if (isEnvSet(env[PI_WEB_AGENT_DIR_ENV])) inputs.push({ source: "environment", name: PI_WEB_AGENT_DIR_ENV, replacement: PI_CODING_AGENT_DIR_ENV });
-  if (isEnvSet(env[PI_WEB_AGENT_SESSION_DIR_ENV])) inputs.push({ source: "environment", name: PI_WEB_AGENT_SESSION_DIR_ENV, replacement: PI_CODING_AGENT_SESSION_DIR_ENV });
+  if (isEnvSet(env[PI_WEB_AGENT_SESSION_DIR_ENV]))
+    inputs.push({ source: "environment", name: PI_WEB_AGENT_SESSION_DIR_ENV, replacement: PI_CODING_AGENT_SESSION_DIR_ENV });
   if (config.agent?.command !== undefined) inputs.push({ source: "config", name: "agent.command" });
   if (config.agent?.dir !== undefined) inputs.push({ source: "config", name: "agent.dir", replacement: PI_CODING_AGENT_DIR_ENV });
   return inputs;
@@ -291,7 +295,9 @@ function parsePiWebConfig(value: Record<string, unknown>, path: string): PiWebCo
     ...(value["allowedHosts"] !== undefined ? { allowedHosts: parseAllowedHosts(value["allowedHosts"], path) } : {}),
     ...(value["shortcuts"] !== undefined ? { shortcuts: parseShortcuts(value["shortcuts"], path) } : {}),
     ...(value["defaultTheme"] !== undefined ? { defaultTheme: requireDefaultThemePreference(value["defaultTheme"], path) } : {}),
-    ...(value["defaultStreamingBehavior"] !== undefined ? { defaultStreamingBehavior: requireDefaultStreamingBehavior(value["defaultStreamingBehavior"], path) } : {}),
+    ...(value["defaultStreamingBehavior"] !== undefined
+      ? { defaultStreamingBehavior: requireDefaultStreamingBehavior(value["defaultStreamingBehavior"], path) }
+      : {}),
     ...(value["plugins"] !== undefined ? { plugins: parsePlugins(value["plugins"], path) } : {}),
     ...(value["pathAccess"] !== undefined ? { pathAccess: parsePathAccessConfig(value["pathAccess"], path) } : {}),
     ...(value["uploads"] !== undefined ? { uploads: parseUploadsConfig(value["uploads"], path) } : {}),
@@ -303,7 +309,9 @@ function parsePiWebConfig(value: Record<string, unknown>, path: string): PiWebCo
     ...(value["subsessions"] !== undefined ? { subsessions: parseSubsessions(value["subsessions"], path) } : {}),
     ...(value["askUser"] !== undefined ? { askUser: parseAskUser(value["askUser"], path) } : {}),
     ...(value["environmentFacts"] !== undefined ? { environmentFacts: parseBooleanKey(value["environmentFacts"], "environmentFacts", path) } : {}),
-    ...(value["extensionDialogsTimeoutMs"] !== undefined ? { extensionDialogsTimeoutMs: parseExtensionDialogsTimeoutMs(value["extensionDialogsTimeoutMs"], path) } : {}),
+    ...(value["extensionDialogsTimeoutMs"] !== undefined
+      ? { extensionDialogsTimeoutMs: parseExtensionDialogsTimeoutMs(value["extensionDialogsTimeoutMs"], path) }
+      : {}),
     ...(value["agent"] !== undefined ? { agent: parseAgentConfig(value["agent"], path) } : {}),
   };
 }
@@ -470,7 +478,8 @@ export type AgentPathHost = "current" | "portable";
 export function parseAgentConfig(value: unknown, path: string, pathHost: AgentPathHost = "current"): NonNullable<PiWebConfig["agent"]> {
   if (!isRecord(value)) throw new Error(`PI WEB config agent must be an object: ${path}`);
   const unknownKey = Object.keys(value).find((key) => !DEPRECATED_AGENT_CONFIG_KEYS.has(key));
-  if (unknownKey !== undefined) throw new Error(`PI WEB config agent accepts only the deprecated keys "command" and "dir"; unknown key ${JSON.stringify(unknownKey)}: ${path}`);
+  if (unknownKey !== undefined)
+    throw new Error(`PI WEB config agent accepts only the deprecated keys "command" and "dir"; unknown key ${JSON.stringify(unknownKey)}: ${path}`);
   const command = value["command"];
   const dir = value["dir"];
   return {
@@ -530,7 +539,10 @@ function parseAllowedHosts(value: unknown, path: string): string[] | true {
 
 function parseAllowedHostsEnv(value: string): string[] | true {
   if (value === "true") return true;
-  return value.split(",").map((host) => host.trim()).filter((host) => host !== "");
+  return value
+    .split(",")
+    .map((host) => host.trim())
+    .filter((host) => host !== "");
 }
 
 export function parsePathAccessConfig(value: unknown, path: string): NonNullable<PiWebConfigValues["pathAccess"]> {
@@ -570,7 +582,6 @@ function parseWorkspaceRelativeFolder(value: unknown, key: string, path: string)
   if (parts.some((part) => part === "..")) throw new Error(`PI WEB config ${key} must not contain path traversal: ${path}`);
   return parts.join("/");
 }
-
 
 function isHomePath(value: string, pathHost: AgentPathHost): boolean {
   return value === "~" || value.startsWith("~/") || ((pathHost === "portable" || process.platform === "win32") && value.startsWith("~\\"));
@@ -615,25 +626,29 @@ function isAbsoluteLike(value: string): boolean {
 
 function parseShortcuts(value: unknown, path: string): Record<string, string | null> {
   if (!isRecord(value)) throw new Error(`PI WEB config shortcuts must be an object: ${path}`);
-  return Object.fromEntries(Object.entries(value).map(([actionId, shortcut]) => {
-    if (shortcut !== null && (typeof shortcut !== "string" || shortcut === "")) {
-      throw new Error(`PI WEB config shortcut values must be non-empty strings or null: ${path}`);
-    }
-    return [actionId, shortcut];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([actionId, shortcut]) => {
+      if (shortcut !== null && (typeof shortcut !== "string" || shortcut === "")) {
+        throw new Error(`PI WEB config shortcut values must be non-empty strings or null: ${path}`);
+      }
+      return [actionId, shortcut];
+    }),
+  );
 }
 
 function parsePlugins(value: unknown, path: string): NonNullable<PiWebConfigValues["plugins"]> {
   if (!isRecord(value) || Array.isArray(value)) throw new Error(`PI WEB config plugins must be an object: ${path}`);
-  return Object.fromEntries(Object.entries(value).map(([pluginId, config]) => {
-    if (!isPiWebPluginId(pluginId)) throw new Error(`PI WEB config plugin ids must match ${piWebPluginIdPattern.source}: ${path}`);
-    if (!isRecord(config) || Array.isArray(config)) throw new Error(`PI WEB config plugin entries must be objects: ${path}`);
-    const enabled = config["enabled"];
-    if (enabled !== undefined && typeof enabled !== "boolean") throw new Error(`PI WEB config plugin enabled values must be booleans: ${path}`);
-    const settings = config["settings"];
-    if (settings !== undefined && (!isRecord(settings) || Array.isArray(settings))) throw new Error(`PI WEB config plugin settings must be objects: ${path}`);
-    return [pluginId, config];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([pluginId, config]) => {
+      if (!isPiWebPluginId(pluginId)) throw new Error(`PI WEB config plugin ids must match ${piWebPluginIdPattern.source}: ${path}`);
+      if (!isRecord(config) || Array.isArray(config)) throw new Error(`PI WEB config plugin entries must be objects: ${path}`);
+      const enabled = config["enabled"];
+      if (enabled !== undefined && typeof enabled !== "boolean") throw new Error(`PI WEB config plugin enabled values must be booleans: ${path}`);
+      const settings = config["settings"];
+      if (settings !== undefined && (!isRecord(settings) || Array.isArray(settings))) throw new Error(`PI WEB config plugin settings must be objects: ${path}`);
+      return [pluginId, config];
+    }),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -647,4 +662,3 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
 export function examplePiWebConfig(config: PiWebConfig = {}): string {
   return `${JSON.stringify({ host: config.host ?? "127.0.0.1", port: config.port ?? 8504, allowedHosts: config.allowedHosts ?? [] }, null, 2)}\n`;
 }
-

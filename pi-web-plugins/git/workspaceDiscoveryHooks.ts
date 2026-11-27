@@ -9,7 +9,10 @@ import type {
 } from "@jmfederico/pi-web/server-plugin-api";
 
 type RunGit = (cwd: string, args: readonly string[], signal: AbortSignal) => Promise<ServerPluginExecFileResult>;
-interface ConfigValue { scope: string; value: string }
+interface ConfigValue {
+  scope: string;
+  value: string;
+}
 const EVENT = "post-checkout";
 
 /** Git owns the hook policy; the host owns settings snapshots and notification attribution/transport. */
@@ -29,19 +32,19 @@ export function createWorkspaceDiscoveryHooks(
   return Object.freeze({
     reconcile(project: ProjectInput, signal: AbortSignal): Promise<void> {
       const operation = pending.then(() => reconcile(project, signal));
-      pending = operation.catch(() => { /* The caller still receives the failure; do not poison the queue. */ });
+      pending = operation.catch(() => {
+        /* The caller still receives the failure; do not poison the queue. */
+      });
       return operation;
     },
     async acceptNotification(project: ProjectInput, signal: AbortSignal): Promise<boolean> {
-      return await enabled(project, signal) && (context.workspaceNotifications?.command(project.id).length ?? 0) > 0;
+      return (await enabled(project, signal)) && (context.workspaceNotifications?.command(project.id).length ?? 0) > 0;
     },
   });
 
   async function enabled(project: ProjectInput, signal: AbortSignal): Promise<boolean> {
     signal.throwIfAborted();
-    const settings = context.resolveProjectSettings === undefined
-      ? context.settings
-      : await context.resolveProjectSettings(project, signal);
+    const settings = context.resolveProjectSettings === undefined ? context.settings : await context.resolveProjectSettings(project, signal);
     const value = settings["workspaceDiscoveryHooks"];
     if (value === undefined) return true;
     if (typeof value !== "boolean") throw new Error("Git setting workspaceDiscoveryHooks must be a boolean");
@@ -63,16 +66,18 @@ export function createWorkspaceDiscoveryHooks(
     const registration = join(context.dataDirectory, "workspace-discovery", `${name}.registration.json`);
     const notifier = context.workspaceNotifications?.command(project.id);
     const command = registrationCommand(helper, nodeExecutable, notifier ?? []);
-    const ownedCommands = new Set([command, ...await readRegistrationCommands(registration, signal)]);
+    const ownedCommands = new Set([command, ...(await readRegistrationCommands(registration, signal))]);
     const install = isEnabled && notifier !== undefined && notifier.length > 0;
-    if (install && !await supportsNamedHooks(project, signal)) return;
+    if (install && !(await supportsNamedHooks(project, signal))) return;
 
     const commandKey = `hook.${name}.command`;
     const eventKey = `hook.${name}.event`;
     const commands = await readConfig(project, commandKey, signal);
     const events = await readConfig(project, eventKey, signal);
-    if (commands.some((entry) => entry.scope !== "local" || !ownedCommands.has(entry.value))
-      || events.some((entry) => entry.scope !== "local" || (entry.value !== EVENT && commands.length === 0))) {
+    if (
+      commands.some((entry) => entry.scope !== "local" || !ownedCommands.has(entry.value))
+      || events.some((entry) => entry.scope !== "local" || (entry.value !== EVENT && commands.length === 0))
+    ) {
       // We only install local keys. A same-name global/worktree registration is
       // external even if its values happen to match ours; never override it or
       // remove the local command on which its inherited event might depend.
@@ -109,8 +114,7 @@ export function createWorkspaceDiscoveryHooks(
     const result = await runGit(project.path, ["help", "--config"], signal);
     if (result.signal !== null) throw new Error(`Git named-hook detection ended from signal ${result.signal}`);
     const keys = result.stdout.split(/\r?\n/u);
-    const supported = result.exitCode === 0
-      && keys.includes("hook.<friendly-name>.command") && keys.includes("hook.<friendly-name>.event");
+    const supported = result.exitCode === 0 && keys.includes("hook.<friendly-name>.command") && keys.includes("hook.<friendly-name>.event");
     if (!supported) context.logger.debug("Git named configuration hooks unavailable; workspace discovery remains on catalog access", { projectId: project.id });
     return supported;
   }
@@ -168,8 +172,8 @@ async function readRegistrationCommands(path: string, signal: AbortSignal): Prom
     throw error;
   }
   const value: unknown = JSON.parse(source);
-  if (typeof value !== "object" || value === null || Array.isArray(value)
-    || Reflect.get(value, "version") !== 1) throw new Error(`Invalid PI WEB Git hook registration record: ${path}`);
+  if (typeof value !== "object" || value === null || Array.isArray(value) || Reflect.get(value, "version") !== 1)
+    throw new Error(`Invalid PI WEB Git hook registration record: ${path}`);
   const commands: unknown = Reflect.get(value, "commands");
   if (!Array.isArray(commands) || !commands.every((command: unknown): command is string => typeof command === "string" && command.length > 0)) {
     throw new Error(`Invalid PI WEB Git hook command record: ${path}`);
@@ -180,7 +184,7 @@ async function readRegistrationCommands(path: string, signal: AbortSignal): Prom
 async function writeOwnedFileIfChanged(path: string, source: string, signal: AbortSignal): Promise<void> {
   signal.throwIfAborted();
   try {
-    if (await readFile(path, { encoding: "utf8", signal }) === source) return;
+    if ((await readFile(path, { encoding: "utf8", signal })) === source) return;
   } catch (error) {
     if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
   }

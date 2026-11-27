@@ -6,15 +6,32 @@ import { queuedMessageRecallConfirmation } from "../queuedMessageActions";
 import type { QueuedSessionMessage } from "../api";
 
 vi.mock("../clipboard", () => ({ writeClipboardText: vi.fn().mockResolvedValue(true) }));
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.clearAllMocks(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.clearAllMocks();
+});
 
-const messages = [{ kind: "steer" as const, text: "adjust" }, { kind: "steer" as const, text: "again" }, { kind: "followUp" as const, text: "next" }];
+const messages = [
+  { kind: "steer" as const, text: "adjust" },
+  { kind: "steer" as const, text: "again" },
+  { kind: "followUp" as const, text: "next" },
+];
 
 async function queuedView(queuedMessages: QueuedSessionMessage[] = messages) {
   const view = new ChatView();
   view.sessionId = "session";
   view.machineId = "remote";
-  view.status = { sessionId: "session", isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: queuedMessages.length, queuedMessages, cost: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  view.status = {
+    sessionId: "session",
+    isStreaming: true,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: queuedMessages.length,
+    queuedMessages,
+    cost: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
   view.onQueuedMessageAction = vi.fn().mockResolvedValue(undefined);
   document.body.append(view);
   await view.updateComplete;
@@ -84,15 +101,24 @@ describe("queued message actions", () => {
     vi.mocked(writeClipboardText).mockResolvedValueOnce(false);
     const view = await queuedView();
     button(view, '[aria-label="Copy queued message"]').click();
-    await vi.waitFor(() => { expect(view.shadowRoot?.textContent).toContain("Could not copy message"); });
+    await vi.waitFor(() => {
+      expect(view.shadowRoot?.textContent).toContain("Could not copy message");
+    });
     button(view, '[aria-label="Copy queued message"]').click();
-    await vi.waitFor(() => { expect(view.shadowRoot?.querySelector('[role="status"]')).toBeNull(); });
+    await vi.waitFor(() => {
+      expect(view.shadowRoot?.querySelector('[role="status"]')).toBeNull();
+    });
     expect(view.shadowRoot?.textContent).not.toContain("Copied");
   });
 
   it("does not show copy feedback in a different session", async () => {
     let finishCopy: ((copied: boolean) => void) | undefined;
-    vi.mocked(writeClipboardText).mockImplementationOnce(() => new Promise<boolean>((resolve) => { finishCopy = resolve; }));
+    vi.mocked(writeClipboardText).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishCopy = resolve;
+        }),
+    );
     const view = await queuedView();
     button(view, '[aria-label="Copy queued message"]').click();
     view.sessionId = "another-session";
@@ -103,7 +129,11 @@ describe("queued message actions", () => {
     expect(view.shadowRoot?.textContent).not.toContain("Could not copy message");
   });
 
-  it.each([['[aria-label="Switch to Queue"]', "toggle"], ['[title^="Recall this message"]', "edit"], ['[aria-label="Remove queued message"]', "remove"]])("wires %s to its queue snapshot", async (selector, action) => {
+  it.each([
+    ['[aria-label="Switch to Queue"]', "toggle"],
+    ['[title^="Recall this message"]', "edit"],
+    ['[aria-label="Remove queued message"]', "remove"],
+  ])("wires %s to its queue snapshot", async (selector, action) => {
     const view = await queuedView();
     button(view, selector).click();
     expect(view.onQueuedMessageAction).toHaveBeenCalledWith({ machineId: "remote", sessionId: "session", action, index: 0, expectedQueue: messages });
@@ -119,7 +149,9 @@ describe("queued message actions", () => {
     const visibleReason = reason || "Individual queue controls are unavailable with this runtime.";
     expect(serverQueue?.textContent).toContain(visibleReason);
     expect(view.shadowRoot?.querySelector(".queued-messages")?.textContent).not.toContain(visibleReason);
-    const dependentControls = Array.from(serverQueue?.querySelectorAll<HTMLButtonElement>(".queued-action") ?? []).filter((control) => control.getAttribute("aria-label") !== "Copy queued message");
+    const dependentControls = Array.from(serverQueue?.querySelectorAll<HTMLButtonElement>(".queued-action") ?? []).filter(
+      (control) => control.getAttribute("aria-label") !== "Copy queued message",
+    );
     expect(dependentControls).toHaveLength(messages.length * 3);
     for (const control of dependentControls) {
       expect(control.disabled).toBe(true);
@@ -174,6 +206,14 @@ describe("queued message actions", () => {
     const attached = messages.map((message, index) => ({ ...message, hasAttachments: index === 2 }));
     expect(queuedMessageRecallConfirmation(attached, 0)).not.toContain("attachments");
     expect(queuedMessageRecallConfirmation(attached, 2)).toBe("Recall this message? Only its text will return to the composer. Its attachments will be lost.");
-    expect(queuedMessageRecallConfirmation([{ kind: "steer", text: "attached", hasAttachments: true }, { kind: "followUp", text: "later" }], 0)).toBe("Recall this message? Only its text will return to the composer. Its attachments will be lost.\n\nThis will also remove 1 queued follow-up.");
+    expect(
+      queuedMessageRecallConfirmation(
+        [
+          { kind: "steer", text: "attached", hasAttachments: true },
+          { kind: "followUp", text: "later" },
+        ],
+        0,
+      ),
+    ).toBe("Recall this message? Only its text will return to the composer. Its attachments will be lost.\n\nThis will also remove 1 queued follow-up.");
   });
 });

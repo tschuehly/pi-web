@@ -7,7 +7,12 @@ import { MachineStatusController } from "./machineStatusController";
 describe("MachineStatusController", () => {
   it("stores each machine's snapshot under its own id without mirroring the selected machine", () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    );
 
     controller.apply("remote", snapshot({ machine: { "core:working": true } }));
     controller.apply("local", snapshot({ machine: { "core:unread": true } }));
@@ -18,7 +23,12 @@ describe("MachineStatusController", () => {
 
   it("ignores snapshots at an equal or lower revision within the same epoch", () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    );
 
     controller.apply("local", snapshot({ revision: 5, machine: { "core:working": true } }));
     controller.apply("local", snapshot({ revision: 5, machine: {} }));
@@ -33,7 +43,12 @@ describe("MachineStatusController", () => {
 
   it("replaces state wholesale when the epoch changes, even at a lower revision", () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    );
 
     controller.apply("local", snapshot({ epochId: "epoch-1", revision: 9, projects: { "project-1": { "core:working": true } } }));
     controller.apply("local", snapshot({ epochId: "epoch-2", revision: 1, projects: {} }));
@@ -43,7 +58,12 @@ describe("MachineStatusController", () => {
 
   it("keeps an unknown flag id so a newer daemon's status still reaches the rows", () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    );
 
     controller.apply("local", snapshot({ machine: { "core:working": true, "core:future": true } }));
 
@@ -52,9 +72,15 @@ describe("MachineStatusController", () => {
 
   it("applies the fetched snapshot for the requested machine", async () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; }, {
-      api: { machineStatus: (machineId) => Promise.resolve(snapshot({ epochId: `epoch-${machineId}` })) },
-    });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        api: { machineStatus: (machineId) => Promise.resolve(snapshot({ epochId: `epoch-${machineId}` })) },
+      },
+    );
 
     await controller.refresh("remote");
     await controller.refresh("local");
@@ -65,9 +91,15 @@ describe("MachineStatusController", () => {
 
   it("leaves a machine without a snapshot and raises no blocking error when the refresh fails", async () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; }, {
-      api: { machineStatus: () => Promise.reject(new Error("Not Found")) },
-    });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        api: { machineStatus: () => Promise.reject(new Error("Not Found")) },
+      },
+    );
 
     await expect(controller.refresh("local")).rejects.toThrow("Not Found");
 
@@ -77,12 +109,25 @@ describe("MachineStatusController", () => {
 
   it("recovers missed session completions wholesale without visiting the sessions", async () => {
     let state = initialAppState();
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; }, {
-      api: { machineStatus: () => Promise.resolve(snapshot({ revision: 2, sessions: {} })) },
-    });
-    controller.apply("local", snapshot({ revision: 1, sessions: {
-      "child-1": { "core:working": true }, "child-2": { "core:working": true },
-    } }));
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        api: { machineStatus: () => Promise.resolve(snapshot({ revision: 2, sessions: {} })) },
+      },
+    );
+    controller.apply(
+      "local",
+      snapshot({
+        revision: 1,
+        sessions: {
+          "child-1": { "core:working": true },
+          "child-2": { "core:working": true },
+        },
+      }),
+    );
     await controller.refresh("local");
     expect(state.machineStatusSnapshots["local"]?.sessions).toEqual({});
     expect(state.selectedSession).toBeUndefined();
@@ -91,10 +136,18 @@ describe("MachineStatusController", () => {
   it("does not let an HTTP read from an old daemon replace a new socket epoch", async () => {
     let state = initialAppState();
     let resolveFetch: ((value: MachineStatusSnapshot) => void) | undefined;
-    const fetched = new Promise<MachineStatusSnapshot>((resolve) => { resolveFetch = resolve; });
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; }, {
-      api: { machineStatus: () => fetched },
+    const fetched = new Promise<MachineStatusSnapshot>((resolve) => {
+      resolveFetch = resolve;
     });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        api: { machineStatus: () => fetched },
+      },
+    );
     controller.apply("local", snapshot({ epochId: "old", revision: 5, sessions: { child: { "core:working": true } } }));
     const refreshing = controller.refresh("local");
     // The coordinator starts its read in a microtask.
@@ -109,10 +162,18 @@ describe("MachineStatusController", () => {
   it("does not let a late refresh response overwrite a newer socket snapshot", async () => {
     let state = initialAppState();
     let resolveFetch: ((value: MachineStatusSnapshot) => void) | undefined;
-    const fetched = new Promise<MachineStatusSnapshot>((resolve) => { resolveFetch = resolve; });
-    const controller = new MachineStatusController(() => state, (patch) => { state = { ...state, ...patch }; }, {
-      api: { machineStatus: () => fetched },
+    const fetched = new Promise<MachineStatusSnapshot>((resolve) => {
+      resolveFetch = resolve;
     });
+    const controller = new MachineStatusController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        api: { machineStatus: () => fetched },
+      },
+    );
 
     const refreshing = controller.refresh("local");
     await Promise.resolve();

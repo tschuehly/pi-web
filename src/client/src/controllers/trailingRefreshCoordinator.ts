@@ -38,33 +38,32 @@ export class TrailingRefreshCoordinator<Key> {
       debounceTimer: undefined,
       finishDebounce: undefined,
     };
-    pending.promise = Promise.resolve()
-      .then(async () => {
-        let latestError: unknown;
-        let latestFailed: boolean;
-        try {
-          do {
-            pending.trailing = false;
-            pending.phase = "debouncing";
-            if (this.debounceMs > 0) await this.waitForDebounce(pending);
-            pending.phase = "running";
-            const runRefresh = pending.latestRefresh;
-            latestFailed = false;
-            try {
-              await runRefresh();
-            } catch (error) {
-              latestError = error;
-              latestFailed = true;
-            }
-          } while (this.hasTrailingRequest(pending));
-          if (latestFailed) throw latestError;
-        } finally {
-          // Retire atomically with the final trailing check. A later microtask
-          // must not attach work to an already-drained operation.
-          this.cancelDebounce(pending);
-          if (this.pendingByKey.get(key) === pending) this.pendingByKey.delete(key);
-        }
-      });
+    pending.promise = Promise.resolve().then(async () => {
+      let latestError: unknown;
+      let latestFailed: boolean;
+      try {
+        do {
+          pending.trailing = false;
+          pending.phase = "debouncing";
+          if (this.debounceMs > 0) await this.waitForDebounce(pending);
+          pending.phase = "running";
+          const runRefresh = pending.latestRefresh;
+          latestFailed = false;
+          try {
+            await runRefresh();
+          } catch (error) {
+            latestError = error;
+            latestFailed = true;
+          }
+        } while (this.hasTrailingRequest(pending));
+        if (latestFailed) throw latestError;
+      } finally {
+        // Retire atomically with the final trailing check. A later microtask
+        // must not attach work to an already-drained operation.
+        this.cancelDebounce(pending);
+        if (this.pendingByKey.get(key) === pending) this.pendingByKey.delete(key);
+      }
+    });
     this.pendingByKey.set(key, pending);
     return pending.promise;
   }

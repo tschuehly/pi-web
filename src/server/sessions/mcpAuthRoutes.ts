@@ -17,7 +17,9 @@ export function registerMcpAuthRoutes(app: FastifyInstance, sessions: McpAuthRou
       const cwd = string(query, "cwd");
       if (!cwd) throw new Error("cwd must not be empty");
       return await sessions.mcpAuthServers({ id: request.params.sessionId, cwd: normalizeRequestCwd(cwd) });
-    } catch (error) { return reply.code(400).send({ error: message(error) }); }
+    } catch (error) {
+      return reply.code(400).send({ error: message(error) });
+    }
   });
   app.post<{ Params: { sessionId: string }; Body: unknown }>(`${prefix}/sessions/:sessionId/mcp/auth`, async (request, reply) => {
     try {
@@ -34,19 +36,27 @@ export function registerMcpAuthRoutes(app: FastifyInstance, sessions: McpAuthRou
     }
   });
   app.get<{ Params: { flowId: string } }>(`${prefix}/auth/mcp/:flowId`, (request, reply) => {
-    try { return sessions.mcpAuthFlows.get(request.params.flowId); }
-    catch (error) { return reply.code(404).send({ error: message(error) }); }
+    try {
+      return sessions.mcpAuthFlows.get(request.params.flowId);
+    } catch (error) {
+      return reply.code(404).send({ error: message(error) });
+    }
   });
   app.post<{ Params: { flowId: string }; Body: unknown }>(`${prefix}/auth/mcp/:flowId/respond`, (request, reply) => {
     try {
       const body = record(request.body);
       onlyKeys(body, ["requestId", "value"]);
       return sessions.mcpAuthFlows.respond(request.params.flowId, string(body, "requestId"), string(body, "value"));
-    } catch (error) { return reply.code(400).send({ error: message(error) }); }
+    } catch (error) {
+      return reply.code(400).send({ error: message(error) });
+    }
   });
   app.post<{ Params: { flowId: string } }>(`${prefix}/auth/mcp/:flowId/cancel`, (request, reply) => {
-    try { return sessions.mcpAuthFlows.cancel(request.params.flowId); }
-    catch (error) { return reply.code(400).send({ error: message(error) }); }
+    try {
+      return sessions.mcpAuthFlows.cancel(request.params.flowId);
+    } catch (error) {
+      return reply.code(400).send({ error: message(error) });
+    }
   });
 }
 
@@ -62,4 +72,6 @@ function string(body: Record<string, unknown>, key: string): string {
 function onlyKeys(body: Record<string, unknown>, keys: string[]): void {
   if (Object.keys(body).some((key) => !keys.includes(key))) throw new Error("Unexpected MCP authentication field");
 }
-function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

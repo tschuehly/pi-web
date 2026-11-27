@@ -11,14 +11,23 @@ export async function collectReview(connection: PiWebHostPiSessionConnection, re
   let completionTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await new Promise<string>((resolve, reject) => {
-      onAbort = () => { reject(new Error("Review connection interrupted; agent work may continue in Sessions")); };
+      onAbort = () => {
+        reject(new Error("Review connection interrupted; agent work may continue in Sessions"));
+      };
       signal.addEventListener("abort", onAbort, { once: true });
-      receiptTimer = setTimeout(() => { reject(new Error("No companion receipt within 5 seconds. Check package enablement/trust; inspect Sessions before retrying.")); }, 5_000);
-      completionTimer = setTimeout(() => { reject(new Error("Review exceeded 10 minutes; agent work may continue in Sessions. No findings saved.")); }, 600_000);
+      receiptTimer = setTimeout(() => {
+        reject(new Error("No companion receipt within 5 seconds. Check package enablement/trust; inspect Sessions before retrying."));
+      }, 5_000);
+      completionTimer = setTimeout(() => {
+        reject(new Error("Review exceeded 10 minutes; agent work may continue in Sessions. No findings saved."));
+      }, 600_000);
       unsubscribe = connection.on(REVIEW_REPLY, (data) => {
         if (typeof data !== "object" || data === null || !("requestId" in data) || data.requestId !== requestId) return;
         if (!("status" in data)) return;
-        if (data.status === "accepted") { clearTimeout(receiptTimer); return; }
+        if (data.status === "accepted") {
+          clearTimeout(receiptTimer);
+          return;
+        }
         if (data.status === "failed") {
           reject(new Error("error" in data && typeof data.error === "string" ? data.error.slice(0, 4000) : "Review failed"));
         } else if (data.status === "completed") {

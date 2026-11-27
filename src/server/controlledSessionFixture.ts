@@ -80,11 +80,14 @@ export async function buildControlledSessionFixture(options: ControlledSessionFi
   return {
     fixedClock: CONTROLLED_FIXTURE_CLOCK,
     anchors,
-    blockers: [{
-      code: "LIVE_ASK_UNREACHABLE",
-      state: "partial",
-      message: "Persisted sessions alone cannot hold a live pending ask. Start a separate, owned fixture session daemon with PI_WEB_FIXTURE_PENDING_ASK_MANIFEST pointing to this manifest to open one daemon-memory ask; never point this fixture at a live daemon.",
-    }],
+    blockers: [
+      {
+        code: "LIVE_ASK_UNREACHABLE",
+        state: "partial",
+        message:
+          "Persisted sessions alone cannot hold a live pending ask. Start a separate, owned fixture session daemon with PI_WEB_FIXTURE_PENDING_ASK_MANIFEST pointing to this manifest to open one daemon-memory ask; never point this fixture at a live daemon.",
+      },
+    ],
   };
 }
 
@@ -112,7 +115,10 @@ async function createDeterministicRepository(path: string, ordinal: number): Pro
   return realpath(path);
 }
 
-function writeControlledSession(sessionDir: string, input: { sessionId: string; cwd: string; displayName: string; transcriptMarker: string; ordinal: number }): void {
+function writeControlledSession(
+  sessionDir: string,
+  input: { sessionId: string; cwd: string; displayName: string; transcriptMarker: string; ordinal: number },
+): void {
   // SessionManager is the canonical Pi persistence writer. The fixture supplies
   // only its documented id option and append/branch APIs; no private JSONL
   // shape is fabricated. Message clocks are explicit and the manager's entry
@@ -164,15 +170,27 @@ function withFixedDate<T>(timestamp: string, operation: () => T): T {
   const NativeDate = Date;
   const fixedMs = NativeDate.parse(timestamp);
   class FixedDate extends NativeDate {
-    constructor(value?: string | number | Date) { super(value ?? fixedMs); }
-    static override now(): number { return fixedMs; }
+    constructor(value?: string | number | Date) {
+      super(value ?? fixedMs);
+    }
+    static override now(): number {
+      return fixedMs;
+    }
   }
   Object.defineProperty(globalThis, "Date", { configurable: true, writable: true, value: FixedDate });
-  try { return operation(); }
-  finally { Object.defineProperty(globalThis, "Date", { configurable: true, writable: true, value: NativeDate }); }
+  try {
+    return operation();
+  } finally {
+    Object.defineProperty(globalThis, "Date", { configurable: true, writable: true, value: NativeDate });
+  }
 }
-function workspaceIdentity(projectId: string, path: string): string { return createHash("sha1").update(`${projectId}:${path}`).digest("hex").slice(0, 12); }
-async function writeJson(path: string, value: unknown): Promise<void> { await mkdir(dirname(path), { recursive: true }); await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8"); }
+function workspaceIdentity(projectId: string, path: string): string {
+  return createHash("sha1").update(`${projectId}:${path}`).digest("hex").slice(0, 12);
+}
+async function writeJson(path: string, value: unknown): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
 function requireOwnedRoot(value: string): string {
   if (!isAbsolute(value)) throw new Error("Controlled fixture root must be absolute");
   return resolve(value);

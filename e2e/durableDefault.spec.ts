@@ -19,7 +19,13 @@ test(`New Chat creates a ${durableDefault ? "Durable" : "legacy"} Chat when the 
   await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
   const id = new URL(page.url()).searchParams.get("session") ?? "";
   // Only Durable Chats list the capabilities their host names; legacy Chats support everything and list none.
-  const listed = async () => ((await (await page.request.get(`${base}api/sessions?${new URLSearchParams({ cwd: project }).toString()}`)).json()) as { id: string; capabilities?: string[] }[]).find((s) => s.id === id);
+  const listed = async () =>
+    (
+      (await (await page.request.get(`${base}api/sessions?${new URLSearchParams({ cwd: project }).toString()}`)).json()) as {
+        id: string;
+        capabilities?: string[];
+      }[]
+    ).find((s) => s.id === id);
   await expect.poll(async () => (await listed()) !== undefined).toBe(true);
   expect((await listed())?.capabilities !== undefined).toBe(durableDefault);
 });

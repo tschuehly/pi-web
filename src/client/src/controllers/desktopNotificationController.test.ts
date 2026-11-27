@@ -42,8 +42,12 @@ function harness(onPermissionChange: () => void = () => undefined, workstreamTit
     notifications,
     focus,
     openChat,
-    setBackground: (value: boolean) => { background = value; },
-    setPermission: (value: NotificationPermission) => { permission = value; },
+    setBackground: (value: boolean) => {
+      background = value;
+    },
+    setPermission: (value: NotificationPermission) => {
+      permission = value;
+    },
   };
 }
 
@@ -70,9 +74,25 @@ function status(isStreaming: boolean): SessionStatus {
   };
 }
 
-const ask: PendingAskUser = { askId: "ask-1", askedAt: "2026-09-20T00:00:00Z", updatedAt: "2026-09-20T00:00:00Z", revision: "r1", turnsSinceUpdate: 0, questions: [] };
+const ask: PendingAskUser = {
+  askId: "ask-1",
+  askedAt: "2026-09-20T00:00:00Z",
+  updatedAt: "2026-09-20T00:00:00Z",
+  revision: "r1",
+  turnsSinceUpdate: 0,
+  questions: [],
+};
 const dialog: PendingExtensionDialog = { dialogId: "dialog-1", kind: "confirm", title: "Proceed?", askedAt: "2026-09-20T00:00:00Z", runScoped: true };
-const session: SessionInfo = { id: "session-1", name: "Build Chat", cwd: "/repo", path: "/sessions/1.jsonl", created: "2026-09-20T00:00:00Z", modified: "2026-09-20T00:00:00Z", messageCount: 1, firstMessage: "Hello" };
+const session: SessionInfo = {
+  id: "session-1",
+  name: "Build Chat",
+  cwd: "/repo",
+  path: "/sessions/1.jsonl",
+  created: "2026-09-20T00:00:00Z",
+  modified: "2026-09-20T00:00:00Z",
+  messageCount: 1,
+  firstMessage: "Hello",
+};
 
 describe("DesktopNotificationController", () => {
   it("stays quiet when a selected Chat's turn ends, in the foreground or not", () => {
@@ -80,7 +100,10 @@ describe("DesktopNotificationController", () => {
     const streaming = state({ status: status(true) });
     test.controller.sync(initialAppState(), streaming);
     test.controller.activate(streaming);
-    const completed = state({ status: status(false), messages: [{ entryId: "reply-1", role: "assistant", parts: [{ type: "text", text: "The result is ready." }] }] });
+    const completed = state({
+      status: status(false),
+      messages: [{ entryId: "reply-1", role: "assistant", parts: [{ type: "text", text: "The result is ready." }] }],
+    });
 
     test.setBackground(false);
     test.controller.sync(streaming, completed);
@@ -99,11 +122,15 @@ describe("DesktopNotificationController", () => {
     test.controller.sync(hydrated, hydrated);
     expect(test.notifications).toHaveLength(0);
 
-    const requested = state({ status: { ...status(false), attentionRequest: { id: "attention-2", reason: "  Log in to npm so I can publish.\nDetails follow" } } });
+    const requested = state({
+      status: { ...status(false), attentionRequest: { id: "attention-2", reason: "  Log in to npm so I can publish.\nDetails follow" } },
+    });
     test.controller.sync(hydrated, requested);
     test.controller.sync(requested, requested);
 
-    expect(test.notifications.map(({ title, options }): unknown[] => [title, options.body, options.data])).toEqual([["Build Chat", "Needs you · Log in to npm so I can publish.", { machineId: "local", sessionId: "session-1" }]]);
+    expect(test.notifications.map(({ title, options }): unknown[] => [title, options.body, options.data])).toEqual([
+      ["Build Chat", "Needs you · Log in to npm so I can publish.", { machineId: "local", sessionId: "session-1" }],
+    ]);
     test.notifications[0]?.handle.onclick?.(new Event("click"));
     expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-1", undefined);
   });
@@ -113,11 +140,21 @@ describe("DesktopNotificationController", () => {
     const selected = state();
     test.controller.sync(initialAppState(), selected);
     test.controller.activate(selected);
-    const event = { type: "session.attention" as const, sessionId: "session-2", cwd: "/other", sessionName: "Other Chat", kind: "attention" as const, id: "attention-1", detail: "Review the release PR before I merge." };
+    const event = {
+      type: "session.attention" as const,
+      sessionId: "session-2",
+      cwd: "/other",
+      sessionName: "Other Chat",
+      kind: "attention" as const,
+      id: "attention-1",
+      detail: "Review the release PR before I merge.",
+    };
     test.controller.attention(selected, event, "local");
     test.controller.attention(selected, event, "local");
 
-    expect(test.notifications.map(({ title, options }): unknown[] => [title, options.body, options.data])).toEqual([["Other Chat", "Needs you · Review the release PR before I merge.", { machineId: "local", sessionId: "session-2" }]]);
+    expect(test.notifications.map(({ title, options }): unknown[] => [title, options.body, options.data])).toEqual([
+      ["Other Chat", "Needs you · Review the release PR before I merge.", { machineId: "local", sessionId: "session-2" }],
+    ]);
     test.notifications[0]?.handle.onclick?.(new Event("click"));
     expect(test.openChat).toHaveBeenCalledExactlyOnceWith("local", "session-2", undefined);
   });
@@ -196,7 +233,11 @@ describe("DesktopNotificationController", () => {
     test.controller.sync(initialAppState(), idle);
     test.controller.activate(idle);
     test.controller.sync(idle, state({ pendingAsks: [ask], pendingDialogs: [dialog] }));
-    test.controller.attention(idle, { type: "session.attention", sessionId: "session-2", cwd: "/other", kind: "ask", id: "unsafe id/../", detail: "?" }, "local");
+    test.controller.attention(
+      idle,
+      { type: "session.attention", sessionId: "session-2", cwd: "/other", kind: "ask", id: "unsafe id/../", detail: "?" },
+      "local",
+    );
     test.controller.sessionError(idle, "failed", 7);
 
     expect(test.notifications.map((notification): unknown => notification.options.data)).toEqual([
@@ -243,16 +284,27 @@ describe("DesktopNotificationController", () => {
     const selected = state();
     test.controller.sync(initialAppState(), selected);
     test.controller.activate(selected);
-    const other = { type: "session.attention" as const, sessionId: "session-2", cwd: "/other", sessionName: "Other Chat", kind: "ask" as const, id: "ask-2", detail: "Which branch?" };
+    const other = {
+      type: "session.attention" as const,
+      sessionId: "session-2",
+      cwd: "/other",
+      sessionName: "Other Chat",
+      kind: "ask" as const,
+      id: "ask-2",
+      detail: "Which branch?",
+    };
     test.controller.attention(selected, other, "local");
     test.controller.attention(selected, other, "local");
     test.controller.attention(selected, { ...other, sessionId: session.id, cwd: session.cwd }, "local");
     expect(test.notifications).toHaveLength(1);
-    expect(test.notifications[0]).toMatchObject({ title: "Other Chat", options: { body: "Question · Which branch?", data: { machineId: "local", sessionId: "session-2", message: "ask:ask-2" } } });
+    expect(test.notifications[0]).toMatchObject({
+      title: "Other Chat",
+      options: { body: "Question · Which branch?", data: { machineId: "local", sessionId: "session-2", message: "ask:ask-2" } },
+    });
     test.notifications[0]?.handle.onclick?.(new Event("click"));
     expect(test.openChat).toHaveBeenCalledWith("local", "session-2", "ask:ask-2");
 
-    test.controller.attention(selected, { ...other, kind: "error", id: "42", detail: "terminal failed" , sessionId: session.id }, "local");
+    test.controller.attention(selected, { ...other, kind: "error", id: "42", detail: "terminal failed", sessionId: session.id }, "local");
     test.controller.sessionError(selected, "terminal failed", 42);
     expect(test.notifications).toHaveLength(2);
     test.controller.sessionError(selected, "terminal failed", 42);
@@ -288,7 +340,9 @@ describe("DesktopNotificationController", () => {
       vi.advanceTimersByTime(30_000);
       test.controller.attention(selected, { ...error, id: "3", detail: "third" }, "local");
       expect(test.notifications).toHaveLength(2);
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("requests permission only from the explicit default state", async () => {
@@ -366,7 +420,10 @@ describe("DesktopNotificationController", () => {
     const handle = await adapter.show("Build Chat", { body: "Finished", tag: "chat:complete", data: { machineId: "local", sessionId: "session-1" } });
 
     expect(host.notify).toHaveBeenLastCalledWith("Build Chat", "Finished", { machineId: "local", sessionId: "session-1" });
-    expect(() => { handle.onclick = () => undefined; handle.close(); }).not.toThrow();
+    expect(() => {
+      handle.onclick = () => undefined;
+      handle.close();
+    }).not.toThrow();
     await adapter.show("Build Chat", { body: "Finished", data: { machineId: "local", sessionId: "session-1", message: "entry:reply-1" } });
     expect(host.notify).toHaveBeenLastCalledWith("Build Chat", "Finished", { machineId: "local", sessionId: "session-1", message: "entry:reply-1" });
   });
@@ -385,7 +442,9 @@ describe("DesktopNotificationController", () => {
 
     controller.sessionError(selected, "failed", 1);
 
-    await vi.waitFor(() => { expect(onPermissionChange).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(onPermissionChange).toHaveBeenCalledOnce();
+    });
     expect(adapter.permission()).toBe("default");
     expect(desktopNotifications(host, storage).permission()).toBe("default");
     expect(controller.diagnostic).toContain("delivery failed");
@@ -393,7 +452,15 @@ describe("DesktopNotificationController", () => {
 
   it("delivers a Durable Chat's attention through the native bridge once; a reload or reconnect re-notifies nothing already seen", async () => {
     // The exact global event DurableChatService publishes for a committed request_attention (durableChatService.test.ts).
-    const wire = { type: "session.attention", sessionId: "durable-1", cwd: "/work/a", sessionName: "Durable · Fix the build", kind: "attention", id: "att-1", detail: "Please review" };
+    const wire = {
+      type: "session.attention",
+      sessionId: "durable-1",
+      cwd: "/work/a",
+      sessionName: "Durable · Fix the build",
+      kind: "attention",
+      id: "att-1",
+      detail: "Please review",
+    };
     const host = nativeHost();
     const storage = memoryStorage();
     const adapter = desktopNotifications(host, storage);
@@ -404,26 +471,42 @@ describe("DesktopNotificationController", () => {
     controller.activate(selected);
     controller.attention(selected, parseSessionAttentionEvent(wire), "local");
     controller.attention(selected, parseSessionAttentionEvent(wire), "local");
-    await vi.waitFor(() => { expect(host.notify).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(host.notify).toHaveBeenCalledOnce();
+    });
     expect(host.notify).toHaveBeenCalledWith("Durable · Fix the build", "Needs you · Please review", { machineId: "local", sessionId: "durable-1" });
     controller.attention(selected, parseSessionAttentionEvent({ ...wire, kind: "ask", id: "ask-1", detail: "Which target?" }), "local");
-    await vi.waitFor(() => { expect(host.notify).toHaveBeenCalledTimes(2); });
-    expect(host.notify).toHaveBeenLastCalledWith("Durable · Fix the build", "Question · Which target?", { machineId: "local", sessionId: "durable-1", message: "ask:ask-1" });
+    await vi.waitFor(() => {
+      expect(host.notify).toHaveBeenCalledTimes(2);
+    });
+    expect(host.notify).toHaveBeenLastCalledWith("Durable · Fix the build", "Question · Which target?", {
+      machineId: "local",
+      sessionId: "durable-1",
+      message: "ask:ask-1",
+    });
 
     // A reloaded page opens the Durable Chat: its still-open request is hydration, not news; a newer one notifies once.
     const reloaded = new DesktopNotificationController({ ...desktopNotifications(host, storage), isBackground: () => true });
     const durableSession = { ...session, id: "durable-1", path: "durable:durable-1", name: "Durable · Fix the build" };
-    const open = state({ selectedSession: durableSession, status: { ...status(false), sessionId: "durable-1", attentionRequest: { id: "att-1", reason: "Please review" } } });
+    const open = state({
+      selectedSession: durableSession,
+      status: { ...status(false), sessionId: "durable-1", attentionRequest: { id: "att-1", reason: "Please review" } },
+    });
     reloaded.sync(initialAppState(), open);
     reloaded.activate(open);
     reloaded.sync(open, open);
     const acknowledged = state({ selectedSession: durableSession, status: { ...status(false), sessionId: "durable-1" } });
     reloaded.sync(open, acknowledged);
     expect(host.notify).toHaveBeenCalledTimes(2);
-    const newer = state({ selectedSession: durableSession, status: { ...status(false), sessionId: "durable-1", attentionRequest: { id: "att-2", reason: "Log in again" } } });
+    const newer = state({
+      selectedSession: durableSession,
+      status: { ...status(false), sessionId: "durable-1", attentionRequest: { id: "att-2", reason: "Log in again" } },
+    });
     reloaded.sync(acknowledged, newer);
     reloaded.sync(newer, newer);
-    await vi.waitFor(() => { expect(host.notify).toHaveBeenCalledTimes(3); });
+    await vi.waitFor(() => {
+      expect(host.notify).toHaveBeenCalledTimes(3);
+    });
     expect(host.notify).toHaveBeenLastCalledWith("Durable · Fix the build", "Needs you · Log in again", { machineId: "local", sessionId: "durable-1" });
   });
 
@@ -432,7 +515,10 @@ describe("DesktopNotificationController", () => {
     class BrowserNotification extends FakeNotification {
       static permission: NotificationPermission = "granted";
       static requestPermission = vi.fn(() => Promise.resolve<NotificationPermission>("granted"));
-      constructor(public readonly title: string, public readonly options: NotificationOptions) {
+      constructor(
+        public readonly title: string,
+        public readonly options: NotificationOptions,
+      ) {
         super();
         shown.push(this);
       }
@@ -471,7 +557,11 @@ function memoryStorage(): DesktopNotificationStorage {
   const values = new Map<string, string>();
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
-    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
   };
 }

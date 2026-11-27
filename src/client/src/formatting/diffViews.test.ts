@@ -30,7 +30,12 @@ describe("enhanceDiffBlocks", () => {
   it("colours diff fence lines like the edit tool's diff", () => {
     const root = enhanced("```diff\n@@ -1 +1 @@\n-old\n+new\n same\n```");
     const lines = [...root.querySelectorAll("pre.diff code span")].map((span) => [span.className, span.textContent]);
-    expect(lines).toEqual([["hunk", "@@ -1 +1 @@\n"], ["removed", "-old\n"], ["added", "+new\n"], ["context", " same\n"]]);
+    expect(lines).toEqual([
+      ["hunk", "@@ -1 +1 @@\n"],
+      ["removed", "-old\n"],
+      ["added", "+new\n"],
+      ["context", " same\n"],
+    ]);
   });
 
   it("renders a worddiff with struck removals and added words, in the chosen layout", () => {

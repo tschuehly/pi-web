@@ -39,10 +39,11 @@ function productionInput(): ProductionNativeServicePlanInput {
 
 function completedProbe(status: "satisfied" | "unsatisfied", detail: string | null = null): NativeServiceAuthoritativeProbe {
   return {
-    run: (request) => Promise.resolve({
-      kind: "completed",
-      outcomes: request.prerequisites.map((prerequisite) => ({ prerequisiteId: prerequisite.id, status, detail })),
-    }),
+    run: (request) =>
+      Promise.resolve({
+        kind: "completed",
+        outcomes: request.prerequisites.map((prerequisite) => ({ prerequisiteId: prerequisite.id, status, detail })),
+      }),
   };
 }
 
@@ -123,12 +124,7 @@ describe("production native service planning", () => {
         backend,
         shell,
         workingDirectory: null,
-        prerequisites: [
-          { id: "sessiond.command.pi-web-sessiond" },
-          { id: "sessiond.node" },
-          { id: "web.command.pi-web-server" },
-          { id: "web.node" },
-        ],
+        prerequisites: [{ id: "sessiond.command.pi-web-sessiond" }, { id: "sessiond.node" }, { id: "web.command.pi-web-server" }, { id: "web.node" }],
       },
     ]);
   });
@@ -164,14 +160,16 @@ describe("production native service planning", () => {
         prerequisites: [],
       },
     ]);
-    expect(planValidationProbeRequests(resolution.plan)).toEqual([{
-      purpose: "plan-validation",
-      backend,
-      shell,
-      environment: { PI_WEB_CONFIG: "/home/user/.config/pi-web/config.json" },
-      workingDirectory: null,
-      prerequisites: [],
-    }]);
+    expect(planValidationProbeRequests(resolution.plan)).toEqual([
+      {
+        purpose: "plan-validation",
+        backend,
+        shell,
+        environment: { PI_WEB_CONFIG: "/home/user/.config/pi-web/config.json" },
+        workingDirectory: null,
+        prerequisites: [],
+      },
+    ]);
   });
 
   it("falls back per service to bundled entrypoints when named commands are unavailable", async () => {
@@ -266,12 +264,14 @@ describe("production native service planning", () => {
     expect(fileExists).not.toHaveBeenCalled();
     expect(resolution).toEqual({
       ok: false,
-      failures: [{
-        kind: "probe-infrastructure",
-        serviceIds: ["sessiond", "web"],
-        reason: "cleanup",
-        message: "launchd probe cleanup failed",
-      }],
+      failures: [
+        {
+          kind: "probe-infrastructure",
+          serviceIds: ["sessiond", "web"],
+          reason: "cleanup",
+          message: "launchd probe cleanup failed",
+        },
+      ],
     });
   });
 
@@ -287,16 +287,19 @@ describe("production native service planning", () => {
 
     const malformed = await resolveProductionNativeServicePlan(productionInput(), {
       probe: {
-        run: () => Promise.resolve({
-          kind: "completed",
-          outcomes: [{ prerequisiteId: "sessiond.command.pi-web-sessiond", status: "satisfied", detail: null }],
-        }),
+        run: () =>
+          Promise.resolve({
+            kind: "completed",
+            outcomes: [{ prerequisiteId: "sessiond.command.pi-web-sessiond", status: "satisfied", detail: null }],
+          }),
       },
       fileExists: () => true,
     });
     expect(malformed).toMatchObject({
       ok: false,
-      failures: [{ kind: "probe-infrastructure", reason: "malformed-output", message: "Authoritative probe returned no outcome for web.command.pi-web-server." }],
+      failures: [
+        { kind: "probe-infrastructure", reason: "malformed-output", message: "Authoritative probe returned no outcome for web.command.pi-web-server." },
+      ],
     });
   });
 });
@@ -347,7 +350,8 @@ describe("development native service planning", () => {
       ],
     });
 
-    const serviceCommandRequirements = plan.services.flatMap((service) => service.prerequisites)
+    const serviceCommandRequirements = plan.services
+      .flatMap((service) => service.prerequisites)
       .filter((prerequisite) => prerequisite.kind === "command-available")
       .map((prerequisite) => prerequisite.command);
     expect(serviceCommandRequirements).toEqual(["npm", "npm", "bash"]);

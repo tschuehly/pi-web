@@ -3,7 +3,17 @@ import { resetWorkspaceScopedState, type AppState } from "../appState";
 import { BrowserErrorReporter, projectBrowserErrorScope, workspaceBrowserErrorScope } from "../browserErrors";
 import { mergeCachedNewSessions } from "../cachedNewSessions";
 import { machineProjectKey } from "../machineKeys";
-import { selectedMachineId, type GetState, type NavigationDestinationOptions, type NavigationFreshness, type NavigationScope, type NavigationSelection, type RouteTarget, type SetState, type UpdateUrl } from "./types";
+import {
+  selectedMachineId,
+  type GetState,
+  type NavigationDestinationOptions,
+  type NavigationFreshness,
+  type NavigationScope,
+  type NavigationSelection,
+  type RouteTarget,
+  type SetState,
+  type UpdateUrl,
+} from "./types";
 import type { SessionController } from "./sessionController";
 import { TrailingRefreshCoordinator } from "./trailingRefreshCoordinator";
 import { InMemoryWorkspaceSelectionMemory, selectPreferredWorkspace, type WorkspaceSelectionMemory } from "./workspaceSelection";
@@ -49,16 +59,25 @@ export class WorkspaceController {
     this.navigateToWorkspace = deps.navigateToWorkspace;
     this.captureNavigation = deps.captureNavigation;
     this.beginNavigationOperation = deps.beginNavigationOperation;
-    this.onBackgroundError = deps.onBackgroundError ?? ((message, error) => { console.warn(message, error); });
+    this.onBackgroundError =
+      deps.onBackgroundError
+      ?? ((message, error) => {
+        console.warn(message, error);
+      });
     this.browserErrors = new BrowserErrorReporter(getState, setState);
-    this.topologyRefreshes = new TrailingRefreshCoordinator(
-      deps.topologyRefreshDebounceMs ?? WORKSPACE_TOPOLOGY_REFRESH_DEBOUNCE_MS,
-    );
+    this.topologyRefreshes = new TrailingRefreshCoordinator(deps.topologyRefreshDebounceMs ?? WORKSPACE_TOPOLOGY_REFRESH_DEBOUNCE_MS);
   }
 
   clearSelection(options?: { updateUrl?: boolean | undefined }) {
     this.sessions.clearActiveSession();
-    this.setState({ selectedProject: undefined, workspaceResolution: undefined, selectedWorkspace: undefined, workspaces: [], isLoadingWorkspaces: false, ...resetWorkspaceScopedState() });
+    this.setState({
+      selectedProject: undefined,
+      workspaceResolution: undefined,
+      selectedWorkspace: undefined,
+      workspaces: [],
+      isLoadingWorkspaces: false,
+      ...resetWorkspaceScopedState(),
+    });
     if (options?.updateUrl !== false) this.updateUrl();
   }
 
@@ -76,18 +95,37 @@ export class WorkspaceController {
     const machineId = selectedMachineId(this.getState());
     const errorScope = projectBrowserErrorScope(machineId, project.id);
     this.sessions.clearActiveSession();
-    this.setState({ selectedProject: project, workspaceResolution: undefined, selectedWorkspace: undefined, workspaces: [], isLoadingWorkspaces: true, ...resetWorkspaceScopedState() });
+    this.setState({
+      selectedProject: project,
+      workspaceResolution: undefined,
+      selectedWorkspace: undefined,
+      workspaces: [],
+      isLoadingWorkspaces: true,
+      ...resetWorkspaceScopedState(),
+    });
     const listRequestIsCurrent = this.beginWorkspaceListRequest(project.id, machineId);
     try {
       const resolution = await this.api.workspaceResolution(project.id, machineId);
       const workspaces = [...resolution.workspaces];
-      if (!listRequestIsCurrent()
+      if (
+        !listRequestIsCurrent()
         || !this.navigationIsCurrent(navigation)
         || selectedMachineId(this.getState()) !== machineId
-        || this.getState().selectedProject?.id !== project.id) return;
-      this.setState({ workspaceResolution: resolution, workspaces, workspacesByProjectId: { ...this.getState().workspacesByProjectId, [project.id]: workspaces }, isLoadingWorkspaces: false });
-      if (resolution.status === "degraded") throw new Error(resolution.diagnostics.map(({ message }) => message).join("; ") || "Workspace authority is degraded");
-      const workspace = selectPreferredWorkspace(workspaces, { targetWorkspaceId: target?.workspaceId, latestWorkspaceId: this.workspaceSelection.latestWorkspaceId(machineProjectKey(machineId, project.id)) });
+        || this.getState().selectedProject?.id !== project.id
+      )
+        return;
+      this.setState({
+        workspaceResolution: resolution,
+        workspaces,
+        workspacesByProjectId: { ...this.getState().workspacesByProjectId, [project.id]: workspaces },
+        isLoadingWorkspaces: false,
+      });
+      if (resolution.status === "degraded")
+        throw new Error(resolution.diagnostics.map(({ message }) => message).join("; ") || "Workspace authority is degraded");
+      const workspace = selectPreferredWorkspace(workspaces, {
+        targetWorkspaceId: target?.workspaceId,
+        latestWorkspaceId: this.workspaceSelection.latestWorkspaceId(machineProjectKey(machineId, project.id)),
+      });
       if (workspace) {
         return await this.selectWorkspace(workspace, { sessionId: target?.sessionId, updateUrl: target?.updateUrl, navigation });
       }
@@ -97,10 +135,13 @@ export class WorkspaceController {
       }
       if (target?.updateUrl !== false && this.navigationIsCurrent(navigation)) this.updateUrl();
     } catch (error) {
-      if (this.navigationIsCurrent(navigation)
+      if (
+        this.navigationIsCurrent(navigation)
         && workspaceMutationIsCurrent(target)
         && selectedMachineId(this.getState()) === machineId
-        && this.getState().selectedProject?.id === project.id) this.setState({ isLoadingWorkspaces: false });
+        && this.getState().selectedProject?.id === project.id
+      )
+        this.setState({ isLoadingWorkspaces: false });
       if (target?.signal?.aborted !== true) this.browserErrors.report(errorScope, String(error));
       return String(error);
     }
@@ -116,24 +157,32 @@ export class WorkspaceController {
     this.sessions.clearActiveSession();
     this.setState({ selectedWorkspace: workspace, isLoadingWorkspaces: false, ...resetWorkspaceScopedState() });
     try {
-      const loadedSessions = target?.signal === undefined
-        ? await this.api.sessions(workspace.path, machineId)
-        : await this.api.sessions(workspace.path, machineId, { signal: target.signal });
+      const loadedSessions =
+        target?.signal === undefined
+          ? await this.api.sessions(workspace.path, machineId)
+          : await this.api.sessions(workspace.path, machineId, { signal: target.signal });
       const sessions = mergeCachedNewSessions(workspace.path, loadedSessions, machineId);
-      if (!this.navigationIsCurrent(navigation)
+      if (
+        !this.navigationIsCurrent(navigation)
         || !workspaceMutationIsCurrent(target)
         || selectedMachineId(this.getState()) !== machineId
         || this.getState().selectedWorkspace?.id !== workspace.id
-        || this.getState().selectedProject?.id !== workspace.projectId) return;
+        || this.getState().selectedProject?.id !== workspace.projectId
+      )
+        return;
       this.setState({ sessions });
       const session = this.sessions.preferredSession(workspace.path, sessions, target?.sessionId);
       if (!this.navigationIsCurrent(navigation) || !workspaceMutationIsCurrent(target)) return;
-      if (session) await this.sessions.selectSession(session, { deferChatLoading: true, updateUrl: target?.updateUrl, ...(navigation === undefined ? {} : { navigation }) });
+      if (session)
+        await this.sessions.selectSession(session, {
+          deferChatLoading: true,
+          updateUrl: target?.updateUrl,
+          ...(navigation === undefined ? {} : { navigation }),
+        });
       else if (target?.sessionId !== undefined && target.sessionId !== "") {
         this.browserErrors.report(errorScope, `Session not found: ${target.sessionId}`);
         return `Session not found: ${target.sessionId}`;
-      }
-      else if (target?.updateUrl !== false) this.updateUrl();
+      } else if (target?.updateUrl !== false) this.updateUrl();
     } catch (error) {
       if (target?.signal?.aborted !== true) this.browserErrors.report(errorScope, String(error));
       return String(error);
@@ -141,12 +190,7 @@ export class WorkspaceController {
     return undefined;
   }
 
-
-  async refreshProjectWorkspaces(
-    projectId: string,
-    machineId = selectedMachineId(this.getState()),
-    options?: WorkspaceMutationGuard,
-  ): Promise<Workspace[]> {
+  async refreshProjectWorkspaces(projectId: string, machineId = selectedMachineId(this.getState()), options?: WorkspaceMutationGuard): Promise<Workspace[]> {
     return (await this.refreshProjectWorkspaceList(projectId, machineId, options)).workspaces;
   }
 
@@ -159,13 +203,15 @@ export class WorkspaceController {
     const project = this.getState().projects.find((candidate) => candidate.id === projectId);
     if (project === undefined) throw new Error("Project not found");
     const isCurrent = this.beginWorkspaceListRequest(projectId, machineId);
-    const resolution = options?.signal === undefined
-      ? await this.api.workspaceResolution(project.id, machineId)
-      : await this.api.workspaceResolution(project.id, machineId, { signal: options.signal });
+    const resolution =
+      options?.signal === undefined
+        ? await this.api.workspaceResolution(project.id, machineId)
+        : await this.api.workspaceResolution(project.id, machineId, { signal: options.signal });
     const workspaces = [...resolution.workspaces];
     if (isCurrent() && workspaceMutationIsCurrent(options) && selectedMachineId(this.getState()) === machineId) {
       if (this.getState().selectedProject?.id === project.id) this.setState({ workspaceResolution: resolution });
-      if (resolution.status === "degraded") throw new Error(resolution.diagnostics.map(({ message }) => message).join("; ") || "Workspace authority is degraded");
+      if (resolution.status === "degraded")
+        throw new Error(resolution.diagnostics.map(({ message }) => message).join("; ") || "Workspace authority is degraded");
       this.applyProjectWorkspaces(project.id, workspaces);
     }
     return { workspaces, isCurrent };
@@ -277,12 +323,16 @@ export class WorkspaceController {
 }
 
 function navigationSelection(state: ReturnType<GetState>, captureNavigation?: () => NavigationSelection): NavigationSelection {
-  return captureNavigation?.() ?? {
-    machineId: selectedMachineId(state),
-    projectId: state.selectedProject?.id,
-    workspaceId: state.selectedWorkspace?.id,
-    ...(state.selectedSession === undefined || Reflect.get(state.selectedSession, "clientPendingStart") !== true ? { sessionId: state.selectedSession?.id } : {}),
-  };
+  return (
+    captureNavigation?.() ?? {
+      machineId: selectedMachineId(state),
+      projectId: state.selectedProject?.id,
+      workspaceId: state.selectedWorkspace?.id,
+      ...(state.selectedSession === undefined || Reflect.get(state.selectedSession, "clientPendingStart") !== true
+        ? { sessionId: state.selectedSession?.id }
+        : {}),
+    }
+  );
 }
 
 function workspaceMutationIsCurrent(options: WorkspaceMutationGuard | undefined): boolean {
@@ -301,21 +351,20 @@ function sameWorkspaceSnapshot(left: Workspace, right: Workspace): boolean {
 function sameBrowserObservableValue(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
-    return Array.isArray(left)
+    return (
+      Array.isArray(left)
       && Array.isArray(right)
       && left.length === right.length
-      && left.every((value, index) => sameBrowserObservableValue(value, right[index]));
+      && left.every((value, index) => sameBrowserObservableValue(value, right[index]))
+    );
   }
   if (!isBrowserObservableRecord(left) || !isBrowserObservableRecord(right)) return false;
 
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
-  return leftKeys.length === rightKeys.length
-    && leftKeys.every((key) => Object.hasOwn(right, key)
-      && sameBrowserObservableValue(left[key], right[key]));
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => Object.hasOwn(right, key) && sameBrowserObservableValue(left[key], right[key]));
 }
 
 function isBrowserObservableRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-

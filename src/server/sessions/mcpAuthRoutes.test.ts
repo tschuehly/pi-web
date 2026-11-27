@@ -8,15 +8,28 @@ import { registerMcpAuthRoutes } from "./mcpAuthRoutes.js";
 
 const apps: FastifyInstance[] = [];
 const services: McpAuthFlowService[] = [];
-afterEach(async () => { for (const service of services.splice(0)) service.dispose(); await Promise.all(apps.splice(0).map((app) => app.close())); });
+afterEach(async () => {
+  for (const service of services.splice(0)) service.dispose();
+  await Promise.all(apps.splice(0).map((app) => app.close()));
+});
 
 function fixture() {
-  const app = Fastify(); apps.push(app);
-  const flows = new McpAuthFlowService(); services.push(flows);
-  const startMcpAuth = vi.fn((ref: { id: string; cwd: string }, mode: "login" | "logout") => Promise.resolve(flows.start({
-    sessionId: ref.id, identity: {}, isCurrent: () => true,
-    run: async () => { await required(McpAuthFlowService.current()).input(`Pi ${mode}`); },
-  })));
+  const app = Fastify();
+  apps.push(app);
+  const flows = new McpAuthFlowService();
+  services.push(flows);
+  const startMcpAuth = vi.fn((ref: { id: string; cwd: string }, mode: "login" | "logout") =>
+    Promise.resolve(
+      flows.start({
+        sessionId: ref.id,
+        identity: {},
+        isCurrent: () => true,
+        run: async () => {
+          await required(McpAuthFlowService.current()).input(`Pi ${mode}`);
+        },
+      }),
+    ),
+  );
   const mcpAuthServers = vi.fn(() => Promise.resolve({ servers: [{ name: "alpha", description: "verbatim" }] }));
   registerMcpAuthRoutes(app, { mcpAuthFlows: flows, startMcpAuth, mcpAuthServers }, "/api");
   return { app, flows, startMcpAuth, mcpAuthServers };
@@ -31,9 +44,15 @@ it("wires session start, poll, response and cancel through the machine-owned MCP
   expect(startMcpAuth).toHaveBeenCalledWith({ id: "session-1", cwd: resolve("/workspace") }, "login", undefined);
   const poll = await app.inject(`/api/auth/mcp/${flow.flowId}`);
   expect(poll.json()).toEqual(flow);
-  const answer = await app.inject({ method: "POST", url: `/api/auth/mcp/${flow.flowId}/respond`, payload: { requestId: required(flow.prompt).requestId, value: "redirect" } });
+  const answer = await app.inject({
+    method: "POST",
+    url: `/api/auth/mcp/${flow.flowId}/respond`,
+    payload: { requestId: required(flow.prompt).requestId, value: "redirect" },
+  });
   expect(answer.statusCode).toBe(200);
-  await vi.waitFor(() => { expect(flows.get(flow.flowId).status).toBe("complete"); });
+  await vi.waitFor(() => {
+    expect(flows.get(flow.flowId).status).toBe("complete");
+  });
   const logout = await app.inject({ method: "POST", url: "/api/sessions/session-1/mcp/auth", payload: { cwd: "/workspace", mode: "logout" } });
   const cancel = await app.inject({ method: "POST", url: `/api/auth/mcp/${logout.json<OAuthFlowState>().flowId}/cancel` });
   expect(cancel.json()).toMatchObject({ status: "running", cancelRequested: true });
@@ -42,7 +61,9 @@ it("wires session start, poll, response and cancel through the machine-owned MCP
 });
 
 it.each([
-  {}, { cwd: "", mode: "login" }, { cwd: "/workspace", mode: "arbitrary" },
+  {},
+  { cwd: "", mode: "login" },
+  { cwd: "/workspace", mode: "arbitrary" },
   { cwd: "/workspace", mode: "login", url: "https://untrusted.test" },
   { cwd: "/workspace", mode: "login", config: {} },
 ])("rejects invalid starts and client-supplied configuration: %j", async (payload) => {
@@ -58,7 +79,8 @@ it("allowlists all MCP flow routes for federation", () => {
     { method: "GET", path: "/auth/mcp/:flowId" },
     { method: "POST", path: "/auth/mcp/:flowId/respond" },
     { method: "POST", path: "/auth/mcp/:flowId/cancel" },
-  ]) expect(FEDERATED_HTTP_ROUTES).toContainEqual(route);
+  ])
+    expect(FEDERATED_HTTP_ROUTES).toContainEqual(route);
 });
 
 it("passes explicit targets and list workspace through federation-compatible routes", async () => {
@@ -68,7 +90,11 @@ it("passes explicit targets and list workspace through federation-compatible rou
   expect(list.json()).toEqual({ servers: [{ name: "alpha", description: "verbatim" }] });
   expect(mcpAuthServers).toHaveBeenCalledWith({ id: "session-1", cwd: resolve("/workspace") });
   expect((await app.inject("/api/sessions/session-1/mcp/auth/servers")).statusCode).toBe(400);
-  const auth = await app.inject({ method: "POST", url: "/api/sessions/session-1/mcp/auth", payload: { cwd: "/workspace", mode: "logout", serverName: "alpha" } });
+  const auth = await app.inject({
+    method: "POST",
+    url: "/api/sessions/session-1/mcp/auth",
+    payload: { cwd: "/workspace", mode: "logout", serverName: "alpha" },
+  });
   expect(auth.statusCode).toBe(200);
   expect(startMcpAuth).toHaveBeenCalledWith({ id: "session-1", cwd: resolve("/workspace") }, "logout", "alpha");
 });

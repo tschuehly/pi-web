@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalCommandRun, Workspace } from "./api";
-import { canDeleteWorkspace, isWorkspaceDeletionPending, latestWorkspaceDeletionRuns, pendingWorkspaceDeletionIds, workspaceDeleteOperation, workspaceDeletionMetadata, workspaceRemovalConfirmation } from "./workspaceDeletion";
+import {
+  canDeleteWorkspace,
+  isWorkspaceDeletionPending,
+  latestWorkspaceDeletionRuns,
+  pendingWorkspaceDeletionIds,
+  workspaceDeleteOperation,
+  workspaceDeletionMetadata,
+  workspaceRemovalConfirmation,
+} from "./workspaceDeletion";
 
 const workspace: Workspace = {
   id: "w1",
@@ -50,11 +58,13 @@ describe("workspace deletion state", () => {
   });
 
   it("tracks the latest deletion run per target workspace", () => {
-    expect(latestWorkspaceDeletionRuns([
-      run("old", "w1", "2026-05-25T00:00:00.000Z", "failed"),
-      run("new", "w1", "2026-05-25T00:00:01.000Z", "running"),
-      run("other", "w2", "2026-05-25T00:00:00.000Z", "running"),
-    ])).toMatchObject({
+    expect(
+      latestWorkspaceDeletionRuns([
+        run("old", "w1", "2026-05-25T00:00:00.000Z", "failed"),
+        run("new", "w1", "2026-05-25T00:00:01.000Z", "running"),
+        run("other", "w2", "2026-05-25T00:00:00.000Z", "running"),
+      ]),
+    ).toMatchObject({
       w1: { id: "new", status: "running" },
       w2: { id: "other", status: "running" },
     });

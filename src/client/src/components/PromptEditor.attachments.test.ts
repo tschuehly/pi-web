@@ -6,12 +6,24 @@ import { attachmentFolderDeliveryLabel, PromptEditor } from "./PromptEditor";
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
 
-  get length(): number { return this.values.size; }
-  clear(): void { this.values.clear(); }
-  getItem(key: string): string | null { return this.values.get(key) ?? null; }
-  key(index: number): string | null { return Array.from(this.values.keys())[index] ?? null; }
-  removeItem(key: string): void { this.values.delete(key); }
-  setItem(key: string, value: string): void { this.values.set(key, value); }
+  get length(): number {
+    return this.values.size;
+  }
+  clear(): void {
+    this.values.clear();
+  }
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+  key(index: number): string | null {
+    return Array.from(this.values.keys())[index] ?? null;
+  }
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
 }
 
 beforeEach(() => {
@@ -38,7 +50,10 @@ function triggerSessionSwitch(editor: PromptEditor, previous: { machineId: strin
   // `willUpdate` only reads `has`/`get` for "sessionId"/"machineId" off the
   // changed-properties map Lit would normally build, so a plain string-keyed
   // Map reproduces its contract here without needing a Lit `PropertyValues`.
-  const changed = new Map([["sessionId", previous.sessionId], ["machineId", previous.machineId]]);
+  const changed = new Map([
+    ["sessionId", previous.sessionId],
+    ["machineId", previous.machineId],
+  ]);
   Reflect.apply(method, editor, [changed]);
 }
 
@@ -73,7 +88,9 @@ describe("PromptEditor folder delivery sends the displayed folder", () => {
     Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "file" as const, name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 }]);
     Reflect.set(editor, "draft", "check this");
     const sent: unknown[][] = [];
-    editor.onSend = (...args: unknown[]) => { sent.push(args); };
+    editor.onSend = (...args: unknown[]) => {
+      sent.push(args);
+    };
 
     invokeSend(editor);
 
@@ -89,10 +106,14 @@ describe("PromptEditor folder delivery sends the displayed folder", () => {
     editor.machineId = "local";
     editor.sessionId = "session-a";
     editor.attachmentsFolder = "project-attachments";
-    Reflect.set(editor, "attachments", [{ id: "attachment-1", kind: "image" as const, reference: "[PIC_1]", name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3 }]);
+    Reflect.set(editor, "attachments", [
+      { id: "attachment-1", kind: "image" as const, reference: "[PIC_1]", name: "shot.png", mimeType: "image/png", data: "QUJD", size: 3 },
+    ]);
     Reflect.set(editor, "draft", "look");
     const sent: unknown[][] = [];
-    editor.onSend = (...args: unknown[]) => { sent.push(args); };
+    editor.onSend = (...args: unknown[]) => {
+      sent.push(args);
+    };
 
     invokeSend(editor);
 
@@ -153,7 +174,9 @@ describe("PromptEditor pending attachments across session switches", () => {
     triggerSessionSwitch(editor, { machineId: "local", sessionId: "session-a" });
     editor.sessionId = "session-a";
     triggerSessionSwitch(editor, { machineId: "local", sessionId: "session-b" });
-    expect(Reflect.get(editor, "attachments")).toEqual([{ id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 }]);
+    expect(Reflect.get(editor, "attachments")).toEqual([
+      { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 },
+    ]);
 
     // Sending (resetComposer) consumes the attachment for session-a.
     const resetComposer: unknown = Reflect.get(editor, "resetComposer");

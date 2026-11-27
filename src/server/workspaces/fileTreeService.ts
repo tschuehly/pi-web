@@ -52,27 +52,56 @@ finally:
 // then ignored paths. Empty pages are possible; each page re-traverses the tree.
 // Filesystem or ignore-rule changes between pages can shift offsets.
 // ponytail: offset paging retraverses earlier entries; use a snapshot only if late pages become too slow.
-export async function searchWorkspaceFiles(rootPath: string, query: string, cursor = "", signal?: AbortSignal): Promise<{ paths: string[]; cursor: string | null }> {
-  if (typeof query !== "string" || typeof cursor !== "string" || query.length > 256 || cursor.length > 10 || cursor !== "" && !WORKSPACE_SEARCH_CURSOR.test(cursor)) throw new Error("Invalid file search query");
+export async function searchWorkspaceFiles(
+  rootPath: string,
+  query: string,
+  cursor = "",
+  signal?: AbortSignal,
+): Promise<{ paths: string[]; cursor: string | null }> {
+  if (
+    typeof query !== "string"
+    || typeof cursor !== "string"
+    || query.length > 256
+    || cursor.length > 10
+    || (cursor !== "" && !WORKSPACE_SEARCH_CURSOR.test(cursor))
+  )
+    throw new Error("Invalid file search query");
   const { root } = await resolveWorkspacePathAccessTarget(rootPath, "");
   if (process.platform !== "darwin" && process.platform !== "linux") throw new Error("Safe workspace search is unavailable on this platform");
   let stdout: string;
   try {
-    ({ stdout } = await run("python3", ["-c", searchFromDescriptor, root, "", query, cursor], { maxBuffer: 8 * 1024 * 1024, timeout: 30_000, signal, env: sanitizedGitEnv() }));
+    ({ stdout } = await run("python3", ["-c", searchFromDescriptor, root, "", query, cursor], {
+      maxBuffer: 8 * 1024 * 1024,
+      timeout: 30_000,
+      signal,
+      env: sanitizedGitEnv(),
+    }));
   } catch (error) {
     if (signal?.aborted === true) throw new Error("Workspace search cancelled", { cause: error });
     // execFile errors include the command (and absolute root); never send them to the client.
     throw new Error("Workspace search unavailable", { cause: error });
   }
   const result: unknown = JSON.parse(stdout);
-  if (typeof result === "object" && result !== null && "stale" in result && result.stale === true) throw new Error("Workspace search order changed; enter the query again.");
-  if (typeof result !== "object" || result === null || !("paths" in result) || !Array.isArray(result.paths)
-    || result.paths.length > 100 || !result.paths.every((path: unknown) => typeof path === "string")
-    || !("cursor" in result) || result.cursor !== null && typeof result.cursor !== "string") throw new Error("Invalid workspace search response");
-  return { paths: result.paths.map((path: unknown) => {
-    if (typeof path !== "string") throw new Error("Invalid workspace search path");
-    return path;
-  }), cursor: result.cursor };
+  if (typeof result === "object" && result !== null && "stale" in result && result.stale === true)
+    throw new Error("Workspace search order changed; enter the query again.");
+  if (
+    typeof result !== "object"
+    || result === null
+    || !("paths" in result)
+    || !Array.isArray(result.paths)
+    || result.paths.length > 100
+    || !result.paths.every((path: unknown) => typeof path === "string")
+    || !("cursor" in result)
+    || (result.cursor !== null && typeof result.cursor !== "string")
+  )
+    throw new Error("Invalid workspace search response");
+  return {
+    paths: result.paths.map((path: unknown) => {
+      if (typeof path !== "string") throw new Error("Invalid workspace search path");
+      return path;
+    }),
+    cursor: result.cursor,
+  };
 }
 
 export const searchFromDescriptor = `${openDirectoryFromDescriptor}
@@ -157,7 +186,8 @@ export async function listWorkspaceTree(rootPath: string, path: string | undefin
   try {
     ({ stdout } = await run("python3", ["-c", listFromDescriptor, root, relativeToGrantedRoot(root, target)], { maxBuffer: 8 * 1024 * 1024 }));
   } catch (error) {
-    if (error instanceof Error && "stderr" in error && typeof error.stderr === "string" && error.stderr.includes("NotADirectoryError")) throw new Error("Path is not a directory", { cause: error });
+    if (error instanceof Error && "stderr" in error && typeof error.stderr === "string" && error.stderr.includes("NotADirectoryError"))
+      throw new Error("Path is not a directory", { cause: error });
     throw error;
   }
   const rows: unknown = JSON.parse(stdout);
@@ -181,10 +211,20 @@ export async function listWorkspaceTree(rootPath: string, path: string | undefin
 function isListingRow(value: unknown): value is [string, boolean, boolean, number, number] {
   if (!Array.isArray(value) || value.length !== 5) return false;
   const fields: unknown[] = value;
-  return typeof fields[0] === "string" && fields[0] !== "" && !/[\\/\\\\]/.test(fields[0]) && fields[0] !== "." && fields[0] !== ".."
-    && typeof fields[1] === "boolean" && typeof fields[2] === "boolean"
-    && typeof fields[3] === "number" && Number.isSafeInteger(fields[3]) && fields[3] >= 0
-    && typeof fields[4] === "number" && Number.isFinite(fields[4]);
+  return (
+    typeof fields[0] === "string"
+    && fields[0] !== ""
+    && !/[\\/\\\\]/.test(fields[0])
+    && fields[0] !== "."
+    && fields[0] !== ".."
+    && typeof fields[1] === "boolean"
+    && typeof fields[2] === "boolean"
+    && typeof fields[3] === "number"
+    && Number.isSafeInteger(fields[3])
+    && fields[3] >= 0
+    && typeof fields[4] === "number"
+    && Number.isFinite(fields[4])
+  );
 }
 
 function appendRequestPath(base: string, name: string): string {

@@ -30,19 +30,22 @@ describe("PiSessionService host-owned one-shot runs", () => {
     const entered = deferred();
     const binding = deferred();
     const hub = new CapturingSessionEventHub();
-    const fake = fakeRuntime("session-1", { bindExtensions: () => {
-      fake.emit({ type: "agent_start" });
-      entered.resolve();
-      return binding.promise;
-    } });
-    const service = new PiSessionService(hub, {
-      agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime,
-      createAgentRuntime: runtimeCreator(fake.runtime),
-      sessionManager: sessionGateway([sessionRecord("session-1")]), archiveStore: emptyArchiveStore(), heartbeatIntervalMs: 60_000,
+    const fake = fakeRuntime("session-1", {
+      bindExtensions: () => {
+        fake.emit({ type: "agent_start" });
+        entered.resolve();
+        return binding.promise;
+      },
     });
-    const starting = kind === "managed"
-      ? service.createHostedSession("/workspace", new AbortController().signal)
-      : service.messages(sessionRef("session-1"));
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("session-1")]),
+      archiveStore: emptyArchiveStore(),
+      heartbeatIntervalMs: 60_000,
+    });
+    const starting = kind === "managed" ? service.createHostedSession("/workspace", new AbortController().signal) : service.messages(sessionRef("session-1"));
     try {
       await entered.promise;
       expect(hub.sessionEvents).toContainEqual({ sessionId: "session-1", event: { type: "agent.start" } });
@@ -63,13 +66,18 @@ describe("PiSessionService host-owned one-shot runs", () => {
   it.each(["stop", "dispose"])("coordinates managed startup with %s without republishing a disposed runtime", async (operation) => {
     const entered = deferred();
     const binding = deferred();
-    const fake = fakeRuntime("session-1", { bindExtensions: () => {
-      entered.resolve();
-      return binding.promise;
-    } });
+    const fake = fakeRuntime("session-1", {
+      bindExtensions: () => {
+        entered.resolve();
+        return binding.promise;
+      },
+    });
     const service = new PiSessionService(new CapturingSessionEventHub(), {
-      agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime,
-      createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([]), heartbeatIntervalMs: 60_000,
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
     });
     const starting = service.createHostedSession("/workspace", new AbortController().signal);
     try {
@@ -99,8 +107,11 @@ describe("PiSessionService host-owned one-shot runs", () => {
     };
     const lifetime = new AbortController();
     const service = new PiSessionService(hub, {
-      agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime,
-      createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([]), heartbeatIntervalMs: 60_000,
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([]),
+      heartbeatIntervalMs: 60_000,
     });
     try {
       const created = await service.createHostedSession("/workspace", lifetime.signal);
@@ -140,24 +151,20 @@ describe("PiSessionService host-owned one-shot runs", () => {
       heartbeatIntervalMs: 60_000,
     });
 
-    const run = await service.startOneShotRun(
-      "/workspace",
-      "Do the bounded work",
-      new AbortController().signal,
-    );
+    const run = await service.startOneShotRun("/workspace", "Do the bounded work", new AbortController().signal);
     let settled = false;
-    void run.completion.then(() => { settled = true; });
+    void run.completion.then(() => {
+      settled = true;
+    });
     await Promise.resolve();
 
     expect(run.id).toBe("session-1");
     expect(promptCall).toHaveBeenCalledWith("Do the bounded work", undefined);
     expect(settled).toBe(false);
     expect(delegationToolsEnabled).toBe(false);
-    expect(hub.globalEvents.some((event) => (
-      event.type === "session.created"
-      && event.session.id === "session-1"
-      && event.session.cwd === "/workspace"
-    ))).toBe(true);
+    expect(hub.globalEvents.some((event) => event.type === "session.created" && event.session.id === "session-1" && event.session.cwd === "/workspace")).toBe(
+      true,
+    );
 
     prompt.resolve();
     await run.completion;
@@ -182,25 +189,33 @@ describe("PiSessionService host-owned one-shot runs", () => {
       heartbeatIntervalMs: 60_000,
     });
 
-    const run = await service.startOneShotRun(
-      "/workspace",
-      "Do the work",
-      new AbortController().signal,
-    );
+    const run = await service.startOneShotRun("/workspace", "Do the work", new AbortController().signal);
     await expect(run.completion).rejects.toBe(failure);
 
     expect(hub.sessionEvents).toContainEqual({
       sessionId: run.id,
       event: { type: "session.error", message: "model unavailable" },
     });
-    expect(hub.globalEvents).toContainEqual(expect.objectContaining({ type: "session.attention", sessionId: run.id, cwd: "/workspace", kind: "error", id: String(hub.currentSeq(run.id)), detail: "model unavailable" }));
+    expect(hub.globalEvents).toContainEqual(
+      expect.objectContaining({
+        type: "session.attention",
+        sessionId: run.id,
+        cwd: "/workspace",
+        kind: "error",
+        id: String(hub.currentSeq(run.id)),
+        detail: "model unavailable",
+      }),
+    );
     await service.stop(sessionRef(run.id));
     await service.dispose();
   });
 
   it.each([
-    ["stop", "settled"], ["error", "settled"], ["aborted", "settled"],
-    ["stop", "queued"], ["error", "queued"],
+    ["stop", "settled"],
+    ["error", "settled"],
+    ["aborted", "settled"],
+    ["stop", "queued"],
+    ["error", "queued"],
   ])("freezes initial %s outcome before later %s user activity", async (reason, boundary) => {
     const prompt = deferred();
     const fake = fakeRuntime("session-1", { prompt: () => prompt.promise });
@@ -266,8 +281,7 @@ describe("PiSessionService host-owned one-shot runs", () => {
     const lifetime = new AbortController();
     lifetime.abort(new DOMException("Plugin stopped", "AbortError"));
 
-    await expect(service.startOneShotRun("/workspace", "Must not start", lifetime.signal))
-      .rejects.toThrow("Plugin stopped");
+    await expect(service.startOneShotRun("/workspace", "Must not start", lifetime.signal)).rejects.toThrow("Plugin stopped");
     expect(createAgentRuntime).not.toHaveBeenCalled();
     expect(service.activeCount()).toBe(0);
     await service.dispose();

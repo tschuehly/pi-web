@@ -30,13 +30,16 @@ describe("durable transcript identity", () => {
     ];
     const original = structuredClone(entries);
     const messages = historyMessagesFromEntries(entries);
-    const linesForPage = (before?: number, limit?: number) => normalizeMessages(parseMessagePage(
-      projectBrowserMessageResponse(pageMessagesAtSafeBoundary(messages, { ...(before === undefined ? {} : { before }), ...(limit === undefined ? {} : { limit }) })),
-    ).messages);
+    const linesForPage = (before?: number, limit?: number) =>
+      normalizeMessages(
+        parseMessagePage(
+          projectBrowserMessageResponse(
+            pageMessagesAtSafeBoundary(messages, { ...(before === undefined ? {} : { before }), ...(limit === undefined ? {} : { limit }) }),
+          ),
+        ).messages,
+      );
 
-    expect(linesForPage().map((line) => line.entryId)).toEqual([
-      "user-1", "assistant-1", "custom-1", "compact-1", "branch-1", "user-2", "bash-1",
-    ]);
+    expect(linesForPage().map((line) => line.entryId)).toEqual(["user-1", "assistant-1", "custom-1", "compact-1", "branch-1", "user-2", "bash-1"]);
     expect(linesForPage(5, 1).map((line) => line.entryId)).toEqual(["branch-1"]);
     expect(linesForPage()[1]?.meta?.thinkingLevel).toBe("high");
     expect(historyMessagesFromEntries(entries)).toEqual(messages);
@@ -45,28 +48,67 @@ describe("durable transcript identity", () => {
 
   it("suppresses display:false custom messages and preserves display:true order and details on reload", () => {
     const entries = [
-      { type: "custom_message", id: "goal-contract", customType: "goal-contract", content: "hidden goal context", display: false, details: { version: 2, goalId: "goal-1" } },
-      { type: "custom_message", id: "other-hidden", customType: "other.hidden", content: "hidden extension context", display: false, details: { source: "other" } },
-      { type: "custom_message", id: "goal-lifecycle", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" } },
-      { type: "custom_message", id: "other-visible", customType: "other.visible", content: "visible extension message", display: true, details: { source: "other" } },
+      {
+        type: "custom_message",
+        id: "goal-contract",
+        customType: "goal-contract",
+        content: "hidden goal context",
+        display: false,
+        details: { version: 2, goalId: "goal-1" },
+      },
+      {
+        type: "custom_message",
+        id: "other-hidden",
+        customType: "other.hidden",
+        content: "hidden extension context",
+        display: false,
+        details: { source: "other" },
+      },
+      {
+        type: "custom_message",
+        id: "goal-lifecycle",
+        customType: "pi-goal.lifecycle",
+        content: "Goal resumed",
+        display: true,
+        details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" },
+      },
+      {
+        type: "custom_message",
+        id: "other-visible",
+        customType: "other.visible",
+        content: "visible extension message",
+        display: true,
+        details: { source: "other" },
+      },
     ];
 
     const visible = historyMessagesFromEntries(entries);
     expect(visible).toEqual([
-      { role: "custom", content: "Goal resumed", customType: "pi-goal.lifecycle", details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" }, entryId: "goal-lifecycle" },
+      {
+        role: "custom",
+        content: "Goal resumed",
+        customType: "pi-goal.lifecycle",
+        details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" },
+        entryId: "goal-lifecycle",
+      },
       { role: "custom", content: "visible extension message", customType: "other.visible", details: { source: "other" }, entryId: "other-visible" },
     ]);
-    expect(normalizeMessages(visible)[0]).toMatchObject({ entryId: "goal-lifecycle", parts: [{ type: "goalLifecycle", details: { transition: "resume", state: "active", reason: "Owner approved" } }] });
+    expect(normalizeMessages(visible)[0]).toMatchObject({
+      entryId: "goal-lifecycle",
+      parts: [{ type: "goalLifecycle", details: { transition: "resume", state: "active", reason: "Owner approved" } }],
+    });
   });
 
   it("filters out aborted and model_change entries but preserves the compaction boundary with user entries", () => {
     const summary = `## Goal\n${"x".repeat(19_732 - "## Goal\n".length)}`;
-    const lines = normalizeMessages(historyMessagesFromEntries([
-      { type: "message", id: "aborted", message: { role: "assistant", content: [], stopReason: "aborted", errorMessage: "Request aborted" } },
-      { type: "compaction", id: "compact", summary },
-      { type: "model_change", id: "model", provider: "openai-codex", modelId: "gpt-5.6-sol" },
-      { type: "message", id: "user", message: { role: "user", content: "Continue" } },
-    ]));
+    const lines = normalizeMessages(
+      historyMessagesFromEntries([
+        { type: "message", id: "aborted", message: { role: "assistant", content: [], stopReason: "aborted", errorMessage: "Request aborted" } },
+        { type: "compaction", id: "compact", summary },
+        { type: "model_change", id: "model", provider: "openai-codex", modelId: "gpt-5.6-sol" },
+        { type: "message", id: "user", message: { role: "user", content: "Continue" } },
+      ]),
+    );
 
     expect(lines.map((line) => line.entryId)).toEqual(["compact", "user"]);
     expect(lines[0]?.parts).toEqual([{ type: "text", text: `Compacted history:\n\n${summary}` }]);
@@ -81,7 +123,10 @@ describe("durable transcript identity", () => {
       { type: "message", message: { role: "user", id: "provider", entryId: "untrusted", content: "legacy" } },
       { type: "message", id: "", message: { role: "assistant", content: "answer" } },
     ]);
-    expect(messages).toEqual([{ role: "user", id: "provider", content: "legacy" }, { role: "assistant", content: "answer" }]);
+    expect(messages).toEqual([
+      { role: "user", id: "provider", content: "legacy" },
+      { role: "assistant", content: "answer" },
+    ]);
     expect(normalizeMessages(messages).every((line) => !("entryId" in line))).toBe(true);
   });
 });

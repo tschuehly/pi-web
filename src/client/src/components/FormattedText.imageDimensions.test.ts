@@ -77,9 +77,17 @@ it("reserves external images through the normal content-rendering service withou
   rememberMarkdownImageDimensions(source, { width: 640, height: 360 });
   const draw = vi.fn(() => html`<p>Unrequested preview</p>`);
   const view = new FormattedText();
-  view.contentRendering = createContentRenderingService((request) => request.language === "mermaid" ? [{
-    id: "test:diagram", label: "Mermaid", renderer: { id: "diagram", languages: ["mermaid"], render: draw },
-  }] : []);
+  view.contentRendering = createContentRenderingService((request) =>
+    request.language === "mermaid"
+      ? [
+          {
+            id: "test:diagram",
+            label: "Mermaid",
+            renderer: { id: "diagram", languages: ["mermaid"], render: draw },
+          },
+        ]
+      : [],
+  );
   view.text = `${text}\n\n\`\`\`mermaid\nflowchart LR\nA --> B\n\`\`\``;
   document.body.append(view);
   await settleDeferredContent(view);
@@ -165,8 +173,12 @@ it("does not traverse filesystem-image shadow roots or turn geometry into outsid
 });
 
 it("preserves normal loading and current geometry when storage reads and writes are blocked", async () => {
-  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("storage disabled"); });
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage disabled"); });
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+    throw new Error("storage disabled");
+  });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("storage disabled");
+  });
   const view = await mount();
   const image = imageIn(view);
   expect(image.src).toBe(source);

@@ -24,15 +24,21 @@ describe("Pi SDK before_agent_start for custom-message runs", () => {
       noPromptTemplates: true,
       noThemes: true,
       agentsFilesOverride: () => ({ agentsFiles: [] }),
-      extensionFactories: [(pi) => {
-        pi.on("before_agent_start", (event) => {
-          // Pi 1.3 types the event by what started the run; a triggered custom message carries its content.
-          hookPrompts.push(event.messageType === "user" ? event.prompt
-            : typeof event.message.content === "string" ? event.message.content
-            : event.message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n"));
-          return { systemPrompt: `${event.systemPrompt}\n\nrun override` };
-        });
-      }],
+      extensionFactories: [
+        (pi) => {
+          pi.on("before_agent_start", (event) => {
+            // Pi 1.3 types the event by what started the run; a triggered custom message carries its content.
+            hookPrompts.push(
+              event.messageType === "user"
+                ? event.prompt
+                : typeof event.message.content === "string"
+                  ? event.message.content
+                  : event.message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
+            );
+            return { systemPrompt: `${event.systemPrompt}\n\nrun override` };
+          });
+        },
+      ],
     });
     await loader.reload();
     const { session } = await createAgentSession({
@@ -50,9 +56,14 @@ describe("Pi SDK before_agent_start for custom-message runs", () => {
       // Pi 0.99 projects a forced system prompt as the leading system message.
       providerSystemPrompts.push(JSON.stringify(context.messages.filter((message) => message.role === "system")));
       const message: AssistantMessage = {
-        role: "assistant", content: [{ type: "text", text: "ok" }], api: "anthropic-messages", provider: "anthropic", model: testModel().id,
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: testModel().id,
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        stopReason: "stop", timestamp: Date.now(),
+        stopReason: "stop",
+        timestamp: Date.now(),
       };
       const stream = createAssistantMessageEventStream();
       stream.push({ type: "done", reason: "stop", message });
@@ -62,7 +73,14 @@ describe("Pi SDK before_agent_start for custom-message runs", () => {
     try {
       await session.prompt("start");
       await session.sendCustomMessage(
-        { customType: "background-completion", content: [{ type: "text", text: "collect" }, { type: "text", text: "now" }], display: false },
+        {
+          customType: "background-completion",
+          content: [
+            { type: "text", text: "collect" },
+            { type: "text", text: "now" },
+          ],
+          display: false,
+        },
         { triggerTurn: true },
       );
       expect(hookPrompts).toEqual(["start", "collect\nnow"]);

@@ -12,7 +12,20 @@ import { workspaceFilePreviewUrl } from "../api/urls";
 import { writeClipboardText } from "../clipboard";
 import { INTERFACE_SCALE_CSS_PROPERTY } from "../interfaceScale";
 import { MAX_INLINE_PREVIEW_BYTES, MAX_WORKSPACE_FILE_CONTENT_BYTES } from "../../../shared/workspaceFiles";
-import { applyDiskChange, bulkHunkAction, clearHunks, editHistory, filesHighlighting, hunkField, languageFor, lineRangeHighlight, lineRangeSpec, livePreview, livePreviewStyles, markdownWithCodeLanguages } from "./workbenchFilesEditor";
+import {
+  applyDiskChange,
+  bulkHunkAction,
+  clearHunks,
+  editHistory,
+  filesHighlighting,
+  hunkField,
+  languageFor,
+  lineRangeHighlight,
+  lineRangeSpec,
+  livePreview,
+  livePreviewStyles,
+  markdownWithCodeLanguages,
+} from "./workbenchFilesEditor";
 
 const isMarkdown = (path: string): boolean => /\.(?:md|markdown|mdx)$/i.test(path);
 /** SVG is text the editor can change and an image the pane can preview. */
@@ -24,7 +37,10 @@ const POLL_MS = 2000;
 const isMissing = (error: unknown): boolean => error instanceof HttpRequestError && /does not exist|not found/i.test(error.message);
 
 /** Matching search paths as nested folders, for the filtered tree. */
-interface MatchNode { dirs: Map<string, MatchNode>; files: string[] }
+interface MatchNode {
+  dirs: Map<string, MatchNode>;
+  files: string[];
+}
 
 /** One file surface: tree drawer, CodeMirror editor with Markdown live preview, and inline agent edits. */
 @customElement("workbench-files-pane")
@@ -62,7 +78,10 @@ export class WorkbenchFilesPane extends LitElement {
     window.clearTimeout(this.pdfResizeTimer);
     this.pdfResizeTimer = window.setTimeout(() => {
       const width = this.pdfScreenWidth();
-      if (width !== this.pdfWidth) { this.pdfWidth = width; this.pdfLayout += 1; }
+      if (width !== this.pdfWidth) {
+        this.pdfWidth = width;
+        this.pdfLayout += 1;
+      }
     }, 150);
   };
   private readonly resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(this.refitPdf);
@@ -88,8 +107,12 @@ export class WorkbenchFilesPane extends LitElement {
   private version: string | undefined;
   private eol = "\n";
 
-  private get editable(): boolean { return this.loaded !== undefined && !this.loaded.binary && !this.loaded.truncated; }
-  private get unsaved(): boolean { return this.editable && (this.dirty || this.deleted || this.overlapPending); }
+  private get editable(): boolean {
+    return this.loaded !== undefined && !this.loaded.binary && !this.loaded.truncated;
+  }
+  private get unsaved(): boolean {
+    return this.editable && (this.dirty || this.deleted || this.overlapPending);
+  }
 
   override connectedCallback(): void {
     super.connectedCallback();
@@ -98,10 +121,15 @@ export class WorkbenchFilesPane extends LitElement {
     if (this.pdfBox !== null) this.resizeObserver?.observe(this.pdfBox);
     this.scaleObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
     // ponytail: polling every 2s while a text file is open; swap for a push of file changes later.
-    this.pollTimer = window.setInterval(() => { void this.syncWithDisk(); }, POLL_MS);
+    this.pollTimer = window.setInterval(() => {
+      void this.syncWithDisk();
+    }, POLL_MS);
     // A re-attached pane rebuilds its editor from the last disk text.
     const file = this.loaded;
-    if (file !== undefined && this.view === undefined && this.hasUpdated) void this.updateComplete.then(() => { this.resetEditor(this.base, file); });
+    if (file !== undefined && this.view === undefined && this.hasUpdated)
+      void this.updateComplete.then(() => {
+        this.resetEditor(this.base, file);
+      });
   }
 
   override disconnectedCallback(): void {
@@ -159,8 +187,8 @@ export class WorkbenchFilesPane extends LitElement {
     }
     // Lazily list the root and every open folder the tree shows.
     if (this.workspace === undefined || (this.loaded !== undefined && !this.treeOpen) || this.found !== undefined) return;
-    const visible = (dir: string): string[] => this.openDirs.has(dir) || dir === ""
-      ? [dir, ...(this.dirs.get(dir) ?? []).filter((e) => e.type === "directory").flatMap((e) => visible(e.path))] : [];
+    const visible = (dir: string): string[] =>
+      this.openDirs.has(dir) || dir === "" ? [dir, ...(this.dirs.get(dir) ?? []).filter((e) => e.type === "directory").flatMap((e) => visible(e.path))] : [];
     for (const dir of visible("")) if (!this.dirs.has(dir)) void this.loadDir(dir);
   }
 
@@ -178,9 +206,16 @@ export class WorkbenchFilesPane extends LitElement {
   };
 
   private readonly onWindowKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === "Escape" && this.treeOpen && this.loaded !== undefined) { event.preventDefault(); this.showTree(false); }
-    else if (event.key === "Escape" && this.full) { event.preventDefault(); this.full = false; }
-    else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f" && this.loaded !== undefined) { event.preventDefault(); this.full = !this.full; }
+    if (event.key === "Escape" && this.treeOpen && this.loaded !== undefined) {
+      event.preventDefault();
+      this.showTree(false);
+    } else if (event.key === "Escape" && this.full) {
+      event.preventDefault();
+      this.full = false;
+    } else if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f" && this.loaded !== undefined) {
+      event.preventDefault();
+      this.full = !this.full;
+    }
   };
 
   /** Used by the shell before closing Files or leaving this Chat. */
@@ -217,12 +252,22 @@ export class WorkbenchFilesPane extends LitElement {
     try {
       const listing = await api.workspaceTree(workspace.projectId, workspace.id, dir, this.machineId);
       if (sequence !== this.treeSequence) return;
-      const entries = listing.entries.filter((e) => e.name !== ".git").sort((a, b) =>
-        (a.type === "directory") !== (b.type === "directory") ? (a.type === "directory" ? -1 : 1) : a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }));
+      const entries = listing.entries
+        .filter((e) => e.name !== ".git")
+        .sort((a, b) =>
+          (a.type === "directory") !== (b.type === "directory")
+            ? a.type === "directory"
+              ? -1
+              : 1
+            : a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }),
+        );
       this.dirs = new Map(this.dirs).set(dir, entries);
       if (listing.truncated) this.treeNotice = `Some entries in ${dir === "" ? "the workspace root" : dir} are not shown. Filter to find them.`;
     } catch (error) {
-      if (sequence === this.treeSequence) { this.dirs = new Map(this.dirs).set(dir, []); this.treeNotice = `Could not list ${dir === "" ? "the workspace" : dir}: ${String(error)}`; }
+      if (sequence === this.treeSequence) {
+        this.dirs = new Map(this.dirs).set(dir, []);
+        this.treeNotice = `Could not list ${dir === "" ? "the workspace" : dir}: ${String(error)}`;
+      }
     } finally {
       this.loadingDirs.delete(dir);
     }
@@ -241,9 +286,17 @@ export class WorkbenchFilesPane extends LitElement {
     ++this.treeSequence;
     this.searchController?.abort();
     window.clearTimeout(this.searchTimer);
-    if (this.query.trim() === "") { this.found = undefined; this.cursor = null; this.searching = false; this.treeNotice = ""; return; }
+    if (this.query.trim() === "") {
+      this.found = undefined;
+      this.cursor = null;
+      this.searching = false;
+      this.treeNotice = "";
+      return;
+    }
     this.searching = true;
-    this.searchTimer = window.setTimeout(() => { void this.loadSearch(""); }, 150);
+    this.searchTimer = window.setTimeout(() => {
+      void this.loadSearch("");
+    }, 150);
   }
 
   private async loadSearch(cursor: string): Promise<void> {
@@ -256,21 +309,29 @@ export class WorkbenchFilesPane extends LitElement {
     this.searching = true;
     this.treeNotice = "";
     try {
-      const result = await api.searchWorkspaceFiles(workspace.projectId, workspace.id, this.query.trim(), cursor, this.machineId, { signal: controller.signal });
+      const result = await api.searchWorkspaceFiles(workspace.projectId, workspace.id, this.query.trim(), cursor, this.machineId, {
+        signal: controller.signal,
+      });
       if (sequence !== this.treeSequence || !this.isConnected) return;
       this.found = cursor === "" ? result.paths : [...(this.found ?? []), ...result.paths];
       this.cursor = result.cursor;
     } catch (error) {
       if (sequence === this.treeSequence) this.treeNotice = `Search failed; results may be incomplete. ${String(error)}`;
     } finally {
-      if (sequence === this.treeSequence) { this.searching = false; this.searchController = undefined; }
+      if (sequence === this.treeSequence) {
+        this.searching = false;
+        this.searchController = undefined;
+      }
     }
   }
 
   private onFilterKeyDown(event: KeyboardEvent): void {
     if (event.key !== "Enter") return;
     const first = this.shadowRoot?.querySelector<HTMLElement>(".tree .file")?.dataset["path"];
-    if (first !== undefined) { event.preventDefault(); void this.openFile(first); }
+    if (first !== undefined) {
+      event.preventDefault();
+      void this.openFile(first);
+    }
   }
 
   // ---------------- files ----------------
@@ -319,7 +380,10 @@ export class WorkbenchFilesPane extends LitElement {
     const parts = path.split("/").slice(0, -1);
     const next = new Set(this.openDirs);
     parts.forEach((_, index) => next.add(parts.slice(0, index + 1).join("/")));
-    if (next.size !== this.openDirs.size) { this.openDirs = next; writeOpenDirs(this.scope, next); }
+    if (next.size !== this.openDirs.size) {
+      this.openDirs = next;
+      writeOpenDirs(this.scope, next);
+    }
   }
 
   /** A fresh editor state per file, so undo history never crosses files. */
@@ -347,13 +411,14 @@ export class WorkbenchFilesPane extends LitElement {
     return EditorState.create({
       doc: text,
       extensions: [
-        editHistory(), drawSelection(),
+        editHistory(),
+        drawSelection(),
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         filesHighlighting,
-        hunkField, lineRangeHighlight,
+        hunkField,
+        lineRangeHighlight,
         this.modeSlot.of(this.previewFor(file)),
-        md ? [markdownWithCodeLanguages(), EditorView.lineWrapping]
-          : [languageFor(extension) ?? [], lineNumbers(), highlightActiveLineGutter()],
+        md ? [markdownWithCodeLanguages(), EditorView.lineWrapping] : [languageFor(extension) ?? [], lineNumbers(), highlightActiveLineGutter()],
         file.truncated ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
         EditorView.contentAttributes.of({ "aria-label": "File source" }),
         EditorView.updateListener.of((update) => {
@@ -368,14 +433,22 @@ export class WorkbenchFilesPane extends LitElement {
     const workspace = this.workspace;
     const base = workspace === undefined ? undefined : markdownWorkspaceContext(this.machineId, workspace, { id: "files", cwd: workspace.path });
     const context = base === undefined ? undefined : { ...base, sourcePath: file.path };
-    return livePreview((source) => toSafeMarkdownHtml(source, context), (anchor) => { this.openLink(anchor); });
+    return livePreview(
+      (source) => toSafeMarkdownHtml(source, context),
+      (anchor) => {
+        this.openLink(anchor);
+      },
+    );
   }
 
   /** Opens a rendered link like a Chat does: workspace files here (at their lines), other URLs in a new tab. */
   private openLink(anchor: Element): void {
     const path = anchor.getAttribute("data-workspace-file");
     const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
-    if (path !== null) { void this.openFile(path, false, start > 0 ? { start, end } : undefined); return; }
+    if (path !== null) {
+      void this.openFile(path, false, start > 0 ? { start, end } : undefined);
+      return;
+    }
     const href = anchor.getAttribute("href");
     if (href !== null && href !== "") window.open(href, "_blank", "noopener,noreferrer");
   }
@@ -400,19 +473,23 @@ export class WorkbenchFilesPane extends LitElement {
 
   private highlight(lines: LineRange | undefined): void {
     const view = this.view;
-    if (lines === undefined || view === undefined || !this.editable && this.loaded?.truncated !== true) return;
+    if (lines === undefined || view === undefined || (!this.editable && this.loaded?.truncated !== true)) return;
     view.dispatch(lineRangeSpec(view.state, lines.start, lines.end));
   }
 
   private showToast(message: string, sticky = false): void {
     window.clearTimeout(this.toastTimer);
     this.toast = message;
-    if (!sticky) this.toastTimer = window.setTimeout(() => { this.toast = ""; }, 2500);
+    if (!sticky)
+      this.toastTimer = window.setTimeout(() => {
+        this.toast = "";
+      }, 2500);
   }
 
   /** Applies the agent's disk text over the editor and shows what changed inline. */
   private applyDisk(content: string): void {
-    const view = this.view, disk = toLf(content);
+    const view = this.view,
+      disk = toLf(content);
     if (view === undefined || disk === this.base) return;
     const base = this.base;
     this.base = disk;
@@ -423,8 +500,19 @@ export class WorkbenchFilesPane extends LitElement {
 
   /** Re-reads the open text file and applies agent edits; the poll timer calls this every 2s. */
   async syncWithDisk(): Promise<void> {
-    const workspace = this.workspace, path = this.selectedPath;
-    if (this.polling || !this.editable || workspace === undefined || this.view === undefined || this.saving || this.loading || document.hidden || !this.isConnected) return;
+    const workspace = this.workspace,
+      path = this.selectedPath;
+    if (
+      this.polling
+      || !this.editable
+      || workspace === undefined
+      || this.view === undefined
+      || this.saving
+      || this.loading
+      || document.hidden
+      || !this.isConnected
+    )
+      return;
     this.polling = true;
     const sequence = ++this.diskSequence;
     try {
@@ -441,7 +529,9 @@ export class WorkbenchFilesPane extends LitElement {
   }
 
   private async save(): Promise<void> {
-    const file = this.loaded, workspace = this.workspace, view = this.view;
+    const file = this.loaded,
+      workspace = this.workspace,
+      view = this.view;
     if (file === undefined || !this.editable || workspace === undefined || view === undefined || this.saving || this.loading) return;
     if (!this.dirty && !this.deleted) {
       view.dispatch(clearHunks());
@@ -459,10 +549,18 @@ export class WorkbenchFilesPane extends LitElement {
     let written = false;
     try {
       // A file deleted on disk is recreated, but never over one that reappeared meanwhile.
-      await api.writeWorkspaceFile(workspace.projectId, workspace.id, file.path, this.eol === "\n" ? text : text.replaceAll("\n", this.eol), this.deleted ? { overwrite: false } : { expectedVersion: this.version ?? "" }, this.machineId);
+      await api.writeWorkspaceFile(
+        workspace.projectId,
+        workspace.id,
+        file.path,
+        this.eol === "\n" ? text : text.replaceAll("\n", this.eol),
+        this.deleted ? { overwrite: false } : { expectedVersion: this.version ?? "" },
+        this.machineId,
+      );
       written = true;
       const saved = await api.workspaceFile(workspace.projectId, workspace.id, file.path, this.machineId);
-      if (saved.binary || saved.truncated || saved.version === undefined) throw new Error("Saved, but could not verify the new file version. Reload before saving again.");
+      if (saved.binary || saved.truncated || saved.version === undefined)
+        throw new Error("Saved, but could not verify the new file version. Reload before saving again.");
       if (sequence !== this.diskSequence) return;
       // Unresolved agent hunks count as approved by the save.
       view.dispatch(clearHunks());
@@ -490,7 +588,10 @@ export class WorkbenchFilesPane extends LitElement {
       this.version = disk.version;
       this.applyDisk(disk.content);
     } catch (error) {
-      if (!isMissing(error)) { this.error = `Save failed: the file changed and could not be re-read. Your edits are preserved. ${String(error)}`; return; }
+      if (!isMissing(error)) {
+        this.error = `Save failed: the file changed and could not be re-read. Your edits are preserved. ${String(error)}`;
+        return;
+      }
       this.deleted = true;
     }
     this.showToast("Agent changed the file first · review, then ⌘S", true);
@@ -499,7 +600,9 @@ export class WorkbenchFilesPane extends LitElement {
   private async copy(): Promise<void> {
     if (this.view === undefined) return;
     this.copied = await writeClipboardText(this.view.state.doc.toString());
-    window.setTimeout(() => { this.copied = false; }, 1200);
+    window.setTimeout(() => {
+      this.copied = false;
+    }, 1200);
   }
 
   /** Scales the image between fit-to-pane (1) and 8×, keeping the point under the pointer in place. */
@@ -519,8 +622,10 @@ export class WorkbenchFilesPane extends LitElement {
     if (zoom === previous || this.imageFitWidth === 0) return;
     const box = pane.getBoundingClientRect();
     const imageBox = image.getBoundingClientRect();
-    const pointerX = clientX - box.left, pointerY = clientY - box.top;
-    const offsetX = imageBox.left - box.left + pane.scrollLeft, offsetY = imageBox.top - box.top + pane.scrollTop;
+    const pointerX = clientX - box.left,
+      pointerY = clientY - box.top;
+    const offsetX = imageBox.left - box.left + pane.scrollLeft,
+      offsetY = imageBox.top - box.top + pane.scrollTop;
     const ratio = zoom / previous;
     image.style.maxWidth = "none";
     image.style.maxHeight = "none";
@@ -536,17 +641,29 @@ export class WorkbenchFilesPane extends LitElement {
     event.preventDefault();
     if (event.type === "gesturestart") this.pinchStartZoom = this.imageZoom;
     else if (event.type === "gestureend") this.pinchStartZoom = undefined;
-    else this.zoomImage(event.currentTarget, (this.pinchStartZoom ?? this.imageZoom) * scale, Number(Reflect.get(event, "clientX")), Number(Reflect.get(event, "clientY")));
+    else
+      this.zoomImage(
+        event.currentTarget,
+        (this.pinchStartZoom ?? this.imageZoom) * scale,
+        Number(Reflect.get(event, "clientX")),
+        Number(Reflect.get(event, "clientY")),
+      );
   };
 
-  private readonly onImageWheel = { passive: false, handleEvent: (event: WheelEvent): void => {
-    if (!event.ctrlKey || this.pinchStartZoom !== undefined || !(event.currentTarget instanceof HTMLImageElement)) return;
-    event.preventDefault();
-    this.zoomImage(event.currentTarget, this.imageZoom * Math.exp(-event.deltaY / 100), event.clientX, event.clientY);
-  } };
+  private readonly onImageWheel = {
+    passive: false,
+    handleEvent: (event: WheelEvent): void => {
+      if (!event.ctrlKey || this.pinchStartZoom !== undefined || !(event.currentTarget instanceof HTMLImageElement)) return;
+      event.preventDefault();
+      this.zoomImage(event.currentTarget, this.imageZoom * Math.exp(-event.deltaY / 100), event.clientX, event.clientY);
+    },
+  };
 
   private onPaneKeyDown(event: KeyboardEvent): void {
-    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") { event.preventDefault(); void this.save(); }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void this.save();
+    }
   }
 
   private onBodyMouseDown(event: MouseEvent): void {
@@ -568,36 +685,111 @@ export class WorkbenchFilesPane extends LitElement {
     const svgFile = isSvg(file) && file?.truncated !== true;
     const text = file !== undefined && !file.binary;
     const slash = this.selectedPath.lastIndexOf("/");
-    const status = file === undefined ? "" : this.toast !== "" ? this.toast : !this.editable ? "Read-only" : this.saving ? "Saving…" : this.deleted ? "Deleted on disk" : this.overlapPending ? "Review agent changes" : this.dirty ? "Unsaved · ⌘S" : "Saved";
+    const status =
+      file === undefined
+        ? ""
+        : this.toast !== ""
+          ? this.toast
+          : !this.editable
+            ? "Read-only"
+            : this.saving
+              ? "Saving…"
+              : this.deleted
+                ? "Deleted on disk"
+                : this.overlapPending
+                  ? "Review agent changes"
+                  : this.dirty
+                    ? "Unsaved · ⌘S"
+                    : "Saved";
     const statusClass = this.toast !== "" ? "toast" : this.deleted ? "danger" : this.dirty ? "dirty" : "";
     return html`
-      ${this.full ? html`<div class="backdrop" @mousedown=${() => { this.full = false; }}></div>` : nothing}
-      <section class=${`pane${this.full ? " full" : ""}${this.treeOpen ? " tree-open" : ""}${file === undefined ? " no-file" : ""}${md && this.mode === "live" ? " live" : ""}${text && !md ? " code" : ""}`} aria-label="Workspace files" @keydown=${(event: KeyboardEvent) => { this.onPaneKeyDown(event); }}>
+      ${
+        this.full
+          ? html`<div class="backdrop" @mousedown=${() => {
+              this.full = false;
+            }}></div>`
+          : nothing
+      }
+      <section class=${`pane${this.full ? " full" : ""}${this.treeOpen ? " tree-open" : ""}${file === undefined ? " no-file" : ""}${md && this.mode === "live" ? " live" : ""}${text && !md ? " code" : ""}`} aria-label="Workspace files" @keydown=${(
+        event: KeyboardEvent,
+      ) => {
+        this.onPaneKeyDown(event);
+      }}>
         <div class="bar">
-          <button type="button" class="icon tree-button" title="Files (⌘P)" aria-label="Files" aria-expanded=${this.treeOpen || file === undefined ? "true" : "false"} ?disabled=${workspace === undefined || file === undefined} @click=${() => { this.showTree(!this.treeOpen); }}>${FOLDER_ICON}</button>
-          <button type="button" class="icon" title="Search files (⌘P)" aria-label="Search files" ?disabled=${workspace === undefined} @click=${() => { void this.searchFiles(); }}>${SEARCH_ICON}</button>
-          <button type="button" class="crumbs" title=${this.selectedPath || "Files"} ?disabled=${workspace === undefined} @click=${() => { this.showTree(true); }}>
+          <button type="button" class="icon tree-button" title="Files (⌘P)" aria-label="Files" aria-expanded=${this.treeOpen || file === undefined ? "true" : "false"} ?disabled=${workspace === undefined || file === undefined} @click=${() => {
+            this.showTree(!this.treeOpen);
+          }}>${FOLDER_ICON}</button>
+          <button type="button" class="icon" title="Search files (⌘P)" aria-label="Search files" ?disabled=${workspace === undefined} @click=${() => {
+            void this.searchFiles();
+          }}>${SEARCH_ICON}</button>
+          <button type="button" class="crumbs" title=${this.selectedPath || "Files"} ?disabled=${workspace === undefined} @click=${() => {
+            this.showTree(true);
+          }}>
             ${slash > 0 ? html`<span class="dir">${this.selectedPath.slice(0, slash + 1)}</span>` : nothing}<span class="leaf">${file === undefined ? "Files" : this.selectedPath.slice(slash + 1)}</span>
           </button>
           <span class=${`state ${statusClass}`} role="status">${this.loading ? "Opening…" : status}</span>
-          ${md || svgFile ? html`<div class="seg" role="group" aria-label=${md ? "Markdown view" : "SVG view"}>
-            <button type="button" aria-pressed=${this.mode === "live" ? "true" : "false"} @click=${() => { this.setMode("live"); }}>Live</button>
-            <button type="button" aria-pressed=${this.mode === "raw" ? "true" : "false"} @click=${() => { this.setMode("raw"); }}>Raw</button>
-          </div>` : nothing}
-          ${text ? html`<button type="button" class=${`icon${this.copied ? " done" : ""}`} title=${this.copied ? "Copied" : "Copy file contents"} aria-label=${this.copied ? "Copied" : "Copy file contents"} @click=${() => { void this.copy(); }}>${this.copied ? CHECK_ICON : COPY_ICON}</button>` : nothing}
-          ${file !== undefined ? html`<button type="button" class="icon" title=${this.full ? "Back to panel (Esc)" : "Open full size (⌘⇧F)"} aria-label=${this.full ? "Back to panel" : "Open full size"} aria-pressed=${this.full ? "true" : "false"} @click=${() => { this.full = !this.full; }}>${this.full ? COLLAPSE_ICON : EXPAND_ICON}</button>` : nothing}
+          ${
+            md || svgFile
+              ? html`<div class="seg" role="group" aria-label=${md ? "Markdown view" : "SVG view"}>
+            <button type="button" aria-pressed=${this.mode === "live" ? "true" : "false"} @click=${() => {
+              this.setMode("live");
+            }}>Live</button>
+            <button type="button" aria-pressed=${this.mode === "raw" ? "true" : "false"} @click=${() => {
+              this.setMode("raw");
+            }}>Raw</button>
+          </div>`
+              : nothing
+          }
+          ${
+            text
+              ? html`<button type="button" class=${`icon${this.copied ? " done" : ""}`} title=${this.copied ? "Copied" : "Copy file contents"} aria-label=${this.copied ? "Copied" : "Copy file contents"} @click=${() => {
+                  void this.copy();
+                }}>${this.copied ? CHECK_ICON : COPY_ICON}</button>`
+              : nothing
+          }
+          ${
+            file !== undefined
+              ? html`<button type="button" class="icon" title=${this.full ? "Back to panel (Esc)" : "Open full size (⌘⇧F)"} aria-label=${this.full ? "Back to panel" : "Open full size"} aria-pressed=${this.full ? "true" : "false"} @click=${() => {
+                  this.full = !this.full;
+                }}>${this.full ? COLLAPSE_ICON : EXPAND_ICON}</button>`
+              : nothing
+          }
         </div>
         <slot></slot>
-        ${this.hunkCount > 0 ? html`<div class="strip" role="region" aria-label="Agent changes"><b>${this.hunkCount} agent change${this.hunkCount > 1 ? "s" : ""}</b><span class="actions">
-          <button type="button" @click=${() => { if (this.view) bulkHunkAction(this.view, "next"); }}>Next</button>
-          <button type="button" class="approve" @click=${() => { if (this.view) bulkHunkAction(this.view, "approve"); }}>${CHECK_ICON}Approve all</button>
-          <button type="button" class="reject" @click=${() => { if (this.view) bulkHunkAction(this.view, "reject"); }}>${X_ICON}Reject all</button></span></div>` : nothing}
-        ${this.error !== "" ? html`<p class="error" role="alert">${this.error}${file !== undefined ? html` <button type="button" @click=${() => { void this.openFile(this.selectedPath, true); }}>Reload</button>` : nothing}</p>` : nothing}
-        <div class="body" @mousedown=${(event: MouseEvent) => { this.onBodyMouseDown(event); }}>
+        ${
+          this.hunkCount > 0
+            ? html`<div class="strip" role="region" aria-label="Agent changes"><b>${this.hunkCount} agent change${this.hunkCount > 1 ? "s" : ""}</b><span class="actions">
+          <button type="button" @click=${() => {
+            if (this.view) bulkHunkAction(this.view, "next");
+          }}>Next</button>
+          <button type="button" class="approve" @click=${() => {
+            if (this.view) bulkHunkAction(this.view, "approve");
+          }}>${CHECK_ICON}Approve all</button>
+          <button type="button" class="reject" @click=${() => {
+            if (this.view) bulkHunkAction(this.view, "reject");
+          }}>${X_ICON}Reject all</button></span></div>`
+            : nothing
+        }
+        ${
+          this.error !== ""
+            ? html`<p class="error" role="alert">${this.error}${
+                file !== undefined
+                  ? html` <button type="button" @click=${() => {
+                      void this.openFile(this.selectedPath, true);
+                    }}>Reload</button>`
+                  : nothing
+              }</p>`
+            : nothing
+        }
+        <div class="body" @mousedown=${(event: MouseEvent) => {
+          this.onBodyMouseDown(event);
+        }}>
           ${workspace === undefined ? nothing : this.renderTree()}
           <div class="main">
             ${file === undefined ? nothing : svgFile && this.mode === "live" ? this.renderSvg(file) : this.renderReadOnly(file)}
-            <div class="editor" ?hidden=${!text || svgFile && this.mode === "live"} @click=${(event: MouseEvent) => { this.onEditorClick(event); }}></div>
+            <div class="editor" ?hidden=${!text || (svgFile && this.mode === "live")} @click=${(event: MouseEvent) => {
+              this.onEditorClick(event);
+            }}></div>
           </div>
         </div>
       </section>
@@ -615,35 +807,60 @@ export class WorkbenchFilesPane extends LitElement {
     if (workspace === undefined || (!file.binary && !file.truncated)) return nothing;
     const reveal = this.machineId === "local" ? window.piWebNative?.revealLocalFile : undefined;
     const absolute = `${workspace.path.replace(/\/+$/, "")}/${file.path}`;
-    const action = reveal !== undefined
-      ? html`<button type="button" @click=${() => { void reveal(absolute).catch((error: unknown) => { this.error = `Could not show the file in Finder: ${String(error)}`; }); }}>Show in Finder</button>`
-      : html`<a class="download" href=${workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, download: true })} download>Download file</a>`;
+    const action =
+      reveal !== undefined
+        ? html`<button type="button" @click=${() => {
+            void reveal(absolute).catch((error: unknown) => {
+              this.error = `Could not show the file in Finder: ${String(error)}`;
+            });
+          }}>Show in Finder</button>`
+        : html`<a class="download" href=${workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, download: true })} download>Download file</a>`;
     const preview = workspaceFilePreviewUrl(workspace.projectId, workspace.id, file.path, { machineId: this.machineId, modifiedAt: file.modifiedAt });
     // Video has no public media type; the server's MIME type marks it. Its preview streams by byte range, uncapped.
     const video = file.mimeType?.startsWith("video/") === true;
-    if (file.truncated && !video) return html`<p class="note" role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here. ${action}</p>`;
+    if (file.truncated && !video)
+      return html`<p class="note" role="note">Showing the first ${formatBytes(MAX_WORKSPACE_FILE_CONTENT_BYTES)} of ${formatBytes(file.size)}. The file is too large to edit here. ${action}</p>`;
     const pdf = file.mediaType === "pdf" && file.size <= MAX_INLINE_PREVIEW_BYTES;
     return html`<div class=${pdf ? "preview pdf" : video ? "preview video" : "preview"}>
-      ${(file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES ? html`<p>File too large to preview.</p>`
-        : file.mediaType === "image" ? html`<img alt=${`Preview of ${file.path}`} title="Pinch to zoom" @gesturestart=${this.onImageGesture} @gesturechange=${this.onImageGesture} @gestureend=${this.onImageGesture} @wheel=${this.onImageWheel} src=${preview}>`
-        : pdf ? keyed(this.pdfLayout, html`<iframe title=${`Preview of ${file.path}`} src=${preview} allow="" referrerpolicy="no-referrer"></iframe>`)
-        : video ? html`<video aria-label=${`Preview of ${file.path}`} src=${preview} controls playsinline preload="metadata"></video>`
-        : html`<p>Preview unavailable: this file is binary.</p>`}
+      ${
+        (file.mediaType === "image" || file.mediaType === "pdf") && file.size > MAX_INLINE_PREVIEW_BYTES
+          ? html`<p>File too large to preview.</p>`
+          : file.mediaType === "image"
+            ? html`<img alt=${`Preview of ${file.path}`} title="Pinch to zoom" @gesturestart=${this.onImageGesture} @gesturechange=${this.onImageGesture} @gestureend=${this.onImageGesture} @wheel=${this.onImageWheel} src=${preview}>`
+            : pdf
+              ? keyed(this.pdfLayout, html`<iframe title=${`Preview of ${file.path}`} src=${preview} allow="" referrerpolicy="no-referrer"></iframe>`)
+              : video
+                ? html`<video aria-label=${`Preview of ${file.path}`} src=${preview} controls playsinline preload="metadata"></video>`
+                : html`<p>Preview unavailable: this file is binary.</p>`
+      }
       <p class="note">${action}</p>
     </div>`;
   }
 
   private renderTree(): TemplateResult {
     const rows: TemplateResult[] = [];
-    const fileRow = (path: string, name: string, depth: number) => rows.push(html`<button type="button" class=${`row file${path === this.selectedPath ? " sel" : ""}`} data-path=${path} style=${`padding-left:${String(8 + depth * 14)}px`} title=${path} @click=${() => { void this.openFile(path); }}><i class=${`dot ext-${extensionOf(name)}`}></i><span>${name}</span></button>`);
-    const dirRow = (path: string, name: string, depth: number, open: boolean, toggle: boolean) => rows.push(html`<button type="button" class=${`row dir${open ? " open" : ""}`} aria-expanded=${open ? "true" : "false"} style=${`padding-left:${String(8 + depth * 14)}px`} title=${path} @click=${() => { if (toggle) this.toggleDir(path); }}>${CHEVRON_ICON}<span>${name}</span></button>`);
+    const fileRow = (path: string, name: string, depth: number) =>
+      rows.push(
+        html`<button type="button" class=${`row file${path === this.selectedPath ? " sel" : ""}`} data-path=${path} style=${`padding-left:${String(8 + depth * 14)}px`} title=${path} @click=${() => {
+          void this.openFile(path);
+        }}><i class=${`dot ext-${extensionOf(name)}`}></i><span>${name}</span></button>`,
+      );
+    const dirRow = (path: string, name: string, depth: number, open: boolean, toggle: boolean) =>
+      rows.push(
+        html`<button type="button" class=${`row dir${open ? " open" : ""}`} aria-expanded=${open ? "true" : "false"} style=${`padding-left:${String(8 + depth * 14)}px`} title=${path} @click=${() => {
+          if (toggle) this.toggleDir(path);
+        }}>${CHEVRON_ICON}<span>${name}</span></button>`,
+      );
     if (this.found !== undefined) {
       const root: MatchNode = { dirs: new Map(), files: [] };
       for (const path of this.found) {
         let node = root;
         for (const part of path.split("/").slice(0, -1)) {
           let child = node.dirs.get(part);
-          if (child === undefined) { child = { dirs: new Map(), files: [] }; node.dirs.set(part, child); }
+          if (child === undefined) {
+            child = { dirs: new Map(), files: [] };
+            node.dirs.set(part, child);
+          }
           node = child;
         }
         node.files.push(path);
@@ -653,13 +870,17 @@ export class WorkbenchFilesPane extends LitElement {
           dirRow(prefix + name, name, depth, true, false);
           walk(child, `${prefix}${name}/`, depth + 1);
         }
-        for (const path of node.files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }))) fileRow(path, path.slice(path.lastIndexOf("/") + 1), depth);
+        for (const path of node.files.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true })))
+          fileRow(path, path.slice(path.lastIndexOf("/") + 1), depth);
       };
       walk(root, "", 0);
     } else {
       const walk = (dir: string, depth: number): void => {
         for (const entry of this.dirs.get(dir) ?? []) {
-          if (entry.type !== "directory") { fileRow(entry.path, entry.name, depth); continue; }
+          if (entry.type !== "directory") {
+            fileRow(entry.path, entry.name, depth);
+            continue;
+          }
           const open = this.openDirs.has(entry.path);
           dirRow(entry.path, entry.name, depth, open, true);
           if (open) walk(entry.path, depth + 1);
@@ -670,10 +891,22 @@ export class WorkbenchFilesPane extends LitElement {
     const empty = this.found !== undefined ? (this.searching ? "Searching…" : "No matching files") : this.dirs.has("") ? "No files" : "Loading…";
     return html`<aside aria-label="File tree" ?inert=${this.loaded !== undefined && !this.treeOpen}>
       <div class="filter">
-        ${SEARCH_ICON}<input aria-label="Filter files" placeholder="Filter files" autocomplete="off" spellcheck="false" .value=${this.query} @input=${(event: Event) => { this.onFilterInput(event); }} @keydown=${(event: KeyboardEvent) => { this.onFilterKeyDown(event); }}><kbd>⌘P</kbd>
+        ${SEARCH_ICON}<input aria-label="Filter files" placeholder="Filter files" autocomplete="off" spellcheck="false" .value=${this.query} @input=${(
+          event: Event,
+        ) => {
+          this.onFilterInput(event);
+        }} @keydown=${(event: KeyboardEvent) => {
+          this.onFilterKeyDown(event);
+        }}><kbd>⌘P</kbd>
       </div>
       <div class="tree">${rows.length > 0 ? rows : html`<p class="none">${empty}</p>`}
-        ${this.cursor !== null && this.found !== undefined ? html`<button type="button" class="more" ?disabled=${this.searching} @click=${() => { void this.loadSearch(this.cursor ?? ""); }}>Load more</button>` : nothing}
+        ${
+          this.cursor !== null && this.found !== undefined
+            ? html`<button type="button" class="more" ?disabled=${this.searching} @click=${() => {
+                void this.loadSearch(this.cursor ?? "");
+              }}>Load more</button>`
+            : nothing
+        }
         ${this.treeNotice !== "" ? html`<p class="none" role="status">${this.treeNotice}</p>` : nothing}
       </div>
     </aside>`;
@@ -787,18 +1020,28 @@ export class WorkbenchFilesPane extends LitElement {
 }
 
 function readMode(): "live" | "raw" {
-  try { return localStorage.getItem(MODE_KEY) === "raw" ? "raw" : "live"; } catch { return "live"; }
+  try {
+    return localStorage.getItem(MODE_KEY) === "raw" ? "raw" : "live";
+  } catch {
+    return "live";
+  }
 }
 
 function readOpenDirs(scope: string): string[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(`pi-web.files.openDirs:${scope}`) ?? "[]");
     return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 function writeOpenDirs(scope: string, dirs: Set<string>): void {
-  try { localStorage.setItem(`pi-web.files.openDirs:${scope}`, JSON.stringify([...dirs])); } catch { /* storage unavailable */ }
+  try {
+    localStorage.setItem(`pi-web.files.openDirs:${scope}`, JSON.stringify([...dirs]));
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 function extensionOf(name: string): string {
@@ -811,11 +1054,17 @@ function formatBytes(bytes: number): string {
 
 // Lucide folder, copy, check, maximize-2, minimize-2, chevron-right, search, x.
 const icon = (body: SVGTemplateResult) => html`<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
-const FOLDER_ICON = icon(svg`<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`);
+const FOLDER_ICON = icon(
+  svg`<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`,
+);
 const COPY_ICON = icon(svg`<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`);
 const CHECK_ICON = icon(svg`<path d="M20 6 9 17l-5-5"/>`);
 const X_ICON = icon(svg`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`);
-const EXPAND_ICON = icon(svg`<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>`);
-const COLLAPSE_ICON = icon(svg`<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/>`);
+const EXPAND_ICON = icon(
+  svg`<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>`,
+);
+const COLLAPSE_ICON = icon(
+  svg`<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/>`,
+);
 const CHEVRON_ICON = icon(svg`<path d="m9 18 6-6-6-6"/>`);
 const SEARCH_ICON = icon(svg`<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>`);

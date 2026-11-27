@@ -126,7 +126,7 @@ export class SessionArchiveStore {
       if (records.length === 0) return [];
 
       for (const record of records) {
-        if (record.archivePath !== undefined && await pathExists(record.archivePath)) await unlink(record.archivePath);
+        if (record.archivePath !== undefined && (await pathExists(record.archivePath))) await unlink(record.archivePath);
       }
       const sessions = data.sessions.filter((session) => !targetIdSet.has(session.sessionId));
       await this.write({ sessions });
@@ -148,7 +148,9 @@ export class SessionArchiveStore {
   private async exclusive<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.operationQueue;
     let release = (): void => undefined;
-    this.operationQueue = new Promise<void>((resolve) => { release = resolve; });
+    this.operationQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     await previous.catch(() => undefined);
     try {
       return await operation();
@@ -180,7 +182,10 @@ export class SessionArchiveStore {
   }
 }
 
-function archiveRecordFromInput(session: ArchiveSessionInput, archive: { archivedAt: string; originalPath: string; archivePath: string }): ArchivedSessionRecord {
+function archiveRecordFromInput(
+  session: ArchiveSessionInput,
+  archive: { archivedAt: string; originalPath: string; archivePath: string },
+): ArchivedSessionRecord {
   return {
     sessionId: session.sessionId,
     cwd: canonicalizeStoredCwd(session.cwd),

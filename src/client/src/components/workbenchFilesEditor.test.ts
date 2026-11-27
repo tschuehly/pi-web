@@ -7,7 +7,19 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { highlightingFor } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { undo } from "@codemirror/commands";
-import { applyDiskChange, diskChangeSpec, editHistory, filesHighlighting, hunkActionSpec, hunkField, lineChunks, lineRangeHighlight, lineRangeSpec, livePreview, wordChanges } from "./workbenchFilesEditor";
+import {
+  applyDiskChange,
+  diskChangeSpec,
+  editHistory,
+  filesHighlighting,
+  hunkActionSpec,
+  hunkField,
+  lineChunks,
+  lineRangeHighlight,
+  lineRangeSpec,
+  livePreview,
+  wordChanges,
+} from "./workbenchFilesEditor";
 
 const slices = (a: string, b: string) => wordChanges(a, b)?.map((w) => [a.slice(w.oF, w.oT), b.slice(w.nF, w.nT)]) ?? null;
 
@@ -127,10 +139,24 @@ describe("agent hunks", () => {
 
 describe("live preview and line ranges", () => {
   it("renders a document with tables, lists, tasks and code without throwing", () => {
-    const doc = "# Plan\n\n- [ ] open\n- [x] done\n  - nested *item* with `code`\n1. first\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```ts\nconst x = 1;\n```\n\n> quote\n\n---\n\n![img](a.png) [link](b.md)\n";
+    const doc =
+      "# Plan\n\n- [ ] open\n- [x] done\n  - nested *item* with `code`\n1. first\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n```ts\nconst x = 1;\n```\n\n> quote\n\n---\n\n![img](a.png) [link](b.md)\n";
     const parent = document.createElement("div");
     document.body.append(parent);
-    const view = new EditorView({ parent, state: EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), livePreview((md) => `<table><tr><td>${md.length.toString()}</td></tr></table>`, () => undefined), lineRangeHighlight] }) });
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc,
+        extensions: [
+          markdown({ base: markdownLanguage }),
+          livePreview(
+            (md) => `<table><tr><td>${md.length.toString()}</td></tr></table>`,
+            () => undefined,
+          ),
+          lineRangeHighlight,
+        ],
+      }),
+    });
     expect(view.contentDOM.querySelector(".lp-table")).not.toBeNull();
     expect(view.contentDOM.querySelectorAll(".lp-check")).toHaveLength(2);
     view.dispatch(lineRangeSpec(view.state, 3, 4));
@@ -147,10 +173,17 @@ describe("editor controls", () => {
     document.body.append(parent);
     return new EditorView({ parent, state: EditorState.create({ doc, selection: { anchor }, extensions }) });
   };
-  const mousedown = (target: Element | null, init: MouseEventInit = {}) => target?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init }));
+  const mousedown = (target: Element | null, init: MouseEventInit = {}) =>
+    target?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, ...init }));
 
   it("toggles a task checkbox on click (also keyboard activation), not on mousedown alone", () => {
-    const view = mountView("- [ ] open\n", [markdown({ base: markdownLanguage }), livePreview(() => "", () => undefined)]);
+    const view = mountView("- [ ] open\n", [
+      markdown({ base: markdownLanguage }),
+      livePreview(
+        () => "",
+        () => undefined,
+      ),
+    ]);
     mousedown(view.contentDOM.querySelector(".lp-check"));
     expect(view.state.doc.toString()).toBe("- [ ] open\n");
     view.contentDOM.querySelector<HTMLInputElement>(".lp-check")?.click();
@@ -172,7 +205,12 @@ describe("editor controls", () => {
     const opened: (string | null)[] = [];
     const render = (md: string) => `<p><a href="${/\]\((.*)\)/.exec(md)?.[1] ?? ""}">x</a></p>`;
     const doc = "See [notes](docs/b.md:4) and [site](https://example.com).";
-    const view = mountView(doc, [markdown({ base: markdownLanguage }), livePreview(render, (a) => { opened.push(a.getAttribute("href")); })]);
+    const view = mountView(doc, [
+      markdown({ base: markdownLanguage }),
+      livePreview(render, (a) => {
+        opened.push(a.getAttribute("href"));
+      }),
+    ]);
     const links = () => view.contentDOM.querySelectorAll(".lp-link");
     mousedown(links()[0] ?? null);
     mousedown(links()[1] ?? null);

@@ -14,9 +14,15 @@ afterEach(() => {
 
 function session(id: string, overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
-    id, path: `/sessions/${id}.jsonl`, cwd: "/workspace",
-    created: "2026-06-09T00:00:00.000Z", modified: "2026-06-09T00:00:00.000Z",
-    messageCount: 1, firstMessage: id, persisted: true, ...overrides,
+    id,
+    path: `/sessions/${id}.jsonl`,
+    cwd: "/workspace",
+    created: "2026-06-09T00:00:00.000Z",
+    modified: "2026-06-09T00:00:00.000Z",
+    messageCount: 1,
+    firstMessage: id,
+    persisted: true,
+    ...overrides,
   };
 }
 
@@ -75,9 +81,20 @@ describe("session root pins", () => {
     expect(result.pinnedRootIds).toEqual(["b", "a"]);
     expect(result.pinnedRowCount).toBe(6);
     expect(result.rows.map(({ session: item }) => item.id)).toEqual([
-      "b", "b-child", "a", "agent", "nested", "user", "recent", "orphan", "archived", "archived-child",
+      "b",
+      "b-child",
+      "a",
+      "agent",
+      "nested",
+      "user",
+      "recent",
+      "orphan",
+      "archived",
+      "archived-child",
     ]);
-    expect(result.rows.filter((item) => ["a", "agent", "nested", "user"].includes(item.session.id))).toEqual(rows.filter((item) => ["a", "agent", "nested", "user"].includes(item.session.id)));
+    expect(result.rows.filter((item) => ["a", "agent", "nested", "user"].includes(item.session.id))).toEqual(
+      rows.filter((item) => ["a", "agent", "nested", "user"].includes(item.session.id)),
+    );
     expect(pinnedSessionRows(rows, []).rows).toEqual(rows);
   });
 
@@ -92,7 +109,9 @@ describe("session root pins", () => {
     expect([...shadow(list).querySelectorAll(".pin-heading")].map((item) => item.textContent)).toEqual(["Pinned", "Recent"]);
     expect(shadow(list).querySelector('[aria-label="Pinned session"]')).toBeNull();
     expect(shadow(list).textContent).not.toContain("📌");
-    const contents = [...shadow(list).querySelectorAll(".pin-heading, .action-row")].map((item) => item.classList.contains("action-row") ? item.getAttribute("title") : item.textContent);
+    const contents = [...shadow(list).querySelectorAll(".pin-heading, .action-row")].map((item) =>
+      item.classList.contains("action-row") ? item.getAttribute("title") : item.textContent,
+    );
     expect(contents).toEqual(["Pinned", a.path, child.path, "Recent", b.path]);
     button(shadow(list), "▸ Agent subsessions (1)").click();
     await list.updateComplete;
@@ -114,12 +133,17 @@ describe("session root pins", () => {
   it("offers pin actions only on actual current roots, including transient roots", async () => {
     const root = session("root");
     const archived = session("archived", { archived: true });
-    const list = await mount([
-      root, session("child", { parentSessionPath: root.path }),
-      session("orphan", { parentSessionPath: "/missing.jsonl" }),
-      archived, session("active-child", { parentSessionPath: archived.path }),
-      session("transient", { persisted: false, messageCount: 0 }),
-    ], ["child", "orphan", "archived"]);
+    const list = await mount(
+      [
+        root,
+        session("child", { parentSessionPath: root.path }),
+        session("orphan", { parentSessionPath: "/missing.jsonl" }),
+        archived,
+        session("active-child", { parentSessionPath: archived.path }),
+        session("transient", { persisted: false, messageCount: 0 }),
+      ],
+      ["child", "orphan", "archived"],
+    );
     const onPin = vi.fn();
     const onSelect = vi.fn();
     list.onPin = onPin;

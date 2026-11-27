@@ -86,7 +86,9 @@ describe("panel resize behavior", () => {
     const storage = new ThrowingStorage();
 
     expect(readStoredPanelSizes(storage)).toEqual({});
-    expect(() => { writeStoredPanelSizes({ navigationPanelWidth: 260 }, storage); }).not.toThrow();
+    expect(() => {
+      writeStoredPanelSizes({ navigationPanelWidth: 260 }, storage);
+    }).not.toThrow();
   });
 });
 

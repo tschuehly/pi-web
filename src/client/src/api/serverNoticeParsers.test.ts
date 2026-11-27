@@ -21,10 +21,18 @@ describe("server notice parsers", () => {
 
   it("rejects malformed notice identity, severity, timestamps, and duplicate ids", () => {
     expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, severity: "fatal" }] })).toThrow("severity");
-    expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, createdAt: "not-a-time" }] })).toThrow("creation time");
+    expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, createdAt: "not-a-time" }] })).toThrow(
+      "creation time",
+    );
     expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [notice, notice] })).toThrow("Duplicate server notice id");
-    expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, scope: {} }] })).toThrow("must contain at least one");
-    expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, scope: { projectId: "project-1", other: "value" } }] })).toThrow("Unsupported Server notice scope field");
-    expect(() => parseRealtimeStreamEvent({ type: "notices.updated", snapshot: { ...{ daemonInstanceId: "daemon-a", revision: 0, notices: [] }, revision: -1 } })).toThrow("safe integer");
+    expect(() => parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, scope: {} }] })).toThrow(
+      "must contain at least one",
+    );
+    expect(() =>
+      parseServerNoticeSnapshot({ daemonInstanceId: "daemon-a", revision: 0, notices: [{ ...notice, scope: { projectId: "project-1", other: "value" } }] }),
+    ).toThrow("Unsupported Server notice scope field");
+    expect(() =>
+      parseRealtimeStreamEvent({ type: "notices.updated", snapshot: { ...{ daemonInstanceId: "daemon-a", revision: 0, notices: [] }, revision: -1 } }),
+    ).toThrow("safe integer");
   });
 });

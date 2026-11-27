@@ -10,7 +10,9 @@ import {
   writeTerminalSoftKeysPreference,
 } from "./terminalSoftKeysPreference";
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("terminal soft key preferences", () => {
   it("uses only screen width for the default media query", () => {
@@ -69,7 +71,9 @@ describe("terminal soft key preferences", () => {
     const storage = new ThrowingStorage();
 
     expect(readTerminalSoftKeysPreference(storage)).toBeUndefined();
-    expect(() => { writeTerminalSoftKeysPreference(true, storage); }).not.toThrow();
+    expect(() => {
+      writeTerminalSoftKeysPreference(true, storage);
+    }).not.toThrow();
   });
 });
 

@@ -14,7 +14,9 @@ export function useDeferredContent(): void {
       frames.set(id, callback);
       return id;
     });
-    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => { frames.delete(id); });
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => {
+      frames.delete(id);
+    });
   });
   afterEach(() => {
     document.body.replaceChildren();

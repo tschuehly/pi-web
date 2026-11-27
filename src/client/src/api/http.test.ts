@@ -81,7 +81,10 @@ describe("request", () => {
   it("returns the parsed result after a successful JSON read", async () => {
     fetchMock.mockResolvedValue(new Response('{"value":1}'));
     const result = { parsed: true };
-    const parse = vi.fn((body: unknown) => { void body; return result; });
+    const parse = vi.fn((body: unknown) => {
+      void body;
+      return result;
+    });
 
     await expect(request("api/read", parse)).resolves.toBe(result);
 
@@ -104,7 +107,11 @@ describe("request", () => {
   it.each([new TypeError("Invalid shape"), new SyntaxError("Invalid value"), new Error("Parser bug")])("preserves parser errors: %s", async (failure) => {
     fetchMock.mockResolvedValue(new Response("{}"));
 
-    await expect(request("api/read", () => { throw failure; })).rejects.toBe(failure);
+    await expect(
+      request("api/read", () => {
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
 
     expect(fetchMock).toHaveBeenCalledOnce();
   });
@@ -131,17 +138,20 @@ describe("request", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it.each([new TypeError("Body transport failure"), new SyntaxError("Invalid JSON"), new DOMException("Cancelled", "AbortError")])("retains HTTP failure fallback when its body is unreadable: %s", async (failure) => {
-    const response = new Response("", { status: 503, statusText: "Service Unavailable" });
-    vi.spyOn(response, "json").mockRejectedValue(failure);
-    fetchMock.mockResolvedValue(response);
+  it.each([new TypeError("Body transport failure"), new SyntaxError("Invalid JSON"), new DOMException("Cancelled", "AbortError")])(
+    "retains HTTP failure fallback when its body is unreadable: %s",
+    async (failure) => {
+      const response = new Response("", { status: 503, statusText: "Service Unavailable" });
+      vi.spyOn(response, "json").mockRejectedValue(failure);
+      fetchMock.mockResolvedValue(response);
 
-    const pending = request("api/read", (body) => body);
+      const pending = request("api/read", (body) => body);
 
-    await expect(pending).rejects.toBeInstanceOf(HttpRequestError);
-    await expect(pending).rejects.toMatchObject({ status: 503, message: "Service Unavailable" });
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
+      await expect(pending).rejects.toBeInstanceOf(HttpRequestError);
+      await expect(pending).rejects.toMatchObject({ status: 503, message: "Service Unavailable" });
+      expect(fetchMock).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each(["GET", "POST", "PUT", "DELETE"])("never globally retries %s requests", async (method) => {
     fetchMock.mockRejectedValue(new TypeError("Offline"));

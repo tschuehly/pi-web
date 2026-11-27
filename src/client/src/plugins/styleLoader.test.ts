@@ -15,7 +15,9 @@ function cssResponse(text: string, init?: ResponseInit) {
   return new Response(text, { headers: { "content-type": "text/css; charset=utf-8" }, ...init });
 }
 
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("resolveStylesheetAssets", () => {
   it("resolves CSS resource forms while preserving other strings, comments and nested function arguments", () => {
@@ -26,22 +28,27 @@ x { background: image-set("one.png" 1x, url(two.png) 2x, "three.png" type("image
 mask: URL(#mask); content: "one.png"; other: future-syntax("unchanged"); }`;
     const output = resolveStylesheetAssets(source, fileUrl);
     expect(output).toContain("/* url(fake.png) @import 'ignore.css'; */");
-    expect(output).toContain('url("https://example.test/plugins/fonts/font.woff2") format(\'woff2\')');
+    expect(output).toContain("url(\"https://example.test/plugins/fonts/font.woff2\") format('woff2')");
     expect(output).toContain("url(https://example.test/plugins/palettes/icons/a.svg#mark)");
-    expect(output).toContain('image-set("https://example.test/plugins/palettes/one.png" 1x, url(https://example.test/plugins/palettes/two.png) 2x, "https://example.test/plugins/palettes/three.png" type("image/png"))');
+    expect(output).toContain(
+      'image-set("https://example.test/plugins/palettes/one.png" 1x, url(https://example.test/plugins/palettes/two.png) 2x, "https://example.test/plugins/palettes/three.png" type("image/png"))',
+    );
     expect(output).toContain(`--message: "url(fake.png)"`);
     expect(output).toContain("url(#mask)");
     expect(output).toContain('content: "one.png"; other: future-syntax("unchanged")');
   });
 
   it("preserves local SVG references in quoted, unquoted and escaped resource URLs", () => {
-    const output = resolveStylesheetAssets(String.raw`x {
+    const output = resolveStylesheetAssets(
+      String.raw`x {
 filter: url(#shadow);
 clip-path: url("#clip");
 mask: url('\23 mask');
 other: u\72l(\23 marker);
 background-image: image-set("#local" 1x, "icons.svg#external" 2x);
-}`, fileUrl);
+}`,
+      fileUrl,
+    );
     expect(output).toContain("filter: url(#shadow)");
     expect(output).toContain('clip-path: url("#clip")');
     expect(output).toContain('mask: url("#mask")');
@@ -51,13 +58,16 @@ background-image: image-set("#local" 1x, "icons.svg#external" 2x);
   });
 
   it("handles CSS escapes, image-set prefixes, root paths and absolute/data URLs", () => {
-    const output = resolveStylesheetAssets(String.raw`x {
+    const output = resolveStylesheetAssets(
+      String.raw`x {
 background: u\72l(../a\ b.png);
 mask: url("\2e\2e /icons/a.svg");
 background-image: -webkit-image-set("/one.png" 1x);
 other: url(https://cdn.test/a.png);
 inline: url("data:image/svg+xml,<svg/>");
-}`, fileUrl);
+}`,
+      fileUrl,
+    );
     expect(output).toContain("url(https://example.test/plugins/a%20b.png)");
     expect(output).toContain('url("https://example.test/plugins/icons/a.svg")');
     expect(output).toContain('-webkit-image-set("https://example.test/one.png" 1x)');
@@ -65,9 +75,12 @@ inline: url("data:image/svg+xml,<svg/>");
     expect(output).toContain('url("data:image/svg+xml,<svg/>")');
   });
 
-  it.each(["@import 'other.css';", "@IMPORT url(other.css);", String.raw`@\69mport 'other.css';`])("rejects imports before browser compilation: %s", (source) => {
-    expect(() => resolveStylesheetAssets(source, fileUrl)).toThrow("bundle imports");
-  });
+  it.each(["@import 'other.css';", "@IMPORT url(other.css);", String.raw`@\69mport 'other.css';`])(
+    "rejects imports before browser compilation: %s",
+    (source) => {
+      expect(() => resolveStylesheetAssets(source, fileUrl)).toThrow("bundle imports");
+    },
+  );
 
   it("rejects malformed URLs rather than silently changing their meaning", () => {
     expect(() => resolveStylesheetAssets("x { background: url(a b.png); }", fileUrl)).toThrow("invalid URL or string");
@@ -105,9 +118,18 @@ describe("createPluginStylesheetLoader", () => {
 
   it("bounds slow network loads and releases the timer", async () => {
     vi.useFakeTimers();
-    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation((_url, options) => new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener("abort", () => { reject(new Error("fetch aborted")); }, { once: true });
-    }));
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new Error("fetch aborted"));
+            },
+            { once: true },
+          );
+        }),
+    );
     const load = createPluginStylesheetLoader({ fetch, timeoutMs: 25 });
     const failure = expect(load(fileUrl, new AbortController().signal)).rejects.toThrow("timed out after 25ms");
     await vi.advanceTimersByTimeAsync(25);
@@ -118,9 +140,18 @@ describe("createPluginStylesheetLoader", () => {
   it("forwards unload cancellation and never fetches when already aborted", async () => {
     vi.useFakeTimers();
     const fixture = sheetFixture();
-    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation((_url, options) => new Promise((_resolve, reject) => {
-      options?.signal?.addEventListener("abort", () => { reject(new Error("fetch aborted")); }, { once: true });
-    }));
+    const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(
+      (_url, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new Error("fetch aborted"));
+            },
+            { once: true },
+          );
+        }),
+    );
     const load = createPluginStylesheetLoader({ fetch, createSheet: fixture.createSheet });
     const controller = new AbortController();
     const failure = expect(load(fileUrl, controller.signal)).rejects.toThrow("plugin unloaded");
@@ -153,7 +184,9 @@ describe("createPluginStylesheetLoader", () => {
   it("counts streamed UTF-8 bytes rather than characters and cancels oversized bodies", async () => {
     const cancel = vi.fn();
     const body = new ReadableStream<Uint8Array>({
-      start(controller) { controller.enqueue(new TextEncoder().encode("/*☀☀*/")); },
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("/*☀☀*/"));
+      },
       cancel,
     });
     const fixture = sheetFixture();

@@ -2,10 +2,7 @@ import type { ActiveAgentProfileDescriptor } from "./apiTypes.js";
 
 export const ACTIVE_AGENT_PROFILE_SCHEMA_VERSION = 2 as const;
 
-const ACTIVE_AGENT_PROFILE_FIELDS = new Set([
-  "schemaVersion",
-  "dir",
-]);
+const ACTIVE_AGENT_PROFILE_FIELDS = new Set(["schemaVersion", "dir"]);
 
 export function parseActiveAgentProfileDescriptor(value: unknown): ActiveAgentProfileDescriptor | undefined {
   if (!isRecord(value) || Object.keys(value).some((key) => !ACTIVE_AGENT_PROFILE_FIELDS.has(key))) return undefined;

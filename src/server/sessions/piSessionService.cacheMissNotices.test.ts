@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRef, TEST_MODEL_ID, TEST_MODEL_PROVIDER, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRef,
+  TEST_MODEL_ID,
+  TEST_MODEL_PROVIDER,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const MINUTE = 60_000;
 const NOTICE = "Cache miss after 10m idle: 51k tokens re-billed (~$0.14)";

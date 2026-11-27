@@ -4,27 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PI WEB plugins — capabilities and guide</title>
-    <meta
-      name="description"
-      content="Discover what PI WEB plugins can do, how to install and manage them, and where to point an agent to build your own."
-    />
+    <meta name="description" content="Discover what PI WEB plugins can do, how to install and manage them, and where to point an agent to build your own." />
     <link rel="canonical" href="https://pi-web.dev/plugins" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="PI WEB" />
     <meta property="og:title" content="PI WEB plugins — capabilities and guide" />
-    <meta
-      property="og:description"
-      content="Discover what plugins can do, install existing tools, or ask an agent to build your own."
-    />
+    <meta property="og:description" content="Discover what plugins can do, install existing tools, or ask an agent to build your own." />
     <meta property="og:url" content="https://pi-web.dev/plugins" />
     <meta property="og:image" content="https://pi-web.dev/assets/pi-web-banner.png" />
     <meta property="og:image:alt" content="PI WEB browser UI for persistent Pi Coding Agent sessions" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="PI WEB plugins — capabilities and guide" />
-    <meta
-      name="twitter:description"
-      content="Discover what plugins can do, install existing tools, or ask an agent to build your own."
-    />
+    <meta name="twitter:description" content="Discover what plugins can do, install existing tools, or ask an agent to build your own." />
     <meta name="twitter:image" content="https://pi-web.dev/assets/pi-web-banner.png" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
     <script>
@@ -102,7 +93,10 @@
                 <li><strong>Run backend work</strong> — tasks, integrations, and background processes.</li>
                 <li><strong>Connect them</strong> — trigger work from the UI and bring progress and results back.</li>
               </ul>
-              <p>For example, build a review panel that starts a Pi conversation and brings its findings back for you to inspect. <a href="community-plugins">Browse community plugins</a> for more ideas.</p>
+              <p>
+                For example, build a review panel that starts a Pi conversation and brings its findings back for you to inspect.
+                <a href="community-plugins">Browse community plugins</a> for more ideas.
+              </p>
             </section>
             <section id="agent-development">
               <span id="ask-ai"></span><span id="agent-docs"></span><span id="develop"></span>
@@ -126,21 +120,42 @@ Here's what I want:
                 <li>Open <strong>Settings → PI WEB plugins</strong> to check its status and enable or disable its web integration.</li>
                 <li>Follow the reload or restart guidance shown there.</li>
               </ol>
-              <p>Browser-only changes need a page reload. Server-backed changes need a restart of the target session daemon, then a page reload. <strong>A daemon restart can interrupt active sessions and terminals.</strong> Check active work first. Reloading the page or using Pi's <code>/reload</code> does not activate server-plugin changes.</p>
-              <p>Relays and Workflows are managed bundled packages, not independently versioned installs. At session-daemon startup, PI WEB updates their configured sources in the active agent profile to the running installation while preserving resource filters. Removing them through <strong>Settings → Pi packages</strong> is remembered; absent packages stay removed.</p>
+              <p>
+                Browser-only changes need a page reload. Server-backed changes need a restart of the target session daemon, then a page reload.
+                <strong>A daemon restart can interrupt active sessions and terminals.</strong> Check active work first. Reloading the page or using Pi's
+                <code>/reload</code> does not activate server-plugin changes.
+              </p>
+              <p>
+                Relays and Workflows are managed bundled packages, not independently versioned installs. At session-daemon startup, PI WEB updates their
+                configured sources in the active agent profile to the running installation while preserving resource filters. Removing them through
+                <strong>Settings → Pi packages</strong> is remembered; absent packages stay removed.
+              </p>
               <h3 id="pi-packages-extensions-and-plugins">Packages, extensions, and plugins</h3>
               <span id="packages-vs-plugins"></span><span id="pi-packages"></span>
-              <p>A <strong>Pi package</strong> is an installable bundle. A <strong>Pi extension</strong> changes agent behavior; a <strong>PI WEB plugin</strong> adds web tools. One package can include both. Disabling its web plugin leaves its extensions, skills, and prompts available.</p>
+              <p>
+                A <strong>Pi package</strong> is an installable bundle. A <strong>Pi extension</strong> changes agent behavior; a
+                <strong>PI WEB plugin</strong> adds web tools. One package can include both. Disabling its web plugin leaves its extensions, skills, and prompts
+                available.
+              </p>
               <h3 id="remote-machines">Remote machines</h3>
               <span id="remote-machine-plugins"></span>
-              <p>Installation and settings apply to the machine selected in Settings. A remote plugin runs its server work there and shows its UI in your browser. Keep gateway and remote PI WEB versions compatible.</p>
+              <p>
+                Installation and settings apply to the machine selected in Settings. A remote plugin runs its server work there and shows its UI in your
+                browser. Keep gateway and remote PI WEB versions compatible.
+              </p>
             </section>
             <section id="trust-and-recovery">
               <span id="trust"></span><span id="lifecycle-recovery"></span>
               <h2>Trust and recovery</h2>
-              <p><strong>Install only plugins you trust.</strong> Plugins are not sandboxed: they can run code in your browser or access files, environment variables, and processes on their machine. Faulty server plugins can affect other sessions.</p>
+              <p>
+                <strong>Install only plugins you trust.</strong> Plugins are not sandboxed: they can run code in your browser or access files, environment
+                variables, and processes on their machine. Faulty server plugins can affect other sessions.
+              </p>
               <p>Model-backed features may send data to a model provider. Check the plugin's description before using it with sensitive content.</p>
-              <p>If a plugin fails, check its status in <strong>Settings → PI WEB plugins</strong> on the affected machine. Disable it there if needed. If the UI cannot recover, use the <a href="plugins.md#trust-and-recovery">offline disable and safe-start commands</a>.</p>
+              <p>
+                If a plugin fails, check its status in <strong>Settings → PI WEB plugins</strong> on the affected machine. Disable it there if needed. If the UI
+                cannot recover, use the <a href="plugins.md#trust-and-recovery">offline disable and safe-start commands</a>.
+              </p>
             </section>
             <section id="technical-reference">
               <!-- Published deep links now lead to the implementation reference. -->
@@ -180,10 +195,21 @@ Here's what I want:
               <span id="css-first-themes"></span>
               <span id="read-only-catalogs-and-scoped-backends-v5"></span>
               <h2>For agents and developers</h2>
-              <p>The <a href="plugins.md">plugin implementation reference</a> is the starting point for APIs, packaging, examples, compatibility, and lifecycle rules.</p>
-              <p id="included-tools-and-optional-packages"><span id="built-in-plugins"></span>For individual tools, see <a href="plugins.md#included-tools-and-optional-packages">included tools and optional packages</a>.</p>
-              <p id="automatic-git-worktree-discovery">See <a href="plugins.md#automatic-git-worktree-discovery">automatic Git worktree discovery</a> for supported Git versions, configuration, and fallback behavior.</p>
-              <p id="pi-extension-dialogs">See <a href="plugins.md#pi-extension-dialogs">Pi extension support</a> for dialogs and other agent integration behavior.</p>
+              <p>
+                The <a href="plugins.md">plugin implementation reference</a> is the starting point for APIs, packaging, examples, compatibility, and lifecycle
+                rules.
+              </p>
+              <p id="included-tools-and-optional-packages">
+                <span id="built-in-plugins"></span>For individual tools, see
+                <a href="plugins.md#included-tools-and-optional-packages">included tools and optional packages</a>.
+              </p>
+              <p id="automatic-git-worktree-discovery">
+                See <a href="plugins.md#automatic-git-worktree-discovery">automatic Git worktree discovery</a> for supported Git versions, configuration, and
+                fallback behavior.
+              </p>
+              <p id="pi-extension-dialogs">
+                See <a href="plugins.md#pi-extension-dialogs">Pi extension support</a> for dialogs and other agent integration behavior.
+              </p>
             </section>
           </div>
         </div>

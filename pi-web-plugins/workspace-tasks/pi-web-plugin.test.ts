@@ -22,8 +22,13 @@ function required<T>(value: T | null | undefined): T {
 
 function activate() {
   return plugin.activate({
-    apiVersion: 4, pluginId: "workspace-tasks", runtimePluginId: "remote.workspace-tasks",
-    html, svg, signal: new AbortController().signal, lifetimeSignal: new AbortController().signal,
+    apiVersion: 4,
+    pluginId: "workspace-tasks",
+    runtimePluginId: "remote.workspace-tasks",
+    html,
+    svg,
+    signal: new AbortController().signal,
+    lifetimeSignal: new AbortController().signal,
   });
 }
 
@@ -33,13 +38,21 @@ function workspaceContext() {
     machine: { id: "local", name: "Local", kind: "local" },
     workspace: { id: `workspace-${String(++workspaceSequence)}`, projectId: "project", path: "/repo", label: "main", isMain: true },
     files: {
-      capabilityVersion: 1, defaultUploadFolder: ".pi-web/uploads", maxInlinePreviewBytes: 1024,
+      capabilityVersion: 1,
+      defaultUploadFolder: ".pi-web/uploads",
+      maxInlinePreviewBytes: 1024,
       readFile: vi.fn().mockResolvedValue({
         content: JSON.stringify({ version: 1, tasks: [{ id: "build", title: "Build <app>", command: "npm run build", confirm: true }] }),
-        truncated: false, binary: false,
+        truncated: false,
+        binary: false,
       }),
-      listFiles: vi.fn(), writeFile: vi.fn(), deleteFile: vi.fn(), moveFile: vi.fn(),
-      previewUrl: vi.fn(), downloadUrl: vi.fn(), uploadFile: vi.fn(),
+      listFiles: vi.fn(),
+      writeFile: vi.fn(),
+      deleteFile: vi.fn(),
+      moveFile: vi.fn(),
+      previewUrl: vi.fn(),
+      downloadUrl: vi.fn(),
+      uploadFile: vi.fn(),
     },
     host: { requestRender: vi.fn() },
     prompt: { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) },
@@ -70,17 +83,27 @@ describe("Workspace Tasks stylesheet integration", () => {
     expect(requirement).toMatchObject({ pluginId: "pi-web", id: "stylesheet-integration", version: 1 });
     const release = vi.fn();
     const integration = { registerRoot: vi.fn(() => release), createController: vi.fn(), subscribe: vi.fn(() => vi.fn()) };
-    for (const value of [null, undefined, {}, { ...integration, registerRoot: undefined }, { ...integration, createController: undefined }, { ...integration, subscribe: undefined }]) {
+    for (const value of [
+      null,
+      undefined,
+      {},
+      { ...integration, registerRoot: undefined },
+      { ...integration, createController: undefined },
+      { ...integration, subscribe: undefined },
+    ]) {
       expect(() => requirement.parse(value)).toThrow("Stylesheet integration capability v1");
     }
     const instance = activate();
     const requests = vi.fn();
-    instance.start({ signal: new AbortController().signal, capabilities: {
-      resolve<Value>(token: PluginCapability<Value>): Value {
-        requests(token);
-        return token.parse(integration);
+    instance.start({
+      signal: new AbortController().signal,
+      capabilities: {
+        resolve<Value>(token: PluginCapability<Value>): Value {
+          requests(token);
+          return token.parse(integration);
+        },
       },
-    } });
+    });
     expect(requests).toHaveBeenCalledExactlyOnceWith(requirement);
     const container = document.createElement("div");
     document.body.append(container);
@@ -103,7 +126,9 @@ describe("Workspace Tasks stylesheet integration", () => {
     panel.context = context;
     document.body.append(panel);
     expect(integration.registerRoot).toHaveBeenCalledExactlyOnceWith(root(panel), { sharedUi: true });
-    await vi.waitFor(() => { expect(button(panel, "[data-task-id]").textContent).toBe("Run"); });
+    await vi.waitFor(() => {
+      expect(button(panel, "[data-task-id]").textContent).toBe("Run");
+    });
     const open = button(panel, "[data-open-terminal]");
     const viewer = required(root(panel).querySelector(".viewer"));
     panel.stylesheetIntegration = integration;
@@ -126,15 +151,24 @@ describe("Workspace Tasks stylesheet integration", () => {
 
   it("preserves refresh, confirmation, dispatch disabling, and terminal events on native UI controls", async () => {
     const context = workspaceContext();
-    let rejectRun: (reason: Error) => void = () => { throw new Error("No task dispatched"); };
-    context.terminal.runCommand.mockImplementation(() => new Promise((_resolve, reject) => { rejectRun = reject; }));
+    let rejectRun: (reason: Error) => void = () => {
+      throw new Error("No task dispatched");
+    };
+    context.terminal.runCommand.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRun = reject;
+        }),
+    );
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
     const panel = createPanel();
     panel.context = context;
     document.body.append(panel);
     expect(button(panel, "[data-refresh-config]").disabled).toBe(true);
-    await vi.waitFor(() => { expect(button(panel, "[data-refresh-config]").disabled).toBe(false); });
+    await vi.waitFor(() => {
+      expect(button(panel, "[data-refresh-config]").disabled).toBe(false);
+    });
     expect(root(panel).querySelector(".ui-toolbar .ui-toolbar-group")).not.toBeNull();
     expect(button(panel, "[data-task-id]").classList.contains("ui-button--primary")).toBe(true);
     expect(root(panel).textContent).toContain("Build <app>");
@@ -148,15 +182,21 @@ describe("Workspace Tasks stylesheet integration", () => {
     expect(button(panel, "[data-task-id]").disabled).toBe(true);
     expect(button(panel, "[data-task-id]").textContent).toBe("Dispatching…");
     expect(context.terminal.runCommand).toHaveBeenCalledExactlyOnceWith({
-      title: "Build <app>", command: "npm run build", open: true,
+      title: "Build <app>",
+      command: "npm run build",
+      open: true,
       metadata: { "pi.plugin": "workspace-tasks", "task.id": "build" },
     });
     rejectRun(new Error("Terminal unavailable"));
-    await vi.waitFor(() => { expect(button(panel, "[data-task-id]").disabled).toBe(false); });
+    await vi.waitFor(() => {
+      expect(button(panel, "[data-task-id]").disabled).toBe(false);
+    });
     expect(root(panel).textContent).toContain("Terminal unavailable");
     button(panel, "[data-refresh-config]").click();
     expect(button(panel, "[data-refresh-config]").disabled).toBe(true);
-    await vi.waitFor(() => { expect(root(panel).textContent).toContain("Loaded 1 task."); });
+    await vi.waitFor(() => {
+      expect(root(panel).textContent).toContain("Loaded 1 task.");
+    });
     expect(context.files.readFile).toHaveBeenCalledTimes(2);
     button(panel, "[data-open-terminal]").click();
     expect(context.terminal.open).toHaveBeenCalledOnce();

@@ -5,13 +5,15 @@ import { property, state } from "lit/decorators.js";
 let enginePromise: Promise<string> | undefined;
 export function loadMermaidEngine(): Promise<string> {
   // The package build emits this self-contained script beside the browser entry.
-  enginePromise ??= fetch(new URL(/* @vite-ignore */ "./mermaid-engine.js", import.meta.url), { signal: AbortSignal.timeout(30_000) }).then(async (response) => {
-    if (!response.ok) throw new Error(`Mermaid engine unavailable (${String(response.status)})`);
-    return response.text();
-  }).catch((error: unknown) => {
-    enginePromise = undefined;
-    throw error;
-  });
+  enginePromise ??= fetch(new URL(/* @vite-ignore */ "./mermaid-engine.js", import.meta.url), { signal: AbortSignal.timeout(30_000) })
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`Mermaid engine unavailable (${String(response.status)})`);
+      return response.text();
+    })
+    .catch((error: unknown) => {
+      enginePromise = undefined;
+      throw error;
+    });
   return enginePromise;
 }
 
@@ -27,7 +29,9 @@ export class MermaidPreview extends LitElement {
   private releaseStyles: (() => void) | undefined;
 
   @property({ attribute: false })
-  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined { return this.integration; }
+  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined {
+    return this.integration;
+  }
   set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
     if (value === this.integration) return;
     this.releaseStyles?.();

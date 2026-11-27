@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { NAVIGATION_PREFERENCE_ROUTES } from "../shared/navigationPreferences.js";
-import { InvalidNavigationPreferenceError, NavigationPreferenceConflictError, parseNavigationPreference, type NavigationPreferenceScope, type NavigationPreferenceStore } from "./storage/navigationPreferenceStore.js";
+import {
+  InvalidNavigationPreferenceError,
+  NavigationPreferenceConflictError,
+  parseNavigationPreference,
+  type NavigationPreferenceScope,
+  type NavigationPreferenceStore,
+} from "./storage/navigationPreferenceStore.js";
 
 interface PreferenceParams {
   projectId?: string;
@@ -15,11 +21,7 @@ function preferenceScope(index: number, params: PreferenceParams): NavigationPre
   return { kind: "session-pins", projectId: params.projectId, workspaceId: params.workspaceId };
 }
 
-export function registerNavigationPreferenceRoutes(
-  app: FastifyInstance,
-  store: Pick<NavigationPreferenceStore, "get" | "put">,
-  prefix = "/api",
-): void {
+export function registerNavigationPreferenceRoutes(app: FastifyInstance, store: Pick<NavigationPreferenceStore, "get" | "put">, prefix = "/api"): void {
   NAVIGATION_PREFERENCE_ROUTES.forEach((path, index) => {
     app.get<{ Params: PreferenceParams }>(`${prefix}${path}`, async (request) => store.get(preferenceScope(index, request.params)));
     app.put<{ Params: PreferenceParams; Body: unknown }>(`${prefix}${path}`, async (request, reply) => {

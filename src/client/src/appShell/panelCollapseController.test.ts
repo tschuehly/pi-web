@@ -8,10 +8,17 @@ function host(): ReactiveControllerHost {
 
 function storage(initial: string | null = null) {
   let value = initial;
-  return { getItem: vi.fn(() => value), setItem: vi.fn((_key: string, next: string) => { value = next; }) };
+  return {
+    getItem: vi.fn(() => value),
+    setItem: vi.fn((_key: string, next: string) => {
+      value = next;
+    }),
+  };
 }
 
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("panel collapse preferences", () => {
   it("restores both collapsed panels and persists explicit expansion", () => {
@@ -21,9 +28,14 @@ describe("panel collapse preferences", () => {
     expect(first.workspacePanelCollapsed).toBe(false);
     first.toggleNavigationPanel();
     first.toggleWorkspacePanel();
-    expect(saved.setItem).toHaveBeenLastCalledWith(PANEL_COLLAPSE_STORAGE_KEY, JSON.stringify({
-      version: 1, navigationPanelCollapsed: true, workspacePanelCollapsed: true,
-    }));
+    expect(saved.setItem).toHaveBeenLastCalledWith(
+      PANEL_COLLAPSE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        navigationPanelCollapsed: true,
+        workspacePanelCollapsed: true,
+      }),
+    );
     const restored = new PanelCollapseController(host(), { storage: saved });
     expect(restored.shellClass("chat")).toContain("navigation-panel-collapsed");
     expect(restored.shellClass("chat")).toContain("workspace-panel-collapsed");
@@ -44,14 +56,14 @@ describe("panel collapse preferences", () => {
     expect(restored.workspacePanelCollapsed).toBe(false);
   });
 
-  it.each([
-    null, "null", "[]", '{"version":2,"workspacePanelCollapsed":true}',
-    '{"version":1,"navigationPanelCollapsed":"true","workspacePanelCollapsed":1}',
-  ])("defaults to expanded for unsupported preferences: %s", (value) => {
-    const controller = new PanelCollapseController(host(), { storage: storage(value) });
-    expect(controller.navigationPanelCollapsed).toBe(false);
-    expect(controller.workspacePanelCollapsed).toBe(false);
-  });
+  it.each([null, "null", "[]", '{"version":2,"workspacePanelCollapsed":true}', '{"version":1,"navigationPanelCollapsed":"true","workspacePanelCollapsed":1}'])(
+    "defaults to expanded for unsupported preferences: %s",
+    (value) => {
+      const controller = new PanelCollapseController(host(), { storage: storage(value) });
+      expect(controller.navigationPanelCollapsed).toBe(false);
+      expect(controller.workspacePanelCollapsed).toBe(false);
+    },
+  );
 
   it("uses defaults for malformed JSON and reports the failure", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -63,8 +75,12 @@ describe("panel collapse preferences", () => {
   it("still updates the layout when storage fails", () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const unavailable = {
-      getItem: () => { throw new Error("Storage blocked"); },
-      setItem: () => { throw new Error("Storage blocked"); },
+      getItem: () => {
+        throw new Error("Storage blocked");
+      },
+      setItem: () => {
+        throw new Error("Storage blocked");
+      },
     };
     const requestUpdate = vi.fn();
     const owner = { ...host(), requestUpdate };

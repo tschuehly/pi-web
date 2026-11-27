@@ -141,9 +141,7 @@ export function dockerEnvironmentFacts({ env, mounts }: DockerEnvironmentFactsIn
   const devRepoRoot = nonEmptyEnv(env, "PI_WEB_DOCKER_DEV_REPO_ROOT");
   const installDir = nonEmptyEnv(env, "PI_WEB_DOCKER_INSTALL_DIR");
   const dockerCommand = devRepoRoot === undefined ? "pi-web-docker" : "pi-web-docker --dev";
-  const imageHookDir = devRepoRoot === undefined
-    ? `${installDir ?? "<install-dir>"}/custom-image.d/*.sh`
-    : `${devRepoRoot}/docker/custom-image.d/*.sh`;
+  const imageHookDir = devRepoRoot === undefined ? `${installDir ?? "<install-dir>"}/custom-image.d/*.sh` : `${devRepoRoot}/docker/custom-image.d/*.sh`;
   const facts = [
     "Shell commands, file edits, and installed tools act inside the PI WEB container, not on the Docker host.",
     `The container filesystem is ephemeral: paths outside the mounts below are lost when the image is rebuilt or the containers are recreated (\`${dockerCommand} update\`).`,
@@ -210,9 +208,7 @@ function persistentDataFact(mounts: readonly ContainerMount[], env: NodeJS.Proce
 function hostPathFacts(mounts: readonly ContainerMount[]): string[] {
   const paths = hostSharedMountTargets(mounts);
   if (paths.length === 0) return [];
-  return [
-    `Docker host paths mounted read/write at the same absolute path inside and outside the container: ${paths.map((path) => `\`${path}\``).join(", ")}.`,
-  ];
+  return [`Docker host paths mounted read/write at the same absolute path inside and outside the container: ${paths.map((path) => `\`${path}\``).join(", ")}.`];
 }
 
 /**
@@ -232,9 +228,7 @@ function hostSharedMountTargets(mounts: readonly ContainerMount[]): string[] {
 function hostRootFact(mounts: readonly ContainerMount[]): string[] {
   const hostRoot = mounts.find((mount) => mount.target === HOST_ROOT_MOUNT);
   if (hostRoot === undefined) return [];
-  return [
-    `The Docker host root filesystem is mounted at \`${HOST_ROOT_MOUNT}\`${hostRoot.readOnly ? " read-only" : ""}.`,
-  ];
+  return [`The Docker host root filesystem is mounted at \`${HOST_ROOT_MOUNT}\`${hostRoot.readOnly ? " read-only" : ""}.`];
 }
 
 function dockerSocketFact(mounts: readonly ContainerMount[]): string[] {
@@ -258,7 +252,8 @@ function devWorkspaceFacts(mounts: readonly ContainerMount[], devRepoRoot: strin
     .filter((mount) => mount.target !== DEV_WORKSPACE_MOUNT && isWithin(mount.target, DEV_WORKSPACE_MOUNT))
     .map((mount) => `\`${mount.target}\``);
   const hostDependencies = devRepoRoot === undefined ? undefined : `${devRepoRoot}/node_modules`;
-  const sharedDependencies = hostDependencies !== undefined
+  const sharedDependencies =
+    hostDependencies !== undefined
     && hostDependencies !== `${DEV_WORKSPACE_MOUNT}/node_modules`
     && mounts.some((mount) => mount.target === `${DEV_WORKSPACE_MOUNT}/node_modules`)
     && mounts.some((mount) => mount.target === hostDependencies);
@@ -266,9 +261,13 @@ function devWorkspaceFacts(mounts: readonly ContainerMount[], devRepoRoot: strin
     `The PI WEB checkout this deployment runs is bind-mounted at \`${DEV_WORKSPACE_MOUNT}\`.${hostPath}`,
     ...(nested.length === 0
       ? []
-      : [`Inside it, ${nested.join(", ")} ${nested.length === 1 ? "is a separate container-managed mount" : "are separate container-managed mounts"}, not the host directory of the same path.`]),
+      : [
+          `Inside it, ${nested.join(", ")} ${nested.length === 1 ? "is a separate container-managed mount" : "are separate container-managed mounts"}, not the host directory of the same path.`,
+        ]),
     ...(sharedDependencies
-      ? [`Inside this container, \`${hostDependencies}\` uses the same container-managed dependency volume as \`${DEV_WORKSPACE_MOUNT}/node_modules\`. Neither checkout path uses or modifies the host checkout's \`node_modules\`.`]
+      ? [
+          `Inside this container, \`${hostDependencies}\` uses the same container-managed dependency volume as \`${DEV_WORKSPACE_MOUNT}/node_modules\`. Neither checkout path uses or modifies the host checkout's \`node_modules\`.`,
+        ]
       : []),
   ];
 }

@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigValues, TerminalCommandRun, Workspace } from "../../../shared/apiTypes";
-import { configApi, machinesApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, SessionTreeForkUnavailableError, sessionsApi, workspacesApi } from "./clients";
+import {
+  configApi,
+  machinesApi,
+  noticesApi,
+  piPackagesApi,
+  piWebApi,
+  pluginsApi,
+  SessionTreeForkUnavailableError,
+  sessionsApi,
+  workspacesApi,
+} from "./clients";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
@@ -86,15 +96,17 @@ describe("machine-scoped runtime API", () => {
     const snapshot = {
       daemonInstanceId: "daemon-a",
       revision: 1,
-      notices: [{
-        id: "notice-1",
-        severity: "warning",
-        message: "Remote warning",
-        createdAt: "2026-08-01T00:00:00.000Z",
-        source: "plugin:remote",
-        scope: { projectId: "project-1" },
-        context: { projectId: "metadata-only" },
-      }],
+      notices: [
+        {
+          id: "notice-1",
+          severity: "warning",
+          message: "Remote warning",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          source: "plugin:remote",
+          scope: { projectId: "project-1" },
+          context: { projectId: "metadata-only" },
+        },
+      ],
     };
     const fetchMock = stubSequenceFetch([jsonResponse(snapshot), jsonResponse({ ...snapshot, revision: 2, notices: [] })]);
 
@@ -272,7 +284,17 @@ describe("Pi package API", () => {
 
 describe("session API compatibility", () => {
   it("keeps the catalog URL unchanged and encodes a targeted session id as one query value", async () => {
-    const row = { id: "s /?&x", startupToken: "creating:reserved", cwd: "/repo", path: "/s.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:00:00.000Z", messageCount: 1, firstMessage: "Hi" };
+    const row = {
+      id: "s /?&x",
+      startupToken: "creating:reserved",
+      cwd: "/repo",
+      path: "/s.jsonl",
+      persisted: true,
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:00:00.000Z",
+      messageCount: 1,
+      firstMessage: "Hi",
+    };
     const fetchMock = stubSequenceFetch([jsonResponse([row]), jsonResponse([row])]);
 
     await expect(sessionsApi.sessions("/repo a", "remote a")).resolves.toEqual([row]);
@@ -306,7 +328,12 @@ describe("session API compatibility", () => {
   });
 
   it("posts session cleanup preview and execute requests through the selected machine", async () => {
-    const preview = { generatedAt: "2026-06-25T12:00:00.000Z", thresholds: { archiveIdleDays: 7 }, projects: [{ cwd: "/repo", archiveCount: 2, deleteCount: 0 }], totals: { archiveCount: 2, deleteCount: 0 } };
+    const preview = {
+      generatedAt: "2026-06-25T12:00:00.000Z",
+      thresholds: { archiveIdleDays: 7 },
+      projects: [{ cwd: "/repo", archiveCount: 2, deleteCount: 0 }],
+      totals: { archiveCount: 2, deleteCount: 0 },
+    };
     const executed = { ...preview, archivedSessionIds: ["s1", "s2"], deletedSessionIds: [] };
     const fetchMock = stubSequenceFetch([jsonResponse(preview), jsonResponse(executed)]);
 
@@ -327,23 +354,33 @@ describe("session API compatibility", () => {
     const deleted = { deleted: true, deletedSessionIds: ["s 1"], failures: [], generatedAt: "later" };
     const fetchMock = stubSequenceFetch([jsonResponse(archived), jsonResponse(deleted)]);
 
-    await expect(sessionsApi.archiveMany([{ id: "s 1", cwd: "/repo" }, { id: "s 2", cwd: "/repo" }], "remote a")).resolves.toEqual(archived);
+    await expect(
+      sessionsApi.archiveMany(
+        [
+          { id: "s 1", cwd: "/repo" },
+          { id: "s 2", cwd: "/repo" },
+        ],
+        "remote a",
+      ),
+    ).resolves.toEqual(archived);
     await expect(sessionsApi.deleteArchivedMany([{ id: "s 1", cwd: "/repo" }], "remote a")).resolves.toEqual(deleted);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/api/machines/remote%20a/sessions/bulk/archive");
     expect(fetchCall(fetchMock, 0)[1]?.method).toBe("POST");
-    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({ sessions: [{ id: "s 1", cwd: "/repo" }, { id: "s 2", cwd: "/repo" }] });
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({
+      sessions: [
+        { id: "s 1", cwd: "/repo" },
+        { id: "s 2", cwd: "/repo" },
+      ],
+    });
     expect(fetchCall(fetchMock, 1)[0]).toBe("https://pi.example.test/api/machines/remote%20a/sessions/bulk/delete-archived");
     expect(fetchCall(fetchMock, 1)[1]?.method).toBe("POST");
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ sessions: [{ id: "s 1", cwd: "/repo" }] });
   });
 
   it("carries a create's correlation token in the start request body when one is supplied", async () => {
-    const fetchMock = stubSequenceFetch([
-      jsonResponse(sessionInfoResponse("s 1")),
-      jsonResponse(sessionInfoResponse("s 2")),
-    ]);
+    const fetchMock = stubSequenceFetch([jsonResponse(sessionInfoResponse("s 1")), jsonResponse(sessionInfoResponse("s 2"))]);
 
     await sessionsApi.startSession("/repo", "remote a", "pending-session-3-k2x9");
     await sessionsApi.startSession("/repo", "remote a");
@@ -421,7 +458,15 @@ describe("session API compatibility", () => {
   });
 
   it("serializes queue mutations with their expected snapshot on encoded machine routes", async () => {
-    const fetchMock = stubJsonFetch({ sessionId: "s /?", isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    const fetchMock = stubJsonFetch({
+      sessionId: "s /?",
+      isStreaming: true,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     const mutation = { action: "toggle" as const, index: 0, expectedQueue: [{ kind: "steer" as const, text: "adjust" }] };
     await sessionsApi.mutateQueuedMessage({ id: "s /?", cwd: "/repo with spaces" }, mutation, "remote /?");
     const [url, init] = fetchCall(fetchMock, 0);
@@ -431,7 +476,15 @@ describe("session API compatibility", () => {
   });
 
   it("submits ask answers and skips through encoded machine routes with ask close responses", async () => {
-    const wireStatus = { sessionId: "s /?", isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    const wireStatus = {
+      sessionId: "s /?",
+      isStreaming: true,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    };
     const stale = { result: "stale", sessionStatus: wireStatus };
     const fetchMock = stubSequenceFetch([jsonResponse(stale), jsonResponse(stale)]);
     const ref = { id: "s /?", cwd: "/repo with spaces" };
@@ -480,7 +533,10 @@ describe("session API compatibility", () => {
     const fetchMock = stubJsonFetch({ cancelled: false, editorText: "edit this" });
     const navigation = { targetId: "entry /?", expectedLeafId: "leaf-1", summary: { mode: "custom" as const, instructions: "focus on tests" } };
 
-    await expect(sessionsApi.navigateTree({ id: "s /?", cwd: "/repo with spaces" }, navigation, "remote /?")).resolves.toEqual({ cancelled: false, editorText: "edit this" });
+    await expect(sessionsApi.navigateTree({ id: "s /?", cwd: "/repo with spaces" }, navigation, "remote /?")).resolves.toEqual({
+      cancelled: false,
+      editorText: "edit this",
+    });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchCall(fetchMock, 0);
@@ -492,10 +548,7 @@ describe("session API compatibility", () => {
   it.each([true, false])("serializes retainCheckpoint=%s for session tree navigation", async (retainCheckpoint) => {
     const fetchMock = stubJsonFetch({ cancelled: false });
 
-    await sessionsApi.navigateTree(
-      { id: "s-1", cwd: "/repo" },
-      { targetId: "entry-1", expectedLeafId: "leaf-1", summary: { mode: "none" }, retainCheckpoint },
-    );
+    await sessionsApi.navigateTree({ id: "s-1", cwd: "/repo" }, { targetId: "entry-1", expectedLeafId: "leaf-1", summary: { mode: "none" }, retainCheckpoint });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({
@@ -538,10 +591,7 @@ describe("session API compatibility", () => {
   it.each([true, false])("serializes retainCheckpoint=%s for session tree forks", async (retainCheckpoint) => {
     const fetchMock = stubJsonFetch({ cancelled: true });
 
-    await sessionsApi.forkTree(
-      { id: "s-1", cwd: "/repo" },
-      { entryId: "entry-1", expectedLeafId: "leaf-1", retainCheckpoint },
-    );
+    await sessionsApi.forkTree({ id: "s-1", cwd: "/repo" }, { entryId: "entry-1", expectedLeafId: "leaf-1", retainCheckpoint });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 0)[1]))).toEqual({
@@ -553,11 +603,16 @@ describe("session API compatibility", () => {
   });
 
   it("recognizes an old daemon only from the missing tree/fork route response", async () => {
-    stubResponseFetch(new Response(JSON.stringify({
-      statusCode: 404,
-      error: "Not Found",
-      message: "Route POST:/sessions/s-1/tree/fork not found",
-    }), { status: 404, headers: { "content-type": "application/json" } }));
+    stubResponseFetch(
+      new Response(
+        JSON.stringify({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Route POST:/sessions/s-1/tree/fork not found",
+        }),
+        { status: 404, headers: { "content-type": "application/json" } },
+      ),
+    );
 
     const request = sessionsApi.forkTree({ id: "s-1", cwd: "/repo" }, { entryId: "entry-1", expectedLeafId: "leaf-1" });
 
@@ -570,10 +625,12 @@ describe("session API compatibility", () => {
     { status: 404, message: "Machine not found" },
     { status: 502, message: "Remote machine unavailable" },
   ])("preserves a genuine API error: $message", async ({ status, message }) => {
-    stubResponseFetch(new Response(JSON.stringify({ error: message }), {
-      status,
-      headers: { "content-type": "application/json" },
-    }));
+    stubResponseFetch(
+      new Response(JSON.stringify({ error: message }), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
+    );
 
     const request = sessionsApi.forkTree({ id: "s-1", cwd: "/repo" }, { entryId: "entry-1", expectedLeafId: "leaf-1" });
 
@@ -584,32 +641,51 @@ describe("session API compatibility", () => {
   it("requests reference images in paginated history while preserving reference and legacy inline payloads", async () => {
     vi.stubEnv("BASE_URL", "./");
     vi.stubGlobal("document", { baseURI: "https://pi.example.test/nested/pi-web/" });
-    const page = { messages: [{ role: "user", content: [
-      { type: "image", mediaId: "a".repeat(64), mimeType: "image/png", byteSize: 3 },
-      { type: "image", mimeType: "image/png", data: "QUJD" },
-    ] }], start: 5, total: 15 };
+    const page = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", mediaId: "a".repeat(64), mimeType: "image/png", byteSize: 3 },
+            { type: "image", mimeType: "image/png", data: "QUJD" },
+          ],
+        },
+      ],
+      start: 5,
+      total: 15,
+    };
     const fetchMock = stubJsonFetch(page);
     await expect(sessionsApi.messages({ id: "s /?", cwd: "/repo with spaces" }, { limit: 10, before: 15 }, "remote /?")).resolves.toEqual(page);
-    expect(fetchCall(fetchMock, 0)[0]).toBe("https://pi.example.test/nested/pi-web/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/messages?cwd=%2Frepo+with+spaces&limit=10&before=15&media=reference");
+    expect(fetchCall(fetchMock, 0)[0]).toBe(
+      "https://pi.example.test/nested/pi-web/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/messages?cwd=%2Frepo+with+spaces&limit=10&before=15&media=reference",
+    );
   });
 
   it("reads a consistent transcript snapshot through a nested encoded machine route with cwd and limit", async () => {
     vi.stubEnv("BASE_URL", "./");
     vi.stubGlobal("document", { baseURI: "https://pi.example.test/nested/pi-web/" });
     const page = { messages: [{ role: "user", content: "hello", entryId: "entry-1" }], start: 10, total: 11 };
-    const partial = { role: "assistant", content: [
-      { type: "text", text: "streaming" },
-      { type: "image", mediaId: "b".repeat(64), mimeType: "image/png", byteSize: 3 },
-    ] };
+    const partial = {
+      role: "assistant",
+      content: [
+        { type: "text", text: "streaming" },
+        { type: "image", mediaId: "b".repeat(64), mimeType: "image/png", byteSize: 3 },
+      ],
+    };
     const fetchMock = stubJsonFetch({ page, status: dialogStatusWire(), seq: 12, partial });
 
     await expect(sessionsApi.transcriptSnapshot({ id: "s /?", cwd: "/repo with spaces" }, { limit: 25 }, "remote /?")).resolves.toEqual({
-      page, status: parsedDialogStatus(), seq: 12, partial,
+      page,
+      status: parsedDialogStatus(),
+      seq: 12,
+      partial,
     });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchCall(fetchMock, 0);
-    expect(url).toBe("https://pi.example.test/nested/pi-web/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/transcript-snapshot?cwd=%2Frepo+with+spaces&limit=25&media=reference");
+    expect(url).toBe(
+      "https://pi.example.test/nested/pi-web/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/transcript-snapshot?cwd=%2Frepo+with+spaces&limit=25&media=reference",
+    );
     expect(init?.method ?? "GET").toBe("GET");
   });
 
@@ -644,12 +720,14 @@ describe("session API compatibility", () => {
   it("uses encoded selected-session notification routes, cwd queries, and authoritative mutation cutoffs", async () => {
     const notification = { id: "daemon-a:1", message: "notice", truncated: false, severity: "warning", receivedAt: "2026-07-18T00:00:00.000Z", order: 1 };
     const summary = { sessionId: "s /?", cwd: "/repo with spaces", inboxRevision: 1, retainedCount: 1, discardedCount: 0, highestSeverity: "warning" };
-    const inbox = { daemonInstanceId: "daemon-a", catalogRevision: 1, summary, notifications: [notification], dismissThrough: { order: 1, overflowWatermark: 0 } };
-    const fetchMock = stubSequenceFetch([
-      jsonResponse(inbox),
-      jsonResponse(inbox),
-      jsonResponse(inbox),
-    ]);
+    const inbox = {
+      daemonInstanceId: "daemon-a",
+      catalogRevision: 1,
+      summary,
+      notifications: [notification],
+      dismissThrough: { order: 1, overflowWatermark: 0 },
+    };
+    const fetchMock = stubSequenceFetch([jsonResponse(inbox), jsonResponse(inbox), jsonResponse(inbox)]);
     const ref = { id: "s /?", cwd: "/repo with spaces" };
 
     await sessionsApi.notificationInbox(ref, "remote /?");
@@ -662,7 +740,12 @@ describe("session API compatibility", () => {
       "https://pi.example.test/api/machines/remote%20%2F%3F/sessions/s%20%2F%3F/notifications/dismiss-all",
     ]);
     expect(JSON.parse(requestBody(fetchCall(fetchMock, 1)[1]))).toEqual({ cwd: ref.cwd, daemonInstanceId: "daemon-a", notificationId: "opaque/id?" });
-    expect(JSON.parse(requestBody(fetchCall(fetchMock, 2)[1]))).toEqual({ cwd: ref.cwd, daemonInstanceId: "daemon-a", throughOrder: 1, throughOverflowWatermark: 7 });
+    expect(JSON.parse(requestBody(fetchCall(fetchMock, 2)[1]))).toEqual({
+      cwd: ref.cwd,
+      daemonInstanceId: "daemon-a",
+      throughOrder: 1,
+      throughOverflowWatermark: 7,
+    });
   });
 });
 
@@ -687,16 +770,29 @@ describe("request cancellation", () => {
       log.push(entry);
       for (const waiter of waiters.filter((candidate) => candidate.entry === entry)) waiter.resolve();
     };
-    const logged = (entry: string): Promise<void> => new Promise((resolve) => { if (log.includes(entry)) resolve(); else waiters.push({ entry, resolve }); });
+    const logged = (entry: string): Promise<void> =>
+      new Promise((resolve) => {
+        if (log.includes(entry)) resolve();
+        else waiters.push({ entry, resolve });
+      });
     // The server never answers, so each request stays open until the client closes it.
     const server = createServer((request, response) => {
       const url = request.url ?? "";
       record(`open ${url}`);
-      response.on("close", () => { record(`${response.writableFinished ? "answered" : "closed"} ${url}`); });
+      response.on("close", () => {
+        record(`${response.writableFinished ? "answered" : "closed"} ${url}`);
+      });
     });
     const sockets = new Set<Socket>();
-    server.on("connection", (socket) => { sockets.add(socket); socket.on("close", () => { sockets.delete(socket); }); });
-    await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+    server.on("connection", (socket) => {
+      sockets.add(socket);
+      socket.on("close", () => {
+        sockets.delete(socket);
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
     try {
       const address = server.address();
       if (address === null || typeof address === "string") throw new Error("Loopback server has no port");
@@ -723,7 +819,12 @@ describe("request cancellation", () => {
       expect(log).toEqual([`open ${locatePath}`, `closed ${locatePath}`, `open ${workspacesPath}`, `closed ${workspacesPath}`]);
     } finally {
       for (const socket of sockets) socket.destroy();
-      await new Promise<void>((resolve, reject) => { server.close((error) => { if (error === undefined) resolve(); else reject(error); }); });
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve();
+          else reject(error);
+        });
+      });
     }
   });
 });
@@ -768,7 +869,6 @@ describe("machine-scoped workspace removal API", () => {
     expect(init?.method).toBe("DELETE");
     expect(init?.body).toBe(JSON.stringify({ precondition: "v1.confirmed" }));
   });
-
 });
 
 describe("workspace file read API", () => {
@@ -809,7 +909,16 @@ describe("workspace file read API", () => {
   it("forwards caller cancellation through selected-machine tree and file requests", async () => {
     const fetchMock = stubSequenceFetch([
       jsonResponse({ path: "src", entries: [], scannedAt: "2026-06-25T00:00:00.000Z", truncated: false }),
-      jsonResponse({ path: "README.md", encoding: "utf8", size: 2, modifiedAt: "2026-06-25T00:00:00.000Z", version: "abc123", content: "hi", truncated: false, binary: false }),
+      jsonResponse({
+        path: "README.md",
+        encoding: "utf8",
+        size: 2,
+        modifiedAt: "2026-06-25T00:00:00.000Z",
+        version: "abc123",
+        content: "hi",
+        truncated: false,
+        binary: false,
+      }),
     ]);
     const controller = new AbortController();
 
@@ -853,7 +962,7 @@ describe("workspace file write API", () => {
   it("sends createDirs and overwrite query parameters", async () => {
     const fetchMock = stubJsonFetch({ path: "config/new.json", size: 10, modifiedAt: "2026-06-10T00:00:00.000Z", created: true });
 
-    await workspacesApi.writeWorkspaceFile("p 1", "w/1", "config/new.json", "{\"a\":1}", { createDirs: false, overwrite: false });
+    await workspacesApi.writeWorkspaceFile("p 1", "w/1", "config/new.json", '{"a":1}', { createDirs: false, overwrite: false });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url] = fetchCall(fetchMock, 0);
@@ -964,7 +1073,18 @@ function piWebConfigResponse(config: PiWebConfigValues) {
 function piWebPluginsResponse() {
   return {
     lifecycleVersion: 2,
-    plugins: [{ id: "info", module: "/pi-web-plugins/info/plugin.js", source: "test", scope: "local", machineSpecific: false, enabled: true, discovered: true, conflict: false }],
+    plugins: [
+      {
+        id: "info",
+        module: "/pi-web-plugins/info/plugin.js",
+        source: "test",
+        scope: "local",
+        machineSpecific: false,
+        enabled: true,
+        discovered: true,
+        conflict: false,
+      },
+    ],
     diagnostics: [],
     serverRuntime: {
       status: "available",

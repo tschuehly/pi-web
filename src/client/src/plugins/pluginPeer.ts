@@ -8,11 +8,7 @@ import {
   type PluginBackendRequestOptions,
   type PluginBackendRequestTarget,
 } from "../api/pluginBackends";
-import type {
-  PluginPeer,
-  PluginPeerRequestOptions,
-  WorkspacePluginBinding,
-} from "./types";
+import type { PluginPeer, PluginPeerRequestOptions, WorkspacePluginBinding } from "./types";
 
 export type PluginPeerRequester = (
   target: PluginBackendRequestTarget,
@@ -68,8 +64,8 @@ export function createPluginBackend(
 ): PluginBackend | undefined {
   if (binding.backendRevision === undefined || (binding.pairedRequestVersion !== 1 && binding.pairedChannelVersion !== 1)) return undefined;
   const backendRevision = binding.backendRevision;
-  const signalFor = (signal?: AbortSignal) => lifetimeSignal === undefined ? signal
-    : signal === undefined ? lifetimeSignal : AbortSignal.any([lifetimeSignal, signal]);
+  const signalFor = (signal?: AbortSignal) =>
+    lifetimeSignal === undefined ? signal : signal === undefined ? lifetimeSignal : AbortSignal.any([lifetimeSignal, signal]);
   return Object.freeze({
     machineId,
     forScope(scope: PluginBackendScope): PluginPeer {
@@ -94,7 +90,8 @@ export function createPluginBackend(
         signal?.throwIfAborted();
         return openChannel(target, operation, input, { ...options, ...(signal === undefined ? {} : { signal }) });
       };
-      if (binding.pairedRequestVersion === 1) return Object.freeze({ request: requester, ...(binding.pairedChannelVersion === 1 ? { openChannel: opener } : {}) });
+      if (binding.pairedRequestVersion === 1)
+        return Object.freeze({ request: requester, ...(binding.pairedChannelVersion === 1 ? { openChannel: opener } : {}) });
       return Object.freeze({ openChannel: opener });
     },
   });

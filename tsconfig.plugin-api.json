@@ -8,8 +8,5 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": [
-    "src/plugin-api.ts",
-    "src/server-plugin-api.ts"
-  ]
+  "include": ["src/plugin-api.ts", "src/server-plugin-api.ts"]
 }

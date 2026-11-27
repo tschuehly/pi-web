@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT } from "../../shared/apiTypes.js";
 import { PiSessionService, type PiAgentSession } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, sessionGateway, sessionRecord, sessionRef, testModelRuntime, type RuntimeCreator, type SessionGateway } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  fakeSessionManager,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+  type RuntimeCreator,
+  type SessionGateway,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-active-tool-executions-test";
 const STARTED_AT = "2026-09-21T12:00:00.000Z";
@@ -24,7 +35,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createService(hub: CapturingSessionEventHub, createAgentRuntime: RuntimeCreator, records = [sessionRecord("session-1")], sessionManager: SessionGateway = sessionGateway(records)) {
+function createService(
+  hub: CapturingSessionEventHub,
+  createAgentRuntime: RuntimeCreator,
+  records = [sessionRecord("session-1")],
+  sessionManager: SessionGateway = sessionGateway(records),
+) {
   return new PiSessionService(hub, {
     agentDir: TEST_AGENT_DIR,
     modelRuntime: testModelRuntime,
@@ -49,9 +65,7 @@ describe("PiSessionService active tool executions", () => {
       fake.emit({ type: "tool_execution_start", toolCallId: "call-read", toolName: "read", args: { path: "/secret" } });
 
       const first = await service.status(sessionRef("session-1"));
-      expect(first.activeToolExecutions).toEqual([
-        { id: "tool:call-bash", kind: "shell", toolName: "bash", label: "Shell command", startedAt: STARTED_AT },
-      ]);
+      expect(first.activeToolExecutions).toEqual([{ id: "tool:call-bash", kind: "shell", toolName: "bash", label: "Shell command", startedAt: STARTED_AT }]);
       expect(JSON.stringify(first.activeToolExecutions)).not.toContain("super-secret");
       await expect(service.status(sessionRef("session-1"))).resolves.toMatchObject({ activeToolExecutions: first.activeToolExecutions });
       expect(hub.globalEvents.filter((event) => event.type === "status.update").at(-1)).toMatchObject({
@@ -87,10 +101,9 @@ describe("PiSessionService active tool executions", () => {
       const status = await service.status(sessionRef("session-1"));
       const executions = status.activeToolExecutions ?? [];
       expect(executions).toHaveLength(ACTIVE_TOOL_EXECUTION_LIMIT);
-      expect(executions.map(({ id }) => id)).toEqual(Array.from(
-        { length: ACTIVE_TOOL_EXECUTION_LIMIT },
-        (_, index) => `tool:call-${String(index).padStart(2, "0")}`,
-      ));
+      expect(executions.map(({ id }) => id)).toEqual(
+        Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT }, (_, index) => `tool:call-${String(index).padStart(2, "0")}`),
+      );
       expect(executions.every(({ label }) => label === "Shell command" && label.length <= ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH)).toBe(true);
       expect(JSON.stringify(executions)).not.toContain("secret-");
       expect((await service.status(sessionRef("session-1"))).activeToolExecutions).toEqual(executions);
@@ -124,9 +137,8 @@ describe("PiSessionService active tool executions", () => {
     };
     const first = fakeRuntime("session-1");
     const second = fakeRuntime("session-2");
-    const createAgentRuntime: RuntimeCreator = (_createRuntime, options) => Promise.resolve(
-      options.sessionManager.getSessionId() === "session-2" ? second.runtime : first.runtime,
-    );
+    const createAgentRuntime: RuntimeCreator = (_createRuntime, options) =>
+      Promise.resolve(options.sessionManager.getSessionId() === "session-2" ? second.runtime : first.runtime);
     const service = createService(hub, createAgentRuntime, records, gateway);
     try {
       await service.status(sessionRef("session-1"));
@@ -213,7 +225,9 @@ describe("PiSessionService active tool executions", () => {
     const first = fakeRuntime("session-1");
     const replacement = fakeRuntime("session-1");
     let rebindSession: ((session: PiAgentSession) => Promise<void>) | undefined;
-    first.runtime.setRebindSession = (callback) => { rebindSession = callback; };
+    first.runtime.setRebindSession = (callback) => {
+      rebindSession = callback;
+    };
     const service = createService(hub, () => Promise.resolve(first.runtime));
     try {
       await service.start("/workspace");
@@ -225,7 +239,7 @@ describe("PiSessionService active tool executions", () => {
       if (rebindSession === undefined) throw new Error("Runtime replacement was not bound");
       await rebindSession(replacement.session);
 
-      const statuses = hub.globalEvents.flatMap((event) => event.type === "status.update" ? [event.status] : []);
+      const statuses = hub.globalEvents.flatMap((event) => (event.type === "status.update" ? [event.status] : []));
       expect(statuses).toHaveLength(1);
       expect(statuses[0]?.activeToolExecutions).toBeUndefined();
     } finally {
@@ -239,9 +253,7 @@ describe("PiSessionService active tool executions", () => {
     const runtimes = [first.runtime, reopened.runtime];
     const createAgentRuntime: RuntimeCreator = () => {
       const runtime = runtimes.shift();
-      return runtime === undefined
-        ? Promise.reject(new Error("unexpected runtime creation"))
-        : Promise.resolve(runtime);
+      return runtime === undefined ? Promise.reject(new Error("unexpected runtime creation")) : Promise.resolve(runtime);
     };
     const service = createService(new CapturingSessionEventHub(), createAgentRuntime);
     try {

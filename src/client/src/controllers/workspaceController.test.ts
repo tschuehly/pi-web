@@ -36,17 +36,9 @@ function requireWorkspaceProvider(workspace: Workspace): NonNullable<Workspace["
   return workspace.provider;
 }
 
-type LoadWorkspaces = (
-  projectId: string,
-  machineId?: string,
-  options?: { signal?: AbortSignal },
-) => Promise<Workspace[]>;
+type LoadWorkspaces = (projectId: string, machineId?: string, options?: { signal?: AbortSignal }) => Promise<Workspace[]>;
 
-type LoadSessions = (
-  path: string,
-  machineId?: string,
-  options?: { signal?: AbortSignal },
-) => Promise<SessionInfo[]>;
+type LoadSessions = (path: string, machineId?: string, options?: { signal?: AbortSignal }) => Promise<SessionInfo[]>;
 
 interface TestNavigationRoute {
   machine: string;
@@ -78,7 +70,9 @@ function harness(
   } = {},
 ): Harness {
   let state: AppState = { ...initialAppState(), ...initial };
-  const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+  const setState = (patch: Partial<AppState>) => {
+    state = { ...state, ...patch };
+  };
   const clearActiveSession = vi.fn();
   const sessions: Pick<SessionController, "clearActiveSession" | "preferredSession" | "selectSession"> = {
     clearActiveSession,
@@ -87,26 +81,28 @@ function harness(
   };
   const updateUrl = vi.fn();
   const backgroundErrors: { message: string; error: unknown }[] = [];
-  const controller = new WorkspaceController(
-    () => state,
-    setState,
-    updateUrl,
-    sessions,
-    undefined,
-    {
-      api: {
-        workspaces: loadWorkspaces,
-        workspaceResolution: options.loadWorkspaceResolution ?? (async (projectId, machineId, options): Promise<WorkspaceProviderResolution> => ({
-          projectId, status: "provider", ownerPluginId: "git", diagnostics: [], workspaces: await loadWorkspaces(projectId, machineId, options),
+  const controller = new WorkspaceController(() => state, setState, updateUrl, sessions, undefined, {
+    api: {
+      workspaces: loadWorkspaces,
+      workspaceResolution:
+        options.loadWorkspaceResolution
+        ?? (async (projectId, machineId, options): Promise<WorkspaceProviderResolution> => ({
+          projectId,
+          status: "provider",
+          ownerPluginId: "git",
+          diagnostics: [],
+          workspaces: await loadWorkspaces(projectId, machineId, options),
         })),
-        sessions: options.loadSessions ?? vi.fn<(path: string, machineId?: string, options?: { signal?: AbortSignal }) => Promise<SessionInfo[]>>().mockResolvedValue([]),
-      },
-      ...(options.navigateToWorkspace === undefined ? {} : { navigateToWorkspace: options.navigateToWorkspace }),
-      ...(options.beginNavigationOperation === undefined ? {} : { beginNavigationOperation: options.beginNavigationOperation }),
-      onBackgroundError: (message, error) => { backgroundErrors.push({ message, error }); },
-      topologyRefreshDebounceMs: options.topologyRefreshDebounceMs ?? 0,
+      sessions:
+        options.loadSessions ?? vi.fn<(path: string, machineId?: string, options?: { signal?: AbortSignal }) => Promise<SessionInfo[]>>().mockResolvedValue([]),
     },
-  );
+    ...(options.navigateToWorkspace === undefined ? {} : { navigateToWorkspace: options.navigateToWorkspace }),
+    ...(options.beginNavigationOperation === undefined ? {} : { beginNavigationOperation: options.beginNavigationOperation }),
+    onBackgroundError: (message, error) => {
+      backgroundErrors.push({ message, error });
+    },
+    topologyRefreshDebounceMs: options.topologyRefreshDebounceMs ?? 0,
+  });
   return { controller, state: () => state, clearActiveSession, updateUrl, backgroundErrors, setState };
 }
 
@@ -119,7 +115,9 @@ describe("WorkspaceController resolution state", () => {
     const repo = project("p1", "/repo/subdir");
     const folder = workspace(repo.id, repo.path, { isMain: true });
     const resolution: WorkspaceProviderResolution = {
-      projectId: repo.id, status, workspaces: status === "degraded" ? [] : [folder],
+      projectId: repo.id,
+      status,
+      workspaces: status === "degraded" ? [] : [folder],
       ...(status === "provider" ? { ownerPluginId: "git" } : {}),
       diagnostics: status === "degraded" ? [{ code: "list-failed", tier: "primary", pluginId: "git", message: "Git is temporarily unavailable" }] : [],
     };
@@ -149,10 +147,19 @@ describe("WorkspaceController route selection freshness", () => {
     const firstWorkspace = workspace(firstProject.id, firstProject.path, { isMain: true });
     const secondWorkspace = workspace(secondProject.id, secondProject.path, { isMain: true });
     const pending = new Map<string, (workspaces: Workspace[]) => void>();
-    const loadWorkspaces = vi.fn((projectId: string) => new Promise<Workspace[]>((resolve) => {
-      pending.set(projectId, resolve);
-    }));
-    let route: TestNavigationRoute = { machine: "local", project: firstProject.id, workspace: firstWorkspace.id, view: "chat", tool: "core:workspace.terminal" };
+    const loadWorkspaces = vi.fn(
+      (projectId: string) =>
+        new Promise<Workspace[]>((resolve) => {
+          pending.set(projectId, resolve);
+        }),
+    );
+    let route: TestNavigationRoute = {
+      machine: "local",
+      project: firstProject.id,
+      workspace: firstWorkspace.id,
+      view: "chat",
+      tool: "core:workspace.terminal",
+    };
     const beginNavigationOperation = (scope: readonly NavigationScope[]): NavigationFreshness => {
       const expected = { ...route };
       return {
@@ -175,7 +182,9 @@ describe("WorkspaceController route selection freshness", () => {
     const secondSelection = test.controller.selectProject(secondProject);
 
     pending.get(secondProject.id)?.([secondWorkspace]);
-    await vi.waitFor(() => { expect(test.state().selectedWorkspace?.id).toBe(secondWorkspace.id); });
+    await vi.waitFor(() => {
+      expect(test.state().selectedWorkspace?.id).toBe(secondWorkspace.id);
+    });
     pending.get(firstProject.id)?.([firstWorkspace]);
     await Promise.all([firstSelection, secondSelection]);
 
@@ -188,13 +197,18 @@ describe("WorkspaceController route selection freshness", () => {
     const repo = project("p1", "/repo");
     const main = workspace(repo.id, repo.path, { isMain: true });
     let resolveWorkspaces: ((workspaces: Workspace[]) => void) | undefined;
-    const loadWorkspaces = vi.fn().mockReturnValue(new Promise<Workspace[]>((resolve) => { resolveWorkspaces = resolve; }));
+    const loadWorkspaces = vi.fn().mockReturnValue(
+      new Promise<Workspace[]>((resolve) => {
+        resolveWorkspaces = resolve;
+      }),
+    );
     let route: TestNavigationRoute = { machine: "local", project: repo.id, view: "chat" };
     const expected = { ...route };
     const navigation: NavigationFreshness = {
       generation: 1,
       scope: ["machine", "project", "workspace", "session"],
-      isCurrent: () => route.machine === expected.machine
+      isCurrent: () =>
+        route.machine === expected.machine
         && route.project === expected.project
         && route.workspace === expected.workspace
         && route.session === expected.session,
@@ -214,7 +228,11 @@ describe("WorkspaceController route selection freshness", () => {
   it("retains a stale project-load failure under its originating scope", async () => {
     const repo = project("p1", "/repo");
     let rejectWorkspaces: ((error: unknown) => void) | undefined;
-    const loadWorkspaces = vi.fn().mockReturnValue(new Promise<Workspace[]>((_resolve, reject) => { rejectWorkspaces = reject; }));
+    const loadWorkspaces = vi.fn().mockReturnValue(
+      new Promise<Workspace[]>((_resolve, reject) => {
+        rejectWorkspaces = reject;
+      }),
+    );
     let navigationCurrent = true;
     const navigation: NavigationFreshness = {
       generation: 1,
@@ -236,18 +254,18 @@ describe("WorkspaceController route selection freshness", () => {
     const repo = project("p1", "/repo");
     const main = workspace(repo.id, repo.path, { isMain: true });
     let rejectSessions: ((error: unknown) => void) | undefined;
-    const loadSessions = vi.fn().mockReturnValue(new Promise<SessionInfo[]>((_resolve, reject) => { rejectSessions = reject; }));
+    const loadSessions = vi.fn().mockReturnValue(
+      new Promise<SessionInfo[]>((_resolve, reject) => {
+        rejectSessions = reject;
+      }),
+    );
     let navigationCurrent = true;
     const navigation: NavigationFreshness = {
       generation: 1,
       scope: ["machine", "project", "workspace", "session"],
       isCurrent: () => navigationCurrent,
     };
-    const test = harness(
-      { selectedMachine: machine("local"), projects: [repo], selectedProject: repo },
-      vi.fn().mockResolvedValue([main]),
-      { loadSessions },
-    );
+    const test = harness({ selectedMachine: machine("local"), projects: [repo], selectedProject: repo }, vi.fn().mockResolvedValue([main]), { loadSessions });
 
     const selection = test.controller.selectWorkspace(main, { navigation });
     navigationCurrent = false;
@@ -262,7 +280,11 @@ describe("WorkspaceController route selection freshness", () => {
     const repo = project("p1", "/repo");
     const main = workspace(repo.id, repo.path, { isMain: true });
     let resolveWorkspaces: ((workspaces: Workspace[]) => void) | undefined;
-    const loadWorkspaces = vi.fn().mockReturnValue(new Promise<Workspace[]>((resolve) => { resolveWorkspaces = resolve; }));
+    const loadWorkspaces = vi.fn().mockReturnValue(
+      new Promise<Workspace[]>((resolve) => {
+        resolveWorkspaces = resolve;
+      }),
+    );
     let workspaceRoute = "requested-workspace";
     const navigation: NavigationFreshness = {
       generation: 1,
@@ -288,15 +310,25 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     const selectedWorkspace = workspace("p", "/repo/feature");
     const selectedSession = session(selectedWorkspace.path);
     const workspaces = [selectedWorkspace];
-    const test = harness({
-      projects: [selectedProject], selectedProject, selectedWorkspace, selectedSession,
-      workspaces, workspacesByProjectId: { p: workspaces },
-    }, vi.fn<LoadWorkspaces>().mockResolvedValue([]), {
-      loadWorkspaceResolution: vi.fn<NonNullable<WorkspaceControllerDependencies["api"]>["workspaceResolution"]>().mockResolvedValue({
-        projectId: "p", status: "degraded", workspaces: [],
-        diagnostics: [{ code: "list-failed", tier: "primary", pluginId: "git", message: "Git is temporarily unavailable" }],
-      }),
-    });
+    const test = harness(
+      {
+        projects: [selectedProject],
+        selectedProject,
+        selectedWorkspace,
+        selectedSession,
+        workspaces,
+        workspacesByProjectId: { p: workspaces },
+      },
+      vi.fn<LoadWorkspaces>().mockResolvedValue([]),
+      {
+        loadWorkspaceResolution: vi.fn<NonNullable<WorkspaceControllerDependencies["api"]>["workspaceResolution"]>().mockResolvedValue({
+          projectId: "p",
+          status: "degraded",
+          workspaces: [],
+          diagnostics: [{ code: "list-failed", tier: "primary", pluginId: "git", message: "Git is temporarily unavailable" }],
+        }),
+      },
+    );
 
     await test.controller.refreshSelectedProjectTopology();
 
@@ -395,7 +427,11 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     const main = workspace(repo.id, repo.path, { isMain: true });
     const created = workspace(repo.id, "/repo-feature");
     let resolveWorkspaces: ((workspaces: Workspace[]) => void) | undefined;
-    const loadWorkspaces = vi.fn().mockReturnValue(new Promise<Workspace[]>((resolve) => { resolveWorkspaces = resolve; }));
+    const loadWorkspaces = vi.fn().mockReturnValue(
+      new Promise<Workspace[]>((resolve) => {
+        resolveWorkspaces = resolve;
+      }),
+    );
     const test = harness(
       {
         selectedMachine: machine("local"),
@@ -421,7 +457,11 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     const repo = project("p1", "/repo");
     const main = workspace(repo.id, repo.path, { isMain: true });
     let resolveWorkspaces: ((workspaces: Workspace[]) => void) | undefined;
-    const loadWorkspaces = vi.fn().mockReturnValue(new Promise<Workspace[]>((resolve) => { resolveWorkspaces = resolve; }));
+    const loadWorkspaces = vi.fn().mockReturnValue(
+      new Promise<Workspace[]>((resolve) => {
+        resolveWorkspaces = resolve;
+      }),
+    );
     const test = harness(
       {
         selectedMachine: machine("local"),
@@ -677,7 +717,10 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);
       return new Promise<Workspace[]>((resolve) => {
-        gates.push((workspaces) => { inFlight -= 1; resolve(workspaces); });
+        gates.push((workspaces) => {
+          inFlight -= 1;
+          resolve(workspaces);
+        });
       });
     });
     const test = harness(
@@ -702,7 +745,9 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     // one can land last, making a just-created worktree disappear again.
     expect(maxInFlight).toBe(1);
     gates[0]?.([main]);
-    await vi.waitFor(() => { expect(gates).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(gates).toHaveLength(2);
+    });
     gates[1]?.([main, created]);
     await Promise.all([resumeRefresh, appDataRefresh]);
 
@@ -715,19 +760,25 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     const main = workspace(repo.id, repo.path, { isMain: true });
     const removed = workspace(repo.id, "/repo-gone");
     let resolveOldList!: (workspaces: Workspace[]) => void;
-    const oldList = new Promise<Workspace[]>((resolve) => { resolveOldList = resolve; });
-    const loadWorkspaces = vi.fn<LoadWorkspaces>()
-      .mockReturnValueOnce(oldList)
-      .mockResolvedValue([main]);
-    const test = harness({
-      projects: [repo], selectedProject: repo, selectedWorkspace: main,
-      workspaces: [main, removed], workspacesByProjectId: { [repo.id]: [main, removed] },
-    }, loadWorkspaces);
+    const oldList = new Promise<Workspace[]>((resolve) => {
+      resolveOldList = resolve;
+    });
+    const loadWorkspaces = vi.fn<LoadWorkspaces>().mockReturnValueOnce(oldList).mockResolvedValue([main]);
+    const test = harness(
+      {
+        projects: [repo],
+        selectedProject: repo,
+        selectedWorkspace: main,
+        workspaces: [main, removed],
+        workspacesByProjectId: { [repo.id]: [main, removed] },
+      },
+      loadWorkspaces,
+    );
 
-    const oldRefresh = source === "topology"
-      ? test.controller.refreshSelectedProjectTopology()
-      : test.controller.refreshProjectWorkspaces(repo.id);
-    await vi.waitFor(() => { expect(loadWorkspaces).toHaveBeenCalledOnce(); });
+    const oldRefresh = source === "topology" ? test.controller.refreshSelectedProjectTopology() : test.controller.refreshProjectWorkspaces(repo.id);
+    await vi.waitFor(() => {
+      expect(loadWorkspaces).toHaveBeenCalledOnce();
+    });
     await test.controller.refreshAfterWorkspaceDeleted(repo.id, removed.id);
     expect(test.state().workspaces).toEqual([main]);
 
@@ -746,15 +797,22 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     const removed = workspace(repo.id, "/repo-gone");
     const created = workspace(repo.id, "/repo-new");
     let resolveDeletionList!: (workspaces: Workspace[]) => void;
-    const deletionList = new Promise<Workspace[]>((resolve) => { resolveDeletionList = resolve; });
-    const loadWorkspaces = vi.fn<LoadWorkspaces>()
-      .mockReturnValueOnce(deletionList)
-      .mockResolvedValue([main, created]);
+    const deletionList = new Promise<Workspace[]>((resolve) => {
+      resolveDeletionList = resolve;
+    });
+    const loadWorkspaces = vi.fn<LoadWorkspaces>().mockReturnValueOnce(deletionList).mockResolvedValue([main, created]);
     const navigateToWorkspace = vi.fn().mockResolvedValue(true);
-    const test = harness({
-      projects: [repo], selectedProject: repo, selectedWorkspace: removed,
-      workspaces: [main, removed], workspacesByProjectId: { [repo.id]: [main, removed] },
-    }, loadWorkspaces, { navigateToWorkspace });
+    const test = harness(
+      {
+        projects: [repo],
+        selectedProject: repo,
+        selectedWorkspace: removed,
+        workspaces: [main, removed],
+        workspacesByProjectId: { [repo.id]: [main, removed] },
+      },
+      loadWorkspaces,
+      { navigateToWorkspace },
+    );
 
     const deleting = test.controller.refreshAfterWorkspaceDeleted(repo.id, removed.id);
     await test.controller.refreshSelectedProjectTopology();
@@ -812,7 +870,9 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     let requestSignal: AbortSignal | undefined;
     const loadWorkspaces = vi.fn((_projectId: string, _machineId?: string, options?: { signal?: AbortSignal }) => {
       requestSignal = options?.signal;
-      return new Promise<Workspace[]>((resolve) => { resolveWorkspaces = resolve; });
+      return new Promise<Workspace[]>((resolve) => {
+        resolveWorkspaces = resolve;
+      });
     });
     const test = harness(
       {
@@ -832,7 +892,9 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
       signal: controller.signal,
       isCurrent: () => generation === 1,
     });
-    await vi.waitFor(() => { expect(loadWorkspaces).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(loadWorkspaces).toHaveBeenCalledOnce();
+    });
 
     controller.abort();
     generation = 2;
@@ -851,9 +913,15 @@ describe("WorkspaceController.refreshSelectedProjectTopology", () => {
     const repo = project("p1", "/repo");
     const main = workspace(repo.id, repo.path, { isMain: true });
     let resolveNavigationList!: (workspaces: Workspace[]) => void;
-    const navigationList = new Promise<Workspace[]>((resolve) => { resolveNavigationList = resolve; });
+    const navigationList = new Promise<Workspace[]>((resolve) => {
+      resolveNavigationList = resolve;
+    });
     const loadTopology = vi.fn(async (): Promise<WorkspaceProviderResolution> => ({
-      projectId: repo.id, status: "provider", ownerPluginId: "git", diagnostics: [], workspaces: await navigationList,
+      projectId: repo.id,
+      status: "provider",
+      ownerPluginId: "git",
+      diagnostics: [],
+      workspaces: await navigationList,
     }));
     const test = harness({ projects: [repo] }, () => navigationList, { loadWorkspaceResolution: loadTopology });
 

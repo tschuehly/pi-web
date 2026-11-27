@@ -2,12 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ProjectTrustStore,
-  SettingsManager,
-  type ProjectTrustContext,
-  type ProjectTrustHandler,
-} from "../../piSdk.js";
+import { ProjectTrustStore, SettingsManager, type ProjectTrustContext, type ProjectTrustHandler } from "../../piSdk.js";
 import { emitWebProjectTrustEvent, resolveWebProjectTrusted, type WebProjectTrustExtensionSet } from "./piSessionService.js";
 
 /**
@@ -143,13 +138,13 @@ describe("resolveWebProjectTrusted", () => {
     const cwd = await trustRequiringCwd();
     const agent = await agentDir("never");
 
-    await expect(
-      resolve({ cwd, agentDirPath: agent, extensionsResult: extensionSet(trustExtension("/ext/a.js", () => ({ trusted: "yes" }))) }),
-    ).resolves.toBe(true);
+    await expect(resolve({ cwd, agentDirPath: agent, extensionsResult: extensionSet(trustExtension("/ext/a.js", () => ({ trusted: "yes" }))) })).resolves.toBe(
+      true,
+    );
 
-    await expect(
-      resolve({ cwd, agentDirPath: agent, extensionsResult: extensionSet(trustExtension("/ext/a.js", () => ({ trusted: "no" }))) }),
-    ).resolves.toBe(false);
+    await expect(resolve({ cwd, agentDirPath: agent, extensionsResult: extensionSet(trustExtension("/ext/a.js", () => ({ trusted: "no" }))) })).resolves.toBe(
+      false,
+    );
   });
 
   it("lets an extension decision beat a saved decision, mirroring the SDK order", async () => {
@@ -157,9 +152,9 @@ describe("resolveWebProjectTrusted", () => {
     const agent = await agentDir("always");
     await writeFile(join(agent, "trust.json"), `${JSON.stringify({ [cwd]: true })}\n`);
 
-    await expect(
-      resolve({ cwd, agentDirPath: agent, extensionsResult: extensionSet(trustExtension("/ext/a.js", () => ({ trusted: "no" }))) }),
-    ).resolves.toBe(false);
+    await expect(resolve({ cwd, agentDirPath: agent, extensionsResult: extensionSet(trustExtension("/ext/a.js", () => ({ trusted: "no" }))) })).resolves.toBe(
+      false,
+    );
   });
 
   it("writes the trust store when an extension asks to remember", async () => {

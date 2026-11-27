@@ -11,36 +11,61 @@ import type { InstallLatestPreview } from "../shared/installLatest.js";
 import { registerInstallLatestRoutes } from "./installLatestRoutes.js";
 
 const real = process.env["PI_WEB_TEST_PROMOTE_INSTALLED"] ?? "";
-const put = (path: string, data: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, data); };
+const put = (path: string, data: string) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, data);
+};
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 function harness(script: string) {
   const root = mkdtempSync(join(tmpdir(), "pi-web-install-latest-real-"));
   roots.push(root);
-  const home = join(root, "home"), projects = join(root, "projects"), bin = join(root, "bin");
+  const home = join(root, "home"),
+    projects = join(root, "projects"),
+    bin = join(root, "bin");
   const store = join(home, ".pi-workbench/installed-durable");
-  const genv = { PATH: process.env["PATH"] ?? "/usr/bin:/bin", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1",
-    GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+  const genv = {
+    PATH: process.env["PATH"] ?? "/usr/bin:/bin",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_AUTHOR_NAME: "t",
+    GIT_AUTHOR_EMAIL: "t@t",
+    GIT_COMMITTER_NAME: "t",
+    GIT_COMMITTER_EMAIL: "t@t",
+  };
   const git = (cwd: string, ...args: string[]) => {
     const r = spawnSync("git", args, { cwd, env: genv, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
     return r.stdout.trim();
   };
   const commit = (cwd: string, subject: string, file = "f", content = subject) => {
-    writeFileSync(join(cwd, file), content); git(cwd, "add", "."); git(cwd, "commit", "-qm", subject); return git(cwd, "rev-parse", "HEAD");
+    writeFileSync(join(cwd, file), content);
+    git(cwd, "add", ".");
+    git(cwd, "commit", "-qm", subject);
+    return git(cwd, "rev-parse", "HEAD");
   };
-  const seeds = { "pi-workbench": "", "pi-web": "" }, first = { "pi-workbench": "", "pi-web": "" };
-  for (const [name, branch] of [["pi-workbench", "main"], ["pi-web", "pi-workbench"]] as const) {
+  const seeds = { "pi-workbench": "", "pi-web": "" },
+    first = { "pi-workbench": "", "pi-web": "" };
+  for (const [name, branch] of [
+    ["pi-workbench", "main"],
+    ["pi-web", "pi-workbench"],
+  ] as const) {
     git(root, "init", "-q", "--bare", "-b", branch, `${name}.git`);
     const seed = join(root, `seed-${name}`);
     git(root, "clone", "-q", join(root, `${name}.git`), seed);
     git(seed, "checkout", "-q", "-b", branch);
-    seeds[name] = seed; first[name] = commit(seed, `${name} one`);
+    seeds[name] = seed;
+    first[name] = commit(seed, `${name} one`);
     git(seed, "push", "-q", "origin", `HEAD:${branch}`);
     git(root, "clone", "-q", "-b", branch, join(root, `${name}.git`), join(projects, name));
   }
-  const shim = (name: string, body: string) => { put(join(bin, name), `#!/bin/sh\n${body}\n`); chmodSync(join(bin, name), 0o755); };
+  const shim = (name: string, body: string) => {
+    put(join(bin, name), `#!/bin/sh\n${body}\n`);
+    chmodSync(join(bin, name), 0o755);
+  };
   shim("launchctl", `echo "$*" >> "$HOME/launchctl.log"`);
   shim("lsof", "exit 0");
   put(join(root, "ps.txt"), "");
@@ -49,10 +74,21 @@ function harness(script: string) {
   // projects and launchd are out of reach.
   const bash = spawnSync("sh", ["-c", "command -v bash"], { env: genv, encoding: "utf8" }).stdout.trim();
   const wrapper = join(root, "promote-installed");
-  const vars = { ...genv, HOME: home, PI_WORKBENCH_PROJECTS: projects, PI_PROMOTE_PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
-    PI_PROMOTE_PS: `cat ${join(root, "ps.txt")}`, PI_PROMOTE_ETIME_PS: `cat ${join(root, "ps.txt")}` };
+  const vars = {
+    ...genv,
+    HOME: home,
+    PI_WORKBENCH_PROJECTS: projects,
+    PI_PROMOTE_PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
+    PI_PROMOTE_PS: `cat ${join(root, "ps.txt")}`,
+    PI_PROMOTE_ETIME_PS: `cat ${join(root, "ps.txt")}`,
+  };
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  put(wrapper, `#!/bin/sh\nexec env -i ${Object.entries(vars).map(([k, v]) => `${k}=${quote(v)}`).join(" ")} ${quote(bash)} ${quote(script)} "$@"\n`);
+  put(
+    wrapper,
+    `#!/bin/sh\nexec env -i ${Object.entries(vars)
+      .map(([k, v]) => `${k}=${quote(v)}`)
+      .join(" ")} ${quote(bash)} ${quote(script)} "$@"\n`,
+  );
   chmodSync(wrapper, 0o755);
   /** A prepared build the switch reuses as is (no install), linked live when `live`. */
   const build = (product: "pi-workbench" | "pi-web", rev: string, live = false) => {
@@ -60,7 +96,10 @@ function harness(script: string) {
     if (product === "pi-web") put(join(dir, "dist/server/sessiond.js"), 'env["PI_WEB_DURABLE_HOST_LAUNCHD"]\n');
     else mkdirSync(dir, { recursive: true });
     put(`${dir}.prepared`, "");
-    if (live) { rmSync(join(projects, `${product}.durable-installed`), { force: true }); symlinkSync(dir, join(projects, `${product}.durable-installed`)); }
+    if (live) {
+      rmSync(join(projects, `${product}.durable-installed`), { force: true });
+      symlinkSync(dir, join(projects, `${product}.durable-installed`));
+    }
     return dir;
   };
   /** pi-workbench main gains a merged branch pinning PI WEB's second commit. */
@@ -77,7 +116,11 @@ function harness(script: string) {
     return { wbPin, pw2 };
   };
   /** Someone merges to pi-workbench main after the owner looked. */
-  const mergeLater = () => { const sha = commit(seeds["pi-workbench"], "later merge", "h"); git(seeds["pi-workbench"], "push", "-q", "origin", "HEAD:main"); return sha; };
+  const mergeLater = () => {
+    const sha = commit(seeds["pi-workbench"], "later merge", "h");
+    git(seeds["pi-workbench"], "push", "-q", "origin", "HEAD:main");
+    return sha;
+  };
   const jobs = () => (existsSync(join(store, "jobs")) ? readdirSync(join(store, "jobs")) : []);
   const launchctl = () => (existsSync(join(home, "launchctl.log")) ? readFileSync(join(home, "launchctl.log"), "utf8") : "");
   return { wrapper, store, first, build, moveOn, mergeLater, jobs, launchctl };
@@ -94,19 +137,24 @@ async function app(script: string) {
 describe.skipIf(real === "" || !existsSync(real))("install latest routes with the real promote-installed", () => {
   it("GET previews the real merges; POST with a stale pair is the script's 409; POST with the shown pair schedules the switch", async () => {
     const h = harness(real);
-    const wb1 = h.first["pi-workbench"], pw1 = h.first["pi-web"];
+    const wb1 = h.first["pi-workbench"],
+      pw1 = h.first["pi-web"];
     h.build("pi-workbench", wb1, true);
     h.build("pi-web", pw1, true);
     const { wbPin, pw2 } = h.moveOn();
-    const wbDir = h.build("pi-workbench", wbPin), pwDir = h.build("pi-web", pw2);
+    const wbDir = h.build("pi-workbench", wbPin),
+      pwDir = h.build("pi-web", pw2);
     const server = await app(h.wrapper);
 
     const preview = await server.inject({ method: "GET", url: "/api/install/latest" });
     expect(preview.statusCode, preview.body).toBe(200);
     const shown = preview.json<InstallLatestPreview>();
     expect(shown).toMatchObject({ installed: { workbench: wb1, piWeb: pw1 }, latest: { workbench: wbPin, piWeb: pw2 }, upToDate: false });
-    expect(shown.merges.map((m) => `${m.repo}: ${m.subject}`))
-      .toEqual(["pi-workbench: pin pi-web", "pi-workbench: Merge branch 'feature'", "pi-web: pi-web two"]);
+    expect(shown.merges.map((m) => `${m.repo}: ${m.subject}`)).toEqual([
+      "pi-workbench: pin pi-web",
+      "pi-workbench: Merge branch 'feature'",
+      "pi-web: pi-web two",
+    ]);
 
     const stale = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: pw1, piWeb: pw1 }, to: shown.latest } });
     expect(stale.statusCode).toBe(409);
@@ -152,7 +200,9 @@ describe.skipIf(real === "" || !existsSync(real))("install latest routes with th
 
     const moved = await server.inject({ method: "POST", url: "/api/install/latest", payload: { from: shown.installed, to: shown.latest } });
     expect(moved.statusCode, moved.body).toBe(409);
-    expect(moved.json<{ error: string }>().error).toMatch(new RegExp(`^refusing: latest moved since you looked: now ${later.slice(0, 12)} .*review again`, "u"));
+    expect(moved.json<{ error: string }>().error).toMatch(
+      new RegExp(`^refusing: latest moved since you looked: now ${later.slice(0, 12)} .*review again`, "u"),
+    );
     expect(h.jobs()).toEqual([]);
   });
 });

@@ -21,18 +21,27 @@ describe("Files plugin activation", () => {
     const result = activateFilesPlugin(activationContext(), new FilesRuntime());
     const integration = { registerRoot: vi.fn(() => vi.fn()), createController: vi.fn(), subscribe: vi.fn(() => vi.fn()) };
     const requests: string[] = [];
-    await result.start?.({ signal: new AbortController().signal, capabilities: {
-      resolve<Value>(token: PluginCapability<Value>): Value {
-        requests.push(token.id);
-        return token.parse(token.id === "stylesheet-integration" ? integration : { listRenderers: vi.fn(), renderText: vi.fn(), renderMarkdown: vi.fn() });
+    await result.start?.({
+      signal: new AbortController().signal,
+      capabilities: {
+        resolve<Value>(token: PluginCapability<Value>): Value {
+          requests.push(token.id);
+          return token.parse(token.id === "stylesheet-integration" ? integration : { listRenderers: vi.fn(), renderText: vi.fn(), renderMarkdown: vi.fn() });
+        },
       },
-    } });
+    });
     expect(requests).toEqual(["content-rendering", "stylesheet-integration"]);
     const panel = result.contributions.workspacePanels?.[0]?.render(createWorkspaceContext());
     expect(panel?.values).toContain(integration);
     const requirement = plugin.requires.find(({ id }) => id === "stylesheet-integration");
     if (requirement === undefined) throw new Error("Missing stylesheet integration requirement");
-    for (const value of [null, {}, { ...integration, registerRoot: undefined }, { ...integration, createController: undefined }, { ...integration, subscribe: undefined }]) {
+    for (const value of [
+      null,
+      {},
+      { ...integration, registerRoot: undefined },
+      { ...integration, createController: undefined },
+      { ...integration, subscribe: undefined },
+    ]) {
       expect(() => requirement.parse(value)).toThrow("Stylesheet integration capability v1");
     }
   });
@@ -80,13 +89,14 @@ describe("Files plugin activation", () => {
   it("still rejects an unrelated owner of a reserved Files element name", () => {
     class UnrelatedElement extends HTMLElement {}
     const registry = {
-      get: vi.fn((name: string) => name === FILES_CODE_VIEWER_ELEMENT ? UnrelatedElement : undefined),
+      get: vi.fn((name: string) => (name === FILES_CODE_VIEWER_ELEMENT ? UnrelatedElement : undefined)),
       define: vi.fn(),
     };
     vi.stubGlobal("customElements", registry);
 
-    expect(() => activateFilesPlugin(activationContext(), new FilesRuntime()))
-      .toThrow(`Files custom element name is already owned: ${FILES_CODE_VIEWER_ELEMENT}`);
+    expect(() => activateFilesPlugin(activationContext(), new FilesRuntime())).toThrow(
+      `Files custom element name is already owned: ${FILES_CODE_VIEWER_ELEMENT}`,
+    );
     expect(registry.define).not.toHaveBeenCalled();
   });
 

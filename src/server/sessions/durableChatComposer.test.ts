@@ -14,8 +14,22 @@ import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 const ALL = ["queue.edit", "queue.promote", "attachments", "thinking", "shell"];
 const LEGEND = "\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]";
 const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
-const base = { persisted: true, isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
-interface Request { id: number; method: string; params?: Record<string, unknown> }
+const base = {
+  persisted: true,
+  isStreaming: true,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  messageCount: 0,
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: 0,
+};
+interface Request {
+  id: number;
+  method: string;
+  params?: Record<string, unknown>;
+}
 
 function isRequest(value: unknown): value is Request {
   return typeof value === "object" && value !== null && "id" in value && typeof value.id === "number" && "method" in value && typeof value.method === "string";
@@ -27,7 +41,9 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
 
   constructor(capabilities: string[] | undefined) {
     super();
-    queueMicrotask(() => { this.emit("message", { ready: { protocol: DURABLE_HOST_PROTOCOL, ...(capabilities === undefined ? {} : { capabilities }) } }); });
+    queueMicrotask(() => {
+      this.emit("message", { ready: { protocol: DURABLE_HOST_PROTOCOL, ...(capabilities === undefined ? {} : { capabilities }) } });
+    });
   }
 
   send(message: unknown): boolean {
@@ -43,13 +59,22 @@ class FakeHost extends EventEmitter implements DurableHostProcess {
     return true;
   }
 
-  push(event: object): void { this.emit("message", { event }); }
-  kill(): boolean { this.emit("exit", null, "SIGTERM"); return true; }
-  sent(method: string): Request[] { return this.requests.filter((request) => request.method === method); }
+  push(event: object): void {
+    this.emit("message", { event });
+  }
+  kill(): boolean {
+    this.emit("exit", null, "SIGTERM");
+    return true;
+  }
+  sent(method: string): Request[] {
+    return this.requests.filter((request) => request.method === method);
+  }
 }
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 async function chat(options: { capabilities?: string[] | undefined; resources?: DurableChatResourceSet } = {}) {
   const root = await mkdtemp(join(tmpdir(), "pi-web-durable-composer-"));
@@ -62,7 +87,11 @@ async function chat(options: { capabilities?: string[] | undefined; resources?: 
   const durable = new DurableChatService({
     locator: new SessionRuntimeLocator(root),
     events: hub,
-    launch: () => { const launched = new FakeHost("capabilities" in options ? options.capabilities : ALL); hosts.push(launched); return launched; },
+    launch: () => {
+      const launched = new FakeHost("capabilities" in options ? options.capabilities : ALL);
+      hosts.push(launched);
+      return launched;
+    },
     storesDir: join(root, "durable"),
     ...(resources === undefined ? {} : { resources: () => Promise.resolve(resources) }),
   });
@@ -76,7 +105,9 @@ describe("Durable Chat composer", () => {
   it("blocks every composer operation visibly when the host does not name it, and disables the queue controls", async () => {
     const { durable, ref } = await chat({ capabilities: undefined });
     const expectedQueue = [{ kind: "followUp" as const, text: "x" }];
-    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).rejects.toThrow("Editing a queued message is not available in Durable Chats yet");
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).rejects.toThrow(
+      "Editing a queued message is not available in Durable Chats yet",
+    );
     await expect(durable.promoteQueuedMessage(ref, { kind: "followUp", text: "x" })).rejects.toThrow("Promoting queued messages is not available");
     await expect(durable.setThinkingLevel(ref, "high")).rejects.toThrow("Changing the thinking level is not available");
     await expect(durable.shell(ref, "!ls")).rejects.toThrow("Shell commands is not available");
@@ -87,18 +118,33 @@ describe("Durable Chat composer", () => {
 
   it("maps recall, remove and toggle to the host against the exact queued IDs the browser saw; a stale snapshot changes nothing and returns the current queue", async () => {
     const { durable, host, ref } = await chat();
-    const queued = [{ id: 7, kind: "steer", text: "s1" }, { id: 5, kind: "followUp", text: `look [PIC_1]${LEGEND}`, hasAttachments: true, attachmentCount: 1 }, { id: 6, kind: "followUp", text: "f2" }];
-    host.answer = (request) => request.method === "status" ? { ...base, queuedMessages: queued } : null;
+    const queued = [
+      { id: 7, kind: "steer", text: "s1" },
+      { id: 5, kind: "followUp", text: `look [PIC_1]${LEGEND}`, hasAttachments: true, attachmentCount: 1 },
+      { id: 6, kind: "followUp", text: "f2" },
+    ];
+    host.answer = (request) => (request.method === "status" ? { ...base, queuedMessages: queued } : null);
     const status = await durable.status(ref);
-    expect(status.queuedMessages).toEqual([{ kind: "steer", text: "s1" }, { kind: "followUp", text: "look [PIC_1]", hasAttachments: true, attachmentCount: 1 }, { kind: "followUp", text: "f2" }]);
+    expect(status.queuedMessages).toEqual([
+      { kind: "steer", text: "s1" },
+      { kind: "followUp", text: "look [PIC_1]", hasAttachments: true, attachmentCount: 1 },
+      { kind: "followUp", text: "f2" },
+    ]);
     expect(status.queueMessageActionsUnavailable).toBeUndefined();
     await durable.mutateQueueMessage(ref, { action: "edit", index: 1, expectedQueue: status.queuedMessages });
     await durable.mutateQueueMessage(ref, { action: "toggle", index: 0, expectedQueue: status.queuedMessages });
-    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue: status.queuedMessages.slice(1) })).resolves.toMatchObject({ queueChanged: true, queuedMessages: status.queuedMessages });
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue: status.queuedMessages.slice(1) })).resolves.toMatchObject({
+      queueChanged: true,
+      queuedMessages: status.queuedMessages,
+    });
     // A message the browser still shows was already delivered.
-    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 3, expectedQueue: [...status.queuedMessages, { kind: "followUp", text: "delivered" }] })).resolves.toMatchObject({ queueChanged: true });
+    await expect(
+      durable.mutateQueueMessage(ref, { action: "remove", index: 3, expectedQueue: [...status.queuedMessages, { kind: "followUp", text: "delivered" }] }),
+    ).resolves.toMatchObject({ queueChanged: true });
     // Recall loses the attachments only when the browser acknowledged them.
-    await expect(durable.mutateQueueMessage(ref, { action: "edit", index: 1, expectedQueue: status.queuedMessages.map(({ kind, text }) => ({ kind, text })) })).resolves.toMatchObject({ queueChanged: true });
+    await expect(
+      durable.mutateQueueMessage(ref, { action: "edit", index: 1, expectedQueue: status.queuedMessages.map(({ kind, text }) => ({ kind, text })) }),
+    ).resolves.toMatchObject({ queueChanged: true });
     expect(await durable.mutateQueueMessage(ref, { action: "toggle", index: 0, expectedQueue: status.queuedMessages })).not.toHaveProperty("queueChanged");
     const sent = host.sent("mutateQueue").map((request) => request.params ?? {});
     expect(sent.map(({ action, index, expected }) => ({ action, index, expected }))).toEqual([
@@ -113,9 +159,12 @@ describe("Durable Chat composer", () => {
     const { durable, host, ref } = await chat();
     const queued = [{ id: 7, kind: "followUp", text: "f1" }];
     let refusal = new Error("Queued messages changed; refresh the queue and try again");
-    host.answer = (request) => request.method === "status" ? { ...base, queuedMessages: queued } : request.method === "mutateQueue" ? refusal : null;
+    host.answer = (request) => (request.method === "status" ? { ...base, queuedMessages: queued } : request.method === "mutateQueue" ? refusal : null);
     const expectedQueue = (await durable.status(ref)).queuedMessages;
-    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).resolves.toMatchObject({ queueChanged: true, queuedMessages: expectedQueue });
+    await expect(durable.mutateQueueMessage(ref, { action: "remove", index: 0, expectedQueue })).resolves.toMatchObject({
+      queueChanged: true,
+      queuedMessages: expectedQueue,
+    });
     refusal = new Error("Operation op-1 is no longer queued; it cannot be edited");
     await expect(durable.mutateQueueMessage(ref, { action: "toggle", index: 0, expectedQueue })).resolves.toMatchObject({ queueChanged: true });
     await expect(durable.promoteQueuedMessage(ref, { kind: "followUp", text: "f1" })).resolves.toMatchObject({ queuedMessages: expectedQueue });
@@ -125,51 +174,93 @@ describe("Durable Chat composer", () => {
 
   it("promotes one follow-up by its text, leaves a steer or an unknown message alone, and sends all follow-ups now", async () => {
     const { durable, host, ref } = await chat();
-    host.answer = (request) => request.method === "status" ? { ...base, queuedMessages: [{ id: 3, kind: "steer", text: "s" }, { id: 1, kind: "followUp", text: "a" }, { id: 2, kind: "followUp", text: "b" }] } : null;
+    host.answer = (request) =>
+      request.method === "status"
+        ? {
+            ...base,
+            queuedMessages: [
+              { id: 3, kind: "steer", text: "s" },
+              { id: 1, kind: "followUp", text: "a" },
+              { id: 2, kind: "followUp", text: "b" },
+            ],
+          }
+        : null;
     await durable.promoteQueuedMessage(ref, { kind: "followUp", text: "b" });
     await durable.promoteQueuedMessage(ref, { kind: "steer", text: "s" });
     await durable.promoteQueuedMessage(ref, { kind: "followUp", text: "gone" });
     await durable.promoteAllQueuedMessages(ref);
-    expect(host.sent("mutateQueue").map((request) => [request.params?.["action"], request.params?.["index"]])).toEqual([["promote", 2], ["promoteAll", 1]]);
+    expect(host.sent("mutateQueue").map((request) => [request.params?.["action"], request.params?.["index"]])).toEqual([
+      ["promote", 2],
+      ["promoteAll", 1],
+    ]);
   });
 
   it("sends inline images as Pi resizes them, with the [PIC_n] legend for the model and metadata for the host; the browser never sees the legend", async () => {
     const { durable, host, hub, ref } = await chat();
-    await durable.prompt(ref, "look [PIC_1]", "followUp", [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: PNG, name: "shot.png" }], { operationId: "op-1" });
+    await durable.prompt(ref, "look [PIC_1]", "followUp", [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: PNG, name: "shot.png" }], {
+      operationId: "op-1",
+    });
     const [prompt] = host.sent("prompt");
-    expect(prompt?.params).toMatchObject({ operationId: "op-1", mode: "followUp", text: `look [PIC_1]${LEGEND}`, attachments: [{ reference: "[PIC_1]", mimeType: "image/png", name: "shot.png" }] });
+    expect(prompt?.params).toMatchObject({
+      operationId: "op-1",
+      mode: "followUp",
+      text: `look [PIC_1]${LEGEND}`,
+      attachments: [{ reference: "[PIC_1]", mimeType: "image/png", name: "shot.png" }],
+    });
     expect(prompt?.params?.["images"]).toMatchObject([{ type: "image", mimeType: "image/png" }]);
     const published: unknown[] = [];
     hub.addGlobal({ OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined, on: () => undefined });
     const original = hub.publish.bind(hub);
-    hub.publish = (sessionId, event, scope) => { published.push(event); original(sessionId, event, scope); };
-    host.push({ type: "message.end", message: { role: "user", content: [{ type: "text", text: `look [PIC_1]${LEGEND}` }, { type: "image", mimeType: "image/png", data: PNG }], entryId: "4" } });
+    hub.publish = (sessionId, event, scope) => {
+      published.push(event);
+      original(sessionId, event, scope);
+    };
+    host.push({
+      type: "message.end",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: `look [PIC_1]${LEGEND}` },
+          { type: "image", mimeType: "image/png", data: PNG },
+        ],
+        entryId: "4",
+      },
+    });
     expect(JSON.stringify(published)).not.toContain("Image blocks immediately following");
   });
 
   it("serves the Chat's transcript images as media and saves file attachments into its workspace", async () => {
     const { durable, host, hub, ref } = await chat();
     const block = { type: "image", mimeType: "image/png", data: PNG };
-    host.answer = (request) => request.method === "transcript" ? { messages: [{ role: "user", content: [{ type: "text", text: "pic" }, block], entryId: "1" }], partial: null, status: base } : base;
+    host.answer = (request) =>
+      request.method === "transcript"
+        ? { messages: [{ role: "user", content: [{ type: "text", text: "pic" }, block], entryId: "1" }], partial: null, status: base }
+        : base;
     const mediaId = hub.mediaIndex.reference(undefined, { ...block })?.mediaId ?? "";
     const media = await durable.media(ref, mediaId);
     expect(media?.mimeType).toBe("image/png");
     expect(media?.data.equals(Buffer.from(PNG, "base64"))).toBe(true);
     await expect(durable.media({ id: ref.id, cwd: "/elsewhere" }, mediaId)).rejects.toThrow("Session not found");
-    const [saved] = await durable.saveAttachments(ref, [{ kind: "file", mimeType: "text/plain", data: Buffer.from("notes").toString("base64"), name: "notes.txt" }], "inbox");
+    const [saved] = await durable.saveAttachments(
+      ref,
+      [{ kind: "file", mimeType: "text/plain", data: Buffer.from("notes").toString("base64"), name: "notes.txt" }],
+      "inbox",
+    );
     expect(saved?.path).toMatch(/^inbox\/.*notes\.txt$/);
     expect(await readFile(join(ref.cwd, saved?.path ?? ""), "utf8")).toBe("notes");
   });
 
   it("forwards thinking levels and `!` commands to the host", async () => {
     const { durable, host, ref } = await chat();
-    host.answer = (request) => request.method === "thinkingLevels" ? ["off", "low", "high"] : base;
+    host.answer = (request) => (request.method === "thinkingLevels" ? ["off", "low", "high"] : base);
     await expect(durable.availableThinkingLevels(ref)).resolves.toEqual(["off", "low", "high"]);
     await durable.setThinkingLevel(ref, "high");
     await durable.cycleThinkingLevel(ref);
     await durable.shell(ref, "!!git status");
     expect(host.requests.filter((r) => ["setThinkingLevel", "cycleThinkingLevel", "shell"].includes(r.method)).map((r) => [r.method, r.params])).toEqual([
-      ["setThinkingLevel", { level: "high" }], ["cycleThinkingLevel", undefined], ["shell", { text: "!!git status" }],
+      ["setThinkingLevel", { level: "high" }],
+      ["cycleThinkingLevel", undefined],
+      ["shell", { text: "!!git status" }],
     ]);
   });
 
@@ -177,13 +268,23 @@ describe("Durable Chat composer", () => {
     const skillDir = await mkdtemp(join(tmpdir(), "pi-web-skill-"));
     roots.push(skillDir);
     await writeFile(join(skillDir, "SKILL.md"), "---\nname: tidy\n---\nTidy.\n");
-    const { durable, host, ref } = await chat({ resources: {
-      resources: { sources: [] },
-      compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
-      skillList: [{ name: "tidy", filePath: join(skillDir, "SKILL.md"), baseDir: skillDir }],
-      promptList: [{ name: "review", description: "Review code", argumentHint: "<path>", content: "Review $1 (all: $@) ${2:-carefully}" }],
-    } });
-    expect((await durable.commands(ref)).map((command) => [command.name, command.source])).toEqual([["mode", "extension"], ["name", "builtin"], ["pair", "extension"], ["review", "prompt"], ["session", "builtin"], ["skill:tidy", "skill"], ["tabname", "builtin"]]);
+    const { durable, host, ref } = await chat({
+      resources: {
+        resources: { sources: [] },
+        compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 },
+        skillList: [{ name: "tidy", filePath: join(skillDir, "SKILL.md"), baseDir: skillDir }],
+        promptList: [{ name: "review", description: "Review code", argumentHint: "<path>", content: "Review $1 (all: $@) ${2:-carefully}" }],
+      },
+    });
+    expect((await durable.commands(ref)).map((command) => [command.name, command.source])).toEqual([
+      ["mode", "extension"],
+      ["name", "builtin"],
+      ["pair", "extension"],
+      ["review", "prompt"],
+      ["session", "builtin"],
+      ["skill:tidy", "skill"],
+      ["tabname", "builtin"],
+    ]);
     await expect(durable.runCommand(ref, '/review src "two words" /skill:tidy')).resolves.toEqual({ type: "done" });
     await durable.prompt(ref, "/review lib");
     await durable.prompt(ref, "/unknown x");

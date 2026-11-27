@@ -2,7 +2,15 @@ import { appendFile, mkdir, mkdtemp, readFile, rename, rm, utimes, writeFile } f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createPiSessionManagerGateway, defaultPiSessionDir, defaultPiSessionsRoot, filterSessionsForCwd, locateSessionInDirs, resolveSessionFileInDir, SessionDirResolver } from "./piSessionManagerGateway.js";
+import {
+  createPiSessionManagerGateway,
+  defaultPiSessionDir,
+  defaultPiSessionsRoot,
+  filterSessionsForCwd,
+  locateSessionInDirs,
+  resolveSessionFileInDir,
+  SessionDirResolver,
+} from "./piSessionManagerGateway.js";
 import { DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT } from "./transcriptBranchCache.js";
 import type { PiSessionListEntry } from "./piSessionService.js";
 import type { PiSessionManager } from "./piSessionService.js";
@@ -86,10 +94,12 @@ describe("SessionDirResolver", () => {
     await mkdir(agentDir, { recursive: true });
     await writeFile(join(agentDir, "settings.json"), `${JSON.stringify({ sessionDir: join(tempDir, "settings-sessions") }, null, 2)}\n`, "utf8");
 
-    const resolver = new SessionDirResolver(piProfileOptions({
-      PI_WEB_AGENT_SESSION_DIR: aliasDir,
-      PI_CODING_AGENT_SESSION_DIR: join(tempDir, "pi-env-sessions"),
-    }));
+    const resolver = new SessionDirResolver(
+      piProfileOptions({
+        PI_WEB_AGENT_SESSION_DIR: aliasDir,
+        PI_CODING_AGENT_SESSION_DIR: join(tempDir, "pi-env-sessions"),
+      }),
+    );
 
     expect(resolver.resolve(cwd)).toMatchObject({ source: "env", sessionDir: aliasDir, usesConfiguredSessionDir: true });
   });
@@ -112,7 +122,9 @@ describe("Pi session manager gateway", () => {
     await writeSessionFile(defaultPiSessionDir(otherCwd, agentDir), "session-b", otherCwd);
     const gateway = createPiSessionManagerGateway(piProfileOptions());
 
-    await expect(gateway.listAll()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: "session-a", cwd }), expect.objectContaining({ id: "session-b", cwd: otherCwd })]));
+    await expect(gateway.listAll()).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "session-a", cwd }), expect.objectContaining({ id: "session-b", cwd: otherCwd })]),
+    );
   });
 
   it("lists the newest sessions across every project with a global limit", async () => {
@@ -150,7 +162,9 @@ describe("Pi session manager gateway", () => {
     await writeSessionFile(envSessionDir, "env-session", cwd);
     const gateway = createPiSessionManagerGateway(piProfileOptions({ PI_CODING_AGENT_SESSION_DIR: envSessionDir }));
 
-    await expect(gateway.listAll()).resolves.toEqual(expect.arrayContaining([expect.objectContaining({ id: "default-session", cwd }), expect.objectContaining({ id: "env-session", cwd })]));
+    await expect(gateway.listAll()).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "default-session", cwd }), expect.objectContaining({ id: "env-session", cwd })]),
+    );
   });
 
   it("includes generic env session directories in global listing", async () => {
@@ -198,7 +212,13 @@ describe("Pi session manager gateway", () => {
     const lines = [
       JSON.stringify({ type: "session", version: 3, id: "session-rough", timestamp: "2026-01-01T00:00:00.000Z", cwd }),
       '{"type":"message","id":"half-written"',
-      JSON.stringify({ type: "message", id: "m1", parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } }),
+      JSON.stringify({
+        type: "message",
+        id: "m1",
+        parentId: "root",
+        timestamp: "2026-01-01T00:01:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "hello" }] },
+      }),
     ];
     await writeFile(join(sharedSessionDir, "rough.jsonl"), `${lines.join("\n")}\n`, "utf8");
     const gateway = createPiSessionManagerGateway(piProfileOptions({ PI_CODING_AGENT_SESSION_DIR: sharedSessionDir }));
@@ -244,7 +264,10 @@ describe("Pi session manager gateway", () => {
     const store = join(tempDir, "all-entries");
     const path = await writeNamedSessionFile(store, "media.jsonl", { id: "media-session", cwd });
     const entry = (id: string, parentId: string | null) => ({ type: "message", id, parentId, message: { role: "user", content: id } });
-    await appendFile(path, [entry("root", null), entry("abandoned", "root"), entry("selected", "root")].map((value) => JSON.stringify(value)).join("\n") + "\n");
+    await appendFile(
+      path,
+      [entry("root", null), entry("abandoned", "root"), entry("selected", "root")].map((value) => JSON.stringify(value)).join("\n") + "\n",
+    );
     const before = await readFile(path);
     const gateway = createPiSessionManagerGateway(piProfileOptions({ PI_CODING_AGENT_SESSION_DIR: store }));
     if (gateway.readEntries === undefined || gateway.readBranch === undefined) throw new Error("Expected transcript readers");
@@ -285,7 +308,11 @@ describe("Pi session manager gateway", () => {
 
     // The miss is not memoized: once the file exists, the same path serves it.
     await writeNamedSessionFile(sharedSessionDir, "absent.jsonl", { id: "absent-session", cwd });
-    await appendFile(path, `${JSON.stringify({ type: "message", id: "m1", parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role: "user", content: [{ type: "text", text: "persisted later" }] } })}\n`, "utf8");
+    await appendFile(
+      path,
+      `${JSON.stringify({ type: "message", id: "m1", parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role: "user", content: [{ type: "text", text: "persisted later" }] } })}\n`,
+      "utf8",
+    );
 
     await expect(gateway.readBranch(path)).resolves.toHaveLength(1);
   });
@@ -299,7 +326,11 @@ describe("Pi session manager gateway", () => {
     const gateway = createPiSessionManagerGateway(piProfileOptions({ PI_CODING_AGENT_SESSION_DIR: sharedSessionDir }));
     if (gateway.readBranch === undefined) throw new Error("Expected transcript snapshot reader");
     const firstPath = await writeNamedSessionFile(sharedSessionDir, "bounded-0.jsonl", { id: "bounded-0", cwd });
-    await appendFile(firstPath, `${JSON.stringify({ type: "message", id: "m1", parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role: "user", content: [{ type: "text", text: "evicted and re-read" }] } })}\n`, "utf8");
+    await appendFile(
+      firstPath,
+      `${JSON.stringify({ type: "message", id: "m1", parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role: "user", content: [{ type: "text", text: "evicted and re-read" }] } })}\n`,
+      "utf8",
+    );
 
     const first = await gateway.readBranch(firstPath);
     for (let i = 1; i < DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT; i += 1) {
@@ -347,7 +378,11 @@ describe("Pi session manager gateway", () => {
     if (gateway.readBranch === undefined) throw new Error("Expected transcript snapshot reader");
     const first = await gateway.readBranch(path);
 
-    await writeFile(path, `${JSON.stringify({ type: "session", version: 3, id: "shrinking-session", timestamp: "2026-01-01T00:00:00.000Z", cwd })}\n${snapshotMessage("m1", "root", "kept")}\n`, "utf8");
+    await writeFile(
+      path,
+      `${JSON.stringify({ type: "session", version: 3, id: "shrinking-session", timestamp: "2026-01-01T00:00:00.000Z", cwd })}\n${snapshotMessage("m1", "root", "kept")}\n`,
+      "utf8",
+    );
     const second = await gateway.readBranch(path);
 
     expect(branchIds(second)).toEqual(["m1"]);
@@ -366,7 +401,11 @@ describe("Pi session manager gateway", () => {
     const first = await gateway.readBranch(path);
 
     const replacement = join(sharedSessionDir, "replacement.jsonl");
-    await writeFile(replacement, `${JSON.stringify({ type: "session", version: 3, id: "replaced-session", timestamp: "2026-01-01T00:00:00.000Z", cwd })}\n${snapshotMessage("n1", "root", "replacement")}\n`, "utf8");
+    await writeFile(
+      replacement,
+      `${JSON.stringify({ type: "session", version: 3, id: "replaced-session", timestamp: "2026-01-01T00:00:00.000Z", cwd })}\n${snapshotMessage("n1", "root", "replacement")}\n`,
+      "utf8",
+    );
     await rename(replacement, path);
     const second = await gateway.readBranch(path);
 
@@ -506,11 +545,18 @@ describe("gateway session-file resolution by id", () => {
 
   it("rejects an abbreviated id even when only one session matches its prefix", async () => {
     const sharedSessionDir = join(tempDir, "shared-sessions");
-    const targetPath = await writeNamedSessionFile(sharedSessionDir, "2026-01-01T00-00-00-000Z_0199f3a2-prefix-session.jsonl", { id: "0199f3a2-prefix-session", cwd });
+    const targetPath = await writeNamedSessionFile(sharedSessionDir, "2026-01-01T00-00-00-000Z_0199f3a2-prefix-session.jsonl", {
+      id: "0199f3a2-prefix-session",
+      cwd,
+    });
 
     await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "0199f3a2", readSessionHeaderSummary)).resolves.toBeUndefined();
     await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "", readSessionHeaderSummary)).resolves.toBeUndefined();
-    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "0199f3a2-prefix-session", readSessionHeaderSummary)).resolves.toEqual({ id: "0199f3a2-prefix-session", cwd, path: targetPath });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "0199f3a2-prefix-session", readSessionHeaderSummary)).resolves.toEqual({
+      id: "0199f3a2-prefix-session",
+      cwd,
+      path: targetPath,
+    });
   });
 
   it("falls back to header reads when the file name does not embed the id", async () => {
@@ -518,7 +564,11 @@ describe("gateway session-file resolution by id", () => {
     const renamedPath = await writeNamedSessionFile(sharedSessionDir, "hand-renamed.jsonl", { id: "renamed-session", cwd });
 
     await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "renamed", readSessionHeaderSummary)).resolves.toBeUndefined();
-    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "renamed-session", readSessionHeaderSummary)).resolves.toEqual({ id: "renamed-session", cwd, path: renamedPath });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "renamed-session", readSessionHeaderSummary)).resolves.toEqual({
+      id: "renamed-session",
+      cwd,
+      path: renamedPath,
+    });
   });
 
   it("trusts the header over a file name that embeds a different session id", async () => {
@@ -526,7 +576,11 @@ describe("gateway session-file resolution by id", () => {
     const copiedPath = await writeNamedSessionFile(sharedSessionDir, "2026-01-01T00-00-00-000Z_original-id.jsonl", { id: "copied-id", cwd });
 
     await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "original-id", readSessionHeaderSummary)).resolves.toBeUndefined();
-    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "copied-id", readSessionHeaderSummary)).resolves.toEqual({ id: "copied-id", cwd, path: copiedPath });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "copied-id", readSessionHeaderSummary)).resolves.toEqual({
+      id: "copied-id",
+      cwd,
+      path: copiedPath,
+    });
   });
 
   it("does not let a failing filename candidate shadow a renamed file that really holds the session", async () => {
@@ -536,7 +590,11 @@ describe("gateway session-file resolution by id", () => {
     await writeNamedSessionFile(sharedSessionDir, "2026-01-01T00-00-00-000Z_target-session.jsonl", { id: "unrelated-session", cwd });
     const renamedPath = await writeNamedSessionFile(sharedSessionDir, "hand-renamed.jsonl", { id: "target-session", cwd });
 
-    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "target-session", readSessionHeaderSummary)).resolves.toEqual({ id: "target-session", cwd, path: renamedPath });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "target-session", readSessionHeaderSummary)).resolves.toEqual({
+      id: "target-session",
+      cwd,
+      path: renamedPath,
+    });
   });
 
   it("prefers an exact header id over a newer prefix-extended id", async () => {
@@ -554,7 +612,11 @@ describe("gateway session-file resolution by id", () => {
     await writeNamedSessionFile(sharedSessionDir, "2026-01-01T00-00-00-000Z_target-session.jsonl", { id: "target-session-extended", cwd });
     const renamedPath = await writeNamedSessionFile(sharedSessionDir, "archived.jsonl", { id: "target-session", cwd });
 
-    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "target-session", readSessionHeaderSummary)).resolves.toEqual({ id: "target-session", cwd, path: renamedPath });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "target-session", readSessionHeaderSummary)).resolves.toEqual({
+      id: "target-session",
+      cwd,
+      path: renamedPath,
+    });
   });
 
   it("rejects ambiguous abbreviations regardless of filename timestamps or order", async () => {
@@ -600,7 +662,10 @@ describe("gateway session-file resolution by id", () => {
   it("reads the headers of a miss concurrently, within a bound", async () => {
     const sharedSessionDir = join(tempDir, "shared-sessions");
     for (let index = 0; index < 60; index += 1) {
-      await writeNamedSessionFile(sharedSessionDir, `2026-01-01T00-00-${String(index).padStart(2, "0")}-000Z_other-${String(index)}.jsonl`, { id: `other-${String(index)}`, cwd });
+      await writeNamedSessionFile(sharedSessionDir, `2026-01-01T00-00-${String(index).padStart(2, "0")}-000Z_other-${String(index)}.jsonl`, {
+        id: `other-${String(index)}`,
+        cwd,
+      });
     }
     const reader = concurrencyTrackingReader();
 
@@ -627,7 +692,11 @@ describe("gateway session-file resolution by id", () => {
     await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "abc", reader)).resolves.toEqual({ id: "abc", cwd, path: exactPath });
 
     // No filename candidate: the header decides.
-    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "abc-hand-2", reader)).resolves.toEqual({ id: "abc-hand-2", cwd, path: join(sharedSessionDir, "hand-2.jsonl") });
+    await expect(resolveSessionFileInDir(sharedSessionDir, cwd, "abc-hand-2", reader)).resolves.toEqual({
+      id: "abc-hand-2",
+      cwd,
+      path: join(sharedSessionDir, "hand-2.jsonl"),
+    });
   });
 });
 
@@ -635,7 +704,8 @@ describe("locating sessions across session directories", () => {
   it("reads the headers of a miss concurrently across directories, within a bound", async () => {
     const dirs = ["a", "b", "c"].map((name) => join(tempDir, "store", name));
     for (const dir of dirs) {
-      for (let index = 0; index < 20; index += 1) await writeNamedSessionFile(dir, `2026-01-01T00-00-${String(index).padStart(2, "0")}-000Z_s-${String(index)}.jsonl`, { id: `s-${String(index)}`, cwd });
+      for (let index = 0; index < 20; index += 1)
+        await writeNamedSessionFile(dir, `2026-01-01T00-00-${String(index).padStart(2, "0")}-000Z_s-${String(index)}.jsonl`, { id: `s-${String(index)}`, cwd });
     }
     const reader = concurrencyTrackingReader();
 
@@ -729,7 +799,8 @@ describe("targeted session listing", () => {
 
   const message = (id: string, role: string, text: string) =>
     JSON.stringify({ type: "message", id, parentId: "root", timestamp: "2026-01-01T00:01:00.000Z", message: { role, content: [{ type: "text", text }] } });
-  const sessionInfo = (name: string) => JSON.stringify({ type: "session_info", id: `info-${name}`, parentId: "root", timestamp: "2026-01-01T00:02:00.000Z", name });
+  const sessionInfo = (name: string) =>
+    JSON.stringify({ type: "session_info", id: `info-${name}`, parentId: "root", timestamp: "2026-01-01T00:02:00.000Z", name });
 
   async function targetedStore() {
     const sessionDir = join(tempDir, "targeted-sessions");
@@ -786,11 +857,13 @@ describe("targeted session listing", () => {
     const { sessionDir, targetPath, gateway } = await targetedStore();
     const intruder = await writeNamedSessionFile(sessionDir, "intruder.tmp", { id: "intruder-id", cwd });
     const resolve = gateway.resolveSessionFile.bind(gateway);
-    spies.push(vi.spyOn(gateway, "resolveSessionFile").mockImplementationOnce(async (refCwd, sessionId) => {
-      const resolved = await resolve(refCwd, sessionId);
-      await rename(intruder, targetPath);
-      return resolved;
-    }));
+    spies.push(
+      vi.spyOn(gateway, "resolveSessionFile").mockImplementationOnce(async (refCwd, sessionId) => {
+        const resolved = await resolve(refCwd, sessionId);
+        await rename(intruder, targetPath);
+        return resolved;
+      }),
+    );
 
     await expect(gateway.list(cwd, { sessionId: "target-id" })).resolves.toEqual([]);
   });
@@ -865,7 +938,16 @@ function hasSessionDir(manager: PiSessionManager): manager is PiSessionManager &
 }
 
 function sessionEntry(id: string, sessionCwd: string): PiSessionListEntry {
-  return { path: join(tempDir, `${id}.jsonl`), id, cwd: sessionCwd, created: new Date(), modified: new Date(), messageCount: 0, firstMessage: "", allMessagesText: "" };
+  return {
+    path: join(tempDir, `${id}.jsonl`),
+    id,
+    cwd: sessionCwd,
+    created: new Date(),
+    modified: new Date(),
+    messageCount: 0,
+    firstMessage: "",
+    allMessagesText: "",
+  };
 }
 
 /** One transcript message line, as the SDK would append it. */
@@ -880,7 +962,11 @@ function branchIds(branch: unknown[] | undefined): unknown[] {
 
 async function writeSessionFile(dir: string, id: string, sessionCwd: string): Promise<void> {
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${id}.jsonl`), `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: sessionCwd })}\n`, "utf8");
+  await writeFile(
+    join(dir, `${id}.jsonl`),
+    `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: sessionCwd })}\n`,
+    "utf8",
+  );
 }
 
 async function writeNamedSessionFile(dir: string, fileName: string, header: { id: string; cwd?: string; parentSession?: string }): Promise<string> {

@@ -57,16 +57,10 @@ import type {
 } from "./client/src/plugins/types";
 
 type IfEqual<Left, Right, Then, Else = never> =
-  (<Value>(value: Value) => Value extends Left ? 1 : 2) extends
-  (<Value>(value: Value) => Value extends Right ? 1 : 2) ? Then : Else;
+  (<Value>(value: Value) => Value extends Left ? 1 : 2) extends <Value>(value: Value) => Value extends Right ? 1 : 2 ? Then : Else;
 
 type ReadonlyKeys<Value> = {
-  [Key in keyof Value]-?: IfEqual<
-    { [Property in Key]: Value[Property] },
-    { -readonly [Property in Key]: Value[Property] },
-    never,
-    Key
-  >;
+  [Key in keyof Value]-?: IfEqual<{ [Property in Key]: Value[Property] }, { -readonly [Property in Key]: Value[Property] }, never, Key>;
 }[keyof Value];
 
 type WritableKeys<Value> = Exclude<keyof Value, ReadonlyKeys<Value>>;
@@ -82,8 +76,12 @@ interface ExistingV2WorkspaceFiles {
 
 // These declarations intentionally exercise the source patterns used by v2
 // adapters and test fakes. A union alias here produces TS2312/TS2422.
-interface ExtendedWorkspaceFiles extends WorkspaceFiles { readonly adapterName?: string; }
-interface ExtendedWorkspacePanelFiles extends WorkspacePanelFiles { readonly panelName?: string; }
+interface ExtendedWorkspaceFiles extends WorkspaceFiles {
+  readonly adapterName?: string;
+}
+interface ExtendedWorkspacePanelFiles extends WorkspacePanelFiles {
+  readonly panelName?: string;
+}
 declare class ImplementedWorkspaceFiles implements WorkspaceFiles {
   readFile: WorkspaceFiles["readFile"];
   listFiles: WorkspaceFiles["listFiles"];
@@ -185,10 +183,11 @@ describe("public browser plugin API", () => {
     expectTypeOf<ExtendedWorkspacePanelFiles>().toExtend<WorkspacePanelFiles>();
     expectTypeOf<ImplementedWorkspaceFiles>().toExtend<WorkspaceFiles>();
     expectTypeOf<ImplementedWorkspacePanelFiles>().toExtend<WorkspacePanelFiles>();
-    expectTypeOf<Extract<WorkspaceFilesContextValue, { readonly capabilityVersion: 1 }>>()
-      .toEqualTypeOf<WorkspaceFilesCapabilityV1>();
+    expectTypeOf<Extract<WorkspaceFilesContextValue, { readonly capabilityVersion: 1 }>>().toEqualTypeOf<WorkspaceFilesCapabilityV1>();
     expectTypeOf<WorkspaceFilesCapabilityV1["capabilityVersion"]>().toEqualTypeOf<1>();
-    expectTypeOf<ReadonlyKeys<Pick<WorkspaceFilesCapabilityV1, "capabilityVersion" | "defaultUploadFolder" | "maxInlinePreviewBytes">>>().toEqualTypeOf<"capabilityVersion" | "defaultUploadFolder" | "maxInlinePreviewBytes">();
+    expectTypeOf<ReadonlyKeys<Pick<WorkspaceFilesCapabilityV1, "capabilityVersion" | "defaultUploadFolder" | "maxInlinePreviewBytes">>>().toEqualTypeOf<
+      "capabilityVersion" | "defaultUploadFolder" | "maxInlinePreviewBytes"
+    >();
   });
 
   it("exposes only package peers and models their capabilities as valid detectable combinations", () => {
@@ -220,8 +219,9 @@ describe("public browser plugin API", () => {
   it("adds optional versioned panel navigation without changing browser API v2 compatibility", () => {
     type NavigationIsOptional = IsOptional<WorkspacePanelContext, "navigation">;
     expectTypeOf<WorkspacePanelNavigationV1["version"]>().toEqualTypeOf<1>();
-    expectTypeOf<ReadonlyKeys<Pick<WorkspacePanelNavigationV1, "version" | "contributionId" | "query">>>()
-      .toEqualTypeOf<"version" | "contributionId" | "query">();
+    expectTypeOf<ReadonlyKeys<Pick<WorkspacePanelNavigationV1, "version" | "contributionId" | "query">>>().toEqualTypeOf<
+      "version" | "contributionId" | "query"
+    >();
     expectTypeOf<NavigationIsOptional>().toEqualTypeOf<true>();
     expectTypeOf<Extract<keyof WorkspacePanelContribution, "routeAliases" | "navigationAliases">>().toEqualTypeOf<never>();
     expectTypeOf<Extract<keyof ApplicationPanelContribution, "routeAliases" | "navigationAliases">>().toEqualTypeOf<never>();

@@ -64,16 +64,43 @@ export class AskMarkdownField extends ElementBase {
     if (changed && this.#view !== undefined) resetEditHistory(this.#view);
   }
 
-  set label(text: string) { this.#label = text; this.#syncAttributes(); }
-  set invalid(invalid: boolean) { this.#invalid = invalid; this.#syncAttributes(); }
-  set describedBy(id: string | undefined) { this.#describedBy = id; this.#syncAttributes(); }
+  set label(text: string) {
+    this.#label = text;
+    this.#syncAttributes();
+  }
+  set invalid(invalid: boolean) {
+    this.#invalid = invalid;
+    this.#syncAttributes();
+  }
+  set describedBy(id: string | undefined) {
+    this.#describedBy = id;
+    this.#syncAttributes();
+  }
 
   constructor() {
     super();
     // Capture runs before the editor's own handlers, which would move the cursor into the image (showing its source) or take Enter as a newline.
-    this.addEventListener("mousedown", (event) => { if (this.#foldSummary(event) !== undefined) event.stopPropagation(); }, true);
-    this.addEventListener("click", (event) => { this.#activateFold(event); }, true);
-    this.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") this.#activateFold(event); }, true);
+    this.addEventListener(
+      "mousedown",
+      (event) => {
+        if (this.#foldSummary(event) !== undefined) event.stopPropagation();
+      },
+      true,
+    );
+    this.addEventListener(
+      "click",
+      (event) => {
+        this.#activateFold(event);
+      },
+      true,
+    );
+    this.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key === "Enter" || event.key === " ") this.#activateFold(event);
+      },
+      true,
+    );
   }
 
   connectedCallback(): void {
@@ -82,16 +109,23 @@ export class AskMarkdownField extends ElementBase {
     const state = EditorState.create({
       doc: this.#value,
       extensions: [
-        editHistory(), drawSelection(),
+        editHistory(),
+        drawSelection(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
-        filesHighlighting, markdownWithCodeLanguages(), EditorView.lineWrapping,
-        livePreview((source) => foldMediaMarkup(toSafeMarkdownHtml(source, this.workspaceContext)), (anchor) => {
-          // File links open as in the Chat (Files pane, Finder); other links in a new tab.
-          const context = this.workspaceContext;
-          if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
-        }, this.renderFences ? { languages: RENDERED_FENCE, render: (source) => this.#renderFence(source) } : undefined),
+        filesHighlighting,
+        markdownWithCodeLanguages(),
+        EditorView.lineWrapping,
+        livePreview(
+          (source) => foldMediaMarkup(toSafeMarkdownHtml(source, this.workspaceContext)),
+          (anchor) => {
+            // File links open as in the Chat (Files pane, Finder); other links in a new tab.
+            const context = this.workspaceContext;
+            if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
+          },
+          this.renderFences ? { languages: RENDERED_FENCE, render: (source) => this.#renderFence(source) } : undefined,
+        ),
         // The textarea's maxlength: an edit that would pass the limit is refused.
-        EditorState.transactionFilter.of((tr) => tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr),
+        EditorState.transactionFilter.of((tr) => (tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr)),
         this.placeholderText === "" ? [] : placeholder(this.placeholderText),
         this.#attributes.of(this.#contentAttributes()),
         EditorView.updateListener.of((update) => {
@@ -170,7 +204,8 @@ export class AskMarkdownField extends ElementBase {
   }
 }
 
-if (typeof customElements !== "undefined" && customElements.get("ask-markdown-field") === undefined) customElements.define("ask-markdown-field", AskMarkdownField);
+if (typeof customElements !== "undefined" && customElements.get("ask-markdown-field") === undefined)
+  customElements.define("ask-markdown-field", AskMarkdownField);
 
 declare global {
   interface HTMLElementTagNameMap {

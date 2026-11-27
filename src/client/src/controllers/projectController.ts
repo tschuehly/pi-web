@@ -47,7 +47,9 @@ export class ProjectController {
       const projects = await this.api.projects(machineId);
       if (selectedMachineId(this.getState()) !== machineId) return;
       const projectIds = new Set(projects.map((project) => project.id));
-      const workspacesByProjectId = Object.fromEntries(Object.entries(this.getState().workspacesByProjectId).filter(([projectId]) => projectIds.has(projectId)));
+      const workspacesByProjectId = Object.fromEntries(
+        Object.entries(this.getState().workspacesByProjectId).filter(([projectId]) => projectIds.has(projectId)),
+      );
       this.setState({ projects, workspacesByProjectId });
     } catch (error) {
       this.loadErrors.set(machineId, String(error));
@@ -118,10 +120,14 @@ export class ProjectController {
 }
 
 function navigationSelection(state: ReturnType<GetState>, captureNavigation?: () => NavigationSelection): NavigationSelection {
-  return captureNavigation?.() ?? {
-    machineId: selectedMachineId(state),
-    projectId: state.selectedProject?.id,
-    workspaceId: state.selectedWorkspace?.id,
-    ...(state.selectedSession === undefined || Reflect.get(state.selectedSession, "clientPendingStart") !== true ? { sessionId: state.selectedSession?.id } : {}),
-  };
+  return (
+    captureNavigation?.() ?? {
+      machineId: selectedMachineId(state),
+      projectId: state.selectedProject?.id,
+      workspaceId: state.selectedWorkspace?.id,
+      ...(state.selectedSession === undefined || Reflect.get(state.selectedSession, "clientPendingStart") !== true
+        ? { sessionId: state.selectedSession?.id }
+        : {}),
+    }
+  );
 }

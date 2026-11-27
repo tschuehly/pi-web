@@ -10,7 +10,13 @@ let poll: (() => void) | undefined;
 
 beforeEach(() => {
   poll = undefined;
-  vi.stubGlobal("window", { setInterval: (callback: () => void) => { poll = callback; return 1; }, clearInterval: () => undefined });
+  vi.stubGlobal("window", {
+    setInterval: (callback: () => void) => {
+      poll = callback;
+      return 1;
+    },
+    clearInterval: () => undefined,
+  });
 });
 afterEach(() => {
   for (const controller of controllers.splice(0)) controller.dispose();
@@ -22,25 +28,61 @@ function flow(patch: Partial<OAuthFlowState> = {}): OAuthFlowState {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((settle) => { resolve = settle; });
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
   return { promise, resolve };
 }
 function fixture(overrides: Partial<typeof api>, patch: Partial<AppState> = {}) {
   let state = { ...initialAppState(), selectedMachine: machine, selectedSession: session, ...patch };
-  const controller = new AuthController(() => state, (update) => { state = { ...state, ...update }; }, () => undefined, {
-    api: { ...api, status: () => Promise.resolve({ sessionId: session.id, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 }), ...overrides },
-  });
+  const controller = new AuthController(
+    () => state,
+    (update) => {
+      state = { ...state, ...update };
+    },
+    () => undefined,
+    {
+      api: {
+        ...api,
+        status: () =>
+          Promise.resolve({
+            sessionId: session.id,
+            isStreaming: false,
+            isCompacting: false,
+            isBashRunning: false,
+            pendingMessageCount: 0,
+            queuedMessages: [],
+            tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+            cost: 0,
+          }),
+        ...overrides,
+      },
+    },
+  );
   controllers.push(controller);
-  return { controller, state: () => state, setState: (update: Partial<AppState>) => { state = { ...state, ...update }; } };
+  return {
+    controller,
+    state: () => state,
+    setState: (update: Partial<AppState>) => {
+      state = { ...state, ...update };
+    },
+  };
 }
-async function tick() { poll?.(); await Promise.resolve(); await Promise.resolve(); }
+async function tick() {
+  poll?.();
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe("unified MCP auth controller", () => {
   it("uses the captured machine/session and shared modal through selection, input and command completion", async () => {
     const pending = deferred<OAuthFlowState>();
     const start = vi.fn(() => pending.promise);
-    const respond = vi.fn<typeof api.respondMcpAuthFlow>()
-      .mockResolvedValueOnce(flow({ auth: { url: "https://auth.example/authorize" }, prompt: { requestId: "redirect", message: "Paste redirect URL", promptType: "manual_code" } }))
+    const respond = vi
+      .fn<typeof api.respondMcpAuthFlow>()
+      .mockResolvedValueOnce(
+        flow({ auth: { url: "https://auth.example/authorize" }, prompt: { requestId: "redirect", message: "Paste redirect URL", promptType: "manual_code" } }),
+      )
       .mockResolvedValueOnce(flow({ status: "complete", progress: ["Signed in to MCP server."] }));
     const { controller, state, setState } = fixture({ startMcpAuth: start, respondMcpAuthFlow: respond });
     const starting = controller.openMcpAuth("login");
@@ -61,7 +103,8 @@ describe("unified MCP auth controller", () => {
 
   it("polls the MCP endpoint and removes a callback prompt without cancelling the operation", async () => {
     const prompt = { requestId: "redirect", message: "Paste URL", promptType: "manual_code" as const };
-    const read = vi.fn<typeof api.mcpAuthFlow>()
+    const read = vi
+      .fn<typeof api.mcpAuthFlow>()
       .mockResolvedValueOnce(flow({ prompt }))
       .mockResolvedValueOnce(flow())
       .mockResolvedValueOnce(flow({ status: "complete", progress: ["Pi finished"] }));
@@ -81,7 +124,8 @@ describe("unified MCP auth controller", () => {
 
   it("keeps cancellation visible, ignores pre-cancel polls, and waits for Pi to finish", async () => {
     const oldRead = deferred<OAuthFlowState>();
-    const read = vi.fn<typeof api.mcpAuthFlow>()
+    const read = vi
+      .fn<typeof api.mcpAuthFlow>()
       .mockReturnValueOnce(oldRead.promise)
       .mockResolvedValueOnce(flow({ status: "complete", cancelRequested: true, progress: ["Pi finished"] }));
     const cancel = vi.fn(() => Promise.resolve(flow({ cancelRequested: true })));
@@ -92,7 +136,8 @@ describe("unified MCP auth controller", () => {
     expect(cancel).toHaveBeenCalledWith("mcp-flow", machine.id);
     expect(state().authDialog).toMatchObject({ flow: { status: "running", cancelRequested: true } });
     oldRead.resolve(flow());
-    await Promise.resolve(); await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(state().authDialog).toMatchObject({ flow: { cancelRequested: true } });
     await tick();
     expect(state().authDialog).toMatchObject({ flow: { status: "complete", cancelRequested: true } });
@@ -117,7 +162,10 @@ describe("unified MCP auth controller", () => {
   });
 
   it("allows retrying cancellation after a transport failure", async () => {
-    const cancel = vi.fn<typeof api.cancelMcpAuthFlow>().mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce(flow({ cancelRequested: true }));
+    const cancel = vi
+      .fn<typeof api.cancelMcpAuthFlow>()
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValueOnce(flow({ cancelRequested: true }));
     const { controller, state } = fixture({ startMcpAuth: () => Promise.resolve(flow()), cancelMcpAuthFlow: cancel });
     await controller.openMcpAuth("login");
     await controller.cancelOAuth();

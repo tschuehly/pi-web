@@ -4,18 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ModelRuntime } from "../../piSdk.js";
 import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import {
-  bootstrapAndFreezeGlobalExtensionProviders,
-  type GlobalProviderBootstrapLogger,
-} from "./globalProviderPolicy.js";
+import { bootstrapAndFreezeGlobalExtensionProviders, type GlobalProviderBootstrapLogger } from "./globalProviderPolicy.js";
 import { createPiSessionManagerGateway } from "./piSessionManagerGateway.js";
 import { PiSessionService, type PiSessionRef } from "./piSessionService.js";
-import {
-  CapturingSessionEventHub,
-  createTestModelRuntime,
-  TEST_MODEL_ID,
-  TEST_MODEL_PROVIDER,
-} from "./piSessionService.testSupport.js";
+import { CapturingSessionEventHub, createTestModelRuntime, TEST_MODEL_ID, TEST_MODEL_PROVIDER } from "./piSessionService.testSupport.js";
 
 /**
  * Acceptance coverage for the exact sessiond lifecycle: global extensions are
@@ -61,15 +53,17 @@ function providerConfig(providerId: string, variant = "baseline"): Record<string
     baseUrl: providerBaseUrl(providerId, variant),
     apiKey: `sk-${providerId}-${variant}-secret`,
     api: "openai-completions",
-    models: [{
-      id: modelId(providerId, variant),
-      name: `${providerId} ${variant} model`,
-      reasoning: false,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 1_000,
-      maxTokens: 100,
-    }],
+    models: [
+      {
+        id: modelId(providerId, variant),
+        name: `${providerId} ${variant} model`,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1_000,
+        maxTokens: 100,
+      },
+    ],
   };
 }
 
@@ -83,15 +77,17 @@ function providerRegistrationSource(providerId: string, variant = "baseline"): s
  */
 function catalogRefreshSource(providerId: string, refreshedModelId: string, variant = "baseline"): string {
   const config = providerConfig(providerId, variant);
-  const models = [{
-    id: refreshedModelId,
-    name: `${providerId} refreshed model`,
-    reasoning: false,
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 1_000,
-    maxTokens: 100,
-  }];
+  const models = [
+    {
+      id: refreshedModelId,
+      name: `${providerId} refreshed model`,
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_000,
+      maxTokens: 100,
+    },
+  ];
   return `pi.registerProvider(${JSON.stringify(providerId)}, ${JSON.stringify({ ...config, models })});`;
 }
 
@@ -147,9 +143,15 @@ function capturingLogger(): { entries: LogEntry[]; logger: GlobalProviderBootstr
   return {
     entries,
     logger: {
-      error: (details, message) => { record("error", details, message); },
-      info: (details, message) => { record("info", details, message); },
-      warn: (details, message) => { record("warn", details, message); },
+      error: (details, message) => {
+        record("error", details, message);
+      },
+      info: (details, message) => {
+        record("info", details, message);
+      },
+      warn: (details, message) => {
+        record("warn", details, message);
+      },
     },
   };
 }
@@ -158,23 +160,17 @@ function ignoredMutationEntries(entries: readonly LogEntry[]): LogEntry[] {
   return entries.filter((entry) => entry.message === IGNORED_MUTATION_MESSAGE);
 }
 
-function expectIgnoredMutations(
-  entries: readonly LogEntry[],
-  expected: readonly { operation: string; providerId: string }[],
-): void {
+function expectIgnoredMutations(entries: readonly LogEntry[], expected: readonly { operation: string; providerId: string }[]): void {
   const ignored = ignoredMutationEntries(entries);
   expect(ignored).toHaveLength(expected.length);
-  expect(ignored.map(({ details }) => ({ operation: details["operation"], providerId: details["providerId"] })))
-    .toEqual(expect.arrayContaining([...expected]));
+  expect(ignored.map(({ details }) => ({ operation: details["operation"], providerId: details["providerId"] }))).toEqual(expect.arrayContaining([...expected]));
   for (const { details } of ignored) {
     expect(details["context"]).toBe("global-provider-bootstrap");
     expect(details["code"]).toBe("PROVIDER_MUTATION_IGNORED");
     expect(details["reason"]).toBeTypeOf("string");
     expect(details["guidance"]).toEqual(expect.stringContaining("manually restart the session daemon when safe"));
   }
-  const operationProviderKeys = ignored.map((entry) => JSON.stringify([
-    entry.details["operation"], entry.details["providerId"], entry.details["reason"],
-  ]));
+  const operationProviderKeys = ignored.map((entry) => JSON.stringify([entry.details["operation"], entry.details["providerId"], entry.details["reason"]]));
   expect(new Set(operationProviderKeys).size).toBe(ignored.length);
 }
 
@@ -210,13 +206,13 @@ async function projectWithExtension(source: string): Promise<string> {
 }
 
 async function policyHarness(options: { runtime?: ModelRuntime; agentDir?: string } = {}): Promise<PolicyHarness> {
-  const agentDir = options.agentDir ?? await tempDir("pi-web-policy-agent-");
+  const agentDir = options.agentDir ?? (await tempDir("pi-web-policy-agent-"));
   // Isolate Pi's per-user resource discovery (~/.agents/skills et al.) so the
   // harness sees only extensions written into its explicit agent/project dirs.
   vi.stubEnv("HOME", await tempDir("pi-web-policy-home-"));
   // The built-in MCP extension reads mcp.json from Pi's agent directory.
   vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
-  const runtime = options.runtime ?? await createTestModelRuntime();
+  const runtime = options.runtime ?? (await createTestModelRuntime());
   const { entries, logger } = capturingLogger();
 
   await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, logger);
@@ -282,12 +278,13 @@ describe("immutable global provider bootstrap acceptance", () => {
     const second = { id: (await service.start(secondCwd)).id, cwd: secondCwd };
     expect(first.id).not.toBe(second.id);
 
-    const errorMessages = (ref: PiSessionRef): string[] => events.sessionEvents.flatMap(({ sessionId, event }) =>
-      sessionId === ref.id && event.type === "session.error" ? [event.message] : []);
+    const errorMessages = (ref: PiSessionRef): string[] =>
+      events.sessionEvents.flatMap(({ sessionId, event }) => (sessionId === ref.id && event.type === "session.error" ? [event.message] : []));
     for (const ref of [first, second]) {
       const warnings = (await service.status(ref)).warnings ?? [];
-      expect(warnings.filter((warning) => warning.severity === "error").map((warning) => warning.message))
-        .toContainEqual(expect.stringContaining("PI WEB does not support registerVirtualModel()"));
+      expect(warnings.filter((warning) => warning.severity === "error").map((warning) => warning.message)).toContainEqual(
+        expect.stringContaining("PI WEB does not support registerVirtualModel()"),
+      );
       expect(errorMessages(ref)).toContainEqual(expect.stringContaining("select a physical model instead"));
       await expect(service.setModel(ref, "shared-router", "auto")).rejects.toThrow(/not found/i);
     }
@@ -307,8 +304,7 @@ describe("immutable global provider bootstrap acceptance", () => {
 
     const errorsBeforeDisposal = errorMessages(first).length;
     await service.stop(first);
-    expect(errorMessages(first).slice(errorsBeforeDisposal))
-      .toContainEqual(expect.stringContaining("PI WEB does not support unregisterVirtualModel()"));
+    expect(errorMessages(first).slice(errorsBeforeDisposal)).toContainEqual(expect.stringContaining("PI WEB does not support unregisterVirtualModel()"));
     expect(errorMessages(second)).toEqual(secondErrors);
     expect(await service.availableModels(second)).toEqual(secondCatalog);
     expect((await service.status(second)).model).toEqual(secondModel);
@@ -352,13 +348,13 @@ describe("immutable global provider bootstrap acceptance", () => {
       baseUrl: providerBaseUrl("global-native", "baseline"),
     });
     const available = await service.availableModels(ref);
-    expect(available).toEqual(expect.arrayContaining([
-      expect.objectContaining({ provider: "global-config", id: modelId("global-config", "baseline") }),
-      expect.objectContaining({ provider: "global-native", id: modelId("global-native", "baseline") }),
-    ]));
-    expectIgnoredMutations(logEntries, [
-      { operation: "registerNativeProvider", providerId: "global-native" },
-    ]);
+    expect(available).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ provider: "global-config", id: modelId("global-config", "baseline") }),
+        expect.objectContaining({ provider: "global-native", id: modelId("global-native", "baseline") }),
+      ]),
+    );
+    expectIgnoredMutations(logEntries, [{ operation: "registerNativeProvider", providerId: "global-native" }]);
     expect(ignoredMutationEntries(logEntries).every((entry) => entry.level === "info")).toBe(true);
     await expectNoProviderMutationFeedback(service, ref);
   });
@@ -468,9 +464,7 @@ describe("immutable global provider bootstrap acceptance", () => {
       baseUrl: providerBaseUrl(providerId, "baseline"),
       apiKey: `sk-${providerId}-baseline-secret`,
     });
-    expect(await service.availableModels(ref)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ provider: providerId, id: refreshedModelId }),
-    ]));
+    expect(await service.availableModels(ref)).toEqual(expect.arrayContaining([expect.objectContaining({ provider: providerId, id: refreshedModelId })]));
     // The unchanged startup replay is a silent no-op, not a diagnostic.
     expectIgnoredMutations(logEntries, []);
     expect(logEntries).toContainEqual({
@@ -509,9 +503,7 @@ describe("immutable global provider bootstrap acceptance", () => {
     });
     expect(runtime.getModel(providerId, modelId(providerId, "startup"))).toBeDefined();
     expect(runtime.getModel(providerId, modelId(providerId, "late-refresh-secret"))).toBeUndefined();
-    expectIgnoredMutations(logEntries, [
-      { operation: "registerProvider", providerId },
-    ]);
+    expectIgnoredMutations(logEntries, [{ operation: "registerProvider", providerId }]);
     expect(JSON.stringify(ignoredMutationEntries(logEntries))).not.toContain("late-refresh-secret");
     await expectNoProviderMutationFeedback(service, ref);
   });
@@ -575,14 +567,17 @@ describe("immutable global provider bootstrap acceptance", () => {
     });
     const { service, logEntries, events } = await policyHarness({ runtime, agentDir });
     expect(runtime.getRegisteredProviderIds()).toEqual([]);
-    await writeAgentExtension(agentDir, `
+    await writeAgentExtension(
+      agentDir,
+      `
       export default function (pi) {
         pi.registerProvider(${JSON.stringify(providerId)}, {
           api: "openai-completions",
           streamSimple() { throw new Error("late-stream-secret"); }
         });
       }
-    `);
+    `,
+    );
     const cwd = await tempDir("pi-web-policy-project-");
     const first = { id: (await service.start(cwd)).id, cwd };
     const second = { id: (await service.start(cwd)).id, cwd };
@@ -637,7 +632,8 @@ describe("immutable global provider bootstrap acceptance", () => {
     expect(runtime.getRegisteredProviderConfig(providerId)?.streamSimple).toBe(baselineStream);
     expectIgnoredMutations(logEntries, [{ operation: "registerProvider", providerId }]);
     expect(ignoredMutationEntries(logEntries)[0]).toMatchObject({
-      level: "info", details: { reason: "implementation-unverified" },
+      level: "info",
+      details: { reason: "implementation-unverified" },
     });
     expect(logEntries.filter((entry) => entry.level === "warn" || entry.level === "error")).toEqual([]);
     await expectNoProviderMutationFeedback(service, ref);
@@ -645,9 +641,12 @@ describe("immutable global provider bootstrap acceptance", () => {
 
   it("leaves project-level models.json behavior unchanged", async () => {
     const agentDir = await tempDir("pi-web-policy-agent-");
-    await writeFile(join(agentDir, "models.json"), JSON.stringify({
-      providers: { "global-acme": providerConfig("global-acme") },
-    }));
+    await writeFile(
+      join(agentDir, "models.json"),
+      JSON.stringify({
+        providers: { "global-acme": providerConfig("global-acme") },
+      }),
+    );
     const runtime = await ModelRuntime.create({
       credentials: new InMemoryCredentialStore(),
       modelsPath: join(agentDir, "models.json"),
@@ -656,9 +655,12 @@ describe("immutable global provider bootstrap acceptance", () => {
     const { service } = await policyHarness({ runtime, agentDir });
     const cwd = await tempDir("pi-web-policy-project-");
     await mkdir(join(cwd, ".pi"), { recursive: true });
-    await writeFile(join(cwd, ".pi", "models.json"), JSON.stringify({
-      providers: { "project-acme": providerConfig("project-acme") },
-    }));
+    await writeFile(
+      join(cwd, ".pi", "models.json"),
+      JSON.stringify({
+        providers: { "project-acme": providerConfig("project-acme") },
+      }),
+    );
 
     const session = await service.start(cwd);
     const ref = { id: session.id, cwd };

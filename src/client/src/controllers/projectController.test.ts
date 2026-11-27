@@ -16,7 +16,9 @@ function workspace(projectId: string, path: string): Workspace {
 describe("ProjectController", () => {
   it("reports project loading failures under the selected machine", async () => {
     let state: AppState = { ...initialAppState(), error: "A global failure" };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const failure = new Error("Projects unavailable");
     const controller = new ProjectController(
       () => state,
@@ -41,7 +43,9 @@ describe("ProjectController", () => {
 
   it("reports project close failures under that project without overwriting a global error", async () => {
     let state: AppState = { ...initialAppState(), error: "A global failure" };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const failure = new Error("Project is busy");
     const controller = new ProjectController(
       () => state,
@@ -66,7 +70,9 @@ describe("ProjectController", () => {
 
   it("reports a project creation failure under the selected machine", async () => {
     let state: AppState = { ...initialAppState(), error: "A global failure" };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const failure = new Error("Project path is invalid");
     const controller = new ProjectController(
       () => state,
@@ -93,7 +99,9 @@ describe("ProjectController", () => {
     const addedProject = project("added", "/added");
     const addedWorkspace = workspace(addedProject.id, addedProject.path);
     let state: AppState = { ...initialAppState() };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const failure = new Error("Trust write failed");
     const selectProject = vi.fn(() => {
       state = { ...state, selectedProject: addedProject, workspaces: [addedWorkspace] };
@@ -132,7 +140,9 @@ describe("ProjectController", () => {
     };
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -162,11 +172,17 @@ describe("ProjectController", () => {
       selectedProject: otherProject,
     };
     let resolveClose: (() => void) | undefined;
-    const closeRequest = new Promise<{ closed: true }>((resolve) => { resolveClose = () => { resolve({ closed: true }); }; });
+    const closeRequest = new Promise<{ closed: true }>((resolve) => {
+      resolveClose = () => {
+        resolve({ closed: true });
+      };
+    });
     const selectedAtNavigation: string[] = [];
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -205,7 +221,9 @@ describe("ProjectController", () => {
     });
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject, forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -230,7 +248,9 @@ describe("ProjectController", () => {
     let navigatedProject: string | undefined;
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -268,7 +288,9 @@ describe("ProjectController", () => {
     });
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject, forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -293,7 +315,9 @@ describe("ProjectController", () => {
     const setWorkspaceTrust = vi.fn();
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -325,7 +349,9 @@ describe("ProjectController", () => {
     const setWorkspaceTrust = vi.fn();
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -356,7 +382,9 @@ describe("ProjectController", () => {
     });
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject, forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
@@ -380,10 +408,17 @@ describe("ProjectController", () => {
     const mainWorkspace = { ...workspace(addedProject.id, "/server-resolved"), id: "main-id" };
     let state: AppState = { ...initialAppState(), projectDialogOpen: true };
     let release!: () => void;
-    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let started!: () => void;
-    const inFlight = new Promise<void>((resolve) => { started = resolve; });
-    const pause = async () => { started(); await pending; };
+    const inFlight = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const pause = async () => {
+      started();
+      await pending;
+    };
     const setWorkspaceTrust = vi.fn();
     const workspaces = vi.fn(async () => {
       if (phase === "workspace lookup") await pause();
@@ -392,11 +427,16 @@ describe("ProjectController", () => {
     const navigateToProject = vi.fn();
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: {
-          projects: vi.fn(), closeProject: vi.fn(), workspaces, setWorkspaceTrust,
+          projects: vi.fn(),
+          closeProject: vi.fn(),
+          workspaces,
+          setWorkspaceTrust,
           addProject: async () => {
             if (phase === "creation") await pause();
             return addedProject;
@@ -433,13 +473,16 @@ describe("ProjectController", () => {
     let state: AppState = { ...initialAppState(), selectedProject: unrelatedProject, workspaces: [unrelatedWorkspace] };
     const failure = new Error(`Trust ${failureKind} failed`);
     const setWorkspaceTrust = vi.fn().mockRejectedValue(failure);
-    const workspaces = failureKind === "lookup"
-      ? vi.fn().mockRejectedValue(failure)
-      : vi.fn().mockResolvedValue(failureKind === "missing main" ? [unrelatedWorkspace] : [workspace(addedProject.id, addedProject.path)]);
+    const workspaces =
+      failureKind === "lookup"
+        ? vi.fn().mockRejectedValue(failure)
+        : vi.fn().mockResolvedValue(failureKind === "missing main" ? [unrelatedWorkspace] : [workspace(addedProject.id, addedProject.path)]);
     const navigateToProject = vi.fn();
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject: vi.fn(), clearSelection: vi.fn() },
       {
         api: { projects: vi.fn(), closeProject: vi.fn(), addProject: vi.fn().mockResolvedValue(addedProject), workspaces, setWorkspaceTrust },
@@ -450,9 +493,7 @@ describe("ProjectController", () => {
     await controller.addProject("/added", undefined, { trusted: false, changed: true });
 
     const message = state.browserErrors[browserErrorScopeKey(projectBrowserErrorScope("local", addedProject.id))]?.message;
-    expect(message).toBe(failureKind === "missing main"
-      ? "Error: Cannot save trust choice for project added: main workspace unavailable"
-      : String(failure));
+    expect(message).toBe(failureKind === "missing main" ? "Error: Cannot save trust choice for project added: main workspace unavailable" : String(failure));
     expect(navigateToProject).not.toHaveBeenCalled();
     expect(state.selectedProject).toBe(unrelatedProject);
     expect(state.workspaces).toEqual([unrelatedWorkspace]);
@@ -479,10 +520,14 @@ describe("ProjectController", () => {
         workspacesByProjectId: Object.fromEntries(Object.entries(state.workspacesByProjectId).filter(([id]) => id !== projectId)),
       };
     });
-    const clearSelection = vi.fn(() => { events.push("clear"); });
+    const clearSelection = vi.fn(() => {
+      events.push("clear");
+    });
     const controller = new ProjectController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       { selectProject: vi.fn(), forgetProject, clearSelection },
       {
         api: {

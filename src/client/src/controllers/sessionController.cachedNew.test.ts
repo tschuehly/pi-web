@@ -4,7 +4,19 @@ import { isCachedNewSessionInfo, loadCachedNewSessions, markCachedNewSessionInfo
 import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { clearStagedAttachments, loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { SessionController } from "./sessionController";
-import { defaultApi, emptyPage, FakeSocket, MemoryStorage, oldSession, replacementSession, sessionKey, sessionLookupId, status, workspace, type AppState } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  emptyPage,
+  FakeSocket,
+  MemoryStorage,
+  oldSession,
+  replacementSession,
+  sessionKey,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+} from "./sessionController.testSupport";
 
 describe("SessionController cached-new sessions", () => {
   it("keeps live message count updates when a cached new session becomes persisted", async () => {
@@ -13,11 +25,18 @@ describe("SessionController cached-new sessions", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: cachedSession, sessions: [cachedSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      prompt: () => new Promise<{ accepted: true }>((resolve) => { resolvePrompt = () => { resolve({ accepted: true }); }; }),
+      prompt: () =>
+        new Promise<{ accepted: true }>((resolve) => {
+          resolvePrompt = () => {
+            resolve({ accepted: true });
+          };
+        }),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -51,21 +70,31 @@ describe("SessionController cached-new sessions", () => {
     };
     const api: typeof defaultApi = {
       ...defaultApi,
-      stop: (session) => { stoppedIds.push(sessionLookupId(session)); return Promise.resolve({ stopped: true }); },
+      stop: (session) => {
+        stoppedIds.push(sessionLookupId(session));
+        return Promise.resolve({ stopped: true });
+      },
       transcriptSnapshot: (session) => Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null }),
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
     );
     saveDraft(sessionKey(transientSession.id), "discard me");
     const discardedAttachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    saveStagedAttachments(sessionKey(transientSession.id), { attachments: [discardedAttachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
+    saveStagedAttachments(sessionKey(transientSession.id), {
+      attachments: [discardedAttachment],
+      nextImageReference: 1,
+      pendingImageReferences: [],
+      generation: 0,
+    });
 
     await controller.deleteCachedNewSession(transientSession);
 
@@ -79,58 +108,65 @@ describe("SessionController cached-new sessions", () => {
     expect(state.selectedSession?.id).toBe(nextSession.id);
   });
 
-  it.each(["before response", "after response"] as const)("recreates missing browser-cached new sessions without duplicates and moves their draft (broadcast %s)", async (broadcastTiming) => {
-    const storage = new MemoryStorage();
-    Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
-    rememberCachedNewSession(oldSession);
-    saveDraft(sessionKey(oldSession.id), "draft text");
-    const carriedAttachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
-    saveStagedAttachments(sessionKey(oldSession.id), { attachments: [carriedAttachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
+  it.each(["before response", "after response"] as const)(
+    "recreates missing browser-cached new sessions without duplicates and moves their draft (broadcast %s)",
+    async (broadcastTiming) => {
+      const storage = new MemoryStorage();
+      Object.defineProperty(globalThis, "localStorage", { value: storage, configurable: true });
+      rememberCachedNewSession(oldSession);
+      saveDraft(sessionKey(oldSession.id), "draft text");
+      const carriedAttachment: PendingAttachment = { id: "attachment-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=", size: 5 };
+      saveStagedAttachments(sessionKey(oldSession.id), { attachments: [carriedAttachment], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
 
-    const unrelatedSession = { ...oldSession, id: "unrelated-session", path: "/tmp/unrelated-session.jsonl" };
-    let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [markCachedNewSessionInfo(oldSession), unrelatedSession] };
-    const urlUpdates: ({ replace?: boolean | undefined } | undefined)[] = [];
-    const socket = new FakeSocket();
-    const api: typeof defaultApi = {
-      ...defaultApi,
-      startSession: () => {
-        if (broadcastTiming === "before response") controller.applyGlobalEvent({ type: "session.created", session: replacementSession });
-        return Promise.resolve(replacementSession);
-      },
-      transcriptSnapshot: (session) => {
-        if (sessionLookupId(session) === oldSession.id) return Promise.reject(new Error("Session not found"));
-        return Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null });
-      },
-      thinkingLevels: () => Promise.resolve({ levels: [] }),
-    };
-    const controller = new SessionController(
-      () => state,
-      (patch) => { state = { ...state, ...patch }; },
-      (options) => { urlUpdates.push(options); },
-      undefined,
-      { api, socket },
-    );
+      const unrelatedSession = { ...oldSession, id: "unrelated-session", path: "/tmp/unrelated-session.jsonl" };
+      let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [markCachedNewSessionInfo(oldSession), unrelatedSession] };
+      const urlUpdates: ({ replace?: boolean | undefined } | undefined)[] = [];
+      const socket = new FakeSocket();
+      const api: typeof defaultApi = {
+        ...defaultApi,
+        startSession: () => {
+          if (broadcastTiming === "before response") controller.applyGlobalEvent({ type: "session.created", session: replacementSession });
+          return Promise.resolve(replacementSession);
+        },
+        transcriptSnapshot: (session) => {
+          if (sessionLookupId(session) === oldSession.id) return Promise.reject(new Error("Session not found"));
+          return Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null });
+        },
+        thinkingLevels: () => Promise.resolve({ levels: [] }),
+      };
+      const controller = new SessionController(
+        () => state,
+        (patch) => {
+          state = { ...state, ...patch };
+        },
+        (options) => {
+          urlUpdates.push(options);
+        },
+        undefined,
+        { api, socket },
+      );
 
-    await controller.selectSession(markCachedNewSessionInfo(oldSession), { updateUrl: false });
-    if (broadcastTiming === "after response") controller.applyGlobalEvent({ type: "session.created", session: replacementSession });
+      await controller.selectSession(markCachedNewSessionInfo(oldSession), { updateUrl: false });
+      if (broadcastTiming === "after response") controller.applyGlobalEvent({ type: "session.created", session: replacementSession });
 
-    expect(state.selectedSession?.id).toBe(replacementSession.id);
-    expect(state.sessions.map((session) => session.id)).toEqual([replacementSession.id, unrelatedSession.id]);
-    expect(socket.connectedSessionIds).toEqual([oldSession.id, replacementSession.id]);
-    expect(loadDraft(sessionKey(oldSession.id))).toBe("");
-    expect(loadDraft(sessionKey(replacementSession.id))).toBe("draft text");
-    expect(loadStagedAttachments(sessionKey(oldSession.id))).toEqual([]);
-    expect(loadStagedAttachments(sessionKey(replacementSession.id))).toEqual([carriedAttachment]);
-    expect(loadCachedNewSessions().map((session) => session.id)).toEqual([replacementSession.id]);
-    expect(urlUpdates).toEqual([{ replace: true }]);
+      expect(state.selectedSession?.id).toBe(replacementSession.id);
+      expect(state.sessions.map((session) => session.id)).toEqual([replacementSession.id, unrelatedSession.id]);
+      expect(socket.connectedSessionIds).toEqual([oldSession.id, replacementSession.id]);
+      expect(loadDraft(sessionKey(oldSession.id))).toBe("");
+      expect(loadDraft(sessionKey(replacementSession.id))).toBe("draft text");
+      expect(loadStagedAttachments(sessionKey(oldSession.id))).toEqual([]);
+      expect(loadStagedAttachments(sessionKey(replacementSession.id))).toEqual([carriedAttachment]);
+      expect(loadCachedNewSessions().map((session) => session.id)).toEqual([replacementSession.id]);
+      expect(urlUpdates).toEqual([{ replace: true }]);
 
-    // `oldSession`/`replacementSession` are shared fixture ids reused by other
-    // tests in this file; the staged-attachment store is an in-memory module
-    // singleton (unlike localStorage-backed drafts, which each test resets by
-    // swapping in a fresh MemoryStorage), so clear explicitly to avoid leaking
-    // this attachment into a later test that reuses the same id.
-    clearStagedAttachments(sessionKey(replacementSession.id));
-  });
+      // `oldSession`/`replacementSession` are shared fixture ids reused by other
+      // tests in this file; the staged-attachment store is an in-memory module
+      // singleton (unlike localStorage-backed drafts, which each test resets by
+      // swapping in a fresh MemoryStorage), so clear explicitly to avoid leaking
+      // this attachment into a later test that reuses the same id.
+      clearStagedAttachments(sessionKey(replacementSession.id));
+    },
+  );
 
   it.each([false, true])("reconciles rejected cached-session navigation without replacing newer selection (newer: %s)", async (selectNewer) => {
     const storage = new MemoryStorage();
@@ -145,15 +181,20 @@ describe("SessionController cached-new sessions", () => {
     const api: typeof defaultApi = {
       ...defaultApi,
       startSession: () => Promise.resolve(replacementSession),
-      transcriptSnapshot: (session) => sessionLookupId(session) === oldSession.id
-        ? Promise.reject(new Error("Session not found"))
-        : Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null }),
+      transcriptSnapshot: (session) =>
+        sessionLookupId(session) === oldSession.id
+          ? Promise.reject(new Error("Session not found"))
+          : Promise.resolve({ page: emptyPage, status: status(sessionLookupId(session)), seq: 0, partial: null }),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
-      (options) => { urlUpdates.push(options); },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      (options) => {
+        urlUpdates.push(options);
+      },
       undefined,
       {
         api,
@@ -193,7 +234,9 @@ describe("SessionController cached-new sessions", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -236,8 +279,12 @@ describe("SessionController cached-new sessions", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
-      (options) => { urlUpdates.push(options); },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      (options) => {
+        urlUpdates.push(options);
+      },
       undefined,
       { api, socket: new FakeSocket() },
     );

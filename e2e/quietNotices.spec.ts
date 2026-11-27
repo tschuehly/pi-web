@@ -14,7 +14,9 @@ async function openWindow(page: Page, layout: "tabs" | "grid"): Promise<void> {
   const shown = layout === "grid" ? E2E_NOTICE_CHATS : E2E_NOTICE_CHATS.slice(0, 1);
   const chats = shown.map((chat) => ({ sessionId: chat.id, title: chat.question, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream }));
   const store = { n: { name: "Window 1", layout, maximized: false, focused: FOCUSED, lastActive: {}, chats } };
-  await page.addInitScript((value) => { if (localStorage.getItem("pi-workbench.windows.v1") === null) localStorage.setItem("pi-workbench.windows.v1", value); }, JSON.stringify(store));
+  await page.addInitScript((value) => {
+    if (localStorage.getItem("pi-workbench.windows.v1") === null) localStorage.setItem("pi-workbench.windows.v1", value);
+  }, JSON.stringify(store));
   const target = new URL(url);
   target.searchParams.set("win", "n");
   target.searchParams.set("session", FOCUSED);
@@ -36,7 +38,7 @@ test("captures quiet notices in a Chat and a 3-tile Grid for review", async ({ b
       await page.waitForTimeout(800);
       await page.screenshot({ path: join(SHOTS ?? "", `${layout === "tabs" ? "chat" : "grid"}-${scheme}.png`) });
       const fold = transcript(page).locator("details.notice-fold > summary");
-      if (layout === "tabs" && await fold.count() === 1) {
+      if (layout === "tabs" && (await fold.count()) === 1) {
         await fold.click();
         await page.waitForTimeout(300);
         await page.screenshot({ path: join(SHOTS ?? "", `chat-${scheme}-expanded.png`) });
@@ -57,7 +59,10 @@ test("folds consecutive notices into one line, keeps a lone notice quiet and a f
   await expect(fold.locator(".notice").first()).toBeHidden();
   await fold.locator("> summary").click();
   await expect(fold.locator(".notice").first()).toContainText("Disk low: 9 GB free.");
-  await expect(transcript(page).locator(".notice:not(.notice-fold .notice)")).toHaveText(["#74 Comment on the hero: make the headline shorter.", /#75 Decision/u]);
+  await expect(transcript(page).locator(".notice:not(.notice-fold .notice)")).toHaveText([
+    "#74 Comment on the hero: make the headline shorter.",
+    /#75 Decision/u,
+  ]);
   await expect(transcript(page).locator("article.msg.system.error")).toContainText("Model response failed: rate limited, retry later");
 });
 
@@ -101,7 +106,10 @@ test("cards line up with message bars and one routine step needs no Activity fol
   await openWindow(page, "tabs");
   const card = transcript(page).locator(".background-bash-card").first();
   // The fixture's card sits in an earlier exchange; open it so both bars are laid out.
-  await card.evaluate((element) => { const history = element.closest("details"); if (history !== null && history !== element) history.open = true; });
+  await card.evaluate((element) => {
+    const history = element.closest("details");
+    if (history !== null && history !== element) history.open = true;
+  });
   await expect(card).toBeVisible();
   const [cardLeft, messageLeft] = await card.evaluate((element) => {
     // Under the Workbench rail the card's shell article draws the bar, as every block does.

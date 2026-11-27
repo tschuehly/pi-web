@@ -8,9 +8,7 @@ export interface EditReplacement {
   newText: string;
 }
 
-export type EditPreviewResult =
-  | { diff: string; firstChangedLine?: number }
-  | { error: string };
+export type EditPreviewResult = { diff: string; firstChangedLine?: number } | { error: string };
 
 export async function computeEditPreview(path: string, edits: EditReplacement[], cwd: string): Promise<EditPreviewResult> {
   const absolutePath = isAbsolute(path) ? path : resolve(cwd, path);
@@ -95,7 +93,9 @@ function applyEditsToNormalizedContent(normalizedContent: string, edits: EditRep
     const previous = matchedEdits[index - 1];
     const current = matchedEdits[index];
     if (previous !== undefined && current !== undefined && previous.matchIndex + previous.matchLength > current.matchIndex) {
-      throw new Error(`edits[${String(previous.editIndex)}] and edits[${String(current.editIndex)}] overlap in ${path}. Merge them into one edit or target disjoint regions.`);
+      throw new Error(
+        `edits[${String(previous.editIndex)}] and edits[${String(current.editIndex)}] overlap in ${path}. Merge them into one edit or target disjoint regions.`,
+      );
     }
   }
 
@@ -112,9 +112,23 @@ function applyEditsToNormalizedContent(normalizedContent: string, edits: EditRep
 function editError(kind: "missing" | "duplicate" | "empty" | "nochange", path: string, editIndex: number, totalEdits: number, occurrences?: number): Error {
   const prefix = totalEdits === 1 ? "" : `edits[${String(editIndex)}].`;
   if (kind === "empty") return new Error(totalEdits === 1 ? `oldText must not be empty in ${path}.` : `${prefix}oldText must not be empty in ${path}.`);
-  if (kind === "missing") return new Error(totalEdits === 1 ? `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.` : `Could not find edits[${String(editIndex)}] in ${path}. The oldText must match exactly including all whitespace and newlines.`);
-  if (kind === "duplicate") return new Error(totalEdits === 1 ? `Found ${String(occurrences)} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.` : `Found ${String(occurrences)} occurrences of edits[${String(editIndex)}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`);
-  return new Error(totalEdits === 1 ? `No changes made to ${path}. The replacement produced identical content.` : `No changes made to ${path}. The replacements produced identical content.`);
+  if (kind === "missing")
+    return new Error(
+      totalEdits === 1
+        ? `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`
+        : `Could not find edits[${String(editIndex)}] in ${path}. The oldText must match exactly including all whitespace and newlines.`,
+    );
+  if (kind === "duplicate")
+    return new Error(
+      totalEdits === 1
+        ? `Found ${String(occurrences)} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`
+        : `Found ${String(occurrences)} occurrences of edits[${String(editIndex)}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`,
+    );
+  return new Error(
+    totalEdits === 1
+      ? `No changes made to ${path}. The replacement produced identical content.`
+      : `No changes made to ${path}. The replacements produced identical content.`,
+  );
 }
 
 function generateDiffString(oldContent: string, newContent: string, contextLines = 4): { diff: string; firstChangedLine?: number } {
@@ -157,21 +171,45 @@ function generateDiffString(oldContent: string, newContent: string, contextLines
 
     if (hasLeadingChange && hasTrailingChange) {
       if (raw.length <= contextLines * 2) {
-        appendContextLines(output, raw, lineNumWidth, () => oldLineNum++, () => newLineNum++);
+        appendContextLines(
+          output,
+          raw,
+          lineNumWidth,
+          () => oldLineNum++,
+          () => newLineNum++,
+        );
       } else {
         const leadingLines = raw.slice(0, contextLines);
         const trailingLines = raw.slice(raw.length - contextLines);
         const skippedLines = raw.length - leadingLines.length - trailingLines.length;
-        appendContextLines(output, leadingLines, lineNumWidth, () => oldLineNum++, () => newLineNum++);
+        appendContextLines(
+          output,
+          leadingLines,
+          lineNumWidth,
+          () => oldLineNum++,
+          () => newLineNum++,
+        );
         output.push(` ${"".padStart(lineNumWidth, " ")} ...`);
         oldLineNum += skippedLines;
         newLineNum += skippedLines;
-        appendContextLines(output, trailingLines, lineNumWidth, () => oldLineNum++, () => newLineNum++);
+        appendContextLines(
+          output,
+          trailingLines,
+          lineNumWidth,
+          () => oldLineNum++,
+          () => newLineNum++,
+        );
       }
     } else if (hasLeadingChange) {
       const shownLines = raw.slice(0, contextLines);
       const skippedLines = raw.length - shownLines.length;
-      appendContextLines(output, shownLines, lineNumWidth, () => oldLineNum++, () => newLineNum++);
+      appendContextLines(
+        output,
+        shownLines,
+        lineNumWidth,
+        () => oldLineNum++,
+        () => newLineNum++,
+      );
       if (skippedLines > 0) {
         output.push(` ${"".padStart(lineNumWidth, " ")} ...`);
         oldLineNum += skippedLines;
@@ -184,7 +222,13 @@ function generateDiffString(oldContent: string, newContent: string, contextLines
         oldLineNum += skippedLines;
         newLineNum += skippedLines;
       }
-      appendContextLines(output, raw.slice(skippedLines), lineNumWidth, () => oldLineNum++, () => newLineNum++);
+      appendContextLines(
+        output,
+        raw.slice(skippedLines),
+        lineNumWidth,
+        () => oldLineNum++,
+        () => newLineNum++,
+      );
     } else {
       oldLineNum += raw.length;
       newLineNum += raw.length;

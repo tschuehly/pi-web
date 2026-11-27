@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { MachineClient } from "./machines/machineClient.js";
 import type { PiWebConfigResponse, PiWebConfigValues } from "../shared/apiTypes.js";
-import { appTestContext, configFromMachineConfigWriteBody, fakeRemoteClient, fullPiWebConfig, piWebConfigResponse, registerAppTestHooks, selectedMachinePiWebConfig } from "./app.testSupport.js";
+import {
+  appTestContext,
+  configFromMachineConfigWriteBody,
+  fakeRemoteClient,
+  fullPiWebConfig,
+  piWebConfigResponse,
+  registerAppTestHooks,
+  selectedMachinePiWebConfig,
+} from "./app.testSupport.js";
 
 registerAppTestHooks();
 
@@ -10,11 +18,17 @@ describe("buildApp machine routes", () => {
     const response = await appTestContext.app.inject({ method: "GET", url: "/api/machines" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ machines: [{ id: "local", name: "Local", kind: "local", createdAt: "1970-01-01T00:00:00.000Z", updatedAt: "1970-01-01T00:00:00.000Z" }] });
+    expect(response.json()).toEqual({
+      machines: [{ id: "local", name: "Local", kind: "local", createdAt: "1970-01-01T00:00:00.000Z", updatedAt: "1970-01-01T00:00:00.000Z" }],
+    });
   });
 
   it("adds remote machines without exposing tokens", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/", token: "secret" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/", token: "secret" },
+    });
 
     expect(addResponse.statusCode).toBe(200);
     expect(addResponse.json()).toMatchObject({ name: "Remote", kind: "remote", baseUrl: "https://remote.example.test" });
@@ -22,23 +36,28 @@ describe("buildApp machine routes", () => {
   });
 
   it("reports machine health for local and remote machines", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
-    const remote = addResponse.json<{ id: string }>();
-    const requestJson: MachineClient["requestJson"] = () => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: {
-        packageName: "@jmfederico/pi-web",
-        generatedAt: "2026-05-25T00:00:00.000Z",
-        components: {
-          web: { component: "web", label: "Remote Web", stale: false, available: true },
-          sessiond: { component: "sessiond", label: "Remote Sessiond", stale: false, available: true },
-        },
-        release: { packageName: "@jmfederico/pi-web", updateAvailable: false },
-        commands: { update: "", restart: "", restartSystemd: "", restartDev: "" },
-        messages: [],
-      },
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
     });
+    const remote = addResponse.json<{ id: string }>();
+    const requestJson: MachineClient["requestJson"] = () =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: {
+          packageName: "@jmfederico/pi-web",
+          generatedAt: "2026-05-25T00:00:00.000Z",
+          components: {
+            web: { component: "web", label: "Remote Web", stale: false, available: true },
+            sessiond: { component: "sessiond", label: "Remote Sessiond", stale: false, available: true },
+          },
+          release: { packageName: "@jmfederico/pi-web", updateAvailable: false },
+          commands: { update: "", restart: "", restartSystemd: "", restartDev: "" },
+          messages: [],
+        },
+      });
     appTestContext.remoteClient = fakeRemoteClient({ requestJson });
 
     const localHealth = await appTestContext.app.inject({ method: "GET", url: "/api/machines/local/health" });
@@ -51,31 +70,37 @@ describe("buildApp machine routes", () => {
   });
 
   it("reports effective machine runtime capabilities for remote machines", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const requestJson = vi.fn<MachineClient["requestJson"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: {
-        packageName: "@jmfederico/pi-web",
-        generatedAt: "2026-05-25T00:00:00.000Z",
-        components: {
-          web: { component: "web", label: "Remote Web", runtimeVersion: "1.0.0", available: true, capabilities: ["piPackages.manage", "future.capability"] },
-          sessiond: {
-            component: "sessiond",
-            label: "Remote Sessiond",
-            runtimeVersion: "1.0.0",
-            available: true,
-            capabilities: [],
-            activeAgentProfile: {
-              schemaVersion: 2,
-              dir: "/srv/remote-pi-state",
+    const requestJson = vi.fn<MachineClient["requestJson"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: {
+          packageName: "@jmfederico/pi-web",
+          generatedAt: "2026-05-25T00:00:00.000Z",
+          components: {
+            web: { component: "web", label: "Remote Web", runtimeVersion: "1.0.0", available: true, capabilities: ["piPackages.manage", "future.capability"] },
+            sessiond: {
+              component: "sessiond",
+              label: "Remote Sessiond",
+              runtimeVersion: "1.0.0",
+              available: true,
+              capabilities: [],
+              activeAgentProfile: {
+                schemaVersion: 2,
+                dir: "/srv/remote-pi-state",
+              },
             },
           },
+          capabilities: ["piPackages.manage", "future.capability"],
         },
-        capabilities: ["piPackages.manage", "future.capability"],
-      },
-    }));
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ requestJson });
 
     const runtime = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/runtime` });
@@ -94,13 +119,19 @@ describe("buildApp machine routes", () => {
   });
 
   it("filters remote selected-machine config reads to machine-safe keys", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const requestJson = vi.fn<MachineClient["requestJson"]>(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json", "set-cookie": "secret=1" },
-      body: piWebConfigResponse(fullPiWebConfig()),
-    }));
+    const requestJson = vi.fn<MachineClient["requestJson"]>(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json", "set-cookie": "secret=1" },
+        body: piWebConfigResponse(fullPiWebConfig()),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ requestJson });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/config` });
@@ -116,11 +147,16 @@ describe("buildApp machine routes", () => {
   });
 
   it("merges remote selected-machine config updates into the target machine config", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     let persistedConfig = fullPiWebConfig();
     const requestJson = vi.fn<MachineClient["requestJson"]>((method, _path, body) => {
-      if (method === "GET") return Promise.resolve({ statusCode: 200, headers: { "content-type": "application/json" }, body: piWebConfigResponse(persistedConfig) });
+      if (method === "GET")
+        return Promise.resolve({ statusCode: 200, headers: { "content-type": "application/json" }, body: piWebConfigResponse(persistedConfig) });
       persistedConfig = configFromMachineConfigWriteBody(body);
       return Promise.resolve({ statusCode: 200, headers: { "content-type": "application/json" }, body: piWebConfigResponse(persistedConfig) });
     });
@@ -129,7 +165,16 @@ describe("buildApp machine routes", () => {
     const response = await appTestContext.app.inject({
       method: "PUT",
       url: `/api/machines/${remote.id}/config`,
-      payload: { config: { plugins: { info: { enabled: false } }, pathAccess: { allowedPaths: ["/srv/remote"] }, uploads: { defaultFolder: "remote\\uploads" }, maxUploadBytes: 4096, spawnSessions: true, agent: { command: "remote-agent", dir: "/srv/remote-agent" } } },
+      payload: {
+        config: {
+          plugins: { info: { enabled: false } },
+          pathAccess: { allowedPaths: ["/srv/remote"] },
+          uploads: { defaultFolder: "remote\\uploads" },
+          maxUploadBytes: 4096,
+          spawnSessions: true,
+          agent: { command: "remote-agent", dir: "/srv/remote-agent" },
+        },
+      },
     });
 
     const expectedMerged: PiWebConfigValues = {
@@ -156,7 +201,11 @@ describe("buildApp machine routes", () => {
   });
 
   it("proxies session naming reads, updates, unrelated saves, and resets", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     let persistedConfig: PiWebConfigValues = { ...fullPiWebConfig(), sessionNaming: { model: "provider/model", maxTokens: 32 } };
     const requestJson = vi.fn<MachineClient["requestJson"]>((method, _path, body) => {
@@ -178,7 +227,11 @@ describe("buildApp machine routes", () => {
   });
 
   it("saves selected-machine config on a target with no agent profile configured", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const defaultProfileConfig = fullPiWebConfig();
     delete defaultProfileConfig.agent;
@@ -199,7 +252,11 @@ describe("buildApp machine routes", () => {
   });
 
   it("preserves foreign-platform agent paths across the federation transport", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const windowsAgent = { command: "C:\\tools\\pi.exe", dir: "C:\\agent-profiles\\work" };
     const requestJson = vi.fn<MachineClient["requestJson"]>((method, _path, body) => {
@@ -222,7 +279,11 @@ describe("buildApp machine routes", () => {
   });
 
   it("rejects unsafe remote selected-machine config keys before proxying", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const requestJson = vi.fn<MachineClient["requestJson"]>();
     appTestContext.remoteClient = fakeRemoteClient({ requestJson });

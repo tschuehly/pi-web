@@ -44,7 +44,9 @@ test("quotes selections from two messages inline and sends them with the reply",
   await expect(page.locator("prompt-editor .cm-content")).toContainText("> [msg e2e00001](#entry:e2e00001) Where");
   if (SHOTS !== undefined) await page.screenshot({ path: join(SHOTS, "reply-quotes-expanded.png") });
 
-  await page.locator("prompt-editor").evaluate((editor) => { (editor as HTMLElement & { focusInput(): void }).focusInput(); });
+  await page.locator("prompt-editor").evaluate((editor) => {
+    (editor as HTMLElement & { focusInput(): void }).focusInput();
+  });
   await page.keyboard.press("Enter");
   await expect.poll(() => sent).toMatchObject({ text: "> [msg e2e00001](#entry:e2e00001) Where\n\n> [msg e2e00002](#entry:e2e00002) They\n\nWhy there?" });
   await expect(quotes).toHaveCount(0);
@@ -56,7 +58,10 @@ test("keeps a long collapsed quote on one row in a narrow composer", async ({ pa
   await page.setViewportSize({ width: 420, height: 800 });
   await page.goto(url);
   await page.locator("prompt-editor").evaluate((editor) => {
-    (editor as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void }).insertReplyQuote({ entryId: "e2e00002", excerpt: "They are in the docs folder next to the install guide and the release plan" });
+    (editor as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void }).insertReplyQuote({
+      entryId: "e2e00002",
+      excerpt: "They are in the docs folder next to the install guide and the release plan",
+    });
   });
   const quote = page.locator("prompt-editor .cm-reply-quote");
   await expect(quote).toHaveAttribute("aria-expanded", "false");
@@ -71,7 +76,10 @@ test("puts text typed right of a collapsed quote on its own visible line", async
   await page.goto(url);
   const editor = page.locator("prompt-editor");
   await editor.evaluate((element) => {
-    (element as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void }).insertReplyQuote({ entryId: "e2e00002", excerpt: "They are in the docs folder next to the install guide and the release plan" });
+    (element as HTMLElement & { insertReplyQuote(quote: { entryId: string; excerpt: string }): void }).insertReplyQuote({
+      entryId: "e2e00002",
+      excerpt: "They are in the docs folder next to the install guide and the release plan",
+    });
   });
   const line = page.locator("prompt-editor .cm-line").first();
   const box = await line.boundingBox();
@@ -80,8 +88,9 @@ test("puts text typed right of a collapsed quote on its own visible line", async
   await page.keyboard.type("Typed");
   await expect(page.locator("prompt-editor .cm-content")).toContainText("Typed");
   await expect(page.locator("prompt-editor .cm-reply-quote")).toHaveAttribute("aria-expanded", "false");
-  expect(await editor.evaluate((element) => (element as HTMLElement & { view: { state: { doc: { toString(): string } } } }).view.state.doc.toString()))
-    .toBe("> [msg e2e00002](#entry:e2e00002) They are in the docs folder next to the install guide and the release plan\n\nTyped\n\n");
+  expect(await editor.evaluate((element) => (element as HTMLElement & { view: { state: { doc: { toString(): string } } } }).view.state.doc.toString())).toBe(
+    "> [msg e2e00002](#entry:e2e00002) They are in the docs folder next to the install guide and the release plan\n\nTyped\n\n",
+  );
 });
 
 test("formats the composer's Markdown like the Files editor next to a collapsed quote, in light and dark", async ({ page }) => {
@@ -111,7 +120,9 @@ test("formats the composer's Markdown like the Files editor next to a collapsed 
 test("places the Reply button at the selection under a larger interface scale", async ({ page }) => {
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (url === undefined) throw new Error("Isolated PI WEB was not started");
-  await page.addInitScript(() => { localStorage.setItem("pi-web-app-scale", "1.5"); });
+  await page.addInitScript(() => {
+    localStorage.setItem("pi-web-app-scale", "1.5");
+  });
   await page.goto(url);
   const line = page.locator('chat-view article[data-entry-id="e2e00002"] formatted-text p');
   await line.dblclick({ position: { x: 8, y: 6 } });

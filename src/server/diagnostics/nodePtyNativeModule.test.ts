@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  checkNodePtyNativeModule,
-  formatNodePtyNativeModuleCheck,
-  NODE_PTY_GLOBAL_REINSTALL_COMMAND,
-} from "./nodePtyNativeModule.js";
+import { checkNodePtyNativeModule, formatNodePtyNativeModuleCheck, NODE_PTY_GLOBAL_REINSTALL_COMMAND } from "./nodePtyNativeModule.js";
 
 describe("node-pty native module diagnostics", () => {
   it("passes when node-pty loads", () => {
@@ -18,7 +14,9 @@ describe("node-pty native module diagnostics", () => {
 
   it("reports the scoped global reinstall command when node-pty cannot load", () => {
     const check = checkNodePtyNativeModule({
-      load: () => { throw new Error("Failed to load native module: pty.node\nchecked build/Release"); },
+      load: () => {
+        throw new Error("Failed to load native module: pty.node\nchecked build/Release");
+      },
     });
 
     expect(check).toEqual({

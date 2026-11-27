@@ -11,7 +11,15 @@ import { WorkbenchChatPane } from "./WorkbenchChatPane";
 
 // Every Workbench Chat, focused or a Grid tile, is this pane: Edit/Revert and Recall replace the composer text, so they must
 // never silently overwrite an unsent draft and must lock the composer until the replacement lands.
-const session: SessionInfo = { id: "session-1", cwd: "/repo", path: "/repo/session.jsonl", created: "now", modified: "now", messageCount: 1, firstMessage: "Hello" };
+const session: SessionInfo = {
+  id: "session-1",
+  cwd: "/repo",
+  path: "/repo/session.jsonl",
+  created: "now",
+  modified: "now",
+  messageCount: 1,
+  firstMessage: "Hello",
+};
 const runtimes: WorkbenchChatSession[] = [];
 
 afterEach(() => {
@@ -28,7 +36,9 @@ it("asks before Edit & resend replaces an unsent draft, and leaves history alone
   const confirm = vi.fn(() => false);
   vi.stubGlobal("confirm", confirm);
   messageButton(pane, "Edit and resend").click();
-  await vi.waitFor(() => { expect(confirm).toHaveBeenCalledExactlyOnceWith("Going back will replace your unsent draft. Continue?"); });
+  await vi.waitFor(() => {
+    expect(confirm).toHaveBeenCalledExactlyOnceWith("Going back will replace your unsent draft. Continue?");
+  });
   expect(back).not.toHaveBeenCalled();
   expect(editor.view?.state.doc.toString()).toBe("unsent draft");
   expect(editor.disabled).toBe(false);
@@ -40,7 +50,9 @@ it("locks the composer while a confirmed Edit is pending and unlocks once the te
   const back = vi.spyOn(runtime.sessions, "actOnMessage").mockReturnValue(request.promise);
   vi.stubGlobal("confirm", () => true);
   messageButton(pane, "Edit and resend").click();
-  await vi.waitFor(() => { expect(back).toHaveBeenCalledWith("entry-1", "back"); });
+  await vi.waitFor(() => {
+    expect(back).toHaveBeenCalledWith("entry-1", "back");
+  });
   expect(editor.disabled).toBe(true);
   await pane.replacePromptEditorText({ machineId: "local", sessionId: session.id, text: "Hello" });
   await pane.updateComplete;
@@ -55,19 +67,26 @@ it("reverts to an assistant message without asking, since it keeps the draft", a
   const confirm = vi.fn(() => false);
   vi.stubGlobal("confirm", confirm);
   messageButton(pane, "Revert to here").click();
-  await vi.waitFor(() => { expect(back).toHaveBeenCalledWith("entry-1", "back"); });
+  await vi.waitFor(() => {
+    expect(back).toHaveBeenCalledWith("entry-1", "back");
+  });
   expect(confirm).not.toHaveBeenCalled();
 });
 
 it("offers queue Recall, Remove and kind toggle, confirming consequences and the unsent draft before Recall", async () => {
-  const queued: QueuedSessionMessage[] = [{ kind: "steer", text: "adjust" }, { kind: "followUp", text: "next" }];
+  const queued: QueuedSessionMessage[] = [
+    { kind: "steer", text: "adjust" },
+    { kind: "followUp", text: "next" },
+  ];
   const { pane, runtime, editor, view } = await mountPane("unsent draft", "user", queued);
   const mutate = vi.spyOn(runtime.sessions, "mutateQueuedMessage").mockResolvedValue(undefined);
   const confirm = vi.fn<(text: string) => boolean>().mockReturnValueOnce(true).mockReturnValueOnce(false);
   vi.stubGlobal("confirm", confirm);
   expect(queueButton(view, "Switch to Queue").disabled).toBe(false);
   queueButton(view, "Recall queued message").click();
-  await vi.waitFor(() => { expect(confirm).toHaveBeenCalledTimes(2); });
+  await vi.waitFor(() => {
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
   expect(confirm.mock.calls.map(([text]) => text)).toEqual([
     "Recall this message?\n\nThis will also remove 1 queued follow-up.",
     "Recalling will replace your unsent draft. Continue?",
@@ -81,25 +100,58 @@ it("offers queue Recall, Remove and kind toggle, confirming consequences and the
   mutate.mockReturnValue(request.promise);
   confirm.mockReset().mockReturnValue(true);
   queueButton(view, "Recall queued message").click();
-  await vi.waitFor(() => { expect(mutate).toHaveBeenCalledWith("edit", 0, queued); });
+  await vi.waitFor(() => {
+    expect(mutate).toHaveBeenCalledWith("edit", 0, queued);
+  });
   expect(editor.disabled).toBe(true);
   await pane.updateComplete;
   await view.updateComplete;
   // One draft-replacing action at a time: queue controls wait for the pending one.
   expect(queueButton(view, "Remove queued message").disabled).toBe(true);
   request.resolve();
-  await vi.waitFor(() => { expect(editor.disabled).toBe(false); });
+  await vi.waitFor(() => {
+    expect(editor.disabled).toBe(false);
+  });
   await view.updateComplete;
   queueButton(view, "Remove queued message").click();
-  await vi.waitFor(() => { expect(mutate).toHaveBeenLastCalledWith("remove", 0, queued); });
+  await vi.waitFor(() => {
+    expect(mutate).toHaveBeenLastCalledWith("remove", 0, queued);
+  });
 });
 
-async function mountPane(draft: string, role: "user" | "assistant" = "user", queuedMessages: QueuedSessionMessage[] = [], dependencies: Partial<SessionControllerDependencies> = {}) {
-  const status: SessionStatus | undefined = queuedMessages.length === 0 ? undefined : { sessionId: session.id, isStreaming: true, isCompacting: false, isBashRunning: false,
-    pendingMessageCount: queuedMessages.length, queuedMessages, cost: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-  const state: AppState = { ...initialAppState(), selectedSession: session, status, messages: [{ role, entryId: "entry-1", parts: [{ type: "text", text: "Hello" }] }] };
+async function mountPane(
+  draft: string,
+  role: "user" | "assistant" = "user",
+  queuedMessages: QueuedSessionMessage[] = [],
+  dependencies: Partial<SessionControllerDependencies> = {},
+) {
+  const status: SessionStatus | undefined =
+    queuedMessages.length === 0
+      ? undefined
+      : {
+          sessionId: session.id,
+          isStreaming: true,
+          isCompacting: false,
+          isBashRunning: false,
+          pendingMessageCount: queuedMessages.length,
+          queuedMessages,
+          cost: 0,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        };
+  const state: AppState = {
+    ...initialAppState(),
+    selectedSession: session,
+    status,
+    messages: [{ role, entryId: "entry-1", parts: [{ type: "text", text: "Hello" }] }],
+  };
   const pane = new WorkbenchChatPane();
-  const runtime = new WorkbenchChatSession(state, (chat) => { pane.app = chat.state; }, { socket: { connect: vi.fn(), setHandler: vi.fn(), close: vi.fn() }, ...dependencies });
+  const runtime = new WorkbenchChatSession(
+    state,
+    (chat) => {
+      pane.app = chat.state;
+    },
+    { socket: { connect: vi.fn(), setHandler: vi.fn(), close: vi.fn() }, ...dependencies },
+  );
   runtimes.push(runtime);
   pane.runtime = runtime;
   pane.app = runtime.state;
@@ -130,7 +182,11 @@ function queueButton(view: ChatView, label: string): HTMLButtonElement {
 
 function deferred() {
   let resolve: (() => void) | undefined;
-  const promise = new Promise<undefined>((complete) => { resolve = () => { complete(undefined); }; });
+  const promise = new Promise<undefined>((complete) => {
+    resolve = () => {
+      complete(undefined);
+    };
+  });
   if (resolve === undefined) throw new Error("Expected a promise resolver");
   return { promise, resolve };
 }

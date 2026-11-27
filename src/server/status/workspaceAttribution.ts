@@ -125,10 +125,7 @@ export class CachedWorkspaceAttribution implements WorkspaceAttribution {
       const workspaces = await this.dependencies.workspaces.list(project);
       return workspaces.map((workspace) => attributedWorkspacePath(workspace));
     } catch (error) {
-      this.dependencies.logger.warn(
-        { err: error, projectId: project.id },
-        "workspace attribution could not list workspaces for a project",
-      );
+      this.dependencies.logger.warn({ err: error, projectId: project.id }, "workspace attribution could not list workspaces for a project");
       return [];
     }
   }

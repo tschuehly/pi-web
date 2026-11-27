@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { PiWebInstallationInfo } from "../shared/apiTypes.js";
-import { createDeploymentFlavorResolver, deploymentFlavorFromInstallation, deploymentIdentityAssetForPath, deploymentManifestForFlavor, isDeploymentIdentityAssetPath } from "./deploymentIdentity.js";
+import {
+  createDeploymentFlavorResolver,
+  deploymentFlavorFromInstallation,
+  deploymentIdentityAssetForPath,
+  deploymentManifestForFlavor,
+  isDeploymentIdentityAssetPath,
+} from "./deploymentIdentity.js";
 
 describe("deploymentFlavorFromInstallation", () => {
   it("flags Docker dev mode as dev", () => {
@@ -25,7 +31,10 @@ describe("createDeploymentFlavorResolver", () => {
   it("detects once and memoizes the result", async () => {
     let detections = 0;
     const installation: PiWebInstallationInfo = { kind: "docker", dockerMode: "dev" };
-    const flavor = createDeploymentFlavorResolver(() => { detections += 1; return Promise.resolve(installation); });
+    const flavor = createDeploymentFlavorResolver(() => {
+      detections += 1;
+      return Promise.resolve(installation);
+    });
 
     await expect(flavor()).resolves.toBe("dev");
     await expect(flavor()).resolves.toBe("dev");
@@ -34,7 +43,12 @@ describe("createDeploymentFlavorResolver", () => {
 
   it("fails closed to stable when detection fails", async () => {
     const errors: unknown[] = [];
-    const flavor = createDeploymentFlavorResolver(() => Promise.reject(new Error("no detection")), (error) => { errors.push(error); });
+    const flavor = createDeploymentFlavorResolver(
+      () => Promise.reject(new Error("no detection")),
+      (error) => {
+        errors.push(error);
+      },
+    );
 
     await expect(flavor()).resolves.toBe("stable");
     expect(errors).toHaveLength(1);

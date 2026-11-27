@@ -3,7 +3,16 @@ import type { ExtensionUIContext } from "../../piSdk.js";
 import type { PendingExtensionDialog, SessionUiEvent } from "../../shared/apiTypes.js";
 import { PiSessionService, type PiAgentSession } from "./piSessionService.js";
 import { PendingExtensionDialogStore, PendingExtensionDialogValidationError } from "./pendingExtensionDialogStore.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 const ACTIVE_SESSION_ID = "session-1";
@@ -19,7 +28,10 @@ function dialogService(options: { extensionDialogsTimeoutMs?: number } = {}) {
     now: () => new Date("2026-02-01T10:00:00.000Z"),
     createDialogId: (() => {
       let next = 0;
-      return () => { next += 1; return `dialog-${next.toString()}`; };
+      return () => {
+        next += 1;
+        return `dialog-${next.toString()}`;
+      };
     })(),
   });
   const fake = fakeRuntime(ACTIVE_SESSION_ID);
@@ -50,11 +62,10 @@ function dialogEvents(events: CapturingSessionEventHub): { sessionId: string; ev
 }
 
 /** Observe a parked wait without hanging the test when it never settles. */
-async function settledValue(promise: Promise<boolean | string | undefined>): Promise<{ settled: true; value: boolean | string | undefined } | { settled: false }> {
-  return await Promise.race([
-    promise.then((value) => ({ settled: true as const, value })),
-    Promise.resolve({ settled: false as const }),
-  ]);
+async function settledValue(
+  promise: Promise<boolean | string | undefined>,
+): Promise<{ settled: true; value: boolean | string | undefined } | { settled: false }> {
+  return await Promise.race([promise.then((value) => ({ settled: true as const, value })), Promise.resolve({ settled: false as const })]);
 }
 
 function openDialog(events: CapturingSessionEventHub): PendingExtensionDialog {
@@ -70,18 +81,25 @@ describe("PiSessionService extension dialog UI context", () => {
 
     const parked = ui.confirm("Proceed?", "Really proceed?");
 
-    expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([{
-      dialogId: "dialog-1",
-      kind: "confirm",
-      title: "Proceed?",
-      message: "Really proceed?",
-      askedAt: "2026-02-01T10:00:00.000Z",
-      runScoped: false,
-    }]);
-    expect(dialogEvents(events)).toEqual([
-      { sessionId: ACTIVE_SESSION_ID, event: { type: "dialog.opened", dialog: openDialog(events) } },
+    expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([
+      {
+        dialogId: "dialog-1",
+        kind: "confirm",
+        title: "Proceed?",
+        message: "Really proceed?",
+        askedAt: "2026-02-01T10:00:00.000Z",
+        runScoped: false,
+      },
     ]);
-    expect(events.globalEvents).toContainEqual({ type: "session.attention", sessionId: ACTIVE_SESSION_ID, cwd: "/workspace", kind: "dialog", id: "dialog-1", detail: "Proceed?" });
+    expect(dialogEvents(events)).toEqual([{ sessionId: ACTIVE_SESSION_ID, event: { type: "dialog.opened", dialog: openDialog(events) } }]);
+    expect(events.globalEvents).toContainEqual({
+      type: "session.attention",
+      sessionId: ACTIVE_SESSION_ID,
+      cwd: "/workspace",
+      kind: "dialog",
+      id: "dialog-1",
+      detail: "Proceed?",
+    });
     await expect(settledValue(parked)).resolves.toEqual({ settled: false });
     await service.dispose();
   });
@@ -257,9 +275,7 @@ describe("PiSessionService extension dialog timeout", () => {
     const ui = await boundUiContext(service, fake);
     const parked = ui.confirm("Proceed?", "Really?");
 
-    expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([
-      expect.objectContaining({ timeoutAt: "2026-02-01T10:05:00.000Z" }),
-    ]);
+    expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([expect.objectContaining({ timeoutAt: "2026-02-01T10:05:00.000Z" })]);
     await vi.advanceTimersByTimeAsync(300_000);
 
     await expect(parked).resolves.toBe(false);
@@ -277,9 +293,7 @@ describe("PiSessionService extension dialog timeout", () => {
     const ui = await boundUiContext(service, fake);
     const parked = ui.input("Branch name?", undefined, { timeout: 1_000 });
 
-    expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([
-      expect.objectContaining({ timeoutAt: "2026-02-01T10:00:01.000Z" }),
-    ]);
+    expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([expect.objectContaining({ timeoutAt: "2026-02-01T10:00:01.000Z" })]);
     await vi.advanceTimersByTimeAsync(1_000);
 
     await expect(parked).resolves.toBeUndefined();
@@ -479,9 +493,7 @@ describe("PiSessionService extension dialog abort request", () => {
 
     await expect(settledValue(idle)).resolves.toEqual({ settled: false });
     expect(store.pendingDialogs(ACTIVE_SESSION_ID)).toEqual([expect.objectContaining({ dialogId: "dialog-1" })]);
-    expect(dialogEvents(events).map(({ event }) => event)).toEqual([
-      { type: "dialog.opened", dialog: openDialog(events) },
-    ]);
+    expect(dialogEvents(events).map(({ event }) => event)).toEqual([{ type: "dialog.opened", dialog: openDialog(events) }]);
     await service.dispose();
   });
 

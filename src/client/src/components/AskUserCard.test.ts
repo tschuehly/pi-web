@@ -22,10 +22,12 @@ afterEach(() => {
 
 describe("ask-user-card live form", () => {
   it("uses native labelled groups and updates progress for a keyboard-focusable single select", async () => {
-    const card = await mountOpenAsk(openAsk([
-      question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")], { detail: "Used for examples." }),
-      question("platforms", "Target platforms", [option("web", "Web"), option("desktop", "Desktop")], { multiple: true }),
-    ]));
+    const card = await mountOpenAsk(
+      openAsk([
+        question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")], { detail: "Used for examples." }),
+        question("platforms", "Target platforms", [option("web", "Web"), option("desktop", "Desktop")], { multiple: true }),
+      ]),
+    );
     const root = renderRoot(card);
     expect(card).toBeInstanceOf(HTMLElement);
     expect(customElements.get("ask-user-card")).toBe(AskUserCard);
@@ -72,9 +74,10 @@ describe("ask-user-card live form", () => {
 
   it("accumulates several checkbox values for a multi-select question", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("platforms", "Target platforms", [option("web", "Web"), option("desktop", "Desktop")], { multiple: true }),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([question("platforms", "Target platforms", [option("web", "Web"), option("desktop", "Desktop")], { multiple: true })]),
+      onSubmit,
+    );
     const root = renderRoot(card);
 
     inputWithValue(root, "web").click();
@@ -93,7 +96,15 @@ describe("ask-user-card live form", () => {
 
   it("starts on the recommended options, counted as answered, and keeps them cleared once the user unticks them", async () => {
     const ask = openAsk([
-      question("platforms", "Target platforms", [{ ...option("web", "Web"), recommended: true }, { ...option("desktop", "Desktop"), recommended: true }], { multiple: true }),
+      question(
+        "platforms",
+        "Target platforms",
+        [
+          { ...option("web", "Web"), recommended: true },
+          { ...option("desktop", "Desktop"), recommended: true },
+        ],
+        { multiple: true },
+      ),
     ]);
     const card = await mountOpenAsk(ask);
     const root = renderRoot(card);
@@ -111,9 +122,10 @@ describe("ask-user-card live form", () => {
 
   it("always offers and focuses a labelled custom field while preserving multi-select options", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("stack", "Pick the stack", [option("lit", "Lit"), option("react", "React")], { multiple: true }),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([question("stack", "Pick the stack", [option("lit", "Lit"), option("react", "React")], { multiple: true })]),
+      onSubmit,
+    );
     const root = renderRoot(card);
 
     inputWithValue(root, "lit").click();
@@ -140,9 +152,10 @@ describe("ask-user-card live form", () => {
 
   it("keeps an option labelled Custom (from a set posted before the store refused them) an ordinary option beside the automatic Custom", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("fix", "Land it?", [option("merge", "Merge it"), { ...option("correct", "Correct it (custom)"), recommended: true }]),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([question("fix", "Land it?", [option("merge", "Merge it"), { ...option("correct", "Correct it (custom)"), recommended: true }])]),
+      onSubmit,
+    );
     const root = renderRoot(card);
     const labels = [...root.querySelectorAll(".option-label")].map((label) => label.textContent.trim());
 
@@ -156,10 +169,13 @@ describe("ask-user-card live form", () => {
 
   it("edits a proposed option in its own row into the custom answer for single and multi-select questions", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")]),
-      question("stack", "Pick the stack", [option("lit", "Lit"), option("react", "React")], { multiple: true }),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([
+        question("editor", "Choose an editor", [option("vim", "Vim"), option("code", "VS Code")]),
+        question("stack", "Pick the stack", [option("lit", "Lit"), option("react", "React")], { multiple: true }),
+      ]),
+      onSubmit,
+    );
     const root = renderRoot(card);
     const editButtons = [...root.querySelectorAll<HTMLButtonElement>("button[aria-label='Edit this answer']")];
     expect(editButtons).toHaveLength(4);
@@ -213,9 +229,20 @@ describe("ask-user-card live form", () => {
 
   it("sends an edited checked option only as its correction, keeps the other checked ones, and Revert restores it", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("plan", "What ships?", [{ ...option("friday", "Deploy Friday"), recommended: true }, { ...option("docs", "Docs"), recommended: true }], { multiple: true }),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([
+        question(
+          "plan",
+          "What ships?",
+          [
+            { ...option("friday", "Deploy Friday"), recommended: true },
+            { ...option("docs", "Docs"), recommended: true },
+          ],
+          { multiple: true },
+        ),
+      ]),
+      onSubmit,
+    );
     const root = renderRoot(card);
     requiredElement(root.querySelector<HTMLButtonElement>("button[aria-label='Edit this answer']"), "edit Deploy Friday").click();
     await card.updateComplete;
@@ -243,7 +270,9 @@ describe("ask-user-card live form", () => {
     const textarea = markdownField(root, ".inline-edit ask-markdown-field");
     typeInto(textarea, "VS Code, but lighter");
     // The draft holds the edit as the Custom answer, as before.
-    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: [], otherText: "VS Code, but lighter" } });
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({
+      editor: { values: [], otherText: "VS Code, but lighter" },
+    });
 
     const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true });
     requiredElement(textarea.querySelector(".cm-content"), "editor content").dispatchEvent(escape);
@@ -306,9 +335,7 @@ describe("ask-user-card live form", () => {
 
   it("shows and submits the custom field directly when no options were supplied", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("notes", "Anything else?", []),
-    ]), onSubmit);
+    const card = await mountOpenAsk(openAsk([question("notes", "Anything else?", [])]), onSubmit);
     const root = renderRoot(card);
     const field = markdownField(root, ".other-answer ask-markdown-field");
 
@@ -326,9 +353,7 @@ describe("ask-user-card live form", () => {
   });
 
   it("rounds an integer question's native bounds to whole numbers so step=1 never blocks a value the shared validator accepts", async () => {
-    const card = await mountOpenAsk(openAsk([
-      { id: "copies", question: "Copies?", options: [], kind: "number", minimum: 0.5, maximum: 5.5, integer: true },
-    ]));
+    const card = await mountOpenAsk(openAsk([{ id: "copies", question: "Copies?", options: [], kind: "number", minimum: 0.5, maximum: 5.5, integer: true }]));
     const copies = requiredElement(renderRoot(card).querySelector<HTMLInputElement>("input[type='number']"), "number input");
     expect([copies.min, copies.max, copies.step]).toEqual(["1", "5", "1"]);
   });
@@ -344,12 +369,15 @@ describe("ask-user-card live form", () => {
 
   it("renders typed questions as a switch, text, number and date fields on their defaults, shows a field's error, and sends values", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      { id: "backup", question: "Enable backup?", options: [], kind: "boolean" },
-      { id: "folder", question: "Folder?", options: [], kind: "text", multiline: true, default: "~/b", showIf: { question: "backup", values: ["true"] } },
-      { id: "copies", question: "Copies?", options: [], kind: "number", default: 2, maximum: 5, integer: true },
-      { id: "due", question: "Due?", options: [], kind: "date" },
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([
+        { id: "backup", question: "Enable backup?", options: [], kind: "boolean" },
+        { id: "folder", question: "Folder?", options: [], kind: "text", multiline: true, default: "~/b", showIf: { question: "backup", values: ["true"] } },
+        { id: "copies", question: "Copies?", options: [], kind: "number", default: 2, maximum: 5, integer: true },
+        { id: "due", question: "Due?", options: [], kind: "date" },
+      ]),
+      onSubmit,
+    );
     const root = renderRoot(card);
     const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
     expect(toggle.checked).toBe(false);
@@ -396,11 +424,14 @@ describe("ask-user-card live form", () => {
 
   it("names unanswered questions before allowing a partial submit", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("editor", "Choose an editor", [option("vim", "Vim")]),
-      question("deploy", "Choose a deployment target", [option("cloud", "Cloud")]),
-      question("notes", "Add implementation notes", []),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([
+        question("editor", "Choose an editor", [option("vim", "Vim")]),
+        question("deploy", "Choose a deployment target", [option("cloud", "Cloud")]),
+        question("notes", "Add implementation notes", []),
+      ]),
+      onSubmit,
+    );
     const root = renderRoot(card);
 
     inputWithValue(root, "vim").click();
@@ -426,11 +457,12 @@ describe("ask-user-card live form", () => {
 });
 
 describe("ask-user-card dependent questions", () => {
-  const dependentAsk = () => openAsk([
-    question("location", "Where should the browser run?", [option("home", "Home"), option("vps", "VPS")]),
-    { ...question("machine", "Which machine?", [option("mini", "Mac mini"), option("pc", "PC")]), showIf: { question: "location", values: ["home"] } },
-    { ...question("gpu", "Use the GPU?", [option("yes", "Yes")]), showIf: { question: "machine", values: ["pc"] } },
-  ]);
+  const dependentAsk = () =>
+    openAsk([
+      question("location", "Where should the browser run?", [option("home", "Home"), option("vps", "VPS")]),
+      { ...question("machine", "Which machine?", [option("mini", "Mac mini"), option("pc", "PC")]), showIf: { question: "location", values: ["home"] } },
+      { ...question("gpu", "Use the GPU?", [option("yes", "Yes")]), showIf: { question: "machine", values: ["pc"] } },
+    ]);
   const legends = (root: ShadowRoot) => [...root.querySelectorAll("legend")].map((legend) => legend.textContent.replace(/\s+/gu, " ").trim());
 
   it("shows a dependent question only while its condition holds, hides its chain when it changes, and never counts it hidden", async () => {
@@ -480,19 +512,38 @@ describe("ask-user-card dependent questions", () => {
     await card.updateComplete;
     [...root.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenCalledWith("ask-1", { answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["pc"] }], revision: "r1", partial: true });
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      answers: [
+        { id: "location", values: ["home"] },
+        { id: "machine", values: ["pc"] },
+      ],
+      revision: "r1",
+      partial: true,
+    });
 
     const toggled = vi.fn<AskUserSubmitCallback>();
-    const typed = await mountOpenAsk({ ...openAsk([
-      { id: "backup", question: "Enable backup?", options: [], kind: "boolean" },
-      { id: "folder", question: "Folder?", options: [], kind: "text", default: "~/b", showIf: { question: "backup", values: ["true"] } },
-    ]), askId: "ask-2" }, toggled);
+    const typed = await mountOpenAsk(
+      {
+        ...openAsk([
+          { id: "backup", question: "Enable backup?", options: [], kind: "boolean" },
+          { id: "folder", question: "Folder?", options: [], kind: "text", default: "~/b", showIf: { question: "backup", values: ["true"] } },
+        ]),
+        askId: "ask-2",
+      },
+      toggled,
+    );
     requiredElement(renderRoot(typed).querySelector<HTMLInputElement>("input[role='switch']"), "switch").click();
     await typed.updateComplete;
     [...renderRoot(typed).querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
     await Promise.resolve();
     // It answers every visible question, so it closes the set as a full submit.
-    expect(toggled).toHaveBeenCalledWith("ask-2", { answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], revision: "r1" });
+    expect(toggled).toHaveBeenCalledWith("ask-2", {
+      answers: [
+        { id: "backup", values: [], value: true },
+        { id: "folder", values: [], value: "~/b" },
+      ],
+      revision: "r1",
+    });
   });
 
   it("sends the note with a follow-up's own Send that answers every visible question, and keeps it in the draft otherwise", async () => {
@@ -507,7 +558,14 @@ describe("ask-user-card dependent questions", () => {
     // The GPU question still shows unanswered: a partial send, the note waits in the draft.
     [...root.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["pc"] }], revision: "r1", partial: true });
+    expect(onSubmit).toHaveBeenLastCalledWith("ask-1", {
+      answers: [
+        { id: "location", values: ["home"] },
+        { id: "machine", values: ["pc"] },
+      ],
+      revision: "r1",
+      partial: true,
+    });
     expect(loadAskNote("local:session-1", "ask-1")).toBe("Ship it this week.");
 
     const closing = vi.fn<AskUserSubmitCallback>();
@@ -518,7 +576,14 @@ describe("ask-user-card dependent questions", () => {
     await again.updateComplete;
     [...againRoot.querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
     await Promise.resolve();
-    expect(closing).toHaveBeenCalledWith("ask-1", { answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["mini"] }], note: "Ship it this week.", revision: "r2" });
+    expect(closing).toHaveBeenCalledWith("ask-1", {
+      answers: [
+        { id: "location", values: ["home"] },
+        { id: "machine", values: ["mini"] },
+      ],
+      note: "Ship it this week.",
+      revision: "r2",
+    });
   });
 
   it("offers Send anyway only for visible unanswered questions", async () => {
@@ -540,9 +605,17 @@ describe("ask-user-card dependent questions", () => {
     if (location === undefined || machine === undefined) throw new Error("expected two questions");
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      questions: [{ question: location, answered: true, values: ["vps"] }, { question: machine, answered: false, values: [], skipped: true }],
-      answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered; skipped (condition not met): machine",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [
+        { question: location, answered: true, values: ["vps"] },
+        { question: machine, answered: false, values: [], skipped: true },
+      ],
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1 of 1; none left unanswered; skipped (condition not met): machine",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -552,13 +625,18 @@ describe("ask-user-card dependent questions", () => {
   it("shows a typed answer in the record", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       questions: [
         { question: { id: "b", question: "On?", options: [], kind: "boolean" }, answered: true, values: [], value: true },
         { question: { id: "n", question: "N?", options: [], kind: "number" }, answered: true, values: [], value: 7 },
         { question: { id: "s", question: "Ship?", options: [], kind: "boolean", labels: ["Ship it", "Hold"] }, answered: true, values: [], value: false },
       ],
-      answeredCount: 3, unansweredIds: [], summary: "Answered 3 of 3; none left unanswered",
+      answeredCount: 3,
+      unansweredIds: [],
+      summary: "Answered 3 of 3; none left unanswered",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -569,10 +647,10 @@ describe("ask-user-card dependent questions", () => {
 describe("ask-user-card single-answer send", () => {
   it("sends one answered question on its own as a partial submit and offers no per-question Send for a lone question", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk(openAsk([
-      question("editor", "Choose an editor", [option("vim", "Vim")]),
-      question("deploy", "Choose a deployment target", [option("cloud", "Cloud")]),
-    ]), onSubmit);
+    const card = await mountOpenAsk(
+      openAsk([question("editor", "Choose an editor", [option("vim", "Vim")]), question("deploy", "Choose a deployment target", [option("cloud", "Cloud")])]),
+      onSubmit,
+    );
     const root = renderRoot(card);
     const sends = () => [...root.querySelectorAll<HTMLButtonElement>(".send-one")];
     expect(sends().map((button) => button.disabled)).toEqual([true, true]);
@@ -596,7 +674,10 @@ describe("ask-user-card single-answer send", () => {
 
   it("folds the context to one line after a send until clicked, and Keep context open prevents it for this set only", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const ask = { ...openAsk([question("editor", "Editor?", [option("vim", "Vim")]), question("deploy", "Target?", [option("cloud", "Cloud")])]), context: "## Plan\nShip **today**." };
+    const ask = {
+      ...openAsk([question("editor", "Editor?", [option("vim", "Vim")]), question("deploy", "Target?", [option("cloud", "Cloud")])]),
+      context: "## Plan\nShip **today**.",
+    };
     const card = await mountOpenAsk(ask, onSubmit);
     const root = renderRoot(card);
     expect(root.querySelector(".context-folded")).toBeNull();
@@ -637,7 +718,8 @@ describe("ask-user-card single-answer send", () => {
     const why = question("why", "Why?", []);
     const how = question("how", "How?", []);
     const card = await mountOpenAsk(openAsk([why, how]), vi.fn<AskUserSubmitCallback>());
-    const fields = () => [...renderRoot(card).querySelectorAll(".other-answer ask-markdown-field")].map((field) => markdownField(renderRoot(card), `#${field.id}`));
+    const fields = () =>
+      [...renderRoot(card).querySelectorAll(".other-answer ask-markdown-field")].map((field) => markdownField(renderRoot(card), `#${field.id}`));
     const [whyField, howField] = fields();
     typeInto(requiredElement(whyField, "why field"), "Because A.");
     typeInto(requiredElement(howField, "how field"), "Like B.");
@@ -716,7 +798,13 @@ describe("ask-user-card revisions", () => {
     await card.updateComplete;
     buttonWithText(renderRoot(card), "Send answers").click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenCalledWith("ask-1", { revision: "r2", answers: [{ id: "editor", values: ["code"] }, { id: "shell", values: ["zsh"] }] });
+    expect(onSubmit).toHaveBeenCalledWith("ask-1", {
+      revision: "r2",
+      answers: [
+        { id: "editor", values: ["code"] },
+        { id: "shell", values: ["zsh"] },
+      ],
+    });
   });
 });
 
@@ -771,7 +859,10 @@ describe("ask-user-card context", () => {
 
   it("opens a context with Windows line endings, cursor after its text, and keeps it unchanged", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "## Plan\r\nShip it.\r\n" }, onSubmit);
+    const card = await mountOpenAsk(
+      { ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "## Plan\r\nShip it.\r\n" },
+      onSubmit,
+    );
     const view = editorView(markdownField(renderRoot(card), ".context-editor"));
     expect([view.state.doc.toString(), view.state.selection.main.head]).toEqual(["## Plan\nShip it.\n", 17]);
     expect(renderRoot(card).querySelector(".context-actions")).toBeNull();
@@ -792,7 +883,10 @@ describe("ask-user-card context", () => {
 
   it("sends a cleared context as cleared rather than leaving the agent's text in place", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "Approve: drop the table." }, onSubmit);
+    const card = await mountOpenAsk(
+      { ...openAsk([question("db", "Which database?", [option("pg", "Postgres")])]), context: "Approve: drop the table." },
+      onSubmit,
+    );
     typeInto(markdownField(renderRoot(card), ".context-editor"), "  ");
     await card.updateComplete;
     expect(renderRoot(card).querySelector(".context-actions")?.textContent).toContain("Edited");
@@ -806,10 +900,16 @@ describe("ask-user-card context", () => {
   it("shows a context the user cleared as cleared in the record", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      context: "Approve: drop the table.", editedContext: "",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Approve: drop the table.",
+      editedContext: "",
       questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -819,10 +919,17 @@ describe("ask-user-card context", () => {
   });
 
   it("offers Approve only on a set that asks for approval; it sends the whole set approved with the edited context, unanswered questions too", async () => {
-    expect([...renderRoot(await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]))).querySelectorAll("button")].map((button) => button.textContent.trim())).not.toContain("Approve");
+    expect(
+      [...renderRoot(await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]))).querySelectorAll("button")].map((button) =>
+        button.textContent.trim(),
+      ),
+    ).not.toContain("Approve");
     document.body.replaceChildren();
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan.", approval: true }, onSubmit);
+    const card = await mountOpenAsk(
+      { ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan.", approval: true },
+      onSubmit,
+    );
     typeInto(markdownField(renderRoot(card), ".context-editor"), "My plan.");
     inputWithValue(renderRoot(card), "pg").click();
     await card.updateComplete;
@@ -853,9 +960,16 @@ describe("ask-user-card context", () => {
   it("marks an approved set's record Approved", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z", context: "Plan.", approved: true,
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Plan.",
+      approved: true,
       questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -874,7 +988,9 @@ describe("ask-user-card context", () => {
     words.value = "Only after review";
     words.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     await card.updateComplete;
-    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ ship: { value: true, otherText: "Only after review" } });
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({
+      ship: { value: true, otherText: "Only after review" },
+    });
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
     expect(onSubmit).toHaveBeenLastCalledWith("ask-1", { revision: "r1", answers: [{ id: "ship", values: [], otherText: "Only after review" }] });
@@ -893,7 +1009,10 @@ describe("ask-user-card context", () => {
 
   it("carries the edited context with a single-answer send", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk({ ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan." }, onSubmit);
+    const card = await mountOpenAsk(
+      { ...openAsk([question("db", "Which database?", [option("pg", "Postgres")]), question("cache", "Which cache?", [])]), context: "Plan." },
+      onSubmit,
+    );
     typeInto(markdownField(renderRoot(card), ".context-editor"), "My plan.");
     inputWithValue(renderRoot(card), "pg").click();
     await card.updateComplete;
@@ -955,7 +1074,9 @@ describe("ask-user-card context", () => {
     // Neither its source with the ``` marks nor a second copy under the editor shows.
     expect(editor.querySelector(".cm-content")?.textContent).not.toContain("```");
     expect(root.querySelectorAll("formatted-text").length).toBe(1);
-    requiredElement(editor.querySelector<HTMLElement>(".lp-fence-block"), "fence block").dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, composed: true }));
+    requiredElement(editor.querySelector<HTMLElement>(".lp-fence-block"), "fence block").dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, composed: true }),
+    );
     expect(editor.querySelector(".lp-fence-block")).toBeNull();
     expect(editor.querySelector(".cm-content")?.textContent).toContain("```diff");
   });
@@ -974,10 +1095,15 @@ describe("ask-user-card context", () => {
   it("renders the context of a closed ask record in its full-questions disclosure, after the answers", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "cancelled", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "cancelled",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       context: "Recommend **Postgres**.",
       questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -991,10 +1117,15 @@ describe("ask-user-card context", () => {
   it("keeps a sent record's context image without a source until its disclosure opens", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       context: "See ![Login screen](https://example.com/login.png)",
       questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -1011,10 +1142,16 @@ describe("ask-user-card context", () => {
   it("shows the user's edited context in a record, labelled as edited", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      context: "Recommend **Postgres**.", editedContext: "Recommend **SQLite**.",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Recommend **Postgres**.",
+      editedContext: "Recommend **SQLite**.",
       questions: [unansweredRecord(question("db", "Which database?", [option("pg", "Postgres")]))],
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -1026,15 +1163,22 @@ describe("ask-user-card context", () => {
   it("opens a local video linked from the context through the host, like a Chat link", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "cancelled", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "cancelled",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       context: "Watch [IMG_2430.MOV](/Users/me/Bilder & Videos/IMG_2430.MOV).",
       questions: [unansweredRecord(question("db", "Which take?", []))],
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     card.workspaceContext = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
     document.body.append(card);
     await card.updateComplete;
-    const opened = vi.fn((event: Event) => { event.preventDefault(); });
+    const opened = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
     document.body.addEventListener("outside-file-open", opened, { once: true });
 
     requiredElement((await renderedContext(card)).querySelector("a"), "context link").click();
@@ -1048,7 +1192,9 @@ describe("ask-user-card context", () => {
     card.workspaceContext = { machineId: "local", projectId: "p", workspaceId: "w", root: "/work" };
     document.body.append(card);
     await card.updateComplete;
-    const opened = vi.fn((event: Event) => { event.preventDefault(); });
+    const opened = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
     document.body.addEventListener("outside-file-open", opened, { once: true });
 
     const link = requiredElement(markdownField(renderRoot(card), ".context-editor").querySelector(".lp-link"), "editor link");
@@ -1107,11 +1253,15 @@ async function renderedContext(card: AskUserCard): Promise<ShadowRoot> {
 
 describe("ask-user-card media", () => {
   it("folds each image and Mermaid diagram in the context and details behind a disclosure that draws the diagram when opened, and colours diff fences", async () => {
-    const media = "Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  \"A\": 2\n```\n\n```diff\n-a\n+b\n```";
+    const media = 'Compare these.\n\n![Login screen](https://example.com/login.png)\n\n```mermaid\npie\n  "A": 2\n```\n\n```diff\n-a\n+b\n```';
     // A manual renderer, like the Mermaid plugin: the Chat shows its source until asked.
-    const rendering = createContentRenderingService((request) => request.language === "mermaid"
-      ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }]
-      : request.language === "chart" ? [{ id: "chart", label: "Chart", renderer: { id: "chart", render: () => html`<b class="chart-preview">drawn</b>` } }] : []);
+    const rendering = createContentRenderingService((request) =>
+      request.language === "mermaid"
+        ? [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", render: () => html`<b class="diagram-preview">drawn</b>` } }]
+        : request.language === "chart"
+          ? [{ id: "chart", label: "Chart", renderer: { id: "chart", render: () => html`<b class="chart-preview">drawn</b>` } }]
+          : [],
+    );
     const card = new AskUserCard();
     // A manual renderer that is not a folded diagram waits for its own Render click, even in question details.
     const detail = `${media}\n\n\`\`\`chart\nbar 1 2\n\`\`\``;
@@ -1131,7 +1281,11 @@ describe("ask-user-card media", () => {
     card.ask = { ...card.ask, askId: "ask-table", context: "| Screen |\n| --- |\n| ![Table shot](https://example.com/table.png) |\n\nEnd." };
     await card.updateComplete;
     const tableFold = requiredElement(renderRoot(card).querySelector<HTMLDetailsElement>(".context-editor .lp-table details.folded-media"), "table image fold");
-    expect([tableFold.querySelector("summary")?.textContent, tableFold.open, tableFold.querySelector("img")?.hasAttribute("src")]).toEqual(["Show image: Table shot", false, false]);
+    expect([tableFold.querySelector("summary")?.textContent, tableFold.open, tableFold.querySelector("img")?.hasAttribute("src")]).toEqual([
+      "Show image: Table shot",
+      false,
+      false,
+    ]);
     requiredElement(tableFold.querySelector("summary"), "table image summary").dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect([tableFold.open, tableFold.querySelector("img")?.getAttribute("src")]).toEqual([true, "https://example.com/table.png"]);
     card.ask = { ...card.ask, askId: "ask-1", context: media };
@@ -1152,7 +1306,10 @@ describe("ask-user-card media", () => {
       }
       const root = formatted.renderRoot;
       const folds = [...root.querySelectorAll("details.folded-media")];
-      expect(folds.map((fold) => [fold.querySelector("summary")?.textContent, fold.hasAttribute("open")])).toEqual([["Show image: Login screen", false], ["Show diagram", false]]);
+      expect(folds.map((fold) => [fold.querySelector("summary")?.textContent, fold.hasAttribute("open")])).toEqual([
+        ["Show image: Login screen", false],
+        ["Show diagram", false],
+      ]);
       // Source-free until opened: the image never had a source in the DOM.
       expect([folds[0]?.querySelector("img")?.hasAttribute("src"), sourceChanges()]).toEqual([false, []]);
       requiredElement(folds[0]?.querySelector("summary"), "image summary").click();
@@ -1166,7 +1323,10 @@ describe("ask-user-card media", () => {
       await settleDeferredContent(host);
       expect(folds[1]?.hasAttribute("open")).toBe(true);
       expect(host.renderRoot.querySelector(".diagram-preview")?.textContent).toBe("drawn");
-      const chart = requiredElement([...root.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")].find((candidate) => candidate.language === "chart"), "chart host");
+      const chart = requiredElement(
+        [...root.querySelectorAll<ContentRendererHost>("pi-web-content-renderer")].find((candidate) => candidate.language === "chart"),
+        "chart host",
+      );
       expect([chart.closest("details"), chart.renderRoot.querySelector(".chart-preview")]).toEqual([null, null]);
     }
   });
@@ -1231,9 +1391,16 @@ describe("ask-user-card record mode", () => {
   it("labels the record of a single answer sent while the set stays open", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       questions: [{ question: question("db", "Which database?", [option("pg", "Postgres")]), answered: true, values: ["pg"] }],
-      answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.why", partial: true, revision: "r2",
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1; still open: ask.why",
+      partial: true,
+      revision: "r2",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -1245,23 +1412,34 @@ describe("ask-user-card record mode", () => {
   it("shows the question detail as Markdown and the user's note", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       questions: [unansweredRecord(question("db", "Which database?", [], { detail: "The **cache** store." }))],
       note: "Ship it this week.",
-      answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
 
-    expect(renderRoot(card).querySelector<HTMLElement & { text: string }>(".record-question formatted-text.question-detail")?.text).toBe("The **cache** store.");
+    expect(renderRoot(card).querySelector<HTMLElement & { text: string }>(".record-question formatted-text.question-detail")?.text).toBe(
+      "The **cache** store.",
+    );
     expect(renderRoot(card).querySelector(".record-note")?.textContent).toContain("Ship it this week.");
   });
 
   it("shows a closed record as one line per question and answer, the context, details and summary folded until opened", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      context: "Recommend **Postgres**.", editedContext: "Recommend **SQLite**.",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      context: "Recommend **Postgres**.",
+      editedContext: "Recommend **SQLite**.",
       questions: [
         { question: question("db", "Which database?", [option("pg", "Postgres")], { detail: "The **main** store." }), answered: true, values: ["pg"] },
         { question: question("day", "Deploy day?", [option("mon", "Monday")]), answered: true, values: [], otherText: "Tuesday" },
@@ -1270,7 +1448,9 @@ describe("ask-user-card record mode", () => {
         { question: question("gpu", "Which GPU?", []), answered: false, values: [], skipped: true },
       ],
       note: "Ship it.",
-      answeredCount: 3, unansweredIds: ["why"], summary: "Answered 3 of 4; unanswered: why",
+      answeredCount: 3,
+      unansweredIds: ["why"],
+      summary: "Answered 3 of 4; unanswered: why",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -1278,11 +1458,17 @@ describe("ask-user-card record mode", () => {
     const details = requiredElement(root.querySelector<HTMLDetailsElement>("details.record-full"), "full questions");
 
     expect([...root.querySelectorAll("ol.record-lines > li")].map((line) => line.textContent.replace(/\s+/gu, " ").trim())).toEqual([
-      "1. Which database? — Postgres", "2. Deploy day? — Custom: Tuesday", "3. Enable cache? — No", "4. Why? — Unanswered", "5. Which GPU? — Skipped · condition not met",
+      "1. Which database? — Postgres",
+      "2. Deploy day? — Custom: Tuesday",
+      "3. Enable cache? — No",
+      "4. Why? — Unanswered",
+      "5. Which GPU? — Skipped · condition not met",
     ]);
     expect(root.querySelector(".record-note")?.textContent).toContain("Ship it.");
     expect([details.open, details.querySelector("summary")?.textContent]).toEqual([false, "Show full questions"]);
-    expect([...root.querySelectorAll(".ask-context, .context-edited, .question-detail, .record-summary")].every((element) => details.contains(element))).toBe(true);
+    expect([...root.querySelectorAll(".ask-context, .context-edited, .question-detail, .record-summary")].every((element) => details.contains(element))).toBe(
+      true,
+    );
 
     const context = await renderedContext(card);
     expect(details.open).toBe(true);
@@ -1298,8 +1484,14 @@ describe("ask-user-card record mode", () => {
     const card = new AskUserCard();
     card.draftSessionId = "session-1";
     card.outcome = {
-      askId: "ask-1", reason: "superseded", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      questions: [unansweredRecord(db)], answeredCount: 0, unansweredIds: ["db"], summary: "Answered 0 of 1; unanswered: db",
+      askId: "ask-1",
+      reason: "superseded",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [unansweredRecord(db)],
+      answeredCount: 0,
+      unansweredIds: ["db"],
+      summary: "Answered 0 of 1; unanswered: db",
     };
     document.body.append(card);
     await card.updateComplete;
@@ -1321,7 +1513,9 @@ describe("ask-user-card answer images", () => {
     await card.updateComplete;
     const root = renderRoot(card);
     paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("shot.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1);
+    });
     expect(root.querySelector<HTMLImageElement>('.answer-images[data-target="note"] img')?.src).toMatch(/^data:image\/png;base64,/u);
     requiredElement(root.querySelector<HTMLButtonElement>('.answer-images[data-target="note"] .answer-image-remove'), "remove").click();
     await card.updateComplete;
@@ -1341,7 +1535,9 @@ describe("ask-user-card answer images", () => {
     // An image-only clipboard: CodeMirror's own paste would put its empty text over the selection.
     Reflect.set(event, "clipboardData", { files: [pngFile("shot.png")], items: [{ kind: "file" }], types: ["Files"], getData: () => "" });
     view.contentDOM.dispatchEvent(event);
-    await vi.waitFor(() => { expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1);
+    });
     expect(view.state.doc.toString()).toBe("keep this");
   });
 
@@ -1369,21 +1565,29 @@ describe("ask-user-card answer images", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     paste(input, [pngFile("answer.png")]);
     paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(2);
+    });
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({
-      answers: [{ id: "why", values: [], value: "Look" }],
-      images: [
-        { target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
-        { target: { kind: "note" }, mimeType: "image/png", data: "iVBORw==", name: "note.png" },
-      ],
-    }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      "ask-1",
+      expect.objectContaining({
+        answers: [{ id: "why", values: [], value: "Look" }],
+        images: [
+          { target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
+          { target: { kind: "note" }, mimeType: "image/png", data: "iVBORw==", name: "note.png" },
+        ],
+      }),
+    );
   });
 
   it("refuses a closing send (Send anyway, Approve) while a text question holds images but no answer", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
-    const card = await mountOpenAsk({ ...openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?")]), askId: "ask-stranded", approval: true }, onSubmit);
+    const card = await mountOpenAsk(
+      { ...openAsk([textQuestion("why", "Why?"), textQuestion("how", "How?")]), askId: "ask-stranded", approval: true },
+      onSubmit,
+    );
     card.imagesEnabled = true;
     await card.updateComplete;
     const root = renderRoot(card);
@@ -1391,7 +1595,9 @@ describe("ask-user-card answer images", () => {
     why.value = "Fast";
     why.dispatchEvent(new Event("input", { bubbles: true }));
     paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "how"), [pngFile("how.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     buttonWithText(root, "Approve").click();
     await card.updateComplete;
     expect(onSubmit).not.toHaveBeenCalled();
@@ -1407,14 +1613,19 @@ describe("ask-user-card answer images", () => {
   it("refuses a closing send while a hidden follow-up holds images but no answer, offering their removal in the send bar", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const details: AskUserQuestion = { ...textQuestion("details", "Details?"), showIf: { question: "proceed", values: ["yes"] } };
-    const card = await mountOpenAsk({ ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details]), askId: "ask-hidden" }, onSubmit);
+    const card = await mountOpenAsk(
+      { ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details]), askId: "ask-hidden" },
+      onSubmit,
+    );
     card.imagesEnabled = true;
     await card.updateComplete;
     const root = renderRoot(card);
     inputWithValue(root, "yes").click();
     await card.updateComplete;
     paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "details"), [pngFile("details.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     inputWithValue(root, "no").click();
     await card.updateComplete;
     expect(root.querySelector("#ask-user-other-1")).toBeNull();
@@ -1436,14 +1647,22 @@ describe("ask-user-card answer images", () => {
   it("lists a hidden follow-up's images with their removal when Send anyway is refused", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const details: AskUserQuestion = { ...textQuestion("details", "Details?"), showIf: { question: "proceed", values: ["yes"] } };
-    const card = await mountOpenAsk({ ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details, textQuestion("other", "Other?")]), askId: "ask-hidden-anyway" }, onSubmit);
+    const card = await mountOpenAsk(
+      {
+        ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details, textQuestion("other", "Other?")]),
+        askId: "ask-hidden-anyway",
+      },
+      onSubmit,
+    );
     card.imagesEnabled = true;
     await card.updateComplete;
     const root = renderRoot(card);
     inputWithValue(root, "yes").click();
     await card.updateComplete;
     paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "details"), [pngFile("details.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     inputWithValue(root, "no").click();
     await card.updateComplete;
     buttonWithText(root, "Send answers").click();
@@ -1461,14 +1680,22 @@ describe("ask-user-card answer images", () => {
   it("refuses a one-question send whose answer hides a follow-up holding images, offering their removal", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const details: AskUserQuestion = { ...textQuestion("details", "Details?"), showIf: { question: "proceed", values: ["yes"] } };
-    const card = await mountOpenAsk({ ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details, textQuestion("other", "Other?")]), askId: "ask-hidden-one" }, onSubmit);
+    const card = await mountOpenAsk(
+      {
+        ...openAsk([question("proceed", "Proceed?", [option("yes", "Yes"), option("no", "No")]), details, textQuestion("other", "Other?")]),
+        askId: "ask-hidden-one",
+      },
+      onSubmit,
+    );
     card.imagesEnabled = true;
     await card.updateComplete;
     const root = renderRoot(card);
     inputWithValue(root, "yes").click();
     await card.updateComplete;
     paste(requiredElement(root.querySelector<HTMLInputElement>("#ask-user-other-1"), "details"), [pngFile("details.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     inputWithValue(root, "no").click();
     await card.updateComplete;
     requiredElement(root.querySelector<HTMLButtonElement>(".send-one"), "send proceed").click();
@@ -1494,7 +1721,9 @@ describe("ask-user-card answer images", () => {
     const root = renderRoot(card);
     expect(buttonWithText(root, "Send note").disabled).toBe(true);
     paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     expect(buttonWithText(root, "Send note").disabled).toBe(false);
   });
 
@@ -1509,17 +1738,29 @@ describe("ask-user-card answer images", () => {
     input.value = "Look";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     paste(input, [pngFile("why.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     buttonWithText(root, "Send answers").click();
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(1); });
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
     await card.updateComplete;
     // The controller reports a stale close as not sent and applies the revised set the daemon returned.
     card.ask = { ...ask, revision: "r2" };
     await card.updateComplete;
     expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
     buttonWithText(root, "Send answers").click();
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });
-    expect(onSubmit).toHaveBeenLastCalledWith("ask-stale", expect.objectContaining({ revision: "r2", images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "why.png" }] }));
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(2);
+    });
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      "ask-stale",
+      expect.objectContaining({
+        revision: "r2",
+        images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "why.png" }],
+      }),
+    );
   });
 
   it("stages images dropped on the note editor, keeping the drop from the editor", async () => {
@@ -1530,7 +1771,9 @@ describe("ask-user-card answer images", () => {
     const editor = requiredElement(root.querySelector(".ask-note .cm-content"), "note editor");
     const event = drop(editor, [pngFile("dropped.png")]);
     expect(event.defaultPrevented).toBe(true);
-    await vi.waitFor(() => { expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(1);
+    });
     expect(root.querySelector<HTMLImageElement>('.answer-images[data-target="note"] img')?.alt).toBe("dropped.png");
   });
 
@@ -1540,27 +1783,47 @@ describe("ask-user-card answer images", () => {
     card.imagesEnabled = true;
     await card.updateComplete;
     const root = renderRoot(card);
-    for (const [index, name] of [[0, "why.png"], [1, "how.png"]] as const) {
+    for (const [index, name] of [
+      [0, "why.png"],
+      [1, "how.png"],
+    ] as const) {
       const input = requiredElement(root.querySelector<HTMLInputElement>(`#ask-user-other-${String(index)}`), "text answer");
       input.value = "Words";
       input.dispatchEvent(new Event("input", { bubbles: true }));
       paste(input, [pngFile(name)]);
     }
     paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(3); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(3);
+    });
     requiredElement(root.querySelector<HTMLButtonElement>(".send-one"), "send one").click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenCalledWith("ask-1", expect.objectContaining({ partial: true, images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "why.png" }] }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      "ask-1",
+      expect.objectContaining({
+        partial: true,
+        images: [{ target: { kind: "question", id: "why" }, mimeType: "image/png", data: "iVBORw==", name: "why.png" }],
+      }),
+    );
   });
 
   it("shows the record's thumbnails under their answer and the note, opening the gallery on click", async () => {
     const why = textQuestion("why", "Why?");
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      questions: [{ question: why, answered: true, values: [], value: "Look" }], note: "See",
-      images: [{ target: { kind: "question", id: "why" }, reference: "[PIC_1]", mimeType: "image/png" }, { target: { kind: "note" }, reference: "[PIC_2]", mimeType: "image/png" }],
-      answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [{ question: why, answered: true, values: [], value: "Look" }],
+      note: "See",
+      images: [
+        { target: { kind: "question", id: "why" }, reference: "[PIC_1]", mimeType: "image/png" },
+        { target: { kind: "note" }, reference: "[PIC_2]", mimeType: "image/png" },
+      ],
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1 of 1; none left unanswered",
     };
     card.recordImages = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"];
     document.body.append(card);
@@ -1568,10 +1831,16 @@ describe("ask-user-card answer images", () => {
     const root = renderRoot(card);
     expect(root.querySelector<HTMLImageElement>(".record-line .answer-images img")?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
     expect(root.querySelector<HTMLImageElement>(".record-note .answer-images img")?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
-    const gallery = requiredElement(root.querySelector<HTMLElement & { show: (images: unknown, index: number) => void }>("pi-web-image-gallery-dialog"), "gallery");
+    const gallery = requiredElement(
+      root.querySelector<HTMLElement & { show: (images: unknown, index: number) => void }>("pi-web-image-gallery-dialog"),
+      "gallery",
+    );
     const show = vi.spyOn(gallery, "show");
     requiredElement(root.querySelector<HTMLButtonElement>(".record-note .answer-image-open"), "thumbnail").click();
-    expect(show).toHaveBeenCalledWith([expect.objectContaining({ src: "data:image/png;base64,AAAA" }), expect.objectContaining({ src: "data:image/png;base64,BBBB" })], 1);
+    expect(show).toHaveBeenCalledWith(
+      [expect.objectContaining({ src: "data:image/png;base64,AAAA" }), expect.objectContaining({ src: "data:image/png;base64,BBBB" })],
+      1,
+    );
   });
 
   it("stages a question with id note apart from the note and sends each with its own target", async () => {
@@ -1585,26 +1854,46 @@ describe("ask-user-card answer images", () => {
     input.value = "Mine";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     paste(input, [pngFile("answer.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(1);
+    });
     expect(root.querySelectorAll('.answer-images[data-target="note"] .answer-image')).toHaveLength(0);
     paste(requiredElement(root.querySelector(".ask-note"), "note"), [pngFile("note.png")]);
-    await vi.waitFor(() => { expect(root.querySelectorAll(".answer-image")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(root.querySelectorAll(".answer-image")).toHaveLength(2);
+    });
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
-    expect(onSubmit).toHaveBeenCalledWith("ask-note", expect.objectContaining({ images: [
-      { target: { kind: "question", id: "note" }, mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
-      { target: { kind: "note" }, mimeType: "image/png", data: "iVBORw==", name: "note.png" },
-    ] }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      "ask-note",
+      expect.objectContaining({
+        images: [
+          { target: { kind: "question", id: "note" }, mimeType: "image/png", data: "iVBORw==", name: "answer.png" },
+          { target: { kind: "note" }, mimeType: "image/png", data: "iVBORw==", name: "note.png" },
+        ],
+      }),
+    );
   });
 
   it("shows a whole-set record's images under their own answers when an earlier send's bytes are elsewhere", async () => {
     const [a, b] = [textQuestion("a", "A?"), textQuestion("b", "B?")];
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
-      questions: [{ question: a, answered: true, values: [], value: "One", revision: "r2" }, { question: b, answered: true, values: [], value: "Two" }],
-      images: [{ target: { kind: "question", id: "a" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png", revision: "r2" }, { target: { kind: "question", id: "b" }, reference: "[PIC_1]", mimeType: "image/png", name: "b.png" }],
-      answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
+      questions: [
+        { question: a, answered: true, values: [], value: "One", revision: "r2" },
+        { question: b, answered: true, values: [], value: "Two" },
+      ],
+      images: [
+        { target: { kind: "question", id: "a" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png", revision: "r2" },
+        { target: { kind: "question", id: "b" }, reference: "[PIC_1]", mimeType: "image/png", name: "b.png" },
+      ],
+      answeredCount: 2,
+      unansweredIds: [],
+      summary: "Answered 2 of 2; none left unanswered",
     };
     // As the transcript pairs them: the earlier send's entry is not on this page, the final send's block is.
     card.recordImages = [undefined, "data:image/png;base64,BBBB"];
@@ -1619,11 +1908,22 @@ describe("ask-user-card answer images", () => {
   it("matches a whole-set record's images to rows by send and question, so a reused question id keeps each send's own image", async () => {
     const card = new AskUserCard();
     card.outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "2026-07-20T10:00:00.000Z", closedAt: "2026-07-20T10:05:00.000Z",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "2026-07-20T10:00:00.000Z",
+      closedAt: "2026-07-20T10:05:00.000Z",
       // q was sent, then the set was revised reusing id q with new wording, and q was sent again.
-      questions: [{ question: textQuestion("q", "Old q?"), answered: true, values: [], value: "One", revision: "r2" }, { question: textQuestion("q", "New q?"), answered: true, values: [], value: "Two" }],
-      images: [{ target: { kind: "question", id: "q" }, reference: "[PIC_1]", mimeType: "image/png", name: "A.png", revision: "r2" }, { target: { kind: "question", id: "q" }, reference: "[PIC_1]", mimeType: "image/png", name: "B.png" }],
-      answeredCount: 2, unansweredIds: [], summary: "Answered 2 of 2; none left unanswered",
+      questions: [
+        { question: textQuestion("q", "Old q?"), answered: true, values: [], value: "One", revision: "r2" },
+        { question: textQuestion("q", "New q?"), answered: true, values: [], value: "Two" },
+      ],
+      images: [
+        { target: { kind: "question", id: "q" }, reference: "[PIC_1]", mimeType: "image/png", name: "A.png", revision: "r2" },
+        { target: { kind: "question", id: "q" }, reference: "[PIC_1]", mimeType: "image/png", name: "B.png" },
+      ],
+      answeredCount: 2,
+      unansweredIds: [],
+      summary: "Answered 2 of 2; none left unanswered",
     };
     card.recordImages = ["data:image/png;base64,AAAA", "data:image/png;base64,BBBB"];
     document.body.append(card);
@@ -1729,12 +2029,7 @@ function openAsk(questions: AskUserQuestion[]): PendingAskUser {
   return { askId: "ask-1", askedAt: "2026-07-20T10:00:00.000Z", updatedAt: "2026-07-20T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions };
 }
 
-function question(
-  id: string,
-  text: string,
-  options: AskUserQuestion["options"],
-  settings: { detail?: string; multiple?: boolean } = {},
-): AskUserQuestion {
+function question(id: string, text: string, options: AskUserQuestion["options"], settings: { detail?: string; multiple?: boolean } = {}): AskUserQuestion {
   return {
     id,
     question: text,

@@ -3,7 +3,9 @@ import { validImageDimensions, type ImageDimensions } from "../../../shared/sess
 const storageKey = "pi-web:markdown-image-dimensions:v1";
 const maxRecords = 128;
 type DimensionStorage = Pick<Storage, "getItem" | "setItem">;
-interface DimensionRecord extends ImageDimensions { source: string }
+interface DimensionRecord extends ImageDimensions {
+  source: string;
+}
 
 function browserStorage(): DimensionStorage | undefined {
   try {
@@ -59,9 +61,17 @@ function loadRecords(storage: DimensionStorage | undefined): DimensionRecord[] {
 }
 
 function parseRecord(value: unknown): DimensionRecord | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)
-    || !("source" in value) || typeof value.source !== "string" || value.source === ""
-    || !("width" in value) || !("height" in value)) return undefined;
+  if (
+    typeof value !== "object"
+    || value === null
+    || Array.isArray(value)
+    || !("source" in value)
+    || typeof value.source !== "string"
+    || value.source === ""
+    || !("width" in value)
+    || !("height" in value)
+  )
+    return undefined;
   const dimensions = validImageDimensions(value.width, value.height);
   return dimensions === undefined ? undefined : { source: value.source, ...dimensions };
 }

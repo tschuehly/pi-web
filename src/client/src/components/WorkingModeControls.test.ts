@@ -6,9 +6,14 @@ import { WorkingModeControls } from "./WorkingModeControls";
 
 function status(extensionStatuses: Record<string, string>): SessionStatus {
   return {
-    sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false,
-    pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    sessionId: "session-1",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
     extensionStatuses,
   };
 }
@@ -23,14 +28,18 @@ function required<T>(value: T | null | undefined): T {
   return value;
 }
 
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+});
 
 describe("WorkingModeControls", () => {
   it("offers Reset alignment only while aligned, running /mode unalign", async () => {
     const run = vi.fn();
     const element = new WorkingModeControls();
     const selected = { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" } as const;
-    const snapshot = (aligned: boolean) => status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "applied", selected, applied: selected, aligned }) });
+    const snapshot = (aligned: boolean) =>
+      status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "applied", selected, applied: selected, aligned }) });
     element.status = snapshot(false);
     element.onRunCommand = run;
     document.body.append(element);
@@ -51,7 +60,8 @@ describe("WorkingModeControls", () => {
     const run = vi.fn();
     const element = new WorkingModeControls();
     const defaults = { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" } as const;
-    const snapshot = (applied: unknown) => status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...defaults, attention: "Focused" }, applied }) });
+    const snapshot = (applied: unknown) =>
+      status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { ...defaults, attention: "Focused" }, applied }) });
     element.status = snapshot({ ...defaults, attention: "Focused" });
     element.onRunCommand = run;
     document.body.append(element);
@@ -83,7 +93,14 @@ describe("WorkingModeControls", () => {
   it("lists every axis value in the pane and waits for status before changing state", async () => {
     const run = vi.fn();
     const element = new WorkingModeControls();
-    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: null }) });
+    element.status = status({
+      [WORKING_MODE_STATUS_KEY]: JSON.stringify({
+        schemaVersion: 2,
+        phase: "selected",
+        selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" },
+        applied: null,
+      }),
+    });
     element.onRunCommand = run;
     document.body.append(element);
     await element.updateComplete;
@@ -98,11 +115,24 @@ describe("WorkingModeControls", () => {
       ["", "Subagents", "Workers"],
     ]);
     // Each axis default shows only its icon; its name stays as the accessible name and tooltip.
-    expect(groups.map((group) => { const radio = required(group.querySelector('[role="radio"]')); return [radio.getAttribute("aria-label"), radio.getAttribute("title"), radio.querySelector("svg")?.getAttribute("aria-hidden")]; })).toEqual([
-      ["Default", "Default", "true"], ["Default", "Default", "true"], ["Default", "Default", "true"], ["Main", "Main", "true"],
+    expect(
+      groups.map((group) => {
+        const radio = required(group.querySelector('[role="radio"]'));
+        return [radio.getAttribute("aria-label"), radio.getAttribute("title"), radio.querySelector("svg")?.getAttribute("aria-hidden")];
+      }),
+    ).toEqual([
+      ["Default", "Default", "true"],
+      ["Default", "Default", "true"],
+      ["Default", "Default", "true"],
+      ["Main", "Main", "true"],
     ]);
     expect(root(element).querySelector('[data-value="Subagents"]')?.hasAttribute("aria-label")).toBe(false);
-    expect([...root(element).querySelectorAll('[aria-checked="true"]')].map((radio) => radio.getAttribute("data-value"))).toEqual(["Align", "Default", "Test", "Main"]);
+    expect([...root(element).querySelectorAll('[aria-checked="true"]')].map((radio) => radio.getAttribute("data-value"))).toEqual([
+      "Align",
+      "Default",
+      "Test",
+      "Main",
+    ]);
     expect(WorkingModeControls.styles.cssText).toMatch(/\.values > button\s*\{\s*flex:\s*1 1 auto/);
     expect(WorkingModeControls.styles.cssText).toMatch(/\.values > button\.icon-only\s*\{\s*flex:\s*0 0 auto/);
     required(root(element).querySelector<HTMLButtonElement>('.alignment [data-value="Plan"]')).click();
@@ -113,7 +143,9 @@ describe("WorkingModeControls", () => {
 
   it("disables the trigger until a current snapshot arrives", async () => {
     const element = new WorkingModeControls();
-    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Align", checking: "tests" }, applied: null }) });
+    element.status = status({
+      [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, phase: "selected", selected: { alignment: "Align", checking: "tests" }, applied: null }),
+    });
     document.body.append(element);
     await element.updateComplete;
     const trigger = required(root(element).querySelector<HTMLButtonElement>(".trigger"));
@@ -125,13 +157,25 @@ describe("WorkingModeControls", () => {
 
   it("shows each value's icon, colouring only changed axes, and the default icon when unavailable", async () => {
     const element = new WorkingModeControls();
-    element.status = status({ [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Plan", attention: "Default", checking: "Challenge", orchestration: "Workers" }, applied: null }) });
+    element.status = status({
+      [WORKING_MODE_STATUS_KEY]: JSON.stringify({
+        schemaVersion: 2,
+        phase: "selected",
+        selected: { alignment: "Plan", attention: "Default", checking: "Challenge", orchestration: "Workers" },
+        applied: null,
+      }),
+    });
     document.body.append(element);
     await element.updateComplete;
     const labels = () => [...root(element).querySelectorAll(".trigger > .axis")];
     const icons = () => labels().map((label) => label.querySelector("svg")?.innerHTML.replace(/<!--.*?-->/g, "") ?? "");
     const selectedIcons = icons();
-    expect(labels().map((label) => label.className)).toEqual(["axis alignment changed", "axis attention", "axis checking changed", "axis orchestration changed"]);
+    expect(labels().map((label) => label.className)).toEqual([
+      "axis alignment changed",
+      "axis attention",
+      "axis checking changed",
+      "axis orchestration changed",
+    ]);
     expect(selectedIcons[0]).toContain("M13 5h8"); // list-checks
     expect(selectedIcons[1]).toContain("M2.062 12.348"); // eye
     expect(selectedIcons[2]).toContain("m13 19 6-6"); // swords

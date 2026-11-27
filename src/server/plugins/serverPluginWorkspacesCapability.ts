@@ -98,11 +98,7 @@ function snapshotProject(project: Project, requestedId: string, pluginId: string
   return Object.freeze({ id: project.id, name: project.name, path: resolve(project.path) });
 }
 
-function snapshotWorkspace(
-  workspace: WorkspaceListing,
-  projectId: string,
-  pluginId: string,
-): ServerPluginPeerWorkspace {
+function snapshotWorkspace(workspace: WorkspaceListing, projectId: string, pluginId: string): ServerPluginPeerWorkspace {
   if (workspace.id === "") throw authorityError(pluginId, "resolved a workspace with no id");
   if (workspace.projectId !== projectId) throw authorityError(pluginId, "resolved a workspace outside the selected project");
   if (workspace.label === "") throw authorityError(pluginId, "resolved a workspace with no label");
@@ -119,18 +115,11 @@ function snapshotWorkspace(
 
 function assertActive(context: ServerPluginHostCapabilityContext): void {
   if (!context.lifetimeSignal.aborted) return;
-  throw authorityError(
-    context.pluginId,
-    "is no longer active",
-    context.lifetimeSignal.reason,
-  );
+  throw authorityError(context.pluginId, "is no longer active", context.lifetimeSignal.reason);
 }
 
 function authorityError(pluginId: string, message: string, cause?: unknown): Error {
-  return new Error(
-    `PI WEB host workspace authority for server plugin ${pluginId} ${message}`,
-    cause === undefined ? {} : { cause },
-  );
+  return new Error(`PI WEB host workspace authority for server plugin ${pluginId} ${message}`, cause === undefined ? {} : { cause });
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {

@@ -43,22 +43,18 @@ function workspace(path = resolve("/repo/worktree")): WorkspaceListing {
   };
 }
 
-function harness(options: {
-  maxConcurrentRunsPerPlugin?: number;
-  createHostedSession?: (cwd: string, signal: AbortSignal) => Promise<{ id: string }>;
-  runCompletion?: (cwd: string, prompt: string, signal: AbortSignal) => Promise<void>;
-  startOneShotRun?: (
-    cwd: string,
-    prompt: string,
-    signal: AbortSignal,
-  ) => Promise<{ id: string; completion: Promise<void> }>;
-} = {}) {
+function harness(
+  options: {
+    maxConcurrentRunsPerPlugin?: number;
+    createHostedSession?: (cwd: string, signal: AbortSignal) => Promise<{ id: string }>;
+    runCompletion?: (cwd: string, prompt: string, signal: AbortSignal) => Promise<void>;
+    startOneShotRun?: (cwd: string, prompt: string, signal: AbortSignal) => Promise<{ id: string; completion: Promise<void> }>;
+  } = {},
+) {
   let currentWorkspace = workspace();
   let sessionSequence = 0;
   const projects = {
-    requireProject: vi.fn((projectId: string) => projectId === project.id
-      ? Promise.resolve({ ...project })
-      : Promise.reject(new Error("Project not found"))),
+    requireProject: vi.fn((projectId: string) => (projectId === project.id ? Promise.resolve({ ...project }) : Promise.reject(new Error("Project not found")))),
   };
   const workspaces = {
     resolve: vi.fn((selectedProject: Project, signal?: AbortSignal) => {
@@ -75,13 +71,16 @@ function harness(options: {
   const runCompletion = vi.fn(options.runCompletion ?? (() => Promise.resolve()));
   const sessions = {
     createHostedSession: vi.fn(options.createHostedSession ?? (() => Promise.resolve({ id: `created-${String(++sessionSequence)}` }))),
-    startOneShotRun: vi.fn(options.startOneShotRun ?? ((cwd: string, prompt: string, signal: AbortSignal) => {
-      sessionSequence += 1;
-      return Promise.resolve({
-        id: `session-${String(sessionSequence)}`,
-        completion: runCompletion(cwd, prompt, signal),
-      });
-    })),
+    startOneShotRun: vi.fn(
+      options.startOneShotRun
+        ?? ((cwd: string, prompt: string, signal: AbortSignal) => {
+          sessionSequence += 1;
+          return Promise.resolve({
+            id: `session-${String(sessionSequence)}`,
+            completion: runCompletion(cwd, prompt, signal),
+          });
+        }),
+    ),
     abort: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
   };
@@ -90,9 +89,7 @@ function harness(options: {
     projects,
     workspaces,
     sessions,
-    ...(options.maxConcurrentRunsPerPlugin === undefined
-      ? {}
-      : { maxConcurrentRunsPerPlugin: options.maxConcurrentRunsPerPlugin }),
+    ...(options.maxConcurrentRunsPerPlugin === undefined ? {} : { maxConcurrentRunsPerPlugin: options.maxConcurrentRunsPerPlugin }),
   });
   const instance = factory.create({
     pluginId: "run-consumer",
@@ -111,7 +108,9 @@ function harness(options: {
     runCompletion,
     sessions,
     workspaces,
-    setWorkspace(next: WorkspaceListing) { currentWorkspace = next; },
+    setWorkspace(next: WorkspaceListing) {
+      currentWorkspace = next;
+    },
   };
 }
 
@@ -142,7 +141,9 @@ describe("server plugin PI sessions capability", () => {
     const selection = { projectId: fixture.input.projectId, workspaceId: fixture.input.workspaceId };
     const creation = fixture.capability.create(selection);
     const rejected = expect(creation).rejects.toThrow("could not create a PI session");
-    await vi.waitFor(() => { expect(fixture.sessions.createHostedSession).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(fixture.sessions.createHostedSession).toHaveBeenCalledOnce();
+    });
     await expect(fixture.capability.run(fixture.input)).rejects.toThrow("limit of 1");
     await expect(fixture.capability.create(selection)).rejects.toThrow("limit of 1");
     pending.reject(new Error("startup failed"));
@@ -152,7 +153,9 @@ describe("server plugin PI sessions capability", () => {
     fixture.sessions.createHostedSession.mockImplementation(() => late.promise);
     const lateCreation = fixture.capability.create(selection);
     const lateRejected = expect(lateCreation).rejects.toThrow("no longer active");
-    await vi.waitFor(() => { expect(fixture.sessions.createHostedSession).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(fixture.sessions.createHostedSession).toHaveBeenCalledTimes(2);
+    });
     fixture.lifetime.abort();
     late.resolve({ id: "published" });
     await lateRejected;
@@ -175,18 +178,8 @@ describe("server plugin PI sessions capability", () => {
     expect(fixture.projects.requireProject).toHaveBeenCalledTimes(2);
     expect(fixture.workspaces.resolve).toHaveBeenCalledTimes(2);
     expect(fixture.workspaces.resolve.mock.calls.every(([, signal]) => signal === fixture.lifetime.signal)).toBe(true);
-    expect(fixture.sessions.startOneShotRun).toHaveBeenNthCalledWith(
-      1,
-      resolve("/repo/worktree"),
-      fixture.input.prompt,
-      expect.any(AbortSignal),
-    );
-    expect(fixture.sessions.startOneShotRun).toHaveBeenNthCalledWith(
-      2,
-      resolve("/repo/moved-worktree"),
-      fixture.input.prompt,
-      expect.any(AbortSignal),
-    );
+    expect(fixture.sessions.startOneShotRun).toHaveBeenNthCalledWith(1, resolve("/repo/worktree"), fixture.input.prompt, expect.any(AbortSignal));
+    expect(fixture.sessions.startOneShotRun).toHaveBeenNthCalledWith(2, resolve("/repo/moved-worktree"), fixture.input.prompt, expect.any(AbortSignal));
     expect(fixture.runCompletion).toHaveBeenCalledTimes(2);
     expect(fixture.sessions.stop).not.toHaveBeenCalled();
     expect(fixture.sessions.abort).not.toHaveBeenCalled();
@@ -211,8 +204,7 @@ describe("server plugin PI sessions capability", () => {
     });
 
     const first = await fixture.capability.run(fixture.input);
-    await expect(fixture.capability.run(fixture.input))
-      .rejects.toThrow("run-consumer reached its limit of 1 concurrent runs");
+    await expect(fixture.capability.run(fixture.input)).rejects.toThrow("run-consumer reached its limit of 1 concurrent runs");
 
     firstPrompt.resolve();
     await expect(first.completion).resolves.toEqual({ status: "completed" });
@@ -229,17 +221,14 @@ describe("server plugin PI sessions capability", () => {
     let failStart = true;
     const fixture = harness({
       maxConcurrentRunsPerPlugin: 1,
-      startOneShotRun: () => failStart
-        ? Promise.reject(new Error("runtime construction failed"))
-        : Promise.resolve({ id: "session-recovered", completion: Promise.resolve() }),
+      startOneShotRun: () =>
+        failStart ? Promise.reject(new Error("runtime construction failed")) : Promise.resolve({ id: "session-recovered", completion: Promise.resolve() }),
     });
 
-    await expect(fixture.capability.run(fixture.input))
-      .rejects.toThrow("run-consumer could not start a PI session");
+    await expect(fixture.capability.run(fixture.input)).rejects.toThrow("run-consumer could not start a PI session");
     failStart = false;
     fixture.setWorkspace({ ...workspace(), id: "workspace-replaced" });
-    await expect(fixture.capability.run(fixture.input))
-      .rejects.toThrow("run-consumer selected workspace is stale or unavailable");
+    await expect(fixture.capability.run(fixture.input)).rejects.toThrow("run-consumer selected workspace is stale or unavailable");
     fixture.setWorkspace(workspace());
     const recovered = await fixture.capability.run(fixture.input);
     await expect(recovered.completion).resolves.toEqual({ status: "completed" });
@@ -274,12 +263,13 @@ describe("server plugin PI sessions capability", () => {
     const factory = createServerPluginPiSessionsCapabilityFactory({
       projects: { requireProject: () => Promise.resolve(project) },
       workspaces: {
-        resolve: () => Promise.resolve({
-          status: "folder" as const,
-          projectId: project.id,
-          workspaces: [workspace()],
-          diagnostics: [],
-        }),
+        resolve: () =>
+          Promise.resolve({
+            status: "folder" as const,
+            projectId: project.id,
+            workspaces: [workspace()],
+            diagnostics: [],
+          }),
       },
       sessions,
     });
@@ -292,7 +282,9 @@ describe("server plugin PI sessions capability", () => {
     const selection = { projectId: project.id, workspaceId: "workspace-1" };
     const running = method === "run" ? capability.run({ ...selection, prompt: "Must not start" }) : capability.create(selection);
     const rejected = expect(running).rejects.toThrow("is no longer active");
-    await vi.waitFor(() => { expect(store.pendingDialogs("session-1")).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(store.pendingDialogs("session-1")).toHaveLength(1);
+    });
 
     lifetime.abort(new DOMException("Plugin stopped", "AbortError"));
     if (instance.dispose === undefined) throw new Error("Expected PI session capability cleanup");
@@ -316,7 +308,9 @@ describe("server plugin PI sessions capability", () => {
     const fixture = harness({ startOneShotRun: () => started.promise });
 
     const running = fixture.capability.run(fixture.input);
-    await vi.waitFor(() => { expect(fixture.sessions.startOneShotRun).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(fixture.sessions.startOneShotRun).toHaveBeenCalledOnce();
+    });
     fixture.lifetime.abort(new DOMException("Plugin stopped", "AbortError"));
     started.resolve({ id: "session-late", completion: Promise.resolve() });
 
@@ -348,10 +342,14 @@ describe("server plugin PI sessions capability", () => {
       },
     });
     const sessions = new PiSessionService(new CapturingSessionEventHub(), {
-      agentDir: "/tmp/pi-web-test-agent", modelRuntime: testModelRuntime,
-      sessionManager: sessionGateway([]), archiveStore: emptyArchiveStore(),
-      createAgentRuntime: runtimeCreator(fake.runtime), heartbeatIntervalMs: 60_000,
-      pendingExtensionDialogStore: dialogs, extensionDialogsTimeoutMs: 0,
+      agentDir: "/tmp/pi-web-test-agent",
+      modelRuntime: testModelRuntime,
+      sessionManager: sessionGateway([]),
+      archiveStore: emptyArchiveStore(),
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      heartbeatIntervalMs: 60_000,
+      pendingExtensionDialogStore: dialogs,
+      extensionDialogsTimeoutMs: 0,
     });
     const lifetime = new AbortController();
     const instance = createServerPluginPiSessionsCapabilityFactory({
@@ -393,8 +391,7 @@ describe("server plugin PI sessions capability", () => {
     fixture.lifetime.abort(new DOMException("Plugin lifetime ended", "AbortError"));
 
     await fixture.instance.dispose?.(AbortSignal.timeout(1_000));
-    await expect(fixture.capability.run(fixture.input))
-      .rejects.toThrow("run-consumer is no longer active");
+    await expect(fixture.capability.run(fixture.input)).rejects.toThrow("run-consumer is no longer active");
     expect(fixture.sessions.abort).not.toHaveBeenCalled();
     expect(fixture.sessions.stop).not.toHaveBeenCalled();
     prompt.resolve();

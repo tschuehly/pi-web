@@ -4,7 +4,15 @@ import { customElement, property, state } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type { AppAction } from "../../actions";
 import type { PiWebConfigResponse, PiWebConfigValues, PiWebShortcutConfig } from "../../api";
-import { formatShortcut, parseShortcutInput, resolveShortcutBindings, shortcutPreferenceForAction, shortcutSequenceTimeoutMs, shortcutTokenFromEvent, type ShortcutBindingResolution } from "../../keyboardShortcuts";
+import {
+  formatShortcut,
+  parseShortcutInput,
+  resolveShortcutBindings,
+  shortcutPreferenceForAction,
+  shortcutSequenceTimeoutMs,
+  shortcutTokenFromEvent,
+  type ShortcutBindingResolution,
+} from "../../keyboardShortcuts";
 import { composerShortcutActions, isComposerShortcut } from "../../composerShortcuts";
 import { uiButtonStyles } from "../ui/controlStyles";
 import { uiFormStyles } from "../ui/formStyles";
@@ -94,7 +102,10 @@ export class SettingsShortcutsPanel extends LitElement {
         .notices=${this.panelNotices()}
         .onAction=${this.onReload}
       >
-        ${this.configResponse === undefined && this.loading ? html`<div class="loading-card ui-settings-path">Loading shortcuts…</div>` : html`
+        ${
+          this.configResponse === undefined && this.loading
+            ? html`<div class="loading-card ui-settings-path">Loading shortcuts…</div>`
+            : html`
           ${this.configResponse === undefined ? html`<div class="loading-card ui-settings-path" role="status">Shortcut settings are unavailable. Refresh shortcuts to try again.</div>` : null}
           <details class="config-path-card ui-settings-path">
             <summary>Shortcut details</summary>
@@ -110,22 +121,33 @@ export class SettingsShortcutsPanel extends LitElement {
             <div class="ui-settings-heading"><h3>Send behavior</h3></div>
             <label class="shortcut-input-label ui-form-field">
               <span>Send while agent is running</span>
-              <select class="ui-select" aria-label="Send while agent is running" .value=${live(this.configResponse?.config.defaultStreamingBehavior ?? "steer")} ?disabled=${this.loading || this.saving || this.configResponse === undefined} @change=${(event: Event) => { void this.saveSendBehavior(event); }}>
+              <select class="ui-select" aria-label="Send while agent is running" .value=${live(this.configResponse?.config.defaultStreamingBehavior ?? "steer")} ?disabled=${this.loading || this.saving || this.configResponse === undefined} @change=${(
+                event: Event,
+              ) => {
+                void this.saveSendBehavior(event);
+              }}>
                 <option value="steer">Steer (default)</option>
                 <option value="followUp">Follow-up</option>
               </select>
             </label>
             <p>Keyboard shortcut only. Steer sends before the next model call; follow-up waits for the response to finish.</p>
           </section>
-          ${groups.length === 0 ? html`<div class="loading-card ui-settings-path">No actions registered.</div>` : groups.map((group) => html`
+          ${
+            groups.length === 0
+              ? html`<div class="loading-card ui-settings-path">No actions registered.</div>`
+              : groups.map(
+                  (group) => html`
             <section class="shortcut-group ui-settings-section">
               <div class="ui-settings-heading"><h3>${group.name}</h3></div>
               <div class="shortcut-list ui-settings-list">
                 ${group.actions.map((action) => this.renderShortcutRow(action, shortcutResolutions.get(action.id)))}
               </div>
             </section>
-          `)}
-        `}
+          `,
+                )
+          }
+        `
+        }
       </settings-panel-frame>
     `;
   }
@@ -184,15 +206,25 @@ export class SettingsShortcutsPanel extends LitElement {
               autocapitalize="off"
               spellcheck="false"
               ?disabled=${controlsDisabled}
-              @input=${(event: Event) => { this.updateDraft(action.id, inputValue(event)); }}
+              @input=${(event: Event) => {
+                this.updateDraft(action.id, inputValue(event));
+              }}
             >
           </label>
           ${recordingHint !== "" ? html`<small class="recording-hint" id=${`recording-${action.id}`} role="status">${recordingHint}</small>` : null}
           <div class="shortcut-actions ui-settings-actions">
-            <button class="primary ui-button ui-button--action ui-button--primary" aria-label=${`Save shortcut for ${action.title}`} ?disabled=${controlsDisabled || !hasDraft || inputText.trim() === ""} @click=${() => { void this.saveShortcut(action); }}>Save</button>
-            <button class="ui-button ui-button--action" aria-label=${`${this.recording?.actionId === action.id ? "Cancel recording" : "Record shortcut"} for ${action.title}`} ?disabled=${controlsDisabled} @click=${() => { void this.toggleRecording(action.id); }}>${this.recording?.actionId === action.id ? "Cancel recording" : "Record"}</button>
-            <button class="ui-button ui-button--action" aria-label=${`Disable shortcut for ${action.title}`} ?disabled=${controlsDisabled || configured === null} @click=${() => { void this.setShortcutNone(action); }}>Disable shortcut</button>
-            <button class="ui-button ui-button--action" aria-label=${`Restore default shortcut for ${action.title}`} ?disabled=${controlsDisabled || !hasConfiguredShortcut} @click=${() => { void this.resetShortcut(action); }}>Restore default</button>
+            <button class="primary ui-button ui-button--action ui-button--primary" aria-label=${`Save shortcut for ${action.title}`} ?disabled=${controlsDisabled || !hasDraft || inputText.trim() === ""} @click=${() => {
+              void this.saveShortcut(action);
+            }}>Save</button>
+            <button class="ui-button ui-button--action" aria-label=${`${this.recording?.actionId === action.id ? "Cancel recording" : "Record shortcut"} for ${action.title}`} ?disabled=${controlsDisabled} @click=${() => {
+              void this.toggleRecording(action.id);
+            }}>${this.recording?.actionId === action.id ? "Cancel recording" : "Record"}</button>
+            <button class="ui-button ui-button--action" aria-label=${`Disable shortcut for ${action.title}`} ?disabled=${controlsDisabled || configured === null} @click=${() => {
+              void this.setShortcutNone(action);
+            }}>Disable shortcut</button>
+            <button class="ui-button ui-button--action" aria-label=${`Restore default shortcut for ${action.title}`} ?disabled=${controlsDisabled || !hasConfiguredShortcut} @click=${() => {
+              void this.resetShortcut(action);
+            }}>Restore default</button>
           </div>
         </div>
       </article>
@@ -347,7 +379,11 @@ export class SettingsShortcutsPanel extends LitElement {
     this.recordingListenerActive = false;
   }
 
-  static override styles = [uiButtonStyles, uiFormStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiFormStyles,
+    uiSettingsStyles,
+    css`
     :host { display: block; }
     h3, p { margin: 0; }
     p { color: var(--pi-muted); line-height: 1.45; }
@@ -380,7 +416,8 @@ export class SettingsShortcutsPanel extends LitElement {
       .shortcut-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
       .shortcut-status, .shortcut-actions { justify-content: flex-start; }
     }
-  `];
+  `,
+  ];
 }
 
 interface RecordingState {
@@ -405,7 +442,10 @@ function shortcutConflictLabel(resolution: ShortcutBindingResolution | undefined
   if (!resolution.active) return `Conflict: inactive; used by ${resolution.shadowedBy?.action.title ?? "another action"}`;
   const shadowedCount = resolution.shadows.length;
   if (shadowedCount === 0) return undefined;
-  const shadowedNames = resolution.shadows.slice(0, 2).map((binding) => binding.action.title).join(", ");
+  const shadowedNames = resolution.shadows
+    .slice(0, 2)
+    .map((binding) => binding.action.title)
+    .join(", ");
   const suffix = shadowedCount > 2 ? `, +${String(shadowedCount - 2)} more` : "";
   return `Conflict: takes priority over ${String(shadowedCount)} ${shadowedCount === 1 ? "action" : "actions"}: ${shadowedNames}${suffix}`;
 }
@@ -443,10 +483,14 @@ function shortcutState(action: AppAction, shortcuts: PiWebShortcutConfig | undef
 
 function shortcutStateLabel(state: ShortcutState): string {
   switch (state) {
-    case "default": return "Default";
-    case "custom": return "Custom";
-    case "disabled": return "Disabled";
-    case "unassigned": return "No default";
+    case "default":
+      return "Default";
+    case "custom":
+      return "Custom";
+    case "disabled":
+      return "Disabled";
+    case "unassigned":
+      return "No default";
   }
 }
 

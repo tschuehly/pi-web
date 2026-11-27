@@ -5,8 +5,14 @@ import { adaptPublicPlugin, publicPluginSession, publicPluginState } from "./pub
 import type { SessionLabelContext, WorkspacePanelContext } from "./types";
 
 const session = {
-  id: "session", cwd: "/workspace", name: "Conversation", path: "/private/session.jsonl",
-  created: "2026-01-01", modified: "2026-01-01", messageCount: 1, firstMessage: "Private message",
+  id: "session",
+  cwd: "/workspace",
+  name: "Conversation",
+  path: "/private/session.jsonl",
+  created: "2026-01-01",
+  modified: "2026-01-01",
+  messageCount: 1,
+  firstMessage: "Private message",
   clientPendingStart: true,
 };
 
@@ -20,8 +26,7 @@ it("projects only documented session fields and does not share the internal sess
   expect(session.name).toBe("Conversation");
   expect(publicPluginState(initialAppState())).not.toHaveProperty("selectedSession");
   const archived = { ...session, archived: true, clientPendingStart: false };
-  expect(publicPluginState({ ...state, selectedSession: archived }).selectedSession)
-    .toMatchObject({ archived: true, pending: false });
+  expect(publicPluginState({ ...state, selectedSession: archived }).selectedSession).toMatchObject({ archived: true, pending: false });
 });
 
 it("exposes detached public session metadata without sharing nested values with host state", () => {
@@ -38,11 +43,9 @@ it("exposes detached public session metadata without sharing nested values with 
 });
 
 it("projects an unselected row independently of the selected conversation", () => {
-  const row = { ...session, id: "other-row", archived: true, clientPendingStart: false,
-    metadata: { workflow: { nested: { leg: 3 } } } };
+  const row = { ...session, id: "other-row", archived: true, clientPendingStart: false, metadata: { workflow: { nested: { leg: 3 } } } };
   const snapshot = publicPluginSession(row);
-  expect(snapshot).toEqual({ id: "other-row", cwd: "/workspace", name: "Conversation", archived: true, pending: false,
-    metadata: row.metadata });
+  expect(snapshot).toEqual({ id: "other-row", cwd: "/workspace", name: "Conversation", archived: true, pending: false, metadata: row.metadata });
   expect(snapshot).not.toHaveProperty("path");
   expect(snapshot).not.toHaveProperty("firstMessage");
   Reflect.set(snapshot.metadata?.["workflow"] ?? {}, "nested", { leg: 100 });
@@ -53,15 +56,25 @@ it("preserves lifecycle callback receivers while adapting contributions", async 
   class Activation {
     contributions = {};
     started = false;
-    start() { this.started = true; }
-    dispose() { this.started = false; }
+    start() {
+      this.started = true;
+    }
+    dispose() {
+      this.started = false;
+    }
   }
   const source = new Activation();
   const plugin = adaptPublicPlugin({ apiVersion: 4, name: "Lifecycle", activate: () => source });
   const signal = new AbortController().signal;
-  const activation = await plugin.activate({ apiVersion: 4, pluginId: "lifecycle", runtimePluginId: "lifecycle", html, svg,
-    signal, lifetimeSignal: signal });
-  await activation.start?.({ signal, capabilities: { resolve() { throw new Error("Unexpected dependency"); } } });
+  const activation = await plugin.activate({ apiVersion: 4, pluginId: "lifecycle", runtimePluginId: "lifecycle", html, svg, signal, lifetimeSignal: signal });
+  await activation.start?.({
+    signal,
+    capabilities: {
+      resolve() {
+        throw new Error("Unexpected dependency");
+      },
+    },
+  });
   expect(source.started).toBe(true);
   await activation.dispose?.(signal);
   expect(source.started).toBe(false);
@@ -73,14 +86,29 @@ it.each([4, 5] as const)("projects state for API v%s external workspace callback
   const onInvalidate = vi.fn();
   const render = vi.fn(() => html`panel`);
   const items = vi.fn(() => []);
-  const plugin = adaptPublicPlugin({ apiVersion, name: "External", activate: () => ({ contributions: {
-    workspacePanels: [{ id: "panel", title: "Panel", visible, badge, onInvalidate, render }],
-    workspaceLabels: [{ id: "label", visible, items }],
-    sessionLabels: [{ id: "session-label", visible, items }],
-  } }) });
-  const activation = await plugin.activate({ apiVersion, pluginId: "external", runtimePluginId: "external", html, svg,
-    signal: new AbortController().signal, lifetimeSignal: new AbortController().signal });
-  const unused = () => { throw new Error("Unexpected host call"); };
+  const plugin = adaptPublicPlugin({
+    apiVersion,
+    name: "External",
+    activate: () => ({
+      contributions: {
+        workspacePanels: [{ id: "panel", title: "Panel", visible, badge, onInvalidate, render }],
+        workspaceLabels: [{ id: "label", visible, items }],
+        sessionLabels: [{ id: "session-label", visible, items }],
+      },
+    }),
+  });
+  const activation = await plugin.activate({
+    apiVersion,
+    pluginId: "external",
+    runtimePluginId: "external",
+    html,
+    svg,
+    signal: new AbortController().signal,
+    lifetimeSignal: new AbortController().signal,
+  });
+  const unused = () => {
+    throw new Error("Unexpected host call");
+  };
   const context: WorkspacePanelContext = {
     navigate: () => Promise.resolve(),
     state: { ...initialAppState(), selectedSession: session },
@@ -88,7 +116,8 @@ it.each([4, 5] as const)("projects state for API v%s external workspace callback
     workspace: { id: "workspace", projectId: "project", path: "/workspace", label: "Workspace", isMain: true, effectiveConfig: {} },
     files: { readFile: unused, listFiles: unused, writeFile: unused, deleteFile: unused, moveFile: unused },
     prompt: { insertText: unused, getText: unused, getSelection: unused },
-    terminal: { open: unused, runCommand: unused }, host: { requestRender: unused },
+    terminal: { open: unused, runCommand: unused },
+    host: { requestRender: unused },
   };
   const panel = activation.contributions.workspacePanels?.[0];
   const label = activation.contributions.workspaceLabels?.[0];
@@ -101,10 +130,14 @@ it.each([4, 5] as const)("projects state for API v%s external workspace callback
   const rowContext: SessionLabelContext = { ...context, session: publicPluginSession({ ...session, id: "row" }) };
   activation.contributions.sessionLabels?.[0]?.visible?.(rowContext);
   activation.contributions.sessionLabels?.[0]?.items(rowContext);
-  expect(items).toHaveBeenLastCalledWith(expect.objectContaining({ session: { id: "row", cwd: "/workspace", name: "Conversation", archived: false, pending: true } }));
+  expect(items).toHaveBeenLastCalledWith(
+    expect.objectContaining({ session: { id: "row", cwd: "/workspace", name: "Conversation", archived: false, pending: true } }),
+  );
   for (const callback of [visible, badge, onInvalidate, render, items]) {
-    expect(callback).toHaveBeenCalledWith(expect.objectContaining({ state: publicPluginState(context.state) }),
-      ...(callback === onInvalidate ? [{ reason: "manual", resources: ["workspace.files"] }] : []));
+    expect(callback).toHaveBeenCalledWith(
+      expect.objectContaining({ state: publicPluginState(context.state) }),
+      ...(callback === onInvalidate ? [{ reason: "manual", resources: ["workspace.files"] }] : []),
+    );
   }
   expect(context.state.selectedSession).toBe(session);
 });

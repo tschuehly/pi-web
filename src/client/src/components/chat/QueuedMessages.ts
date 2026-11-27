@@ -16,8 +16,12 @@ export interface QueuedMessageSection {
 
 export function chatQueuedMessageSections(clientQueued: QueuedSessionMessage[], serverQueued: QueuedSessionMessage[]): QueuedMessageSection[] {
   return [
-    clientQueued.length === 0 ? undefined : { source: "client", heading: "Queued until session starts", detail: "Will send once the backend session is ready", messages: clientQueued },
-    serverQueued.length === 0 ? undefined : { source: "server", heading: "Queued messages", detail: `${String(serverQueued.length)} pending`, messages: serverQueued },
+    clientQueued.length === 0
+      ? undefined
+      : { source: "client", heading: "Queued until session starts", detail: "Will send once the backend session is ready", messages: clientQueued },
+    serverQueued.length === 0
+      ? undefined
+      : { source: "server", heading: "Queued messages", detail: `${String(serverQueued.length)} pending`, messages: serverQueued },
   ].filter((section): section is QueuedMessageSection => section !== undefined);
 }
 
@@ -56,12 +60,17 @@ export function renderQueuedMessageSection(section: QueuedMessageSection, option
       <div class="queued-header">
         <div class="queued-heading"><strong>${section.heading}</strong><small>${section.detail}</small></div>
         ${promoteAll === undefined ? nothing : html`<button type="button" class="queued-send-all-button ui-button ui-button--compact" title=${promotionTitle} ?disabled=${options.compacting === true} @click=${promoteAll}>Send all now</button>`}
-        ${chatQueuedSectionShowsClearAction(section, options.onClear !== undefined) ? html`
+        ${
+          chatQueuedSectionShowsClearAction(section, options.onClear !== undefined)
+            ? html`
           <button type="button" class="queued-clear-button ui-button ui-button--icon ui-button--compact" ?disabled=${options.pending} aria-label="Clear queue" title="Clear queued messages without stopping active work" @click=${options.onClear}>${renderTrashIcon()}</button>
-        ` : nothing}
+        `
+            : nothing
+        }
       </div>
       ${reason === undefined ? nothing : html`<small role="status">${reason}</small>`}
-      ${section.messages.map((message, index) => html`
+      ${section.messages.map(
+        (message, index) => html`
         <div class="queued-message">
           <div class="queued-message-header">
             <div class="queued-message-meta">
@@ -69,18 +78,37 @@ export function renderQueuedMessageSection(section: QueuedMessageSection, option
               ${queuedMessageAttachmentLabel(message) === undefined ? nothing : html`<span class="queued-attachments" title="Attachments included with this queued message"><span aria-hidden="true">📎</span> ${queuedMessageAttachmentLabel(message)}</span>`}
             </div>
             <div class="queued-message-actions ui-toolbar-group">
-              ${promote === undefined || message.kind !== "followUp" ? nothing : html`<button type="button" class="queued-send-now-button ui-button ui-button--compact" aria-label=${`Send follow-up ${String(index + 1)} now`} title=${promotionTitle} ?disabled=${options.compacting === true} @click=${() => { promote(message); }}>Send now</button>`}
-              <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" aria-label="Copy queued message" title="Copy message" @click=${() => { options.onCopy(message.text); }}>${renderCopyIcon()}</button>
-              ${section.source !== "server" || options.onAction === undefined ? nothing : html`
-                <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" ?disabled=${disabled} title=${reason ?? (message.kind === "steer" ? "Move to the end of the follow-up queue" : "Move to the end of the steering queue")} aria-label=${message.kind === "steer" ? "Switch to Queue" : "Switch to Steer"} @click=${() => { options.onAction?.("toggle", index, section.messages); }}>${message.kind === "steer" ? renderQueueIcon() : renderSteerIcon()}</button>
-                <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" ?disabled=${disabled} aria-label="Recall queued message" title=${reason ?? "Recall this message's text and clear later queued messages"} @click=${() => { options.onAction?.("edit", index, section.messages); }}>${renderGoBackIcon()}</button>
-                <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" ?disabled=${disabled} aria-label="Remove queued message" title=${reason ?? "Remove only this message"} @click=${() => { options.onAction?.("remove", index, section.messages); }}>${renderTrashIcon()}</button>
-              `}
+              ${
+                promote === undefined || message.kind !== "followUp"
+                  ? nothing
+                  : html`<button type="button" class="queued-send-now-button ui-button ui-button--compact" aria-label=${`Send follow-up ${String(index + 1)} now`} title=${promotionTitle} ?disabled=${options.compacting === true} @click=${() => {
+                      promote(message);
+                    }}>Send now</button>`
+              }
+              <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" aria-label="Copy queued message" title="Copy message" @click=${() => {
+                options.onCopy(message.text);
+              }}>${renderCopyIcon()}</button>
+              ${
+                section.source !== "server" || options.onAction === undefined
+                  ? nothing
+                  : html`
+                <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" ?disabled=${disabled} title=${reason ?? (message.kind === "steer" ? "Move to the end of the follow-up queue" : "Move to the end of the steering queue")} aria-label=${message.kind === "steer" ? "Switch to Queue" : "Switch to Steer"} @click=${() => {
+                  options.onAction?.("toggle", index, section.messages);
+                }}>${message.kind === "steer" ? renderQueueIcon() : renderSteerIcon()}</button>
+                <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" ?disabled=${disabled} aria-label="Recall queued message" title=${reason ?? "Recall this message's text and clear later queued messages"} @click=${() => {
+                  options.onAction?.("edit", index, section.messages);
+                }}>${renderGoBackIcon()}</button>
+                <button type="button" class="queued-action ui-button ui-button--icon ui-button--compact" ?disabled=${disabled} aria-label="Remove queued message" title=${reason ?? "Remove only this message"} @click=${() => {
+                  options.onAction?.("remove", index, section.messages);
+                }}>${renderTrashIcon()}</button>
+              `
+              }
             </div>
           </div>
           <formatted-text .imagesEnabled=${options.behaviors.loadImages} .codeBlocks=${options.behaviors.codeBlocks} .intentKey=${JSON.stringify([options.machineId, options.sessionId, "queue", section.source, index, message.kind])} .contentRendering=${options.contentRendering} .machineId=${options.machineId} .workspaceContext=${options.workspaceContext} .text=${message.text}></formatted-text>
         </div>
-      `)}
+      `,
+      )}
     </aside>
   `;
 }

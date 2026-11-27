@@ -30,10 +30,7 @@ export function renderRelayDocumentHtml(source: string): string {
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 const TABLE_SCROLL_CLASS = "table-scroll";
@@ -41,7 +38,9 @@ const TABLE_SCROLL_CLASS = "table-scroll";
 function sanitizeHtml(html: string): string {
   const template = document.createElement("template");
   template.innerHTML = html;
-  template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => { node.remove(); });
+  template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => {
+    node.remove();
+  });
   template.content.querySelectorAll("*").forEach((element) => {
     for (const attribute of [...element.attributes]) {
       const name = attribute.name.toLowerCase();

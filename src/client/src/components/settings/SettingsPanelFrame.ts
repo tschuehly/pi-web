@@ -73,7 +73,9 @@ export class SettingsPanelFrame extends LitElement {
         class="secondary ui-button ui-button--action"
         title=${this.actionTitle || this.actionLabel}
         ?disabled=${this.actionDisabled}
-        @click=${() => { void this.onAction?.(); }}
+        @click=${() => {
+          void this.onAction?.();
+        }}
       >${this.actionLabel}</button>
     `;
   }
@@ -99,7 +101,10 @@ export class SettingsPanelFrame extends LitElement {
     `;
   }
 
-  static override styles = [uiButtonStyles, uiNoticeStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiNoticeStyles,
+    css`
     :host { display: block; }
     .panel { display: block; }
     .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px; border-bottom: 1px solid var(--pi-border-muted); background: var(--pi-surface); }
@@ -120,15 +125,19 @@ export class SettingsPanelFrame extends LitElement {
       .section-heading { display: grid; gap: 12px; }
       .heading-actions { justify-self: start; }
     }
-  `];
+  `,
+  ];
 }
 
 function defaultNoticeRole(tone: SettingsNoticeTone): SettingsNoticeRole {
   switch (tone) {
-    case "error": return "alert";
-    case "success": return "status";
+    case "error":
+      return "alert";
+    case "success":
+      return "status";
     case "warning":
-    case "info": return "note";
+    case "info":
+      return "note";
   }
 }
 

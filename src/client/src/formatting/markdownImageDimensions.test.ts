@@ -8,7 +8,9 @@ const dimensions = { width: 640, height: 480 };
 function memoryStorage(values = new Map<string, string>()) {
   return {
     getItem: vi.fn((key: string) => values.get(key) ?? null),
-    setItem: vi.fn((key: string, value: string) => { values.set(key, value); }),
+    setItem: vi.fn((key: string, value: string) => {
+      values.set(key, value);
+    }),
   };
 }
 
@@ -123,7 +125,12 @@ describe("markdown image dimension hints", () => {
     const otherSource = sourceUrl(1);
     const replacement = { width: 800, height: 600 };
     const invalidRecords: unknown[] = [
-      null, true, 7, "record", [], {},
+      null,
+      true,
+      7,
+      "record",
+      [],
+      {},
       { source: 7, ...dimensions },
       { source: "", ...dimensions },
       { source, width: 640 },
@@ -141,12 +148,15 @@ describe("markdown image dimension hints", () => {
       { source, width: Number.MAX_SAFE_INTEGER + 1, height: 480 },
       { source, width: 640, height: Number.MAX_SAFE_INTEGER + 1 },
     ];
-    storage.setItem(storageKey, JSON.stringify([
-      { source: otherSource, ...dimensions },
-      ...invalidRecords,
-      { source: otherSource, ...replacement, allowed: true, timestamp: 0 },
-      { source: otherSource, width: 0, height: 0 },
-    ]));
+    storage.setItem(
+      storageKey,
+      JSON.stringify([
+        { source: otherSource, ...dimensions },
+        ...invalidRecords,
+        { source: otherSource, ...replacement, allowed: true, timestamp: 0 },
+        { source: otherSource, width: 0, height: 0 },
+      ]),
+    );
 
     expect(readMarkdownImageDimensions(source, storage)).toBeUndefined();
     expect(readMarkdownImageDimensions(otherSource, storage)).toEqual(replacement);
@@ -159,9 +169,15 @@ describe("markdown image dimension hints", () => {
 
   it("bounds oversized stored snapshots on read and on the next write", () => {
     const storage = memoryStorage();
-    storage.setItem(storageKey, JSON.stringify(Array.from({ length: 130 }, (_, index) => ({
-      source: sourceUrl(index), ...dimensions,
-    }))));
+    storage.setItem(
+      storageKey,
+      JSON.stringify(
+        Array.from({ length: 130 }, (_, index) => ({
+          source: sourceUrl(index),
+          ...dimensions,
+        })),
+      ),
+    );
     expect(readMarkdownImageDimensions(sourceUrl(0), storage)).toBeUndefined();
     expect(readMarkdownImageDimensions(sourceUrl(1), storage)).toBeUndefined();
     expect(readMarkdownImageDimensions(sourceUrl(2), storage)).toEqual(dimensions);
@@ -172,10 +188,14 @@ describe("markdown image dimension hints", () => {
   });
 
   it.each([
-    { width: 0, height: 480 }, { width: 640, height: 0 },
-    { width: -1, height: 480 }, { width: 640, height: -1 },
-    { width: 0.5, height: 480 }, { width: 640, height: 0.5 },
-    { width: NaN, height: 480 }, { width: 640, height: Infinity },
+    { width: 0, height: 480 },
+    { width: 640, height: 0 },
+    { width: -1, height: 480 },
+    { width: 640, height: -1 },
+    { width: 0.5, height: 480 },
+    { width: 640, height: 0.5 },
+    { width: NaN, height: 480 },
+    { width: 640, height: Infinity },
     { width: Number.MAX_SAFE_INTEGER + 1, height: 480 },
   ])("does not replace a valid hint with invalid observed dimensions: %j", (invalid) => {
     const storage = memoryStorage();
@@ -190,17 +210,23 @@ describe("markdown image dimension hints", () => {
   it("is a cache miss/no-op when browser storage is absent", () => {
     vi.stubGlobal("localStorage", undefined);
     expect(readMarkdownImageDimensions(source)).toBeUndefined();
-    expect(() => { rememberMarkdownImageDimensions(source, dimensions); }).not.toThrow();
+    expect(() => {
+      rememberMarkdownImageDimensions(source, dimensions);
+    }).not.toThrow();
   });
 
   it("catches a disabled browser storage getter and lets injected storage bypass it", () => {
     vi.stubGlobal("localStorage", undefined);
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
-      get() { throw new Error("storage disabled"); },
+      get() {
+        throw new Error("storage disabled");
+      },
     });
     expect(readMarkdownImageDimensions(source)).toBeUndefined();
-    expect(() => { rememberMarkdownImageDimensions(source, dimensions); }).not.toThrow();
+    expect(() => {
+      rememberMarkdownImageDimensions(source, dimensions);
+    }).not.toThrow();
 
     const storage = memoryStorage();
     rememberMarkdownImageDimensions(source, dimensions, storage);
@@ -210,9 +236,13 @@ describe("markdown image dimension hints", () => {
   it("treats read failures as an empty snapshot and attempts a best-effort write", () => {
     const values = new Map<string, string>();
     const storage = memoryStorage(values);
-    storage.getItem.mockImplementation(() => { throw new Error("read blocked"); });
+    storage.getItem.mockImplementation(() => {
+      throw new Error("read blocked");
+    });
     expect(readMarkdownImageDimensions(source, storage)).toBeUndefined();
-    expect(() => { rememberMarkdownImageDimensions(source, dimensions, storage); }).not.toThrow();
+    expect(() => {
+      rememberMarkdownImageDimensions(source, dimensions, storage);
+    }).not.toThrow();
     expect(readMarkdownImageDimensions(source, memoryStorage(values))).toEqual(dimensions);
   });
 
@@ -221,10 +251,16 @@ describe("markdown image dimension hints", () => {
     vi.stubGlobal("localStorage", storage);
     rememberMarkdownImageDimensions(source, dimensions);
     const beforeWrite = storage.getItem(storageKey);
-    storage.setItem.mockImplementation(() => { throw new Error("quota exceeded"); });
+    storage.setItem.mockImplementation(() => {
+      throw new Error("quota exceeded");
+    });
 
-    expect(() => { rememberMarkdownImageDimensions(source, { width: 800, height: 600 }); }).not.toThrow();
-    expect(() => { rememberMarkdownImageDimensions(sourceUrl(1), dimensions); }).not.toThrow();
+    expect(() => {
+      rememberMarkdownImageDimensions(source, { width: 800, height: 600 });
+    }).not.toThrow();
+    expect(() => {
+      rememberMarkdownImageDimensions(sourceUrl(1), dimensions);
+    }).not.toThrow();
     expect(readMarkdownImageDimensions(source)).toEqual(dimensions);
     expect(readMarkdownImageDimensions(sourceUrl(1))).toBeUndefined();
     expect(storage.getItem(storageKey)).toBe(beforeWrite);

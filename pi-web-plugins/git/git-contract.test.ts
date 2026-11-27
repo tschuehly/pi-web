@@ -22,9 +22,9 @@ describe("Git browser backend contract", () => {
 
   it("keeps the legacy missing-submodules response compatible while rejecting malformed provider data", () => {
     expect(parseGitStatusResponse({ isGitRepo: true, hash: "h", files: [] }).submodules).toEqual([]);
-    expect(() => parseGitStatusResponse({ isGitRepo: true, hash: "h", files: [{ path: "a", index: "weird", workingTree: "modified" }] }))
-      .toThrow("Invalid Git file state");
-    expect(() => parseGitDiffResponse({ staged: false, hash: "h", diff: "" }))
-      .toThrow("Expected boolean field: truncated");
+    expect(() => parseGitStatusResponse({ isGitRepo: true, hash: "h", files: [{ path: "a", index: "weird", workingTree: "modified" }] })).toThrow(
+      "Invalid Git file state",
+    );
+    expect(() => parseGitDiffResponse({ staged: false, hash: "h", diff: "" })).toThrow("Expected boolean field: truncated");
   });
 });

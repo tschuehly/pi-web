@@ -1,11 +1,14 @@
 import { DefaultPackageManager, SettingsManager } from "../piSdk.js";
-import type { PiPackageInfo, PiPackageInstallableSuggestion, PiPackageMutationAction, PiPackageMutationResponse, PiPackageScope, PiPackagesResponse } from "../shared/apiTypes.js";
+import type {
+  PiPackageInfo,
+  PiPackageInstallableSuggestion,
+  PiPackageMutationAction,
+  PiPackageMutationResponse,
+  PiPackageScope,
+  PiPackagesResponse,
+} from "../shared/apiTypes.js";
 import { requireActiveAgentProfile, type ActiveAgentProfileProvider } from "./activeAgentProfileProvider.js";
-import {
-  defaultPiWebPackageRoot,
-  isKnownAutoInstallablePiPackageId,
-  resolveShippedPiPackagePath,
-} from "./knownAutoInstallPiPackages.js";
+import { defaultPiWebPackageRoot, isKnownAutoInstallablePiPackageId, resolveShippedPiPackagePath } from "./knownAutoInstallPiPackages.js";
 import { KNOWN_PI_PACKAGES, type KnownPiPackage } from "./knownPiPackages.js";
 import { resolveDeclaredPiPackageName } from "./piPackageIdentity.js";
 import { PiPackageDismissalStore } from "./storage/piPackageDismissalStore.js";
@@ -160,9 +163,7 @@ export class DefaultPiPackageService implements PiPackageService {
 
   remove(source: string, scope: PiPackageScope = "user"): Promise<PiPackageMutationResponse> {
     return this.enqueueMutation(async () => {
-      const removed = scope === "project"
-        ? await this.manager.removeAndPersist(source, { local: true })
-        : await this.manager.removeAndPersist(source);
+      const removed = scope === "project" ? await this.manager.removeAndPersist(source, { local: true }) : await this.manager.removeAndPersist(source);
       await this.flushSettings();
       return this.mutationResponse("remove", { source, scope, removed });
     });

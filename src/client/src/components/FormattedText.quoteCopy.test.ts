@@ -6,7 +6,12 @@ import { settleDeferredContent, useDeferredContent } from "../formatting/deferre
 
 vi.mock("../clipboard", () => ({ writeClipboardText: vi.fn().mockResolvedValue(true) }));
 useDeferredContent();
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.clearAllMocks(); vi.useRealTimers(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.clearAllMocks();
+  vi.useRealTimers();
+});
 
 async function renderQuote(text: string): Promise<FormattedText> {
   const view = new FormattedText();
@@ -21,7 +26,9 @@ it("copies the quote's Markdown source without outer quote markers", async () =>
   const button = view.shadowRoot?.querySelector<HTMLButtonElement>("blockquote .quote-copy-button");
   expect(button?.getAttribute("aria-label")).toBe("Copy quote");
   button?.click();
-  await vi.waitFor(() => { expect(writeClipboardText).toHaveBeenCalledWith("First `command`\n\nSecond paragraph\n- one\n- two"); });
+  await vi.waitFor(() => {
+    expect(writeClipboardText).toHaveBeenCalledWith("First `command`\n\nSecond paragraph\n- one\n- two");
+  });
   expect(button?.getAttribute("aria-label")).toBe("Copied quote");
 });
 
@@ -39,7 +46,9 @@ it("lets a focused quote button activate by keyboard", async () => {
   expect(view.shadowRoot?.activeElement).toBe(button);
   // happy-dom does not synthesize a click from Enter; browsers dispatch a detail=0 click.
   button?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, detail: 0 }));
-  await vi.waitFor(() => { expect(writeClipboardText).toHaveBeenCalledWith("Keyboard `text`"); });
+  await vi.waitFor(() => {
+    expect(writeClipboardText).toHaveBeenCalledWith("Keyboard `text`");
+  });
 });
 
 it("reports a failed copy and restores its label", async () => {
@@ -47,6 +56,13 @@ it("reports a failed copy and restores its label", async () => {
   const view = await renderQuote("> Uncopyable");
   const button = view.shadowRoot?.querySelector<HTMLButtonElement>(".quote-copy-button");
   button?.click();
-  await vi.waitFor(() => { expect(button?.getAttribute("aria-label")).toBe("Failed to copy quote"); });
-  await vi.waitFor(() => { expect(button?.getAttribute("aria-label")).toBe("Copy quote"); }, { timeout: 2000 });
+  await vi.waitFor(() => {
+    expect(button?.getAttribute("aria-label")).toBe("Failed to copy quote");
+  });
+  await vi.waitFor(
+    () => {
+      expect(button?.getAttribute("aria-label")).toBe("Copy quote");
+    },
+    { timeout: 2000 },
+  );
 });

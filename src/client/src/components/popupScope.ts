@@ -28,7 +28,9 @@ export function canOpenTransientPopup(owner: HTMLElement): boolean {
 export function registerTransientPopup(owner: HTMLElement, close: () => void): () => void {
   if (!canOpenTransientPopup(owner)) {
     close();
-    return () => { /* No live registration to release. */ };
+    return () => {
+      /* No live registration to release. */
+    };
   }
   const document = owner.ownerDocument;
   let scope = scopes.get(document);

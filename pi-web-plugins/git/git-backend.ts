@@ -46,10 +46,7 @@ interface ValidatedSubmodule {
 }
 
 /** Dispatch the Git status/diff schema through the package peer request seam. */
-export async function requestGitBackend(
-  activationContext: ServerPluginActivationContext,
-  request: ServerPluginPeerRequestContext,
-): Promise<JsonValue> {
+export async function requestGitBackend(activationContext: ServerPluginActivationContext, request: ServerPluginPeerRequestContext): Promise<JsonValue> {
   const runGit = createGitRunner(activationContext, request.signal);
   if (request.operation === GIT_STATUS_OPERATION) {
     requireStatusInput(request.input);
@@ -88,11 +85,7 @@ interface ParsedStatus {
   submodules: SubmoduleRecord[];
 }
 
-export async function gitStatus(
-  context: ServerPluginActivationContext,
-  cwd: string,
-  signal: AbortSignal,
-): Promise<GitStatusResponse> {
+export async function gitStatus(context: ServerPluginActivationContext, cwd: string, signal: AbortSignal): Promise<GitStatusResponse> {
   return gitStatusWithRunner(createGitRunner(context, signal), cwd);
 }
 
@@ -115,12 +108,12 @@ async function expandSubmodules(runGit: RunGit, cwd: string, parsed: ParsedStatu
   // `git rev-parse` per unstaged pointer move — then concatenate in input
   // order so the file list and hash are identical to a serial pass.
   const canonicalRoot = parsed.submodules.length === 0 ? undefined : await canonicalPath(cwd);
-  const expanded = await Promise.all(parsed.submodules.map(async (sub) => {
-    const location = canonicalRoot === undefined
-      ? undefined
-      : await validatedSubmodule(runGit, cwd, canonicalRoot, sub.path);
-    return { path: sub.path, ...(await expandSubmodule(runGit, sub, location)) };
-  }));
+  const expanded = await Promise.all(
+    parsed.submodules.map(async (sub) => {
+      const location = canonicalRoot === undefined ? undefined : await validatedSubmodule(runGit, cwd, canonicalRoot, sub.path);
+      return { path: sub.path, ...(await expandSubmodule(runGit, sub, location)) };
+    }),
+  );
 
   const files: GitStatusFile[] = [...parsed.files];
   const dirtySubmodulePaths: string[] = [];
@@ -216,7 +209,7 @@ async function gitDiffWithRunner(runGit: RunGit, cwd: string, options: { path?: 
 
   const result = await runGit(cwd, args);
   if (result.code !== 0) throw new Error(result.stderr.trim() || "git diff failed");
-  if (!staged && path !== undefined && result.stdout === "" && await isUntracked(runGit, cwd, path)) {
+  if (!staged && path !== undefined && result.stdout === "" && (await isUntracked(runGit, cwd, path))) {
     const untracked = await runGit(cwd, ["diff", "--no-ext-diff", "--color=never", "--no-index", "/dev/null", "--", path]);
     if (untracked.code !== 0 && untracked.code !== 1) throw new Error(untracked.stderr.trim() || "git diff failed");
     return { path, staged, hash: hash(untracked.stdout), diff: untracked.stdout, truncated: untracked.truncated };
@@ -240,7 +233,7 @@ async function submoduleDiff(runGit: RunGit, owner: ValidatedSubmodule, path: st
 
   const result = await runGit(subCwd, args);
   if (result.code !== 0) throw new Error(result.stderr.trim() || "git diff failed");
-  if (!staged && result.stdout === "" && await isUntracked(runGit, subCwd, rel)) {
+  if (!staged && result.stdout === "" && (await isUntracked(runGit, subCwd, rel))) {
     const untracked = await runGit(subCwd, ["diff", "--no-ext-diff", "--color=never", "--no-index", "/dev/null", "--", rel]);
     if (untracked.code !== 0 && untracked.code !== 1) throw new Error(untracked.stderr.trim() || "git diff failed");
     return { path, staged, hash: hash(untracked.stdout), diff: untracked.stdout, truncated: untracked.truncated };
@@ -306,12 +299,7 @@ async function submoduleForPath(runGit: RunGit, cwd: string, path: string): Prom
  * Commands use the resolved checkout rather than following the configured
  * path as a symlink.
  */
-async function validatedSubmodule(
-  runGit: RunGit,
-  cwd: string,
-  canonicalRoot: string,
-  path: string,
-): Promise<ValidatedSubmodule | undefined> {
+async function validatedSubmodule(runGit: RunGit, cwd: string, canonicalRoot: string, path: string): Promise<ValidatedSubmodule | undefined> {
   const index = await runGit(cwd, ["ls-files", "--stage", "-z", "--", path]);
   if (index.code !== 0 || !hasGitlink(index.stdout, path)) return undefined;
 
@@ -338,10 +326,7 @@ async function canonicalPath(path: string): Promise<string | undefined> {
 
 function isStrictDescendant(root: string, candidate: string): boolean {
   const relation = relative(root, candidate);
-  return relation !== ""
-    && relation !== ".."
-    && !relation.startsWith(`..${sep}`)
-    && !isAbsolute(relation);
+  return relation !== "" && relation !== ".." && !relation.startsWith(`..${sep}`) && !isAbsolute(relation);
 }
 
 function parseStatus(raw: string, options: { deferSubmodules: boolean }): ParsedStatus {
@@ -360,7 +345,10 @@ function parseStatus(raw: string, options: { deferSubmodules: boolean }): Parsed
     else if (record.startsWith("# branch.upstream ")) upstream = record.slice("# branch.upstream ".length);
     else if (record.startsWith("# branch.ab ")) {
       const match = /\+(\d+) -(\d+)/.exec(record);
-      if (match) { ahead = Number(match[1]); behind = Number(match[2]); }
+      if (match) {
+        ahead = Number(match[1]);
+        behind = Number(match[2]);
+      }
     } else if (record.startsWith("? ")) files.push({ path: record.slice(2), index: "untracked", workingTree: "untracked" });
     else if (record.startsWith("! ")) files.push({ path: record.slice(2), index: "ignored", workingTree: "ignored" });
     else if (record.startsWith("1 ")) {
@@ -402,20 +390,36 @@ function parseStatus(raw: string, options: { deferSubmodules: boolean }): Parsed
     }
   }
 
-  return { isGitRepo: true, ...(branch === undefined ? {} : { branch }), ...(upstream === undefined ? {} : { upstream }), ...(ahead === undefined ? {} : { ahead }), ...(behind === undefined ? {} : { behind }), files, submodules };
+  return {
+    isGitRepo: true,
+    ...(branch === undefined ? {} : { branch }),
+    ...(upstream === undefined ? {} : { upstream }),
+    ...(ahead === undefined ? {} : { ahead }),
+    ...(behind === undefined ? {} : { behind }),
+    files,
+    submodules,
+  };
 }
 
 function stateFor(code: string | undefined): GitFileState {
   if (code === undefined) return "unmodified";
   switch (code) {
-    case ".": return "unmodified";
-    case "M": return "modified";
-    case "A": return "added";
-    case "D": return "deleted";
-    case "R": return "renamed";
-    case "C": return "copied";
-    case "U": return "conflicted";
-    default: return "unmodified";
+    case ".":
+      return "unmodified";
+    case "M":
+      return "modified";
+    case "A":
+      return "added";
+    case "D":
+      return "deleted";
+    case "R":
+      return "renamed";
+    case "C":
+      return "copied";
+    case "U":
+      return "conflicted";
+    default:
+      return "unmodified";
   }
 }
 
@@ -467,14 +471,18 @@ function diffPeerResponse(diff: GitDiffResponse): JsonValue {
 }
 
 function createGitRunner(context: ServerPluginActivationContext, signal: AbortSignal): RunGit {
-  return async (cwd, args) => commandResult(await context.execFile({
-    file: "git",
-    args,
-    cwd,
-    unsetEnv: GIT_LOCAL_ENV_VARS,
-    timeoutMs: GIT_COMMAND_TIMEOUT_MS,
-    signal,
-  }), args);
+  return async (cwd, args) =>
+    commandResult(
+      await context.execFile({
+        file: "git",
+        args,
+        cwd,
+        unsetEnv: GIT_LOCAL_ENV_VARS,
+        timeoutMs: GIT_COMMAND_TIMEOUT_MS,
+        signal,
+      }),
+      args,
+    );
 }
 
 function commandResult(result: ServerPluginExecFileResult, args: readonly string[]): GitCommandResult {

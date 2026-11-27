@@ -46,17 +46,27 @@ describe("buildApp workspace file routes", () => {
       expect(response.body).toBe(svg);
     }
 
-    const rejectedResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file/preview?path=${encodeURIComponent("note.txt")}` });
+    const rejectedResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file/preview?path=${encodeURIComponent("note.txt")}`,
+    });
     expect(rejectedResponse.statusCode).toBe(400);
     expect(rejectedResponse.json()).toEqual({ error: "Inline preview is not supported for this file type" });
 
-    const tooLargeResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file/preview?path=${encodeURIComponent("huge.png")}` });
+    const tooLargeResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file/preview?path=${encodeURIComponent("huge.png")}`,
+    });
     expect(tooLargeResponse.statusCode).toBe(400);
     expect(tooLargeResponse.json()).toEqual({ error: "File is too large to preview (limit 10 MB)" });
   });
 
   it("wires showImage=1 to outside-image previews with safe headers, not downloads or ordinary previews", async () => {
-    const added = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Images", path: appTestContext.projectDir, create: true } });
+    const added = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Images", path: appTestContext.projectDir, create: true },
+    });
     const project = added.json<Project>();
     const listed = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
     const workspace = listed.json<WorkspaceProviderResolution>().workspaces[0];
@@ -231,7 +241,11 @@ describe("buildApp workspace file routes", () => {
   });
 
   it("keeps relative tree, file, and preview access independent of invalid project path-access config", async () => {
-    const add = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Local Files", path: appTestContext.projectDir, create: true } });
+    const add = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Local Files", path: appTestContext.projectDir, create: true },
+    });
     const project = add.json<Project>();
     const listed = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
     const workspace = listed.json<WorkspaceProviderResolution>().workspaces[0];
@@ -271,13 +285,18 @@ describe("buildApp workspace file routes", () => {
     await mkdir(externalDir);
     await writeFile(join(externalDir, "sdk.md"), "external sdk\n");
     await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
-    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, pathAccess: { allowedPaths: [externalDir] } }, null, 2)}\n`);
-    appTestContext.workspaceCatalog.set(project.id, [{
-      ...mainWorkspace,
-      id: "linked",
-      path: linkedDir,
-      label: "linked",
-    }]);
+    await writeFile(
+      join(appTestContext.projectDir, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, pathAccess: { allowedPaths: [externalDir] } }, null, 2)}\n`,
+    );
+    appTestContext.workspaceCatalog.set(project.id, [
+      {
+        ...mainWorkspace,
+        id: "linked",
+        path: linkedDir,
+        label: "linked",
+      },
+    ]);
 
     const response = await appTestContext.app.inject({
       method: "GET",
@@ -301,15 +320,27 @@ describe("buildApp workspace file routes", () => {
     await writeFile(join(externalDir, "sdk.md"), "external sdk\n");
     await writeFile(deniedFile, "secret\n");
     await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
-    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, pathAccess: { allowedPaths: [externalDir] } }, null, 2)}\n`);
+    await writeFile(
+      join(appTestContext.projectDir, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, pathAccess: { allowedPaths: [externalDir] } }, null, 2)}\n`,
+    );
 
     const workspacesResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
     const workspace = workspacesResponse.json<WorkspaceProviderResolution>().workspaces[0];
     if (workspace === undefined) throw new Error("Expected workspace");
 
-    const fileResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent(join(externalDir, "sdk.md"))}` });
-    const treeResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/tree?path=${encodeURIComponent(externalDir)}` });
-    const deniedResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent(deniedFile)}` });
+    const fileResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent(join(externalDir, "sdk.md"))}`,
+    });
+    const treeResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/tree?path=${encodeURIComponent(externalDir)}`,
+    });
+    const deniedResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent(deniedFile)}`,
+    });
 
     expect(fileResponse.statusCode).toBe(200);
     expect(fileResponse.json()).toMatchObject({ path: join(externalDir, "sdk.md"), content: "external sdk\n", binary: false });
@@ -344,7 +375,10 @@ describe("buildApp workspace file routes", () => {
     expect(writeTextResponse.json()).toMatchObject({ path: "hello.txt", created: true });
     expect(typeof writeTextResponse.json<{ size: unknown }>().size).toBe("number");
 
-    const readResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("hello.txt")}` });
+    const readResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("hello.txt")}`,
+    });
     expect(readResponse.json<{ content: unknown }>().content).toBe("hello world");
 
     const writeBinaryResponse = await appTestContext.app.inject({
@@ -364,7 +398,10 @@ describe("buildApp workspace file routes", () => {
     });
     expect(writeDeepResponse.statusCode).toBe(200);
 
-    const readDeepResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("deep/nested/dir/file.txt")}` });
+    const readDeepResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("deep/nested/dir/file.txt")}`,
+    });
     expect(readDeepResponse.json<{ content: unknown }>().content).toBe("deep content");
 
     const overwriteResponse = await appTestContext.app.inject({
@@ -421,7 +458,11 @@ describe("buildApp workspace file routes", () => {
   });
 
   it("lists and safely saves loaded Markdown, rejecting stale and deleted versions", async () => {
-    const add = await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Markdown", path: appTestContext.projectDir, create: true } });
+    const add = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { name: "Markdown", path: appTestContext.projectDir, create: true },
+    });
     const project = add.json<Project>();
     const workspaces = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
     const workspace = workspaces.json<WorkspaceProviderResolution>().workspaces[0];
@@ -438,10 +479,13 @@ describe("buildApp workspace file routes", () => {
     const loaded = read.json<{ content: string; version: string }>();
     expect(loaded.content).toBe("# Original\n");
     expect(loaded.version).toMatch(/^[a-f0-9]{64}$/u);
-    const save = (prefix: string, query: string, content: string) => appTestContext.app.inject({
-      method: "PUT", url: `${prefix}${base}/file?path=notes.md&expectedVersion=${loaded.version}${query}`,
-      payload: content, headers: { "content-type": "text/plain" },
-    });
+    const save = (prefix: string, query: string, content: string) =>
+      appTestContext.app.inject({
+        method: "PUT",
+        url: `${prefix}${base}/file?path=notes.md&expectedVersion=${loaded.version}${query}`,
+        payload: content,
+        headers: { "content-type": "text/plain" },
+      });
     const saved = await save("/api/machines/local", "", "# Saved\n");
     expect(saved.statusCode).toBe(200);
     expect(saved.json()).toMatchObject({ path: "notes.md", created: false });
@@ -539,10 +583,16 @@ describe("buildApp workspace file routes", () => {
     expect(moveResponse.json()).toMatchObject({ fromPath: "original.txt", toPath: "moved.txt" });
     expect(typeof moveResponse.json<{ size: unknown }>().size).toBe("number");
 
-    const readSourceResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("original.txt")}` });
+    const readSourceResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("original.txt")}`,
+    });
     expect(readSourceResponse.statusCode).toBe(400);
 
-    const readTargetResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("moved.txt")}` });
+    const readTargetResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}/workspaces/${workspace.id}/file?path=${encodeURIComponent("moved.txt")}`,
+    });
     expect(readTargetResponse.statusCode).toBe(200);
     expect(readTargetResponse.json<{ content: unknown }>().content).toBe("move me");
 
@@ -610,12 +660,14 @@ describe("buildApp workspace file routes", () => {
     if (staleWorkspace === undefined) throw new Error("Expected workspace");
     const replacementPath = join(appTestContext.tempDir, "replacement");
     await mkdir(replacementPath);
-    appTestContext.workspaceCatalog.set(project.id, [{
-      ...staleWorkspace,
-      id: "replacement",
-      path: replacementPath,
-      label: "replacement",
-    }]);
+    appTestContext.workspaceCatalog.set(project.id, [
+      {
+        ...staleWorkspace,
+        id: "replacement",
+        path: replacementPath,
+        label: "replacement",
+      },
+    ]);
 
     const fileResponse = await appTestContext.app.inject({
       method: "GET",

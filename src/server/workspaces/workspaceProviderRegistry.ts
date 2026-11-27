@@ -19,15 +19,9 @@ import type {
   WorkspaceRemovalHostState,
 } from "../../shared/apiTypes.js";
 import { PluginCallbackDrain } from "../pluginCallbackDrain.js";
-import type {
-  ServerPluginHealthInspection,
-  ServerPluginProviderContribution,
-} from "../plugins/serverPluginRuntime.js";
+import type { ServerPluginHealthInspection, ServerPluginProviderContribution } from "../plugins/serverPluginRuntime.js";
 
-export type {
-  WorkspaceProviderAuthorityResolution,
-  WorkspaceProviderDiagnostic,
-} from "../../shared/apiTypes.js";
+export type { WorkspaceProviderAuthorityResolution, WorkspaceProviderDiagnostic } from "../../shared/apiTypes.js";
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10_000;
 
@@ -118,10 +112,12 @@ export function eligibleWorkspaceProviderContributions(
   inspections: readonly ServerPluginHealthInspection[],
 ): readonly ServerPluginProviderContribution[] {
   const healthByPluginId = new Map(inspections.map(({ pluginId, health }) => [pluginId, health.status]));
-  return Object.freeze(contributions.filter(({ pluginId }) => {
-    const status = healthByPluginId.get(pluginId);
-    return status === "healthy" || status === "degraded";
-  }));
+  return Object.freeze(
+    contributions.filter(({ pluginId }) => {
+      const status = healthByPluginId.get(pluginId);
+      return status === "healthy" || status === "degraded";
+    }),
+  );
 }
 
 /**
@@ -141,8 +137,7 @@ export class WorkspaceProviderRegistry {
   private closePromise: Promise<void> | undefined;
 
   constructor(private readonly options: WorkspaceProviderRegistryOptions) {
-    this.contributions = Object.freeze([...options.contributions]
-      .sort((left, right) => left.pluginId.localeCompare(right.pluginId)));
+    this.contributions = Object.freeze([...options.contributions].sort((left, right) => left.pluginId.localeCompare(right.pluginId)));
     this.providerTimeoutMs = positiveInteger(options.providerTimeoutMs, DEFAULT_PROVIDER_TIMEOUT_MS, "providerTimeoutMs");
     this.pathInspector = options.pathInspector ?? pathIsDirectory;
   }
@@ -199,12 +194,11 @@ export class WorkspaceProviderRegistry {
 
   private async reconcileIntegration(project: Project, input: ProjectInput, resolved?: WorkspaceProviderAuthorityResolution): Promise<void> {
     try {
-      const resolution = resolved ?? await this.resolve(project);
+      const resolution = resolved ?? (await this.resolve(project));
       const owner = this.integrationOwner(input, resolution);
       const integration = owner?.provider.integration;
       if (owner === undefined || integration === undefined) return;
-      await this.runProviderOperation(owner.pluginId, "reconcileIntegration",
-        (signal) => integration.reconcile(input, signal));
+      await this.runProviderOperation(owner.pluginId, "reconcileIntegration", (signal) => integration.reconcile(input, signal));
     } catch (error) {
       this.throwIfShuttingDown();
       this.options.logger.warn({ err: error, projectId: project.id }, "workspace provider integration reconciliation failed; discovery remains available");
@@ -218,8 +212,12 @@ export class WorkspaceProviderRegistry {
     const owner = this.integrationOwner(input, resolution);
     const integration = owner?.provider.integration;
     if (owner?.pluginId !== pluginId || integration === undefined) return false;
-    const accepted: unknown = await this.runProviderOperation(owner.pluginId, "acceptNotification",
-      (operationSignal) => integration.acceptNotification(input, operationSignal), signal);
+    const accepted: unknown = await this.runProviderOperation(
+      owner.pluginId,
+      "acceptNotification",
+      (operationSignal) => integration.acceptNotification(input, operationSignal),
+      signal,
+    );
     if (typeof accepted !== "boolean") throw new WorkspaceProviderContractError(`Workspace provider ${pluginId} returned an invalid notification decision`);
     return accepted;
   }
@@ -261,11 +259,7 @@ export class WorkspaceProviderRegistry {
   }
 
   /** Re-resolve one live owner/target before host safety checks and provider planning. */
-  async resolveRemoval(
-    project: Project,
-    workspaceId: string,
-    signal?: AbortSignal,
-  ): Promise<WorkspaceProviderRemovalTarget> {
+  async resolveRemoval(project: Project, workspaceId: string, signal?: AbortSignal): Promise<WorkspaceProviderRemovalTarget> {
     this.assertAccepting();
     const input = snapshotProject(project);
     if (workspaceId === "") throw providerRemovalError("workspace-not-found", 404, "Workspace not found");
@@ -275,11 +269,7 @@ export class WorkspaceProviderRegistry {
       const selection = await this.selectInTier(input, tier, diagnostics, signal);
       if (selection.kind === "none") continue;
       if (selection.kind === "conflict") {
-        throw providerRemovalError(
-          "owner-conflict",
-          409,
-          `Workspace owner conflict prevents removal: ${selection.pluginIds.join(", ")}`,
-        );
+        throw providerRemovalError("owner-conflict", 409, `Workspace owner conflict prevents removal: ${selection.pluginIds.join(", ")}`);
       }
 
       const contribution = selection.contribution;
@@ -308,11 +298,7 @@ export class WorkspaceProviderRegistry {
 
       const current = validated.find(({ workspace }) => workspace.id === workspaceId);
       if (current === undefined) {
-        throw providerRemovalError(
-          "workspace-not-found",
-          404,
-          `Workspace ${workspaceId} is stale or unavailable for removal`,
-        );
+        throw providerRemovalError("workspace-not-found", 404, `Workspace ${workspaceId} is stale or unavailable for removal`);
       }
       const callback = contribution.provider.prepareRemove?.bind(contribution.provider);
       if (callback === undefined || current.workspace.removal === undefined) {
@@ -334,11 +320,14 @@ export class WorkspaceProviderRegistry {
             value = await this.runProviderOperation(
               contribution.pluginId,
               "prepareRemove",
-              (operationSignal) => callback(Object.freeze({
-                project: input,
-                workspace: current.providerWorkspace,
-                signal: operationSignal,
-              })),
+              (operationSignal) =>
+                callback(
+                  Object.freeze({
+                    project: input,
+                    workspace: current.providerWorkspace,
+                    signal: operationSignal,
+                  }),
+                ),
               signal,
             );
           } catch (error) {
@@ -361,11 +350,7 @@ export class WorkspaceProviderRegistry {
 
     const failedProbe = diagnostics.find(({ code }) => code === "probe-failed");
     if (failedProbe !== undefined) {
-      throw providerRemovalError(
-        "resolution-failed",
-        502,
-        `Workspace owner resolution failed before removal: ${boundedErrorMessage(failedProbe.message)}`,
-      );
+      throw providerRemovalError("resolution-failed", 502, `Workspace owner resolution failed before removal: ${boundedErrorMessage(failedProbe.message)}`);
     }
     throw providerRemovalError("owner-unavailable", 409, `No workspace provider currently owns project ${input.id}`);
   }
@@ -381,12 +366,7 @@ export class WorkspaceProviderRegistry {
 
     for (const contribution of candidates) {
       try {
-        const claim = await this.runProviderOperation(
-          contribution.pluginId,
-          "probe",
-          (signal) => contribution.provider.probe(project, signal),
-          dispatchSignal,
-        );
+        const claim = await this.runProviderOperation(contribution.pluginId, "probe", (signal) => contribution.provider.probe(project, signal), dispatchSignal);
         if (!isProviderClaim(claim)) {
           throw new WorkspaceProviderContractError(`Workspace provider ${contribution.pluginId} returned an invalid probe result`);
         }
@@ -395,12 +375,14 @@ export class WorkspaceProviderRegistry {
         if (dispatchSignal?.aborted === true) throw abortError(dispatchSignal);
         this.throwIfShuttingDown();
         const message = errorMessage(error);
-        diagnostics.push(freezeDiagnostic({
-          code: "probe-failed",
-          message,
-          tier,
-          pluginId: contribution.pluginId,
-        }));
+        diagnostics.push(
+          freezeDiagnostic({
+            code: "probe-failed",
+            message,
+            tier,
+            pluginId: contribution.pluginId,
+          }),
+        );
         this.options.logger.warn(
           { err: error, projectId: project.id, pluginId: contribution.pluginId, tier, operation: "probe" },
           "workspace provider probe failed",
@@ -446,12 +428,14 @@ export class WorkspaceProviderRegistry {
       if (dispatchSignal?.aborted === true) throw abortError(dispatchSignal);
       this.throwIfShuttingDown();
       const message = errorMessage(error);
-      diagnostics.push(freezeDiagnostic({
-        code: "list-failed",
-        message,
-        tier,
-        pluginId: contribution.pluginId,
-      }));
+      diagnostics.push(
+        freezeDiagnostic({
+          code: "list-failed",
+          message,
+          tier,
+          pluginId: contribution.pluginId,
+        }),
+      );
       this.options.logger.warn(
         { err: error, projectId: project.id, pluginId: contribution.pluginId, tier, operation: "list" },
         "workspace provider listing failed after claim",
@@ -469,10 +453,7 @@ export class WorkspaceProviderRegistry {
   private async closeProviderOperations(reason: string): Promise<void> {
     if (!this.shutdown.signal.aborted) this.shutdown.abort(new DOMException(reason, "AbortError"));
     await Promise.allSettled([...this.providerOperations]);
-    await this.providerCallbacks.waitForSettled(
-      this.providerTimeoutMs,
-      "Workspace provider callbacks",
-    );
+    await this.providerCallbacks.waitForSettled(this.providerTimeoutMs, "Workspace provider callbacks");
   }
 
   private async runProviderOperation<T>(
@@ -482,17 +463,10 @@ export class WorkspaceProviderRegistry {
     parentSignal?: AbortSignal,
   ): Promise<T> {
     this.assertAccepting();
-    const signal = parentSignal === undefined
-      ? this.shutdown.signal
-      : AbortSignal.any([parentSignal, this.shutdown.signal]);
-    const pending = runBoundedProviderOperation(
-      pluginId,
-      operation,
-      this.providerTimeoutMs,
-      callback,
-      signal,
-      (providerCallback) => { this.providerCallbacks.track(providerCallback); },
-    );
+    const signal = parentSignal === undefined ? this.shutdown.signal : AbortSignal.any([parentSignal, this.shutdown.signal]);
+    const pending = runBoundedProviderOperation(pluginId, operation, this.providerTimeoutMs, callback, signal, (providerCallback) => {
+      this.providerCallbacks.track(providerCallback);
+    });
     this.providerOperations.add(pending);
     try {
       return await pending;
@@ -541,19 +515,13 @@ async function validateProviderWorkspaces(
 
     if (candidate.isMain) mainCount += 1;
 
-    const metadata = candidate.publicMetadata === undefined
-      ? undefined
-      : cloneJsonObject(candidate.publicMetadata, `${label} publicMetadata`);
-    const data = candidate.data === undefined
-      ? undefined
-      : cloneJsonValue(candidate.data, new Set<object>(), `${label} data`);
+    const metadata = candidate.publicMetadata === undefined ? undefined : cloneJsonObject(candidate.publicMetadata, `${label} publicMetadata`);
+    const data = candidate.data === undefined ? undefined : cloneJsonValue(candidate.data, new Set<object>(), `${label} data`);
     const removal = candidate.removal === undefined ? undefined : parseRemoval(candidate.removal, `${label} removal`);
     if (removal !== undefined && contribution.provider.prepareRemove === undefined) {
       throw new WorkspaceProviderContractError(`${label} advertises removal without a prepareRemove capability`);
     }
-    const publicRemoval = removal === undefined
-      ? undefined
-      : hostRemovalPresentation(project, contribution, candidate.key, path, removal);
+    const publicRemoval = removal === undefined ? undefined : hostRemovalPresentation(project, contribution, candidate.key, path, removal);
     const provider = Object.freeze({
       pluginId: contribution.pluginId,
       capabilities: Object.freeze({ remove: removal !== undefined }),
@@ -624,15 +592,9 @@ function hostRemovalPresentation(
   path: string,
   removal: ProviderWorkspaceRemovalPresentation,
 ): WorkspaceRemovalHostState {
-  const digest = createHash("sha256").update(JSON.stringify([
-    contribution.pluginId,
-    contribution.moduleRevision,
-    project.id,
-    providerKey,
-    path,
-    removal.actionLabel,
-    removal.confirmation,
-  ])).digest("base64url");
+  const digest = createHash("sha256")
+    .update(JSON.stringify([contribution.pluginId, contribution.moduleRevision, project.id, providerKey, path, removal.actionLabel, removal.confirmation]))
+    .digest("base64url");
   return Object.freeze({ ...removal, precondition: `v1.${digest}` });
 }
 
@@ -650,11 +612,7 @@ function snapshotProject(project: Project): ProjectInput {
   });
 }
 
-function degradedResolution(
-  project: ProjectInput,
-  diagnostics: WorkspaceProviderDiagnostic[],
-  ownerPluginId?: string,
-): WorkspaceProviderAuthorityResolution {
+function degradedResolution(project: ProjectInput, diagnostics: WorkspaceProviderDiagnostic[], ownerPluginId?: string): WorkspaceProviderAuthorityResolution {
   return Object.freeze({
     status: "degraded",
     projectId: project.id,
@@ -704,15 +662,25 @@ async function runBoundedProviderOperation<T>(
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
 
   const timeoutError = new WorkspaceProviderTimeoutError(`Workspace provider ${pluginId} ${operation} timed out after ${String(timeoutMs)}ms`);
-  const timeout = setTimeout(() => { controller.abort(timeoutError); }, timeoutMs);
+  const timeout = setTimeout(() => {
+    controller.abort(timeoutError);
+  }, timeoutMs);
   timeout.unref();
   const deadline = controller.signal.aborted
     ? Promise.reject(abortError(controller.signal))
     : new Promise<never>((_resolve, rejectPromise) => {
-        controller.signal.addEventListener("abort", () => { rejectPromise(abortError(controller.signal)); }, { once: true });
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            rejectPromise(abortError(controller.signal));
+          },
+          { once: true },
+        );
       });
   const result = controller.signal.aborted
-    ? new Promise<T>(() => { /* parent deadline already won */ })
+    ? new Promise<T>(() => {
+        /* parent deadline already won */
+      })
     : Promise.resolve().then(() => callback(controller.signal));
   if (!controller.signal.aborted) onCallbackStarted?.(result);
   try {
@@ -773,12 +741,7 @@ function cloneJsonValue(value: unknown, ancestors: Set<object>, label: string): 
   throw new WorkspaceProviderContractError(`${label} must contain only JSON values`);
 }
 
-function providerRemovalError(
-  code: WorkspaceProviderRemovalErrorCode,
-  statusCode: number,
-  message: string,
-  cause?: unknown,
-): WorkspaceProviderRemovalError {
+function providerRemovalError(code: WorkspaceProviderRemovalErrorCode, statusCode: number, message: string, cause?: unknown): WorkspaceProviderRemovalError {
   return new WorkspaceProviderRemovalError(code, statusCode, message, cause === undefined ? {} : { cause });
 }
 

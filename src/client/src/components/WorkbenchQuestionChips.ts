@@ -23,7 +23,11 @@ const isOutcome = (value: unknown): value is AskUserOutcome => typeof value === 
  * shows this count. An approval set without questions counts as one: it still waits for the user.
  */
 export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, draftSessionId: string): number =>
-  (asks ?? []).reduce((sum, ask) => sum + (ask.questions.length === 0 ? 1 : visibleQuestions(ask.questions, loadAskDraft(draftSessionId, ask.askId, undefined, ask.questions)).length), 0);
+  (asks ?? []).reduce(
+    (sum, ask) =>
+      sum + (ask.questions.length === 0 ? 1 : visibleQuestions(ask.questions, loadAskDraft(draftSessionId, ask.askId, undefined, ask.questions)).length),
+    0,
+  );
 
 /**
  * The row above a Chat's composer: its Activity roster and, beside the roster's header, one bar for the open questions
@@ -67,7 +71,8 @@ export class WorkbenchQuestionChips extends LitElement {
     this.sending += 1;
     try {
       const result = await this.onSubmit?.(askId, submission);
-      if (isOutcome(result) && result.askId === askId && result.partial !== true && this.open) this.sent = [...this.sent.filter((each) => each.askId !== askId), result];
+      if (isOutcome(result) && result.askId === askId && result.partial !== true && this.open)
+        this.sent = [...this.sent.filter((each) => each.askId !== askId), result];
       return result;
     } finally {
       this.sending -= 1;
@@ -96,29 +101,57 @@ export class WorkbenchQuestionChips extends LitElement {
     const answeredBySet = this.answeredBySet();
     const answered = answeredBySet.reduce((sum, [, n]) => sum + n, 0);
     // Send all appears once two or more sets hold answers; one set keeps its own Send.
-    const sendAll = answeredBySet.length < 2 && this.sendingAll === undefined ? nothing : html`<button type="button" class="send-all" ?disabled=${this.sendingAll !== undefined} @click=${() => { void this.sendAll(); }}>${this.sendingAll === undefined ? `Send all ${String(answered)} ${answered === 1 ? "answer" : "answers"}` : `Sending ${String(this.sendingAll.done + 1)} of ${String(this.sendingAll.total)}…`}</button>`;
-    const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => { this.close(); }}>${CHEVRON_DOWN_ICON}</button>`;
+    const sendAll =
+      answeredBySet.length < 2 && this.sendingAll === undefined
+        ? nothing
+        : html`<button type="button" class="send-all" ?disabled=${this.sendingAll !== undefined} @click=${() => {
+            void this.sendAll();
+          }}>${this.sendingAll === undefined ? `Send all ${String(answered)} ${answered === 1 ? "answer" : "answers"}` : `Sending ${String(this.sendingAll.done + 1)} of ${String(this.sendingAll.total)}…`}</button>`;
+    const closeButton = html`<button type="button" class="close" slot="actions" title="Close questions (Esc)" aria-label="Close questions" @click=${() => {
+      this.close();
+    }}>${CHEVRON_DOWN_ICON}</button>`;
     // One set lends its header line the drawer's title and close button; several keep a drawer header above them.
     const single = this.asks.length === 1 && this.sent.length === 0;
     // Kept records go below the open sets: those still need answers, while a record is only being finished reading.
     return {
-      drawer: !this.open ? nothing : html`
-        <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown} @ask-draft-change=${() => { this.requestUpdate(); }}>
+      drawer: !this.open
+        ? nothing
+        : html`
+        <section id="question-drawer" class="drawer" aria-label="Open questions" @keydown=${this.onKeydown} @ask-draft-change=${() => {
+          this.requestUpdate();
+        }}>
           ${single ? nothing : html`<header><span>${title}</span><span class="header-actions">${sendAll}${closeButton}</span></header>`}
           ${this.sendAllError === "" ? nothing : html`<p class="send-all-error" role="alert">${this.sendAllError}</p>`}
           <div class="sets">
-            ${repeat(this.asks, (ask) => ask.askId, (ask) => html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`)}
-            ${repeat(this.sent, (outcome) => outcome.askId, (outcome) => html`<ask-user-card flat data-record=${outcome.askId} .outcome=${outcome} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering}><button type="button" class="close" slot="actions" title="Dismiss" aria-label="Dismiss sent answers" @click=${() => { this.sent = this.sent.filter((each) => each !== outcome); }}>${X_ICON}</button></ask-user-card>`)}
+            ${repeat(
+              this.asks,
+              (ask) => ask.askId,
+              (ask) =>
+                html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`,
+            )}
+            ${repeat(
+              this.sent,
+              (outcome) => outcome.askId,
+              (outcome) =>
+                html`<ask-user-card flat data-record=${outcome.askId} .outcome=${outcome} .draftSessionId=${this.draftSessionId} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering}><button type="button" class="close" slot="actions" title="Dismiss" aria-label="Dismiss sent answers" @click=${() => {
+                  this.sent = this.sent.filter((each) => each !== outcome);
+                }}>${X_ICON}</button></ask-user-card>`,
+            )}
           </div>
         </section>`,
       bar: html`<button type="button" class="bar" slot="aside" aria-expanded=${String(this.open)} aria-controls="question-drawer" @keydown=${this.onKeydown}
-        @click=${() => { if (this.open) this.close(); else void this.openQuestion(this.asks[0]?.askId ?? "", 0); }}>${QUESTION_ICON}<span><span class="title">${title}</span>${answered === 0 ? nothing : html`<span class="answered"> · ${String(answered)} answered</span>`}</span></button>`,
+        @click=${() => {
+          if (this.open) this.close();
+          else void this.openQuestion(this.asks[0]?.askId ?? "", 0);
+        }}>${QUESTION_ICON}<span><span class="title">${title}</span>${answered === 0 ? nothing : html`<span class="answered"> · ${String(answered)} answered</span>`}</span></button>`,
     };
   }
 
   /** Open sets holding at least one drafted answer, with how many; drafts live in the browser. */
   private answeredBySet(): [string, number][] {
-    return this.asks.map((ask): [string, number] => [ask.askId, answeredCount(ask.questions, loadAskDraft(this.draftSessionId, ask.askId, undefined, ask.questions))]).filter(([, n]) => n > 0);
+    return this.asks
+      .map((ask): [string, number] => [ask.askId, answeredCount(ask.questions, loadAskDraft(this.draftSessionId, ask.askId, undefined, ask.questions))])
+      .filter(([, n]) => n > 0);
   }
 
   /**
@@ -137,7 +170,8 @@ export class WorkbenchQuestionChips extends LitElement {
       if (sent !== undefined && !(await sent)) failed += 1;
     }
     this.sendingAll = undefined;
-    if (failed > 0) this.sendAllError = `${String(failed)} of ${String(askIds.length)} ${askIds.length === 1 ? "set was" : "sets were"} not sent; their answers are kept.`;
+    if (failed > 0)
+      this.sendAllError = `${String(failed)} of ${String(askIds.length)} ${askIds.length === 1 ? "set was" : "sets were"} not sent; their answers are kept.`;
   }
 
   private readonly onKeydown = (event: KeyboardEvent): void => {
@@ -164,7 +198,9 @@ export class WorkbenchQuestionChips extends LitElement {
 
   private close(): void {
     this.open = false;
-    void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLElement>(".bar")?.focus(); });
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLElement>(".bar")?.focus();
+    });
   }
 
   static override styles = css`

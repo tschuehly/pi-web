@@ -38,8 +38,15 @@ export class ImagePresentation extends LitElement {
   private reportIntrinsicDimensions(event: Event): void {
     const image = event.currentTarget;
     const source = this.source;
-    if (this.onIntrinsicDimensions === undefined || !(image instanceof HTMLImageElement)
-      || source === undefined || source === "" || image.getAttribute("src") !== source || !image.complete) return;
+    if (
+      this.onIntrinsicDimensions === undefined
+      || !(image instanceof HTMLImageElement)
+      || source === undefined
+      || source === ""
+      || image.getAttribute("src") !== source
+      || !image.complete
+    )
+      return;
     const dimensions = validImageDimensions(image.naturalWidth, image.naturalHeight);
     if (dimensions !== undefined) this.onIntrinsicDimensions(source, dimensions);
   }
@@ -48,9 +55,13 @@ export class ImagePresentation extends LitElement {
     event.preventDefault();
     event.stopPropagation();
     if (this.source === undefined || this.source === "") return;
-    this.dispatchEvent(new CustomEvent<ImageOpenDetail>("image-open", {
-      detail: { src: this.source, alt: this.description }, bubbles: true, composed: true,
-    }));
+    this.dispatchEvent(
+      new CustomEvent<ImageOpenDetail>("image-open", {
+        detail: { src: this.source, alt: this.description },
+        bubbles: true,
+        composed: true,
+      }),
+    );
   }
 
   override render() {
@@ -59,27 +70,41 @@ export class ImagePresentation extends LitElement {
     return html`
       <div class="frame">
         <button class="placeholder ui-button" type="button" ?hidden=${!pending} ?disabled=${this.requestDisabled}
-          @click=${(event: MouseEvent) => { this.requestImage(event); }}>
+          @click=${(event: MouseEvent) => {
+            this.requestImage(event);
+          }}>
           <span>${this.pendingLabel}</span>${this.label === "" ? null : html`<code>${this.label}</code>`}
         </button>
         <button class="image-button ui-button" type="button" ?hidden=${pending} ?disabled=${pending}
           aria-label=${`Enlarge ${this.description || "image"}`} title="Click to enlarge"
-          @click=${(event: MouseEvent) => { this.open(event); }}
-          @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") this.open(event); }}>
+          @click=${(event: MouseEvent) => {
+            this.open(event);
+          }}
+          @keydown=${(event: KeyboardEvent) => {
+            if (event.key === "Enter" || event.key === " ") this.open(event);
+          }}>
           <img loading="lazy" decoding="async" src=${pending ? nothing : this.source} alt=${this.description}
-            @load=${(event: Event) => { this.reportIntrinsicDimensions(event); }}
+            @load=${(event: Event) => {
+              this.reportIntrinsicDimensions(event);
+            }}
             width=${dimensions?.width ?? nothing} height=${dimensions?.height ?? nothing}
-            style=${styleMap(dimensions === undefined ? {} : {
-              "--image-width": `${String(dimensions.width)}px`,
-              "--image-height": `${String(dimensions.height)}px`,
-              "--image-ratio": String(dimensions.width / dimensions.height),
-            })} />
+            style=${styleMap(
+              dimensions === undefined
+                ? {}
+                : {
+                    "--image-width": `${String(dimensions.width)}px`,
+                    "--image-height": `${String(dimensions.height)}px`,
+                    "--image-ratio": String(dimensions.width / dimensions.height),
+                  },
+            )} />
         </button>
       </div>
     `;
   }
 
-  static override styles = [uiButtonStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    css`
     @layer pi-web-base {
     :host { display: block; max-width: 100%; min-width: 0; }
     .frame { max-width: 100%; }
@@ -99,5 +124,6 @@ export class ImagePresentation extends LitElement {
     :host([thumbnail]) .placeholder code { display: none; }
     :host([thumbnail]) img { width: 100%; height: 100%; max-height: none; border-radius: 0; }
     }
-  `];
+  `,
+  ];
 }

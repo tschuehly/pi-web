@@ -10,11 +10,22 @@ import {
 
 // Repository-local overrides must not redirect commands away from catalog authority.
 const GIT_LOCAL_ENV_VARS = Object.freeze([
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CONFIG",
-  "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS", "GIT_DIR", "GIT_GRAFT_FILE",
-  "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS",
-  "GIT_OBJECT_DIRECTORY", "GIT_PREFIX", "GIT_QUARANTINE_PATH",
-  "GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE", "GIT_WORK_TREE",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_CONFIG",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_DIR",
+  "GIT_GRAFT_FILE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_PREFIX",
+  "GIT_QUARANTINE_PATH",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_SHALLOW_FILE",
+  "GIT_WORK_TREE",
 ]);
 
 const plugin: PiWebServerPluginV5 = {
@@ -44,14 +55,19 @@ const plugin: PiWebServerPluginV5 = {
           const main = mains[0];
           if (mains.length !== 1 || main === undefined) throw new Error("Project must have exactly one main workspace");
           const git = (args: readonly string[]) => runGit(context, main.path, args, signal);
-          if ((await git(["rev-parse", "--is-inside-work-tree"])).trim() !== "true"
-            || (await git(["rev-parse", "--is-bare-repository"])).trim() !== "false") {
+          if ((await git(["rev-parse", "--is-inside-work-tree"])).trim() !== "true" || (await git(["rev-parse", "--is-bare-repository"])).trim() !== "false") {
             throw new Error("Main workspace must be a non-bare Git worktree");
           }
           if (details === undefined) {
             const refs = await git(["for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/"]);
-            const branches = [...new Set(refs.split(/\r?\n/u).filter(Boolean).map((ref) =>
-              ref.replace(/^refs\/(?:heads|remotes)\//u, "")))].sort();
+            const branches = [
+              ...new Set(
+                refs
+                  .split(/\r?\n/u)
+                  .filter(Boolean)
+                  .map((ref) => ref.replace(/^refs\/(?:heads|remotes)\//u, "")),
+              ),
+            ].sort();
             const current = (await git(["rev-parse", "--abbrev-ref", "HEAD"])).trim();
             if (current === "") throw new Error("Git returned an empty current branch");
             return { workspaceId: main.id, workspacePath: main.path, branches, defaultBase: current };
@@ -64,17 +80,21 @@ const plugin: PiWebServerPluginV5 = {
             prompt: worktreeCommand(details.base, details.description),
           });
           const logDetails = { projectId: scope.project.id, workspaceId: main.id, sessionId: run.sessionId };
-          void run.completion.then((completion) => {
-            if (completion.status === "failed") {
-              context.logger.error("Workflows initial worktree task failed", { ...logDetails, error: completion.error });
-            } else if (completion.status === "cancelled") {
-              context.logger.warn("Workflows initial worktree task cancelled", logDetails);
-            }
-          }, (error: unknown) => {
-            context.logger.error("Workflows initial worktree task completion rejected", {
-              ...logDetails, error: error instanceof Error ? error.message : String(error),
-            });
-          });
+          void run.completion.then(
+            (completion) => {
+              if (completion.status === "failed") {
+                context.logger.error("Workflows initial worktree task failed", { ...logDetails, error: completion.error });
+              } else if (completion.status === "cancelled") {
+                context.logger.warn("Workflows initial worktree task cancelled", logDetails);
+              }
+            },
+            (error: unknown) => {
+              context.logger.error("Workflows initial worktree task completion rejected", {
+                ...logDetails,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            },
+          );
           return { workspaceId: main.id, sessionId: run.sessionId };
         },
       },
@@ -85,8 +105,7 @@ const plugin: PiWebServerPluginV5 = {
 export default plugin;
 
 function dispatchInput(input: JsonValue): { base: string; description: string } {
-  if (typeof input !== "object" || input === null || Array.isArray(input)
-    || Object.keys(input).some((key) => key !== "base" && key !== "description")) {
+  if (typeof input !== "object" || input === null || Array.isArray(input) || Object.keys(input).some((key) => key !== "base" && key !== "description")) {
     throw new Error("Dispatch input must contain only base and description");
   }
   return {
@@ -96,8 +115,7 @@ function dispatchInput(input: JsonValue): { base: string; description: string } 
 }
 
 function boundedString(value: unknown, name: string, maxBytes: number): string {
-  if (typeof value !== "string" || value.trim() === "" || value.includes("\0")
-    || Buffer.byteLength(value, "utf8") > maxBytes) {
+  if (typeof value !== "string" || value.trim() === "" || value.includes("\0") || Buffer.byteLength(value, "utf8") > maxBytes) {
     throw new Error(`Invalid ${name}: expected non-empty text of at most ${String(maxBytes)} UTF-8 bytes without NUL`);
   }
   return value;
@@ -111,14 +129,14 @@ function worktreeCommand(base: string, description: string): string {
   return `/worktree '${details.replaceAll("'", "'\"'\"'")}'`;
 }
 
-async function runGit(
-  context: ServerPluginActivationContextV5,
-  cwd: string,
-  args: readonly string[],
-  signal: AbortSignal,
-): Promise<string> {
+async function runGit(context: ServerPluginActivationContextV5, cwd: string, args: readonly string[], signal: AbortSignal): Promise<string> {
   const result = await context.execFile({
-    file: "git", cwd, args, unsetEnv: GIT_LOCAL_ENV_VARS, timeoutMs: 10_000, signal,
+    file: "git",
+    cwd,
+    args,
+    unsetEnv: GIT_LOCAL_ENV_VARS,
+    timeoutMs: 10_000,
+    signal,
   });
   if (result.stdoutTruncated || result.stderrTruncated) throw new Error("Git output exceeded the host limit");
   if (result.exitCode !== 0 || result.signal !== null) {

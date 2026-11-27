@@ -38,14 +38,8 @@ describe("session cleanup planning", () => {
       now: new Date("2026-06-25T00:00:00.000Z"),
       thresholds: { archiveIdleDays: 30, deleteArchivedDays: 30 },
       projectCwds: ["/repo-a"],
-      sessions: [
-        sessionEntry("archive-a", "/repo-a", "2026-05-01T00:00:00.000Z"),
-        sessionEntry("archive-b", "/repo-b", "2026-05-01T00:00:00.000Z"),
-      ],
-      archivedRecords: [
-        archivedRecord("delete-a", "/repo-a", "2026-05-01T00:00:00.000Z"),
-        archivedRecord("delete-b", "/repo-b", "2026-05-01T00:00:00.000Z"),
-      ],
+      sessions: [sessionEntry("archive-a", "/repo-a", "2026-05-01T00:00:00.000Z"), sessionEntry("archive-b", "/repo-b", "2026-05-01T00:00:00.000Z")],
+      archivedRecords: [archivedRecord("delete-a", "/repo-a", "2026-05-01T00:00:00.000Z"), archivedRecord("delete-b", "/repo-b", "2026-05-01T00:00:00.000Z")],
     });
 
     expect(plan.archiveInputs.map((input) => input.sessionId)).toEqual(["archive-a"]);

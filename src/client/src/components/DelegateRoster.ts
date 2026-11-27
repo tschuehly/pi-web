@@ -32,16 +32,28 @@ function icon(shape: TemplateResult, className = "icon"): TemplateResult {
 }
 
 function shortModel(model: string | undefined): string | undefined {
-  return model?.split("/").at(-1)?.replace(/-\d{8}$/, "");
+  return model
+    ?.split("/")
+    .at(-1)
+    ?.replace(/-\d{8}$/, "");
 }
 
-const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [[/opus/u, "Opus"], [/sonnet/u, "Sonnet"], [/fable/u, "Fable"], [/haiku/u, "Haiku"], [/astra/u, "Astra"], [/sol\b/u, "Sol"], [/luna/u, "Luna"], [/grok/u, "Grok"]];
+const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [
+  [/opus/u, "Opus"],
+  [/sonnet/u, "Sonnet"],
+  [/fable/u, "Fable"],
+  [/haiku/u, "Haiku"],
+  [/astra/u, "Astra"],
+  [/sol\b/u, "Sol"],
+  [/luna/u, "Luna"],
+  [/grok/u, "Grok"],
+];
 const EFFORT_SHORT: Readonly<Record<string, string>> = { minimal: "min", medium: "med" };
 
 /** The model's nickname (one version of each is in use); unknown models keep their short id. */
 function modelNickname(model: string | undefined): string | undefined {
   const short = shortModel(model);
-  return short === undefined ? undefined : MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short;
+  return short === undefined ? undefined : (MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short);
 }
 
 function effortLabel(effort: string | undefined): TemplateResult | typeof nothing {
@@ -83,7 +95,10 @@ export class DelegateRoster extends LitElement {
       if (pre.dataset["pinned"] !== "false") pre.scrollTop = pre.scrollHeight;
     }
     const visible = this.shadowRoot?.querySelector(".rows:not([hidden])") != null;
-    if (visible && this.clock === undefined) this.clock = setInterval(() => { this.requestUpdate(); }, 1000);
+    if (visible && this.clock === undefined)
+      this.clock = setInterval(() => {
+        this.requestUpdate();
+      }, 1000);
     if (!visible) this.stopClock();
   }
 
@@ -104,7 +119,9 @@ export class DelegateRoster extends LitElement {
   }
 
   // Slotted content shares the header line, so the roster re-renders when it comes or goes.
-  private readonly asideChanged = (): void => { this.requestUpdate(); };
+  private readonly asideChanged = (): void => {
+    this.requestUpdate();
+  };
 
   override render() {
     const { delegates, watchers, shells, backgroundBash, label } = activitySummary(this.status);
@@ -115,12 +132,15 @@ export class DelegateRoster extends LitElement {
     }
     const now = Date.now();
     // Attention first: failures, results waiting to be collected, quiet work that may be stuck, then the rest.
-    const rank = ({ item, outcome }: { item: DelegateActivityItem; outcome: DelegateOutcome }) => outcome === "running" && isQuiet(item, now) ? QUIET_ORDER : OUTCOME_ORDER[outcome];
+    const rank = ({ item, outcome }: { item: DelegateActivityItem; outcome: DelegateOutcome }) =>
+      outcome === "running" && isQuiet(item, now) ? QUIET_ORDER : OUTCOME_ORDER[outcome];
     const ordered = delegates.map((item) => ({ item, outcome: delegateOutcome(item) })).sort((a, b) => rank(a) - rank(b));
     return html`
       <section aria-label="Activity">
         <div class="head">
-          <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => { this.onToggleCollapsed?.(); }}>
+          <button type="button" class="section-toggle" aria-expanded=${String(!this.collapsed)} aria-controls="delegate-roster-rows" @click=${() => {
+            this.onToggleCollapsed?.();
+          }}>
             ${icon(ICONS.chevron, "chevron")}
             <span class="section-name">Activity</span>
             <small class="aggregate">${label}</small>
@@ -128,25 +148,55 @@ export class DelegateRoster extends LitElement {
           ${aside}
         </div>
         <div class="rows" id="delegate-roster-rows" tabindex="0" role="region" aria-label="Activity entries" ?hidden=${this.collapsed}>
-          ${repeat(ordered, ({ item }) => `delegate:${item.id}`, ({ item, outcome }) => this.renderDelegate(item, outcome, now))}
-          ${repeat(watchers, (item) => `watcher:${item.logicalId}`, (item) => {
-            const warning = item.state === "suspended" || item.state === "quarantined";
-            const kind = `${capitalized(item.mode)} watcher`;
-            const failures = item.consecutiveFailures > 0 ? ` · ${String(item.consecutiveFailures)} ${item.consecutiveFailures === 1 ? "failure" : "failures"}` : "";
-            return this.renderRow({
-              key: `watcher:${item.logicalId}`, tone: warning ? "warning" : "running", shape: ICONS.watcher, iconLabel: `${kind}, ${item.state}`,
-              name: item.label ?? item.handleId, nameTitle: `${kind} · ${item.handleId}`,
-              report: item.scope === "" ? undefined : item.scope, reportLabel: "Scope", fallback: "No scope given",
-              status: html`${capitalized(item.state)}${failures}`, statusTitle: `Monitor ${item.state}${failures}`,
-              elapsed: since(item.startedAt, now),
-            });
-          })}
-          ${repeat(shells, (item) => `shell:${item.id}`, (item) => this.renderRow({
-            key: `shell:${item.id}`, tone: "running", shape: ICONS.shell, iconLabel: "Shell, running",
-            name: item.label, report: item.toolName === "bash" ? "Built-in bash tool" : "Interactive ! shell",
-            status: "Running", elapsed: since(item.startedAt, now),
-          }))}
-          ${repeat(backgroundBash, (item) => `background-bash:${item.id}`, (item) => this.renderBackgroundBash(item))}
+          ${repeat(
+            ordered,
+            ({ item }) => `delegate:${item.id}`,
+            ({ item, outcome }) => this.renderDelegate(item, outcome, now),
+          )}
+          ${repeat(
+            watchers,
+            (item) => `watcher:${item.logicalId}`,
+            (item) => {
+              const warning = item.state === "suspended" || item.state === "quarantined";
+              const kind = `${capitalized(item.mode)} watcher`;
+              const failures =
+                item.consecutiveFailures > 0 ? ` · ${String(item.consecutiveFailures)} ${item.consecutiveFailures === 1 ? "failure" : "failures"}` : "";
+              return this.renderRow({
+                key: `watcher:${item.logicalId}`,
+                tone: warning ? "warning" : "running",
+                shape: ICONS.watcher,
+                iconLabel: `${kind}, ${item.state}`,
+                name: item.label ?? item.handleId,
+                nameTitle: `${kind} · ${item.handleId}`,
+                report: item.scope === "" ? undefined : item.scope,
+                reportLabel: "Scope",
+                fallback: "No scope given",
+                status: html`${capitalized(item.state)}${failures}`,
+                statusTitle: `Monitor ${item.state}${failures}`,
+                elapsed: since(item.startedAt, now),
+              });
+            },
+          )}
+          ${repeat(
+            shells,
+            (item) => `shell:${item.id}`,
+            (item) =>
+              this.renderRow({
+                key: `shell:${item.id}`,
+                tone: "running",
+                shape: ICONS.shell,
+                iconLabel: "Shell, running",
+                name: item.label,
+                report: item.toolName === "bash" ? "Built-in bash tool" : "Interactive ! shell",
+                status: "Running",
+                elapsed: since(item.startedAt, now),
+              }),
+          )}
+          ${repeat(
+            backgroundBash,
+            (item) => `background-bash:${item.id}`,
+            (item) => this.renderBackgroundBash(item),
+          )}
         </div>
       </section>
     `;
@@ -156,14 +206,25 @@ export class DelegateRoster extends LitElement {
     const kind = item.kind === "worker" ? "Worker" : "Subagent";
     const details = [kind, item.role, shortModel(item.model), item.effort].filter(Boolean).join(" · ");
     const nickname = modelNickname(item.model);
-    const model = nickname === undefined || item.model === undefined ? undefined : { label: html`${nickname}${effortLabel(item.effort)}`, title: item.effort === undefined ? item.model : `${item.model} · ${item.effort} effort` };
+    const model =
+      nickname === undefined || item.model === undefined
+        ? undefined
+        : { label: html`${nickname}${effortLabel(item.effort)}`, title: item.effort === undefined ? item.model : `${item.model} · ${item.effort} effort` };
     const reportAge = since(item.reportedAt ?? item.startedAt, now);
     const ended = item.endedAt === undefined ? undefined : Date.parse(item.endedAt);
     if (outcome !== "running") {
       const raw = capitalized((item.activity ?? "").replaceAll("_", " "));
       return this.renderRow({
-        key: `delegate:${item.id}`, tone: outcome === "cancelled" ? "muted" : outcome, shape: ICONS[outcome], iconLabel: `${kind}, ${OUTCOME_LABEL[outcome].toLowerCase()}`,
-        name: item.name ?? "Unnamed", nameTitle: details, model, report: item.reportedStatus, reportLabel: "Status", fallback: "No status report received",
+        key: `delegate:${item.id}`,
+        tone: outcome === "cancelled" ? "muted" : outcome,
+        shape: ICONS[outcome],
+        iconLabel: `${kind}, ${OUTCOME_LABEL[outcome].toLowerCase()}`,
+        name: item.name ?? "Unnamed",
+        nameTitle: details,
+        model,
+        report: item.reportedStatus,
+        reportLabel: "Status",
+        fallback: "No status report received",
         status: outcome === "failed" ? raw : OUTCOME_LABEL[outcome],
         statusTitle: outcome === "done" ? "Finished; its result is waiting to be collected" : `${OUTCOME_LABEL[outcome]}: ${raw.toLowerCase()}`,
         elapsed: ended === undefined || item.startedAt === undefined ? undefined : ended - Date.parse(item.startedAt),
@@ -173,29 +234,62 @@ export class DelegateRoster extends LitElement {
     const quiet = isQuiet(item, now);
     const age = reportAge === undefined ? undefined : formatAge(reportAge);
     return this.renderRow({
-      key: `delegate:${item.id}`, tone: "running", shape: item.kind === "worker" ? ICONS.worker : ICONS.subagent, iconLabel: `${kind}, running`,
-      name: item.name ?? "Unnamed", nameTitle: details, model, report: item.reportedStatus, reportLabel: "Status", fallback: "Waiting for its first status report",
-      status: reportAge === undefined || age === undefined ? nothing
-        : quiet ? html`${icon(ICONS.quiet, "quiet-icon")}Quiet ${formatElapsed(reportAge)}`
-        : html`<span class="visually-hidden">${item.reportedAt === undefined ? "Started" : "Reported"} </span>${age}`,
-      statusTitle: reportAge === undefined || age === undefined ? undefined : quiet ? `No status report for ${formatElapsed(reportAge)}; it may be stuck` : `${item.reportedAt === undefined ? "Started" : "Last status report"} ${age}`,
-      quiet, elapsed: since(item.startedAt, now),
+      key: `delegate:${item.id}`,
+      tone: "running",
+      shape: item.kind === "worker" ? ICONS.worker : ICONS.subagent,
+      iconLabel: `${kind}, running`,
+      name: item.name ?? "Unnamed",
+      nameTitle: details,
+      model,
+      report: item.reportedStatus,
+      reportLabel: "Status",
+      fallback: "Waiting for its first status report",
+      status:
+        reportAge === undefined || age === undefined
+          ? nothing
+          : quiet
+            ? html`${icon(ICONS.quiet, "quiet-icon")}Quiet ${formatElapsed(reportAge)}`
+            : html`<span class="visually-hidden">${item.reportedAt === undefined ? "Started" : "Reported"} </span>${age}`,
+      statusTitle:
+        reportAge === undefined || age === undefined
+          ? undefined
+          : quiet
+            ? `No status report for ${formatElapsed(reportAge)}; it may be stuck`
+            : `${item.reportedAt === undefined ? "Started" : "Last status report"} ${age}`,
+      quiet,
+      elapsed: since(item.startedAt, now),
     });
   }
 
   private renderRow(row: {
-    key: string; tone: Tone; shape: TemplateResult; iconLabel: string; name: string; nameTitle?: string; model?: { label: TemplateResult; title: string } | undefined;
-    report: string | undefined; reportLabel?: string; fallback?: string; status: unknown; statusTitle?: string | undefined; quiet?: boolean;
-    elapsed: number | undefined; elapsedLabel?: string;
+    key: string;
+    tone: Tone;
+    shape: TemplateResult;
+    iconLabel: string;
+    name: string;
+    nameTitle?: string;
+    model?: { label: TemplateResult; title: string } | undefined;
+    report: string | undefined;
+    reportLabel?: string;
+    fallback?: string;
+    status: unknown;
+    statusTitle?: string | undefined;
+    quiet?: boolean;
+    elapsed: number | undefined;
+    elapsedLabel?: string;
   }): TemplateResult {
     return html`<div class="row ${row.tone}" data-row-key=${row.key}>
       <span class="kind" role="img" aria-label=${row.iconLabel} title=${row.iconLabel}>${icon(row.shape)}</span>
-      ${row.model === undefined
-        ? html`<strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong>`
-        : html`<span class="who"><strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong><span class="model" title=${row.model.title}>${row.model.label}</span></span>`}
-      ${row.report === undefined
-        ? html`<span class="report fallback">${row.fallback}</span>`
-        : html`<span class="report" title=${row.report}>${row.reportLabel === undefined ? nothing : html`<span class="visually-hidden">${row.reportLabel}: </span>`}${row.report}</span>`}
+      ${
+        row.model === undefined
+          ? html`<strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong>`
+          : html`<span class="who"><strong class="name" title=${row.nameTitle ?? row.name}>${row.name}</strong><span class="model" title=${row.model.title}>${row.model.label}</span></span>`
+      }
+      ${
+        row.report === undefined
+          ? html`<span class="report fallback">${row.fallback}</span>`
+          : html`<span class="report" title=${row.report}>${row.reportLabel === undefined ? nothing : html`<span class="visually-hidden">${row.reportLabel}: </span>`}${row.report}</span>`
+      }
       <span class="status ${row.quiet === true ? "quiet" : ""}" title=${row.statusTitle ?? nothing}>${row.status}</span>
       ${elapsed(row.elapsed, row.elapsedLabel)}
     </div>`;
@@ -206,19 +300,30 @@ export class DelegateRoster extends LitElement {
     const logId = `bash-log-${item.id}`;
     return html`<div class="row running" data-row-key=${`background-bash:${item.id}`}>
       <span class="kind" role="img" aria-label="Background bash, running" title="Background bash, running">${icon(ICONS.backgroundShell)}</span>
-      <button type="button" class="name expand" aria-expanded=${String(expanded)} aria-controls=${logId} title=${expanded ? "Hide output" : "Show output"} @click=${() => { this.toggleBashJob(item.id); }}>
+      <button type="button" class="name expand" aria-expanded=${String(expanded)} aria-controls=${logId} title=${expanded ? "Hide output" : "Show output"} @click=${() => {
+        this.toggleBashJob(item.id);
+      }}>
         <span>${item.description ?? "Background bash"}</span>${icon(ICONS.chevron, "chevron")}
       </button>
-      ${item.command === undefined
-        ? html`<span class="report fallback">Command not shown</span>`
-        : html`<code class="report command" title=${item.command}>${item.command}</code>`}
+      ${
+        item.command === undefined
+          ? html`<span class="report fallback">Command not shown</span>`
+          : html`<code class="report command" title=${item.command}>${item.command}</code>`
+      }
       <span class="status" title=${`${String(item.bytes)} bytes of output`}>${formatFileSize(item.bytes)}</span>
       ${elapsed(item.elapsedSeconds * 1000)}
-      ${expanded ? html`<div class="bash-log" id=${logId}>
+      ${
+        expanded
+          ? html`<div class="bash-log" id=${logId}>
         ${item.command === undefined ? null : html`<code class="bash-command">$ ${item.command}</code>`}
         ${item.logPath === undefined ? null : html`<small class="log-path">Recent output only. Full log: ${item.logPath}</small>`}
-        <pre tabindex="0" aria-label="Recent output" @scroll=${(event: Event) => { const pre = event.currentTarget; if (pre instanceof HTMLElement) pre.dataset["pinned"] = String(pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4); }}>${item.output === undefined || item.output === "" ? "No output yet." : item.output}</pre>
-      </div>` : null}
+        <pre tabindex="0" aria-label="Recent output" @scroll=${(event: Event) => {
+          const pre = event.currentTarget;
+          if (pre instanceof HTMLElement) pre.dataset["pinned"] = String(pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4);
+        }}>${item.output === undefined || item.output === "" ? "No output yet." : item.output}</pre>
+      </div>`
+          : null
+      }
     </div>`;
   }
 

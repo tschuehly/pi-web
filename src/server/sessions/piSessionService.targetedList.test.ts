@@ -2,7 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { PiSessionService, type PiSessionListEntry, type PiSessionServiceDependencies } from "./piSessionService.js";
 import type { ArchivedSessionRecord } from "./sessionArchiveStore.js";
 import { SessionUnreadStore } from "./sessionUnreadStore.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, resolveSessionFileFromList, runtimeCreator, sessionRecord, testModelRuntime, type SessionGateway } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  fakeSessionManager,
+  resolveSessionFileFromList,
+  runtimeCreator,
+  sessionRecord,
+  testModelRuntime,
+  type SessionGateway,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 const CWD = "/workspace";
@@ -32,7 +42,11 @@ function countingGateway(entries: PiSessionListEntry[]) {
 }
 
 function archiveStoreWith(records: ArchivedSessionRecord[]): NonNullable<PiSessionServiceDependencies["archiveStore"]> {
-  return { ...emptyArchiveStore(), list: () => Promise.resolve(records), isArchived: (id) => Promise.resolve(records.some((record) => record.sessionId === id)) };
+  return {
+    ...emptyArchiveStore(),
+    list: () => Promise.resolve(records),
+    isArchived: (id) => Promise.resolve(records.some((record) => record.sessionId === id)),
+  };
 }
 
 function serviceWith(deps: Partial<PiSessionServiceDependencies> & Pick<PiSessionServiceDependencies, "sessionManager">) {
@@ -72,7 +86,18 @@ describe("PiSessionService targeted listing", () => {
   });
 
   it("projects current archive records exactly like the ordinary listing, ahead of the persisted row", async () => {
-    const complete: ArchivedSessionRecord = { sessionId: "target-id", cwd: CWD, archivedAt: "2026-01-03T00:00:00.000Z", originalPath: "/sessions/target-id.jsonl", archivePath: "/archive/target-id.jsonl", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 5, firstMessage: "archived", name: "Archived" };
+    const complete: ArchivedSessionRecord = {
+      sessionId: "target-id",
+      cwd: CWD,
+      archivedAt: "2026-01-03T00:00:00.000Z",
+      originalPath: "/sessions/target-id.jsonl",
+      archivePath: "/archive/target-id.jsonl",
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-02T00:00:00.000Z",
+      messageCount: 5,
+      firstMessage: "archived",
+      name: "Archived",
+    };
     const legacy: ArchivedSessionRecord = { sessionId: "sibling-id", cwd: CWD, archivedAt: "2026-01-03T00:00:00.000Z" };
     const unprojectable: ArchivedSessionRecord = { sessionId: "orphan-id", cwd: CWD, archivedAt: "2026-01-03T00:00:00.000Z" };
     const { gateway } = countingGateway([target, sibling]);
@@ -94,7 +119,14 @@ describe("PiSessionService targeted listing", () => {
     const hosted = fakeRuntime("blank-id", { sessionFile: undefined, sessionManager: fakeSessionManager(CWD, { getSessionId: () => "blank-id" }) });
     const { gateway } = countingGateway([]);
     const hub = new CapturingSessionEventHub();
-    const service = new PiSessionService(hub, { agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime, archiveStore: emptyArchiveStore(), createAgentRuntime: runtimeCreator(hosted.runtime), sessionManager: gateway, heartbeatIntervalMs: 60_000 });
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      archiveStore: emptyArchiveStore(),
+      createAgentRuntime: runtimeCreator(hosted.runtime),
+      sessionManager: gateway,
+      heartbeatIntervalMs: 60_000,
+    });
     const started = await service.start(CWD);
     const published = hub.globalEvents.length;
     const sessionEvents = hub.sessionEvents.length;
@@ -103,7 +135,11 @@ describe("PiSessionService targeted listing", () => {
     expect(listed).toMatchObject({ id: "blank-id", cwd: CWD, path: "", persisted: false, messageCount: 0, firstMessage: "" });
     expect(listed).toEqual({ ...started, created: listed?.created, modified: listed?.modified });
     await expect(service.list("/elsewhere", { sessionId: "blank-id" })).resolves.toEqual([]);
-    expect({ global: hub.globalEvents.length, session: hub.sessionEvents.length, bind: hosted.calls.bindExtensions.length }).toEqual({ global: published, session: sessionEvents, bind: 1 });
+    expect({ global: hub.globalEvents.length, session: hub.sessionEvents.length, bind: hosted.calls.bindExtensions.length }).toEqual({
+      global: published,
+      session: sessionEvents,
+      bind: 1,
+    });
     await service.dispose();
   });
 
@@ -111,7 +147,14 @@ describe("PiSessionService targeted listing", () => {
     const hosted = fakeRuntime("blank-id", { sessionFile: undefined, sessionManager: fakeSessionManager(CWD, { getSessionId: () => "blank-id" }) });
     const { gateway, calls } = countingGateway([{ ...sessionRecord("blank-id"), messageCount: 4, firstMessage: "stale metadata" }]);
     const hub = new CapturingSessionEventHub();
-    const service = new PiSessionService(hub, { agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime, archiveStore: emptyArchiveStore(), createAgentRuntime: runtimeCreator(hosted.runtime), sessionManager: gateway, heartbeatIntervalMs: 60_000 });
+    const service = new PiSessionService(hub, {
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
+      archiveStore: emptyArchiveStore(),
+      createAgentRuntime: runtimeCreator(hosted.runtime),
+      sessionManager: gateway,
+      heartbeatIntervalMs: 60_000,
+    });
     await service.start(CWD);
     const opened = calls.open;
 

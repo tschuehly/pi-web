@@ -24,7 +24,7 @@ export class AllSessions extends LitElement {
 
   private async load(): Promise<void> {
     try {
-      this.sessions = [...await api.recent(300)].sort((a, b) => b.modified.localeCompare(a.modified));
+      this.sessions = [...(await api.recent(300))].sort((a, b) => b.modified.localeCompare(a.modified));
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
     } finally {
@@ -36,7 +36,9 @@ export class AllSessions extends LitElement {
     const live = isSessionActive(this.sessionStatuses[session.id], this.sessionActivities[session.id]);
     const doing = live ? sessionActivityText(this.sessionActivities[session.id]) : undefined;
     return html`
-      <button class="row ${live ? "live" : ""}" @click=${() => { this.open(session); }}>
+      <button class="row ${live ? "live" : ""}" @click=${() => {
+        this.open(session);
+      }}>
         <span class="row-title">${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}<strong>${sessionTitle(session)}</strong></span>
         <span>${doing ?? shortenHome(session.cwd)}</span>
         <small>${modifiedTime(session.modified)} · ${String(session.messageCount)} messages</small>
@@ -53,7 +55,9 @@ export class AllSessions extends LitElement {
     if (this.error !== "") return html`<p class="error" role="alert">${this.error}</p>`;
     const agentSessionCount = this.sessions.filter((session) => isAgentSession(session) || isChildSession(session)).length;
     const needle = this.query.trim().toLowerCase();
-    const visible = this.sessions.filter((session) => (this.showAgentSessions || (!isAgentSession(session) && !isChildSession(session))) && matchesSearch(session, needle));
+    const visible = this.sessions.filter(
+      (session) => (this.showAgentSessions || (!isAgentSession(session) && !isChildSession(session))) && matchesSearch(session, needle),
+    );
     const groups = new Map<string, SessionInfo[]>();
     for (const session of visible) {
       const label = dayLabel(session.modified);
@@ -61,23 +65,39 @@ export class AllSessions extends LitElement {
     }
     return html`
       <div class="tools">
-        <input type="search" aria-label="Search sessions" placeholder="Search sessions" .value=${this.query} @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.query = event.target.value; }}>
-        ${agentSessionCount === 0 ? nothing : html`
-          <label><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${String(agentSessionCount)})</label>
-        `}
+        <input type="search" aria-label="Search sessions" placeholder="Search sessions" .value=${this.query} @input=${(event: Event) => {
+          if (event.target instanceof HTMLInputElement) this.query = event.target.value;
+        }}>
+        ${
+          agentSessionCount === 0
+            ? nothing
+            : html`
+          <label><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => {
+            if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked;
+          }}> Show agent sessions (${String(agentSessionCount)})</label>
+        `
+        }
       </div>
-      ${visible.length === 0 ? html`<p>No sessions found.</p>` : [...groups].map(([label, sessions]) => html`
+      ${
+        visible.length === 0
+          ? html`<p>No sessions found.</p>`
+          : [...groups].map(
+              ([label, sessions]) => html`
         <section aria-label=${label}>
           <h2>${label}</h2>
           <div class="list">
             ${sessions.map((session) => this.renderRow(session))}
           </div>
         </section>
-      `)}
+      `,
+            )
+      }
     `;
   }
 
-  static override styles = [listStyles, css`
+  static override styles = [
+    listStyles,
+    css`
     :host { display: grid; gap: 12px; min-width: 0; max-width: 100%; }
     * { box-sizing: border-box; min-width: 0; }
     .tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -96,7 +116,8 @@ export class AllSessions extends LitElement {
     p { margin: 0; }
     .error { color: var(--pi-danger); }
     @media (max-width: 600px) { .row { grid-template-columns: 1fr; gap: 3px; } }
-  `];
+  `,
+  ];
 }
 
 function isAgentSession(session: SessionInfo): boolean {

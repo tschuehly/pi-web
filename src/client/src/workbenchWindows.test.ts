@@ -1,9 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { clampGridRatio, closeChats, emptyWindow, focusChat, moveChats, gridPage, gridRatio, gridRatioFromDrag, gridRatioFromKeyboard, resizeGrid, gridPageCount, gridPageLead, gridTiles, openChat, orderedChats, parseWindowStore, toggleLayout, toggleMaximized, updateChat, windowChatSummary, windowGroups, workstreamTabTarget, type WindowChat, type WindowStore } from "./workbenchWindows";
+import {
+  clampGridRatio,
+  closeChats,
+  emptyWindow,
+  focusChat,
+  moveChats,
+  gridPage,
+  gridRatio,
+  gridRatioFromDrag,
+  gridRatioFromKeyboard,
+  resizeGrid,
+  gridPageCount,
+  gridPageLead,
+  gridTiles,
+  openChat,
+  orderedChats,
+  parseWindowStore,
+  toggleLayout,
+  toggleMaximized,
+  updateChat,
+  windowChatSummary,
+  windowGroups,
+  workstreamTabTarget,
+  type WindowChat,
+  type WindowStore,
+} from "./workbenchWindows";
 
 const release = { id: "ws-release", title: "Release" };
 const docs = { id: "ws-docs", title: "Docs" };
-const chat = (sessionId: string, workstream?: { id: string; title: string }): WindowChat => ({ sessionId, title: `Chat ${sessionId}`, machineId: "local", workstream });
+const chat = (sessionId: string, workstream?: { id: string; title: string }): WindowChat => ({
+  sessionId,
+  title: `Chat ${sessionId}`,
+  machineId: "local",
+  workstream,
+});
 const ids = (chats: readonly WindowChat[]) => chats.map((candidate) => candidate.sessionId);
 
 function windowWith(...chats: WindowChat[]): WindowStore {
@@ -87,7 +117,11 @@ describe("opening and closing Chats", () => {
 
 describe("moving Chats between windows", () => {
   it("moves Chats with their Workstream into another window, which then shows the first", () => {
-    const store = focusChat({ ...windowWith(chat("a1", release), chat("a2", release), chat("b")), w2: { ...emptyWindow("Window 2"), chats: [chat("z")], focused: "z" } }, "w1", "a2");
+    const store = focusChat(
+      { ...windowWith(chat("a1", release), chat("a2", release), chat("b")), w2: { ...emptyWindow("Window 2"), chats: [chat("z")], focused: "z" } },
+      "w1",
+      "a2",
+    );
     const moved = moveChats(store, "w1", "w2", ["a1", "a2"]);
 
     expect(ids(moved["w1"]?.chats ?? [])).toEqual(["b"]);
@@ -114,13 +148,25 @@ describe("moving Chats between windows", () => {
 });
 
 describe("grid", () => {
-  const areas = (store: WindowStore) => store["w1"] === undefined ? [] : gridTiles(store["w1"]).map((tile) => [tile.chat.sessionId, tile.area]);
+  const areas = (store: WindowStore) => (store["w1"] === undefined ? [] : gridTiles(store["w1"]).map((tile) => [tile.chat.sessionId, tile.area]));
 
   it("lays out one to four tiles: full, side by side, two over one, 2×2", () => {
     expect(areas(windowWith(chat("a")))).toEqual([["a", "1 / 1 / 3 / 3"]]);
-    expect(areas(windowWith(chat("a"), chat("b")))).toEqual([["a", "1 / 1 / 3 / 2"], ["b", "1 / 2 / 3 / 3"]]);
-    expect(areas(windowWith(chat("a"), chat("b"), chat("c")))).toEqual([["a", "1 / 1 / 2 / 2"], ["b", "1 / 2 / 2 / 3"], ["c", "2 / 1 / 3 / 3"]]);
-    expect(areas(windowWith(chat("a"), chat("b"), chat("c"), chat("d")))).toEqual([["a", "1 / 1 / 2 / 2"], ["b", "1 / 2 / 2 / 3"], ["c", "2 / 1 / 3 / 2"], ["d", "2 / 2 / 3 / 3"]]);
+    expect(areas(windowWith(chat("a"), chat("b")))).toEqual([
+      ["a", "1 / 1 / 3 / 2"],
+      ["b", "1 / 2 / 3 / 3"],
+    ]);
+    expect(areas(windowWith(chat("a"), chat("b"), chat("c")))).toEqual([
+      ["a", "1 / 1 / 2 / 2"],
+      ["b", "1 / 2 / 2 / 3"],
+      ["c", "2 / 1 / 3 / 3"],
+    ]);
+    expect(areas(windowWith(chat("a"), chat("b"), chat("c"), chat("d")))).toEqual([
+      ["a", "1 / 1 / 2 / 2"],
+      ["b", "1 / 2 / 2 / 3"],
+      ["c", "2 / 1 / 3 / 2"],
+      ["d", "2 / 2 / 3 / 3"],
+    ]);
   });
 
   it("pages by four, showing the focused Chat's page", () => {
@@ -149,7 +195,10 @@ describe("grid", () => {
 
 describe("resizable grid", () => {
   const four = () => windowWith(chat("a"), chat("b"), chat("c"), chat("d"));
-  const ratios = (store: WindowStore) => { const window = store["w1"]; return window === undefined ? [] : [gridRatio(window, "columns"), gridRatio(window, "rows")]; };
+  const ratios = (store: WindowStore) => {
+    const window = store["w1"];
+    return window === undefined ? [] : [gridRatio(window, "columns"), gridRatio(window, "rows")];
+  };
 
   it("splits evenly until a divider is dragged, then keeps its share on every page and focus; double-click evens it again", () => {
     const store = resizeGrid(resizeGrid(windowWith(chat("a"), chat("b"), chat("c"), chat("d"), chat("e")), "w1", "columns", 0.33333), "w1", "rows", 0.7);
@@ -208,7 +257,9 @@ describe("stored windows", () => {
 
     expect(parseWindowStore(JSON.stringify(store))).toEqual(store);
     expect(parseWindowStore("not json")).toEqual({});
-    expect(parseWindowStore(JSON.stringify({ bad: { name: 3 }, ok: { name: "W", chats: [{ sessionId: "s" }, chat("c")], focused: "gone", layout: "sideways" } }))).toEqual({
+    expect(
+      parseWindowStore(JSON.stringify({ bad: { name: 3 }, ok: { name: "W", chats: [{ sessionId: "s" }, chat("c")], focused: "gone", layout: "sideways" } })),
+    ).toEqual({
       ok: { name: "W", chats: [chat("c")], focused: undefined, layout: "tabs", maximized: false, lastActive: {} },
     });
   });

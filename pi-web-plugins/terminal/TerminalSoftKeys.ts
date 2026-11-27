@@ -15,7 +15,9 @@ export class TerminalSoftKeys extends LitElement {
   private releaseStyles: (() => void) | undefined;
 
   @property({ attribute: false })
-  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined { return this.integration; }
+  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined {
+    return this.integration;
+  }
   set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
     if (value === this.integration) return;
     this.releaseStyles?.();
@@ -87,19 +89,31 @@ export class TerminalSoftKeys extends LitElement {
   override render() {
     return html`
       <div class="terminal-soft-keys" role="toolbar" aria-label="Terminal soft keys">
-        ${TERMINAL_SOFT_KEYS.map((key) => html`
+        ${TERMINAL_SOFT_KEYS.map(
+          (key) => html`
           <button
             type="button"
             class="soft-key"
             title=${key.title}
             aria-label=${key.ariaLabel}
-            @pointerdown=${(event: PointerEvent) => { this.onSoftKeyPointerDown(event, key); }}
-            @pointermove=${(event: PointerEvent) => { this.onSoftKeyPointerMove(event); }}
-            @pointerup=${(event: PointerEvent) => { this.onSoftKeyPointerUp(event, key); }}
-            @pointercancel=${(event: PointerEvent) => { this.onSoftKeyPointerCancel(event); }}
-            @click=${(event: MouseEvent) => { this.onSoftKeyClick(event, key); }}
+            @pointerdown=${(event: PointerEvent) => {
+              this.onSoftKeyPointerDown(event, key);
+            }}
+            @pointermove=${(event: PointerEvent) => {
+              this.onSoftKeyPointerMove(event);
+            }}
+            @pointerup=${(event: PointerEvent) => {
+              this.onSoftKeyPointerUp(event, key);
+            }}
+            @pointercancel=${(event: PointerEvent) => {
+              this.onSoftKeyPointerCancel(event);
+            }}
+            @click=${(event: MouseEvent) => {
+              this.onSoftKeyClick(event, key);
+            }}
           >${key.label}</button>
-        `)}
+        `,
+        )}
       </div>
     `;
   }

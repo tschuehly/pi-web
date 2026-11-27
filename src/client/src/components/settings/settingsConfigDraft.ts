@@ -90,11 +90,17 @@ function preservedGatewayConfigRemainder(baseConfig: PiWebConfigValues): PiWebCo
 }
 
 function parseAllowedHostsText(value: string): string[] {
-  return value.split(/[\n,]/u).map((host) => host.trim()).filter((host) => host !== "");
+  return value
+    .split(/[\n,]/u)
+    .map((host) => host.trim())
+    .filter((host) => host !== "");
 }
 
 function parseAllowedPathsText(value: string): string[] {
-  const paths = value.split("\n").map((path) => path.trim()).filter((path) => path !== "");
+  const paths = value
+    .split("\n")
+    .map((path) => path.trim())
+    .filter((path) => path !== "");
   const invalid = paths.find((path) => !isAbsoluteishAllowedPath(path));
   if (invalid !== undefined) throw new Error(`Allowed external paths must be absolute paths or start with ~: ${invalid}`);
   return paths;

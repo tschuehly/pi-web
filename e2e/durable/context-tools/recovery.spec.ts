@@ -14,11 +14,24 @@ for (const resolution of ["Done", "Not done", "Retry"] as const) {
     execFileSync("mkfifo", [fifo]);
     // The reader acknowledges the first externally visible effect, then stops consuming. The > pipe-capacity write
     // remains in progress: SIGKILL is after effect, before the unsafe tool result can commit.
-    const receiver = spawn("python3", ["-c", "import os,sys,signal\nf=os.open(sys.argv[1],os.O_RDONLY)\nb=os.read(f,6)\nopen(sys.argv[2],'ab').write(b+b'\\n')\nsignal.pause()", fifo, effects], { stdio: "ignore" });
+    const receiver = spawn(
+      "python3",
+      ["-c", "import os,sys,signal\nf=os.open(sys.argv[1],os.O_RDONLY)\nb=os.read(f,6)\nopen(sys.argv[2],'ab').write(b+b'\\n')\nsignal.pause()", fifo, effects],
+      { stdio: "ignore" },
+    );
     try {
-      await mock.script({ turns: [[{ toolCall: { name: "write", args: { path: fifo, content: "effect" + "x".repeat(256_000) } } }],
-        ...(resolution === "Done" ? [[{ toolCall: { name: "write", args: { path: fifo, content: "duplicate must not run" } } }], "Duplicate blocked.", "After duplicate attempt."] : []),
-        ...(resolution === "Retry" ? ["Interrupted run reconciled.", [{ toolCall: { name: "write", args: { path: fifo, content: "authorized retry" } } }]] : []), "Reconciliation acknowledged."] });
+      await mock.script({
+        turns: [
+          [{ toolCall: { name: "write", args: { path: fifo, content: "effect" + "x".repeat(256_000) } } }],
+          ...(resolution === "Done"
+            ? [[{ toolCall: { name: "write", args: { path: fifo, content: "duplicate must not run" } } }], "Duplicate blocked.", "After duplicate attempt."]
+            : []),
+          ...(resolution === "Retry"
+            ? ["Interrupted run reconciled.", [{ toolCall: { name: "write", args: { path: fifo, content: "authorized retry" } } }]]
+            : []),
+          "Reconciliation acknowledged.",
+        ],
+      });
       const id = await createChat(page);
       await send(page, "unsafe fixture write");
       await expect.poll(() => readFile(effects, "utf8").catch(() => "")).toBe("effect\n");
@@ -44,7 +57,11 @@ for (const resolution of ["Done", "Not done", "Retry"] as const) {
       }
       await card.getByRole("button", { name: resolution, exact: true }).click();
       await expect(card).toHaveCount(0);
-      await expect(chat(page).getByText(/The user resolved the interrupted write call/).first()).toBeVisible();
+      await expect(
+        chat(page)
+          .getByText(/The user resolved the interrupted write call/)
+          .first(),
+      ).toBeVisible();
       if (resolution === "Retry") await expect(chat(page).getByText("Reconciliation acknowledged.", { exact: true })).toBeVisible();
       await idle(page, id);
       await killHost(page, id);

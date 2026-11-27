@@ -12,7 +12,6 @@ import { PromptEditor, promptEditorMaximumHeight } from "./PromptEditor";
 import { SessionTreeNavigator } from "./SessionTreeNavigator";
 import { WorkbenchApp } from "./WorkbenchApp";
 
-
 describe("Workbench zoom-compensated viewport contracts", () => {
   it("defines inherited compensated viewport dimensions on the Workbench host", () => {
     const hostRule = rule(WorkbenchApp.styles, ":host");

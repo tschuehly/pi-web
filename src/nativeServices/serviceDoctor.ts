@@ -31,13 +31,9 @@ export interface InstalledNativeServiceContext {
   environment: Readonly<Record<string, string>>;
 }
 
-export type ManagedNativeServiceConfigSelection =
-  | { source: "caller" | "installed"; configPath: string }
-  | { source: "default" };
+export type ManagedNativeServiceConfigSelection = { source: "caller" | "installed"; configPath: string } | { source: "default" };
 
-export type InstalledNativeServiceInspection<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string };
+export type InstalledNativeServiceInspection<T> = { ok: true; value: T } | { ok: false; message: string };
 
 export type NativeServiceDoctorTarget =
   | {
@@ -123,9 +119,7 @@ export function selectManagedNativeServiceConfig(
   const parsed = parseConsistentDefinitions(backend, definitions);
   if (!parsed.ok) return parsed;
   const firstEnvironment = parsed.value[0]?.environment;
-  const installedConfigPath = firstEnvironment === undefined
-    ? undefined
-    : ownEnvironmentValue(firstEnvironment, "PI_WEB_CONFIG");
+  const installedConfigPath = firstEnvironment === undefined ? undefined : ownEnvironmentValue(firstEnvironment, "PI_WEB_CONFIG");
   if (installedConfigPath === undefined || installedConfigPath === "") {
     return { ok: true, value: { source: "default" } };
   }
@@ -142,9 +136,7 @@ export function inspectInstalledNativeServiceDefinitionEnvironment(
   backend: NativeServiceBackend,
   definition: InstalledNativeServiceDefinition,
 ): InstalledNativeServiceInspection<Readonly<Record<string, string>>> {
-  const parsed = backend.kind === "systemd"
-    ? parseSystemdDefinition(definition)
-    : parseLaunchdDefinition(definition);
+  const parsed = backend.kind === "systemd" ? parseSystemdDefinition(definition) : parseLaunchdDefinition(definition);
   return parsed.ok ? { ok: true, value: parsed.value.environment } : parsed;
 }
 
@@ -207,9 +199,10 @@ export async function runNativeServiceDoctor(
 ): Promise<NativeServiceDoctorResult> {
   if (target.kind === "inspection-failure") return target;
 
-  const scope: NativeServiceDoctorScope = target.kind === "installed-development"
-    ? { kind: target.kind, reason: null, shell: target.input.shell }
-    : { kind: target.kind, reason: target.reason, shell: target.input.shell };
+  const scope: NativeServiceDoctorScope =
+    target.kind === "installed-development"
+      ? { kind: target.kind, reason: null, shell: target.input.shell }
+      : { kind: target.kind, reason: target.reason, shell: target.input.shell };
   let plan: NativeServicePlan;
   if (target.kind === "installed-development") {
     plan = createDevelopmentNativeServicePlan(target.input);
@@ -252,7 +245,9 @@ export function formatNativeServiceDoctorResult(result: NativeServiceDoctorResul
         infrastructure = true;
         lines.push(`✗ Could not inspect bundled ${failure.serviceId} entrypoint ${failure.entrypointPath}: ${failure.message}`);
       } else {
-        lines.push(`✗ ${failure.namedCommand} is unavailable to the native service manager, and bundled entrypoint ${failure.bundledEntrypointPath} is missing.`);
+        lines.push(
+          `✗ ${failure.namedCommand} is unavailable to the native service manager, and bundled entrypoint ${failure.bundledEntrypointPath} is missing.`,
+        );
         if (failure.namedCommandFailure !== null) lines.push(`  ${failure.namedCommandFailure}`);
       }
     }
@@ -263,8 +258,7 @@ export function formatNativeServiceDoctorResult(result: NativeServiceDoctorResul
       lines,
       plan: null,
       adviceShell: result.scope.shell,
-      pathAdviceRecommended: !infrastructure
-        && result.failures.some((failure) => failure.kind === "executable-unavailable"),
+      pathAdviceRecommended: !infrastructure && result.failures.some((failure) => failure.kind === "executable-unavailable"),
       failedPrerequisites: [],
     };
   }
@@ -305,8 +299,7 @@ export function formatNativeServiceDoctorResult(result: NativeServiceDoctorResul
     lines,
     plan: result.plan,
     adviceShell: result.plan.shell,
-    pathAdviceRecommended: !infrastructure
-      && failedPrerequisites.some(nativeServicePrerequisiteNeedsPathAdvice),
+    pathAdviceRecommended: !infrastructure && failedPrerequisites.some(nativeServicePrerequisiteNeedsPathAdvice),
     failedPrerequisites,
   };
 }
@@ -324,9 +317,7 @@ function parseConsistentDefinitions(
 
   const parsed: ParsedServiceDefinition[] = [];
   for (const definition of definitions) {
-    const result = backend.kind === "systemd"
-      ? parseSystemdDefinition(definition)
-      : parseLaunchdDefinition(definition);
+    const result = backend.kind === "systemd" ? parseSystemdDefinition(definition) : parseLaunchdDefinition(definition);
     if (!result.ok) return result;
     parsed.push(result.value);
   }
@@ -411,7 +402,7 @@ function parseSystemdExecStart(value: string): ParsedSystemdExecStart | undefine
 /** Scan one systemd argument linearly so delimiters inside quoted values remain data. */
 function parseSystemdExecStartArgument(value: string, offset: number): ParsedSystemdExecArgument | undefined {
   if (offset >= value.length || value[offset] === " " || value[offset] === "\t") return undefined;
-  let quote: "\"" | "'" | null = null;
+  let quote: '"' | "'" | null = null;
   for (let index = offset; index < value.length; index += 1) {
     const character = value[index];
     if (character === "\\") {
@@ -422,7 +413,7 @@ function parseSystemdExecStartArgument(value: string, offset: number): ParsedSys
     if (quote === null && (character === " " || character === "\t")) {
       return { value: value.slice(offset, index), endOffset: index };
     }
-    if (character !== "\"" && character !== "'") continue;
+    if (character !== '"' && character !== "'") continue;
     if (quote === null) quote = character;
     else if (character === quote) quote = null;
   }
@@ -443,9 +434,7 @@ function isSingleSystemdQuotedValue(value: string): boolean {
   return true;
 }
 
-function parseSystemdDefinition(
-  definition: InstalledNativeServiceDefinition,
-): InstalledNativeServiceInspection<ParsedServiceDefinition> {
+function parseSystemdDefinition(definition: InstalledNativeServiceDefinition): InstalledNativeServiceInspection<ParsedServiceDefinition> {
   if (definition.contents.split(/\r?\n/u).some(hasSystemdPhysicalLineContinuation)) {
     return {
       ok: false,
@@ -458,9 +447,7 @@ function parseSystemdDefinition(
     return { ok: false, message: `Installed ${definition.id} systemd unit has unrecognized service directives.` };
   }
   const execStarts = directives.filter((directive) => directive.name === "ExecStart");
-  const execStart = execStarts.length === 1
-    ? parseSystemdExecStart(execStarts[0]?.value ?? "")
-    : undefined;
+  const execStart = execStarts.length === 1 ? parseSystemdExecStart(execStarts[0]?.value ?? "") : undefined;
   if (execStart === undefined) {
     return { ok: false, message: `Installed ${definition.id} systemd unit must have exactly one recognized ExecStart.` };
   }
@@ -498,9 +485,7 @@ function parseSystemdDefinition(
   if (rawWorkingDirectory?.startsWith('"') === true || rawWorkingDirectory?.startsWith("'") === true) {
     return { ok: false, message: `Installed ${definition.id} systemd unit has an invalid quoted working directory.` };
   }
-  const workingDirectory = rawWorkingDirectory === undefined
-    ? null
-    : parseSystemdDirectiveValue(rawWorkingDirectory);
+  const workingDirectory = rawWorkingDirectory === undefined ? null : parseSystemdDirectiveValue(rawWorkingDirectory);
   if (workingDirectories.length === 1 && workingDirectory === undefined) {
     return { ok: false, message: `Installed ${definition.id} systemd unit has a malformed working directory.` };
   }
@@ -517,9 +502,7 @@ function parseSystemdDefinition(
   };
 }
 
-function parseLaunchdDefinition(
-  definition: InstalledNativeServiceDefinition,
-): InstalledNativeServiceInspection<ParsedServiceDefinition> {
+function parseLaunchdDefinition(definition: InstalledNativeServiceDefinition): InstalledNativeServiceInspection<ParsedServiceDefinition> {
   const plist = parseLaunchdPlistDocument(definition.contents);
   if (plist === undefined) {
     return { ok: false, message: `Installed ${definition.id} LaunchAgent is not a structurally valid property list.` };
@@ -691,9 +674,7 @@ function parseSystemdShellCommand(shell: NativeServiceShell["name"], value: stri
 }
 
 function legacySystemdShellQuote(shell: NativeServiceShell["name"], value: string): string {
-  const escaped = shell === "fish"
-    ? value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")
-    : value.replaceAll("'", "'\\''");
+  const escaped = shell === "fish" ? value.replaceAll("\\", "\\\\").replaceAll("'", "\\'") : value.replaceAll("'", "'\\''");
   return `'${escaped}'`;
 }
 
@@ -763,9 +744,7 @@ function parsePlistValue(cursor: PlistXmlCursor, depth: number): ParsedPlistValu
   for (const tag of ["data", "date", "integer", "real"] as const) {
     if (!cursor.contents.startsWith(`<${tag}>`, cursor.offset)) continue;
     const value = parsePlistTextElement(cursor, tag);
-    return value === undefined || !isValidPlistScalarValue(tag, value)
-      ? undefined
-      : { kind: "scalar", value };
+    return value === undefined || !isValidPlistScalarValue(tag, value) ? undefined : { kind: "scalar", value };
   }
   if (cursor.contents.startsWith("<array", cursor.offset)) return parsePlistArray(cursor, depth);
   if (cursor.contents.startsWith("<dict", cursor.offset)) return parsePlistDictionary(cursor, depth);
@@ -816,7 +795,8 @@ function parsePlistTextElement(cursor: PlistXmlCursor, tag: PlistTextTag): strin
 function normalizePlistXml(contents: string): string | undefined {
   for (const character of contents) {
     const codePoint = character.codePointAt(0) ?? 0;
-    const isXmlCharacter = codePoint === 0x09
+    const isXmlCharacter =
+      codePoint === 0x09
       || codePoint === 0x0a
       || codePoint === 0x0d
       || (codePoint >= 0x20 && codePoint <= 0xd7ff)
@@ -836,16 +816,14 @@ function isValidPlistScalarValue(tag: PlistScalarTag, value: string): boolean {
     const match = /^(\d{4})-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.exec(value);
     if (match?.[1] === undefined || Number(match[1]) === 0) return false;
     const timestamp = Date.parse(value);
-    return Number.isFinite(timestamp)
-      && new Date(timestamp).toISOString() === `${value.slice(0, -1)}.000Z`;
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === `${value.slice(0, -1)}.000Z`;
   }
   if (tag === "integer") {
     if (!/^[+-]?(?:0|[1-9][0-9]*)$/u.test(value)) return false;
     const parsed = BigInt(value);
-    return parsed >= -(2n ** 63n) && parsed <= (2n ** 63n) - 1n;
+    return parsed >= -(2n ** 63n) && parsed <= 2n ** 63n - 1n;
   }
-  return /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/u.test(value)
-    && Number.isFinite(Number(value));
+  return /^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$/u.test(value) && Number.isFinite(Number(value));
 }
 
 function skipPlistWhitespace(cursor: PlistXmlCursor): void {
@@ -884,18 +862,12 @@ function plistStringDictionary(value: ParsedPlistValue): Record<string, string> 
 
 function xmlUnescapeStrict(value: string): string | undefined {
   if (/[<>]/u.test(value) || /&(?!(?:apos|quot|gt|lt|amp);)/u.test(value)) return undefined;
-  return value
-    .replaceAll("&apos;", "'")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&gt;", ">")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&amp;", "&");
+  return value.replaceAll("&apos;", "'").replaceAll("&quot;", '"').replaceAll("&gt;", ">").replaceAll("&lt;", "<").replaceAll("&amp;", "&");
 }
 
 function recordsEqual(left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean {
   const leftEntries = Object.entries(left);
-  return leftEntries.length === Object.keys(right).length
-    && leftEntries.every(([key, value]) => Object.hasOwn(right, key) && right[key] === value);
+  return leftEntries.length === Object.keys(right).length && leftEntries.every(([key, value]) => Object.hasOwn(right, key) && right[key] === value);
 }
 
 function impossibleMissingDefinition(): never {

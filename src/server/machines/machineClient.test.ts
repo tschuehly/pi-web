@@ -35,19 +35,28 @@ describe("RemoteMachineClient", () => {
     const fetchImpl = vi.fn<typeof fetch>((_input, init) => {
       fetchSignal = init?.signal;
       return new Promise<Response>((_resolve, rejectPromise) => {
-        init?.signal?.addEventListener("abort", () => {
-          const reason: unknown = init.signal?.reason;
-          rejectPromise(reason instanceof Error ? reason : new DOMException("Cancelled", "AbortError"));
-        }, { once: true });
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            const reason: unknown = init.signal?.reason;
+            rejectPromise(reason instanceof Error ? reason : new DOMException("Cancelled", "AbortError"));
+          },
+          { once: true },
+        );
       });
     });
     const client = new RemoteMachineClient({ baseUrl: "https://remote.example.test/" }, fetchImpl);
     const controller = new AbortController();
 
-    const pending = client.request("DELETE", "/api/projects/p1/workspaces/w1", { precondition: "v1.confirmed" }, {
-      timeoutMs: 30_000,
-      signal: controller.signal,
-    });
+    const pending = client.request(
+      "DELETE",
+      "/api/projects/p1/workspaces/w1",
+      { precondition: "v1.confirmed" },
+      {
+        timeoutMs: 30_000,
+        signal: controller.signal,
+      },
+    );
     const expectation = expect(pending).rejects.toMatchObject({
       statusCode: 502,
       message: "Remote machine request cancelled",
@@ -60,10 +69,13 @@ describe("RemoteMachineClient", () => {
 
   it("requests compression for the remote hop even when configured headers use different casing", async () => {
     const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(new Response("ok", { status: 200 })));
-    const client = new RemoteMachineClient({
-      baseUrl: "https://remote.example.test/",
-      headers: { "Accept-Encoding": "identity" },
-    }, fetchImpl);
+    const client = new RemoteMachineClient(
+      {
+        baseUrl: "https://remote.example.test/",
+        headers: { "Accept-Encoding": "identity" },
+      },
+      fetchImpl,
+    );
 
     await client.request("GET", "/api/projects");
 
@@ -72,14 +84,18 @@ describe("RemoteMachineClient", () => {
   });
 
   it("removes stale representation headers after Fetch decodes a compressed response", async () => {
-    const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: {
-        "content-type": "application/json",
-        "content-encoding": "gzip",
-        "content-length": "31",
-      },
-    })));
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-encoding": "gzip",
+            "content-length": "31",
+          },
+        }),
+      ),
+    );
     const client = new RemoteMachineClient({ baseUrl: "https://remote.example.test/" }, fetchImpl);
 
     const response = await client.requestJson("GET", "/api/projects");

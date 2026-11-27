@@ -5,9 +5,18 @@ import { ReportedError } from "./reportedError";
 function harness() {
   let state: AppState = initialAppState();
   return {
-    reported: new ReportedError(() => state, (patch) => { state = { ...state, ...patch }; }),
-    get error(): string { return state.error; },
-    set error(value: string) { state = { ...state, error: value }; },
+    reported: new ReportedError(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    ),
+    get error(): string {
+      return state.error;
+    },
+    set error(value: string) {
+      state = { ...state, error: value };
+    },
   };
 }
 

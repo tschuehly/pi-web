@@ -83,7 +83,10 @@ describe("ViewportPositionRepairer", () => {
     scheduler.documentElement.scrollTop = 56;
     scheduler.body.scrollTop = 78;
     scheduler.runAnimationFrame(firstFrame);
-    expect(scheduler.scrollCalls).toEqual([[0, 0], [0, 0]]);
+    expect(scheduler.scrollCalls).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
     expect(scheduler.documentElement.scrollTop).toBe(0);
     expect(scheduler.body.scrollTop).toBe(0);
     const secondFrame = firstMapKey(scheduler.animationFrames);
@@ -91,14 +94,23 @@ describe("ViewportPositionRepairer", () => {
     scheduler.documentElement.scrollTop = 90;
     scheduler.body.scrollTop = 123;
     scheduler.runAnimationFrame(secondFrame);
-    expect(scheduler.scrollCalls).toEqual([[0, 0], [0, 0], [0, 0]]);
+    expect(scheduler.scrollCalls).toEqual([
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]);
     expect(scheduler.documentElement.scrollTop).toBe(0);
     expect(scheduler.body.scrollTop).toBe(0);
 
     scheduler.documentElement.scrollTop = 34;
     scheduler.body.scrollTop = 12;
     scheduler.runTimer(timer[0]);
-    expect(scheduler.scrollCalls).toEqual([[0, 0], [0, 0], [0, 0], [0, 0]]);
+    expect(scheduler.scrollCalls).toEqual([
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]);
     expect(scheduler.documentElement.scrollTop).toBe(0);
     expect(scheduler.body.scrollTop).toBe(0);
   });

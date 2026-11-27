@@ -2,7 +2,9 @@ import { html, nothing, type TemplateResult } from "lit";
 import type { SessionLabelItem } from "../plugins/types";
 
 export function renderSessionLabelItems(items: SessionLabelItem[]): TemplateResult[] {
-  return items.map((item, index) => html`${index === 0 ? null : html`<span class="session-label-separator" aria-hidden="true">·</span>`}${renderSessionLabelItem(item)}`);
+  return items.map(
+    (item, index) => html`${index === 0 ? null : html`<span class="session-label-separator" aria-hidden="true">·</span>`}${renderSessionLabelItem(item)}`,
+  );
 }
 
 function renderSessionLabelItem(item: SessionLabelItem): TemplateResult {

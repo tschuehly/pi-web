@@ -111,7 +111,10 @@ export class ImageGalleryDialog extends LitElement {
 
   private readonly onPointerDown = (event: PointerEvent): void => {
     if (event.pointerType !== "touch") return;
-    if (!event.isPrimary) { this.swipe = undefined; return; }
+    if (!event.isPrimary) {
+      this.swipe = undefined;
+      return;
+    }
     this.swipe = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
     if (event.currentTarget instanceof HTMLElement) event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -135,26 +138,43 @@ export class ImageGalleryDialog extends LitElement {
     return html`
       <dialog class="image-zoom" aria-label="Image preview" aria-describedby="image-gallery-position"
         @keydown=${this.onKeyDown} @click=${this.onDialogClick} @close=${this.close} @cancel=${this.close}>
-        ${gallery === undefined || image === undefined ? null : html`
+        ${
+          gallery === undefined || image === undefined
+            ? null
+            : html`
           <div class="image-gallery-header ui-toolbar ui-toolbar--primary">
             <span id="image-gallery-position" class="image-gallery-position ui-toolbar-title" role="status" aria-live="polite" aria-atomic="true">Image ${String(gallery.index + 1)} of ${String(gallery.images.length)}</span>
             <div class="ui-toolbar-group"><button type="button" class="image-zoom-close ui-button ui-button--icon" aria-label="Close image" title="Close image" @click=${this.close}>×</button></div>
           </div>
-          <div class="image-gallery-stage" @pointerdown=${this.onPointerDown} @pointerup=${this.onPointerUp} @pointercancel=${() => { this.swipe = undefined; }}>
+          <div class="image-gallery-stage" @pointerdown=${this.onPointerDown} @pointerup=${this.onPointerUp} @pointercancel=${() => {
+            this.swipe = undefined;
+          }}>
             <img class="image-zoom-full" src=${image.src} alt=${image.alt} decoding="async" draggable="false" />
           </div>
-          ${gallery.images.length < 2 ? null : html`
+          ${
+            gallery.images.length < 2
+              ? null
+              : html`
             <div class="image-gallery-navigation ui-toolbar ui-toolbar--primary">
-              <button type="button" class="ui-button" aria-label="Previous image" ?disabled=${gallery.index === 0} @click=${() => { this.move(-1); }}>Previous</button>
-              <button type="button" class="ui-button" aria-label="Next image" ?disabled=${gallery.index === gallery.images.length - 1} @click=${() => { this.move(1); }}>Next</button>
+              <button type="button" class="ui-button" aria-label="Previous image" ?disabled=${gallery.index === 0} @click=${() => {
+                this.move(-1);
+              }}>Previous</button>
+              <button type="button" class="ui-button" aria-label="Next image" ?disabled=${gallery.index === gallery.images.length - 1} @click=${() => {
+                this.move(1);
+              }}>Next</button>
             </div>
-          `}
-        `}
+          `
+          }
+        `
+        }
       </dialog>
     `;
   }
 
-  static override styles = [uiButtonStyles, uiToolbarStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiToolbarStyles,
+    css`
     dialog.image-zoom { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(1100px, calc(var(--pi-workbench-viewport-width, 100vw) - 32px - env(safe-area-inset-left) - env(safe-area-inset-right))); height: min(900px, calc(var(--pi-workbench-viewport-height, 100dvh) - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); max-width: none; max-height: none; padding: 0; border: 1px solid var(--pi-border); border-radius: 0; color: var(--pi-text); background: var(--pi-bg); overflow: hidden; }
     dialog.image-zoom[open] { display: flex; flex-direction: column; }
     dialog.image-zoom::backdrop { background: var(--pi-overlay); }
@@ -164,5 +184,6 @@ export class ImageGalleryDialog extends LitElement {
     .image-zoom-full { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; }
     .image-gallery-navigation { border-top: 1px solid var(--pi-border); }
     .image-gallery-navigation .ui-button { flex: 1 1 0; }
-  `];
+  `,
+  ];
 }

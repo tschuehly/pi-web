@@ -16,10 +16,7 @@ import { PluginBackendRegistry } from "../../src/server/plugins/pluginBackendReg
 import { createServerPluginExecFile } from "../../src/server/plugins/serverPluginExec.js";
 import type { ServerPluginPairedBackendContribution, ServerPluginProviderContribution } from "../../src/server/plugins/serverPluginRuntime.js";
 import { WorkspaceProviderRegistry } from "../../src/server/workspaces/workspaceProviderRegistry.js";
-import {
-  GIT_DIFF_OPERATION,
-  GIT_STATUS_OPERATION,
-} from "./git-backend.js";
+import { GIT_DIFF_OPERATION, GIT_STATUS_OPERATION } from "./git-backend.js";
 import plugin, { parseGitWorktreeList } from "./server-plugin.js";
 
 const tempRoots: string[] = [];
@@ -59,45 +56,49 @@ describe("bundled Git workspace provider", () => {
 
     // Poison repository-local variables at the host boundary. The bundled
     // plugin must use the public unsetEnv capability rather than ambient state.
-    const workspaceProvider = await providerFor(createServerPluginExecFile({
-      env: {
-        ...cleanGitEnvironment(),
-        GIT_DIR: "/missing/poisoned-git-dir",
-        GIT_WORK_TREE: "/missing/poisoned-work-tree",
-      },
-    }));
+    const workspaceProvider = await providerFor(
+      createServerPluginExecFile({
+        env: {
+          ...cleanGitEnvironment(),
+          GIT_DIR: "/missing/poisoned-git-dir",
+          GIT_WORK_TREE: "/missing/poisoned-work-tree",
+        },
+      }),
+    );
     const input = project(repository.path);
 
     await expect(workspaceProvider.probe(input, new AbortController().signal)).resolves.toBe("claim");
     const workspaces = await workspaceProvider.list(input, new AbortController().signal);
 
-    expect(workspaces).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        key: repository.path,
-        path: repository.path,
-        label: "main",
-        isMain: true,
-        publicMetadata: { isGitRepo: true, isGitWorktree: true, branch: "main" },
-      }),
-      expect.objectContaining({
-        key: linked,
-        path: linked,
-        label: "feature/with-space",
-        isMain: false,
-        publicMetadata: { isGitRepo: true, isGitWorktree: true, branch: "feature/with-space" },
-        removal: {
-          actionLabel: "Delete workspace",
-          confirmation: `Delete workspace feature/with-space?\n\nThis will run git worktree remove and delete:\n${linked}\n\nThe Git branch will not be deleted.`,
-        },
-      }),
-      expect.objectContaining({
-        key: detached,
-        path: detached,
-        label: "detached",
-        isMain: false,
-        publicMetadata: { isGitRepo: true, isGitWorktree: true, detached: true },
-      }),
-    ]));
+    expect(workspaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: repository.path,
+          path: repository.path,
+          label: "main",
+          isMain: true,
+          publicMetadata: { isGitRepo: true, isGitWorktree: true, branch: "main" },
+        }),
+        expect.objectContaining({
+          key: linked,
+          path: linked,
+          label: "feature/with-space",
+          isMain: false,
+          publicMetadata: { isGitRepo: true, isGitWorktree: true, branch: "feature/with-space" },
+          removal: {
+            actionLabel: "Delete workspace",
+            confirmation: `Delete workspace feature/with-space?\n\nThis will run git worktree remove and delete:\n${linked}\n\nThe Git branch will not be deleted.`,
+          },
+        }),
+        expect.objectContaining({
+          key: detached,
+          path: detached,
+          label: "detached",
+          isMain: false,
+          publicMetadata: { isGitRepo: true, isGitWorktree: true, detached: true },
+        }),
+      ]),
+    );
     expect(workspaces.map(({ path }) => path)).not.toContain(gone);
     expect(workspaces.filter(({ isMain }) => isMain)).toHaveLength(1);
     expect(workspaces.find(({ isMain }) => isMain)).not.toHaveProperty("removal");
@@ -121,10 +122,12 @@ describe("bundled Git workspace provider", () => {
 
     expect(resolution).toMatchObject({ status: "provider", ownerPluginId: "git" });
     expect(resolution.workspaces).toHaveLength(2);
-    expect(resolution.workspaces).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: checkout, isMain: true, label: "main" }),
-      expect.objectContaining({ path: linked, isMain: false, label: "feature" }),
-    ]));
+    expect(resolution.workspaces).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: checkout, isMain: true, label: "main" }),
+        expect.objectContaining({ path: linked, isMain: false, label: "feature" }),
+      ]),
+    );
     expect(resolution.workspaces.map(({ path }) => path)).not.toContain(bare);
     expect(resolution.workspaces.filter(({ isMain }) => isMain)).toHaveLength(1);
   });
@@ -135,13 +138,15 @@ describe("bundled Git workspace provider", () => {
       writeFile(join(repository.path, "tracked.txt"), "tracked\nchanged\n", "utf8"),
       writeFile(join(repository.path, "new file.txt"), "new\n", "utf8"),
     ]);
-    const activation = await activationFor(createServerPluginExecFile({
-      env: {
-        ...cleanGitEnvironment(),
-        GIT_DIR: "/missing/poisoned-git-dir",
-        GIT_WORK_TREE: "/missing/poisoned-work-tree",
-      },
-    }));
+    const activation = await activationFor(
+      createServerPluginExecFile({
+        env: {
+          ...cleanGitEnvironment(),
+          GIT_DIR: "/missing/poisoned-git-dir",
+          GIT_WORK_TREE: "/missing/poisoned-work-tree",
+        },
+      }),
+    );
     const input = project(repository.path);
     const workspaces = new WorkspaceProviderRegistry({
       contributions: [contribution("git", requiredProvider(activation))],
@@ -173,32 +178,38 @@ describe("bundled Git workspace provider", () => {
 
     const statusRecord = requireRecord(status);
     expect(statusRecord).toMatchObject({ isGitRepo: true, submodules: [] });
-    expect(statusRecord["files"]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: "tracked.txt", workingTree: "modified" }),
-      expect.objectContaining({ path: "new file.txt", workingTree: "untracked" }),
-    ]));
+    expect(statusRecord["files"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "tracked.txt", workingTree: "modified" }),
+        expect.objectContaining({ path: "new file.txt", workingTree: "untracked" }),
+      ]),
+    );
     const diffRecord = requireRecord(diff);
     expect(diffRecord).toMatchObject({ path: "tracked.txt", staged: false, truncated: false });
     expect(diffRecord["diff"]).toContain("changed");
   });
 
   it("preserves the Git command timeout, environment sanitization, and diff truncation signal", async () => {
-    const execFile = vi.fn<ServerPluginActivationContext["execFile"]>(({ args }) => Promise.resolve(commandResult(
-      args?.includes("--show-toplevel") === true
-        ? { stdout: "/repo\n" }
-        : { stdout: "diff --git a/tracked.txt b/tracked.txt\n", stdoutTruncated: true },
-    )));
+    const execFile = vi.fn<ServerPluginActivationContext["execFile"]>(({ args }) =>
+      Promise.resolve(
+        commandResult(
+          args?.includes("--show-toplevel") === true ? { stdout: "/repo\n" } : { stdout: "diff --git a/tracked.txt b/tracked.txt\n", stdoutTruncated: true },
+        ),
+      ),
+    );
     const activation = await activationFor(execFile);
     const request = requiredPeerRequest(activation);
     const signal = new AbortController().signal;
 
-    await expect(request({
-      project: project("/repo"),
-      workspace: peerWorkspace("root", "/repo", true),
-      operation: GIT_DIFF_OPERATION,
-      input: {},
-      signal,
-    })).resolves.toMatchObject({ staged: false, truncated: true });
+    await expect(
+      request({
+        project: project("/repo"),
+        workspace: peerWorkspace("root", "/repo", true),
+        operation: GIT_DIFF_OPERATION,
+        input: {},
+        signal,
+      }),
+    ).resolves.toMatchObject({ staged: false, truncated: true });
     expect(execFile).toHaveBeenCalledWith({
       file: "git",
       args: ["diff", "--no-ext-diff", "--color=never"],
@@ -231,17 +242,18 @@ describe("bundled Git workspace provider", () => {
     runGit(repository.path, ["worktree", "add", "-b", "feature/remove", linked]);
     const workspaceProvider = await providerFor(createServerPluginExecFile({ env: cleanGitEnvironment() }));
     const input = project(repository.path);
-    const target = (await workspaceProvider.list(input, new AbortController().signal))
-      .find(({ path }) => path === linked);
+    const target = (await workspaceProvider.list(input, new AbortController().signal)).find(({ path }) => path === linked);
     if (target === undefined || workspaceProvider.prepareRemove === undefined) {
       throw new Error("Expected removable Git worktree");
     }
 
-    await expect(workspaceProvider.prepareRemove({
-      project: input,
-      workspace: target,
-      signal: new AbortController().signal,
-    })).resolves.toEqual({
+    await expect(
+      workspaceProvider.prepareRemove({
+        project: input,
+        workspace: target,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
       title: "Delete workspace: feature/remove",
       command: `git worktree repair '${linked.replaceAll("'", "'\\''")}' && git worktree remove '${linked.replaceAll("'", "'\\''")}'`,
     });
@@ -255,8 +267,7 @@ describe("bundled Git workspace provider", () => {
     await rename(repository.path, moved);
     const workspaceProvider = await providerFor(createServerPluginExecFile({ env: cleanGitEnvironment() }));
     const input = project(moved);
-    const target = (await workspaceProvider.list(input, new AbortController().signal))
-      .find(({ path }) => path === linked);
+    const target = (await workspaceProvider.list(input, new AbortController().signal)).find(({ path }) => path === linked);
     if (target === undefined || workspaceProvider.prepareRemove === undefined) {
       throw new Error("Expected removable Git worktree");
     }
@@ -361,9 +372,19 @@ describe("bundled Git workspace provider", () => {
 describe("parseGitWorktreeList", () => {
   it("parses NUL-delimited paths without losing spaces and records detached/prunable facts", () => {
     const output = [
-      "worktree /repo with spaces", "HEAD abc", "branch refs/heads/main", "",
-      "worktree /linked detached", "HEAD def", "detached", "",
-      "worktree /gone", "HEAD fed", "branch refs/heads/gone", "prunable gitdir file points to non-existent location", "",
+      "worktree /repo with spaces",
+      "HEAD abc",
+      "branch refs/heads/main",
+      "",
+      "worktree /linked detached",
+      "HEAD def",
+      "detached",
+      "",
+      "worktree /gone",
+      "HEAD fed",
+      "branch refs/heads/gone",
+      "prunable gitdir file points to non-existent location",
+      "",
     ].join("\0");
 
     expect(parseGitWorktreeList(output)).toEqual([
@@ -387,10 +408,18 @@ async function activationFor(execFile: ServerPluginActivationContext["execFile"]
     packageRoot: resolve("pi-web-plugins/git"),
     dataDirectory: "/data/plugin-data/git",
     logger: {
-      debug() { /* no-op */ },
-      info() { /* no-op */ },
-      warn() { /* no-op */ },
-      error() { /* no-op */ },
+      debug() {
+        /* no-op */
+      },
+      info() {
+        /* no-op */
+      },
+      warn() {
+        /* no-op */
+      },
+      error() {
+        /* no-op */
+      },
     },
     settings: {},
     execFile,

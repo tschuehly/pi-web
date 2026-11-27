@@ -59,12 +59,14 @@ describe("server plugin execFile helper", () => {
   it("rejects malformed environment keys before spawning", async () => {
     const execFile = createServerPluginExecFile();
 
-    await expect(execFile({
-      file: process.execPath,
-      args: ["-e", "process.exit(99)"],
-      unsetEnv: ["INVALID=KEY"],
-      signal: new AbortController().signal,
-    })).rejects.toThrow("unsetEnv keys");
+    await expect(
+      execFile({
+        file: process.execPath,
+        args: ["-e", "process.exit(99)"],
+        unsetEnv: ["INVALID=KEY"],
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow("unsetEnv keys");
   });
 
   it("rejects an already-aborted operation without spawning", async () => {
@@ -73,36 +75,47 @@ describe("server plugin execFile helper", () => {
     const reason = new Error("caller stopped");
     controller.abort(reason);
 
-    await expect(execFile({
-      file: process.execPath,
-      args: ["-e", "process.exit(0)"],
-      signal: controller.signal,
-    })).rejects.toBe(reason);
+    await expect(
+      execFile({
+        file: process.execPath,
+        args: ["-e", "process.exit(0)"],
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
   });
 
   it("rejects malformed AbortSignal lookalikes before spawning", async () => {
     const execFile = createServerPluginExecFile();
-    const malformedSignal = { aborted: false, addEventListener() { /* incomplete untyped plugin input */ } };
+    const malformedSignal = {
+      aborted: false,
+      addEventListener() {
+        /* incomplete untyped plugin input */
+      },
+    };
 
-    await expect(execFile({
-      file: process.execPath,
-      args: ["-e", "process.exit(99)"],
-      // @ts-expect-error Exercise the runtime boundary used by plain JavaScript plugins.
-      signal: malformedSignal,
-    })).rejects.toThrow("AbortSignal");
+    await expect(
+      execFile({
+        file: process.execPath,
+        args: ["-e", "process.exit(99)"],
+        // @ts-expect-error Exercise the runtime boundary used by plain JavaScript plugins.
+        signal: malformedSignal,
+      }),
+    ).rejects.toThrow("AbortSignal");
   });
 
-  it.skipIf(process.platform === "win32")("terminates the command process group when a deadline expires", async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), "pi-web-plugin-exec-tree-"));
-    const pidPath = join(tempDir, "descendant.pid");
-    const controller = new AbortController();
-    const execFile = createServerPluginExecFile({ maxTimeoutMs: 200 });
-    let command: ReturnType<typeof execFile> | undefined;
-    let descendantPid: number | undefined;
-    // Keep real process startup outside the 200 ms deadline, even under suite load.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    try {
-      const parentSource = `
+  it.skipIf(process.platform === "win32")(
+    "terminates the command process group when a deadline expires",
+    async () => {
+      const tempDir = await mkdtemp(join(tmpdir(), "pi-web-plugin-exec-tree-"));
+      const pidPath = join(tempDir, "descendant.pid");
+      const controller = new AbortController();
+      const execFile = createServerPluginExecFile({ maxTimeoutMs: 200 });
+      let command: ReturnType<typeof execFile> | undefined;
+      let descendantPid: number | undefined;
+      // Keep real process startup outside the 200 ms deadline, even under suite load.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const parentSource = `
         const { spawn } = require("node:child_process");
         const { writeFileSync } = require("node:fs");
         const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
@@ -110,48 +123,52 @@ describe("server plugin execFile helper", () => {
         setInterval(() => {}, 1000);
       `;
 
-      command = execFile({
-        file: process.execPath,
-        args: ["-e", parentSource],
-        signal: controller.signal,
-      });
-      // Observe early spawn errors; the original promise is still asserted below.
-      void command.catch(() => undefined);
-      descendantPid = await waitForDescendantPid(pidPath);
-      expect(processIsAlive(descendantPid)).toBe(true);
+        command = execFile({
+          file: process.execPath,
+          args: ["-e", parentSource],
+          signal: controller.signal,
+        });
+        // Observe early spawn errors; the original promise is still asserted below.
+        void command.catch(() => undefined);
+        descendantPid = await waitForDescendantPid(pidPath);
+        expect(processIsAlive(descendantPid)).toBe(true);
 
-      const timedOut = expect(command).rejects.toThrow("200ms");
-      await vi.advanceTimersByTimeAsync(200);
-      await timedOut;
-      await vi.runOnlyPendingTimersAsync();
-      await expectProcessExit(descendantPid);
-    } finally {
-      controller.abort();
-      try {
+        const timedOut = expect(command).rejects.toThrow("200ms");
+        await vi.advanceTimersByTimeAsync(200);
+        await timedOut;
         await vi.runOnlyPendingTimersAsync();
-        await command?.catch(() => undefined);
+        await expectProcessExit(descendantPid);
       } finally {
-        vi.useRealTimers();
+        controller.abort();
         try {
-          if (descendantPid !== undefined && processIsAlive(descendantPid)) {
-            process.kill(descendantPid, "SIGKILL");
-          }
+          await vi.runOnlyPendingTimersAsync();
+          await command?.catch(() => undefined);
         } finally {
-          await rm(tempDir, { recursive: true, force: true });
+          vi.useRealTimers();
+          try {
+            if (descendantPid !== undefined && processIsAlive(descendantPid)) {
+              process.kill(descendantPid, "SIGKILL");
+            }
+          } finally {
+            await rm(tempDir, { recursive: true, force: true });
+          }
         }
       }
-    }
-  }, 10_000);
+    },
+    10_000,
+  );
 
   it("enforces the host timeout cap", async () => {
     const execFile = createServerPluginExecFile({ maxTimeoutMs: 40 });
 
-    await expect(execFile({
-      file: process.execPath,
-      args: ["-e", "setInterval(() => {}, 1000)"],
-      timeoutMs: 5_000,
-      signal: new AbortController().signal,
-    })).rejects.toThrow("40ms");
+    await expect(
+      execFile({
+        file: process.execPath,
+        args: ["-e", "setInterval(() => {}, 1000)"],
+        timeoutMs: 5_000,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow("40ms");
   });
 });
 

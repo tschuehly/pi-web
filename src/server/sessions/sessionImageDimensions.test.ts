@@ -4,7 +4,8 @@ import { readSessionImageDimensions } from "./sessionImageDimensions.js";
 
 // Real 3x2 images; the JPEG has no EXIF until a test adds an APP1 segment.
 const png = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAFUlEQVR42mOUT3nIwMDAwMDAxAADABiCAWj7JLiIAAAAAElFTkSuQmCC";
-const jpeg = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcp"
+const jpeg =
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcp"
   + "LDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy"
   + "MjIyMjIyMjIyMjIyMjL/wAARCAACAAMDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAA"
   + "AAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdAUIXf//Z";
@@ -18,16 +19,21 @@ const fixtures = [
 ];
 
 function orientedJpeg(orientation: number, endian: "little" | "big"): string {
-  const exif = Buffer.from(endian === "little"
-    ? "ffe1002245786966000049492a0008000000010012010300010000000000000000000000"
-    : "ffe100224578696600004d4d002a00000008000101120003000000010000000000000000", "hex");
+  const exif = Buffer.from(
+    endian === "little"
+      ? "ffe1002245786966000049492a0008000000010012010300010000000000000000000000"
+      : "ffe100224578696600004d4d002a00000008000101120003000000010000000000000000",
+    "hex",
+  );
   if (endian === "little") exif.writeUInt16LE(orientation, 28);
   else exif.writeUInt16BE(orientation, 28);
   const bytes = Buffer.from(jpeg, "base64");
   return Buffer.concat([bytes.subarray(0, 2), exif, bytes.subarray(2)]).toString("base64");
 }
 
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("readSessionImageDimensions", () => {
   it.each(fixtures)("reads $mimeType header dimensions", ({ source, mimeType }) => {
@@ -45,8 +51,9 @@ describe("readSessionImageDimensions", () => {
 
   describe.each(["little", "big"] as const)("%s-endian JPEG EXIF", (endian) => {
     it.each([1, 2, 3, 4, 5, 6, 7, 8])("reports display dimensions for orientation %i", (orientation) => {
-      expect(readSessionImageDimensions(orientedJpeg(orientation, endian), "image/jpeg"))
-        .toEqual(orientation >= 5 ? { width: 2, height: 3 } : { width: 3, height: 2 });
+      expect(readSessionImageDimensions(orientedJpeg(orientation, endian), "image/jpeg")).toEqual(
+        orientation >= 5 ? { width: 2, height: 3 } : { width: 3, height: 2 },
+      );
     });
   });
 
@@ -62,7 +69,8 @@ describe("readSessionImageDimensions", () => {
   });
 
   it.each(["", "AQID", "not an image", Buffer.from('<svg width="3" height="2"></svg>').toString("base64")])(
-    "treats unreadable or unsupported metadata as unavailable (%s)", (source) => {
+    "treats unreadable or unsupported metadata as unavailable (%s)",
+    (source) => {
       expect(readSessionImageDimensions(source, "image/png")).toBeUndefined();
     },
   );
@@ -71,7 +79,7 @@ describe("readSessionImageDimensions", () => {
     const source = Buffer.concat([Buffer.from(png, "base64"), Buffer.alloc(2 * 1024 * 1024)]).toString("base64");
     const from = vi.spyOn(Buffer, "from");
     expect(readSessionImageDimensions(source, "image/png")).toEqual({ width: 3, height: 2 });
-    expect(from).toHaveBeenCalledExactlyOnceWith(source.slice(0, Math.floor(256 * 1024 / 3) * 4), "base64");
+    expect(from).toHaveBeenCalledExactlyOnceWith(source.slice(0, Math.floor((256 * 1024) / 3) * 4), "base64");
   });
 
   it("does not retry with a full decode when JPEG dimensions lie beyond the header cap", () => {
@@ -84,6 +92,6 @@ describe("readSessionImageDimensions", () => {
     const source = lateHeader.toString("base64");
     const from = vi.spyOn(Buffer, "from");
     expect(readSessionImageDimensions(source, "image/jpeg")).toBeUndefined();
-    expect(from).toHaveBeenCalledExactlyOnceWith(source.slice(0, Math.floor(256 * 1024 / 3) * 4), "base64");
+    expect(from).toHaveBeenCalledExactlyOnceWith(source.slice(0, Math.floor((256 * 1024) / 3) * 4), "base64");
   });
 });

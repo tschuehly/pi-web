@@ -9,8 +9,11 @@ export function orderItems<T extends { id: string }>(items: readonly T[], savedI
  * visibleIds must be in the current displayed order (including default-order newcomers).
  */
 export function moveOrderedId(
-  savedIds: readonly string[], visibleIds: readonly string[], id: string,
-  neighborId: string, placement: "before" | "after",
+  savedIds: readonly string[],
+  visibleIds: readonly string[],
+  id: string,
+  neighborId: string,
+  placement: "before" | "after",
 ): string[] {
   const full = [...new Set([...savedIds, ...visibleIds])];
   if (id === neighborId || !visibleIds.includes(id) || !visibleIds.includes(neighborId)) return full;

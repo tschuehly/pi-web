@@ -31,9 +31,11 @@ export function createGitDiffRoute(panelContributionId: string): GitDiffRoute {
 
 function routeMatchesWorkspace(context: WorkspacePanelContext): boolean {
   const params = new URLSearchParams(window.location.search);
-  return (params.get("machine") ?? "local") === context.machine.id
+  return (
+    (params.get("machine") ?? "local") === context.machine.id
     && params.get("project") === context.workspace.projectId
-    && params.get("workspace") === context.workspace.id;
+    && params.get("workspace") === context.workspace.id
+  );
 }
 
 function nonEmpty(value: string | null): string | undefined {

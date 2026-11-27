@@ -36,7 +36,10 @@ describe("tab swipe", () => {
         host.peeked.push(sessionId);
         peek = sessionId === undefined ? null : document.createElement("div");
       },
-      commit: (sessionId) => { host.committed.push(sessionId); return Promise.resolve(); },
+      commit: (sessionId) => {
+        host.committed.push(sessionId);
+        return Promise.resolve();
+      },
     };
   });
   afterEach(() => {
@@ -54,12 +57,22 @@ describe("tab swipe", () => {
   };
 
   /** Plays deltaX samples 16ms apart; returns the clock (Date.now) at each sample. */
-  const play = (controller: TabSwipeController, deltas: readonly number[]) => deltas.map((deltaX) => { const at = Date.now(); swipe(controller, deltaX); return at; });
+  const play = (controller: TabSwipeController, deltas: readonly number[]) =>
+    deltas.map((deltaX) => {
+      const at = Date.now();
+      swipe(controller, deltaX);
+      return at;
+    });
   /** The first sample at which the swipe so far qualifies to move on. */
-  const qualifying = (deltas: readonly number[]) => deltas.findIndex((_, index) => {
-    const samples = deltas.slice(0, index + 1).map((dx, at) => ({ t: at * 16, dx }));
-    return swipeCommits(samples.reduce((sum, sample) => sum + sample.dx, 0), 1000, samples);
-  });
+  const qualifying = (deltas: readonly number[]) =>
+    deltas.findIndex((_, index) => {
+      const samples = deltas.slice(0, index + 1).map((dx, at) => ({ t: at * 16, dx }));
+      return swipeCommits(
+        samples.reduce((sum, sample) => sum + sample.dx, 0),
+        1000,
+        samples,
+      );
+    });
 
   it("follows the fingers, then moves to the neighbour the moment the swipe goes past a third of the width", async () => {
     const controller = new TabSwipeController(host, () => time);
@@ -82,7 +95,11 @@ describe("tab swipe", () => {
 
   it("moves exactly one tab on a flick, without waiting for its momentum tail, and the next swipe moves again", async () => {
     const commits: number[] = [];
-    host.commit = (sessionId) => { commits.push(Date.now()); host.committed.push(sessionId); return Promise.resolve(); };
+    host.commit = (sessionId) => {
+      commits.push(Date.now());
+      host.committed.push(sessionId);
+      return Promise.resolve();
+    };
     const controller = new TabSwipeController(host, () => time);
     const flick = [10, 20, 30, 40, 40, 35, 30, 25, 20, 16, 13, 10, 8, 6, 5, 4, 3, 2, 1, 1, 1, 1];
     const times = play(controller, flick);
@@ -99,7 +116,10 @@ describe("tab swipe", () => {
 
   it("snaps back from a slow small drag, or one let go before it went far enough, ignoring its momentum", async () => {
     const controller = new TabSwipeController(host, () => time);
-    play(controller, Array.from({ length: 20 }, () => -2));
+    play(
+      controller,
+      Array.from({ length: 20 }, () => -2),
+    );
     expect(current.style.transform).toBe("translateX(40px)");
     await vi.advanceTimersByTimeAsync(500);
     expect(host.peeked).toEqual(["a", undefined]);
@@ -109,7 +129,10 @@ describe("tab swipe", () => {
     // Steady 6px samples, then decaying ones: the fingers lifted at 60px, and the momentum must not carry it on.
     play(controller, [...Array.from({ length: 10 }, () => 6), 5, 4, 3, 2]);
     expect(current.style.transform).toBe("");
-    play(controller, Array.from({ length: 30 }, () => 12));
+    play(
+      controller,
+      Array.from({ length: 30 }, () => 12),
+    );
     await vi.advanceTimersByTimeAsync(500);
     expect(host.committed).toEqual([]);
   });
@@ -117,7 +140,17 @@ describe("tab swipe", () => {
   it("never moves the Chat for a vertical scroll with sideways jitter, momentum included, and still swipes at once after it", () => {
     const controller = new TabSwipeController(host, () => time);
     // The first event alone leans sideways; the gesture still locks vertical once it moved 10px.
-    const scroll = [[3, 1], [-3, 8], [3, 15], ...Array.from({ length: 30 }, (_, index) => [index % 2 === 0 ? 3 : -3, 20]), [30, 2], [30, 2], [-3, 6], [3, 3], [-3, 1]];
+    const scroll = [
+      [3, 1],
+      [-3, 8],
+      [3, 15],
+      ...Array.from({ length: 30 }, (_, index) => [index % 2 === 0 ? 3 : -3, 20]),
+      [30, 2],
+      [30, 2],
+      [-3, 6],
+      [3, 3],
+      [-3, 1],
+    ];
     const prevented = scroll.map(([deltaX = 0, deltaY = 0]) => {
       const event = swipe(controller, deltaX, deltaY);
       expect(current.style.transform).toBe("");
@@ -165,7 +198,12 @@ describe("tab swipe", () => {
 
   it("puts the Chat back once a slow move lands, though a vertical scroll began meanwhile, and swallows sideways gestures until then", async () => {
     let land!: () => void;
-    host.commit = (sessionId) => { host.committed.push(sessionId); return new Promise<void>((resolve) => { land = resolve; }); };
+    host.commit = (sessionId) => {
+      host.committed.push(sessionId);
+      return new Promise<void>((resolve) => {
+        land = resolve;
+      });
+    };
     const controller = new TabSwipeController(host, () => time);
     swipe(controller, 40);
     expect(host.committed).toEqual(["c"]);
@@ -191,7 +229,9 @@ describe("tab swipe", () => {
     // The host renders the preview on its next update, as Lit does.
     host.peek = (sessionId) => {
       host.peeked.push(sessionId);
-      return Promise.resolve().then(() => { peek = sessionId === undefined ? null : document.createElement("div"); });
+      return Promise.resolve().then(() => {
+        peek = sessionId === undefined ? null : document.createElement("div");
+      });
     };
     const controller = new TabSwipeController(host, () => time);
     swipe(controller, 40);

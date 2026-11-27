@@ -41,11 +41,12 @@ async function mount(): Promise<SettingsDialog> {
   dialog.machines = [remoteMachine, secondRemoteMachine];
   dialog.mcpContext = { session: { id: "session-a", cwd: "/workspace/a" }, machineId: remoteMachine.id };
   dialog.onMcpAuth = vi.fn();
-  dialog.onNavigate = (section) => { dialog.section = section; };
+  dialog.onNavigate = (section) => {
+    dialog.section = section;
+  };
   document.body.append(dialog);
   await settle(dialog);
-  const nav = Array.from(dialog.shadowRoot?.querySelectorAll("nav button") ?? [])
-    .find((button) => button.querySelector("strong")?.textContent === "MCP");
+  const nav = Array.from(dialog.shadowRoot?.querySelectorAll("nav button") ?? []).find((button) => button.querySelector("strong")?.textContent === "MCP");
   if (!(nav instanceof HTMLButtonElement)) throw new Error("Missing MCP navigation");
   nav.click();
   await settle(dialog);

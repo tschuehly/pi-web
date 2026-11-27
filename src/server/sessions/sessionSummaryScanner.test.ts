@@ -36,7 +36,13 @@ describe("session summary scanner parity with the SDK listing", () => {
     const richPath = await writeSession("2026-01-01T00-00-00-000Z_rich.jsonl", [
       headerLine({ id: "rich", cwd: WORKSPACE, parentSession: "/parents/rich-parent.jsonl" }),
       messageLine({ role: "user", content: textContent("Fix the login bug") }),
-      messageLine({ role: "assistant", content: [{ type: "thinking", thinking: "hmm" }, { type: "text", text: "On it" }] }),
+      messageLine({
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "hmm" },
+          { type: "text", text: "On it" },
+        ],
+      }),
       messageLine({ role: "user", content: [{ type: "toolResult", toolCallId: "call-1", content: "ok" }] }),
       sessionInfoLine("First name"),
       messageLine({ role: "assistant", content: textContent("Done") }),
@@ -108,8 +114,11 @@ describe("session summary scanner parity with the SDK listing", () => {
 
 describe("session summary scanner public metadata", () => {
   it("keeps only explicit metadata across fast-path and foreign-format entries, memo reuse and chunk folding", async () => {
-    const publicEntry = (leg: number) => ({ type: "custom", customType: SESSION_UI_METADATA_CUSTOM_TYPE,
-      data: { version: 1, metadata: { example: { leg } } } });
+    const publicEntry = (leg: number) => ({
+      type: "custom",
+      customType: SESSION_UI_METADATA_CUSTOM_TYPE,
+      data: { version: 1, metadata: { example: { leg } } },
+    });
     const path = await writeSession("metadata.jsonl", [
       headerLine({ id: "metadata", cwd: WORKSPACE }),
       JSON.stringify(publicEntry(1)),
@@ -131,11 +140,7 @@ describe("session summary scanner public metadata", () => {
 
 describe("session summary scanner name handling", () => {
   it("keeps the latest non-empty session_info name", async () => {
-    const path = await writeSession("renamed.jsonl", [
-      headerLine({ id: "renamed", cwd: WORKSPACE }),
-      sessionInfoLine("First"),
-      sessionInfoLine("Second"),
-    ]);
+    const path = await writeSession("renamed.jsonl", [headerLine({ id: "renamed", cwd: WORKSPACE }), sessionInfoLine("First"), sessionInfoLine("Second")]);
 
     expect(await scanFileSummary(path)).toMatchObject({ name: "Second" });
   });
@@ -185,7 +190,14 @@ describe("session summary scanner first message extraction", () => {
   it("joins multiple text blocks with a space like the SDK", async () => {
     const path = await writeSession("multi-block.jsonl", [
       headerLine({ id: "multi-block", cwd: WORKSPACE }),
-      messageLine({ role: "user", content: [{ type: "text", text: "part one" }, { type: "image", url: "x" }, { type: "text", text: "part two" }] }),
+      messageLine({
+        role: "user",
+        content: [
+          { type: "text", text: "part one" },
+          { type: "image", url: "x" },
+          { type: "text", text: "part two" },
+        ],
+      }),
     ]);
 
     expect(await scanFileSummary(path)).toMatchObject({ firstMessage: "part one part two" });
@@ -220,7 +232,12 @@ describe("session summary scanner edge cases", () => {
 
   it("skips unparseable files but still finds a header after blank or garbage lines", async () => {
     await writeSession("garbage.jsonl", ["not json at all"]);
-    const latePath = await writeSession("late-header.jsonl", ["", "also not json", headerLine({ id: "late", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("hi") })]);
+    const latePath = await writeSession("late-header.jsonl", [
+      "",
+      "also not json",
+      headerLine({ id: "late", cwd: WORKSPACE }),
+      messageLine({ role: "user", content: textContent("hi") }),
+    ]);
 
     expect(await scanFileSummary(join(sessionDir, "garbage.jsonl"))).toBeUndefined();
     expect(await scanFileSummary(latePath)).toMatchObject({ id: "late", messageCount: 1, firstMessage: "hi" });
@@ -313,7 +330,10 @@ describe("session summary scanner edge cases", () => {
     const path = await writeSession("huge.jsonl", [
       headerLine({ id: "huge", cwd: WORKSPACE }),
       messageLine({ role: "user", content: textContent("start") }),
-      messageLine({ role: "assistant", content: [{ type: "toolResult", toolCallId: "call-big", content: `${sessionInfoDecoy}\n${padding}\n${messageDecoy}` }] }),
+      messageLine({
+        role: "assistant",
+        content: [{ type: "toolResult", toolCallId: "call-big", content: `${sessionInfoDecoy}\n${padding}\n${messageDecoy}` }],
+      }),
       messageLine({ role: "user", content: textContent("later") }),
     ]);
 
@@ -397,7 +417,10 @@ describe("session summary scanner memo", () => {
     // then folded again as part of the whole file once the writer finishes
     // it: the size changed, so no line is counted twice.
     const inFlight = messageLine({ role: "assistant", content: textContent("streaming") });
-    const path = await writeSession("inflight.jsonl", [headerLine({ id: "inflight", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("start") })]);
+    const path = await writeSession("inflight.jsonl", [
+      headerLine({ id: "inflight", cwd: WORKSPACE }),
+      messageLine({ role: "user", content: textContent("start") }),
+    ]);
     await appendFile(path, inFlight, "utf8");
     const scanner = new SessionSummaryScanner();
     expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "inflight", messageCount: 2 }]);
@@ -420,7 +443,11 @@ describe("session summary scanner memo", () => {
     const scanner = new SessionSummaryScanner();
     expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "shrunk", messageCount: 2, name: "Old name" }]);
 
-    await writeFile(path, `${[headerLine({ id: "shrunk", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("new first") })].join("\n")}\n`, "utf8");
+    await writeFile(
+      path,
+      `${[headerLine({ id: "shrunk", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("new first") })].join("\n")}\n`,
+      "utf8",
+    );
 
     const warm = await scanner.scanSessionSummariesInDir(sessionDir);
     expect(warm).toMatchObject([{ id: "shrunk", messageCount: 1, firstMessage: "new first" }]);
@@ -429,7 +456,10 @@ describe("session summary scanner memo", () => {
   });
 
   it("fully re-parses a replacement file at the same path even when it is larger", async () => {
-    const path = await writeSession("replaced.jsonl", [headerLine({ id: "original", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("small") })]);
+    const path = await writeSession("replaced.jsonl", [
+      headerLine({ id: "original", cwd: WORKSPACE }),
+      messageLine({ role: "user", content: textContent("small") }),
+    ]);
     const scanner = new SessionSummaryScanner();
     expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "original", messageCount: 1 }]);
 
@@ -451,7 +481,10 @@ describe("session summary scanner memo", () => {
 
   it("drops deleted sessions and does not resurrect stale entries at the same path", async () => {
     await writeSession("kept.jsonl", [headerLine({ id: "kept", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("stays") })]);
-    const removedPath = await writeSession("removed.jsonl", [headerLine({ id: "removed", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("goes") })]);
+    const removedPath = await writeSession("removed.jsonl", [
+      headerLine({ id: "removed", cwd: WORKSPACE }),
+      messageLine({ role: "user", content: textContent("goes") }),
+    ]);
     const scanner = new SessionSummaryScanner();
     expect((await scanner.scanSessionSummariesInDir(sessionDir)).map((session) => session.id).sort()).toEqual(["kept", "removed"]);
 
@@ -460,7 +493,9 @@ describe("session summary scanner memo", () => {
 
     // A brand-new session at the old path is listed as itself, not its predecessor.
     await writeSession("removed.jsonl", [headerLine({ id: "fresh", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("back") })]);
-    expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject(expect.arrayContaining([expect.objectContaining({ id: "fresh", messageCount: 1 })]));
+    expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject(
+      expect.arrayContaining([expect.objectContaining({ id: "fresh", messageCount: 1 })]),
+    );
   });
 
   it("keeps skipping unusable files on warm listings until they change", async () => {
@@ -471,7 +506,10 @@ describe("session summary scanner memo", () => {
 
     // Rename-over swaps in a different inode (unlink + recreate can reuse the
     // freed inode, which the memo would read as growth of the rejected fold).
-    const fixedPath = await writeSession("not-a-session-fixed.jsonl", [headerLine({ id: "fixed", cwd: WORKSPACE }), messageLine({ role: "user", content: textContent("valid now") })]);
+    const fixedPath = await writeSession("not-a-session-fixed.jsonl", [
+      headerLine({ id: "fixed", cwd: WORKSPACE }),
+      messageLine({ role: "user", content: textContent("valid now") }),
+    ]);
     await rename(fixedPath, path);
     expect(await scanner.scanSessionSummariesInDir(sessionDir)).toMatchObject([{ id: "fixed" }]);
   });
@@ -564,7 +602,6 @@ describe("session summary scanner memo", () => {
     expect(settled).toMatchObject([{ id: "replacement", messageCount: 3 }]);
     expect(settled).toEqual(await coldListing(sessionDir));
   });
-
 });
 
 describe("session summary scanner multi-chunk folding with a small chunk seam", () => {
@@ -606,7 +643,10 @@ describe("session summary scanner multi-chunk folding with a small chunk seam", 
     await writeSession("long-line.jsonl", [
       headerLine({ id: "long-line", cwd: WORKSPACE }),
       messageLine({ role: "user", content: textContent("start") }),
-      messageLine({ role: "assistant", content: [{ type: "toolResult", toolCallId: "call-big", content: `${sessionInfoDecoy}\n${padding}\n${messageDecoy}` }] }),
+      messageLine({
+        role: "assistant",
+        content: [{ type: "toolResult", toolCallId: "call-big", content: `${sessionInfoDecoy}\n${padding}\n${messageDecoy}` }],
+      }),
       messageLine({ role: "user", content: textContent("end") }),
     ]);
     const scanner = new SessionSummaryScanner({ chunkBytes: SMALL_CHUNK_BYTES });
@@ -781,7 +821,9 @@ describe("session summary scanner shared work across directories and callers", (
     const scanner = new SessionSummaryScanner();
     const realReaddir = fsPromises.readdir;
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const readdirSpy = vi.spyOn(fsPromises, "readdir");
     readdirSpy.mockImplementationOnce(async (...args) => {
       const names = await realReaddir(...args);
@@ -790,7 +832,9 @@ describe("session summary scanner shared work across directories and callers", (
     });
     try {
       const inFlight = scanner.scanSessionSummariesInDir(sessionDir);
-      await vi.waitFor(() => { expect(readdirSpy).toHaveBeenCalled(); });
+      await vi.waitFor(() => {
+        expect(readdirSpy).toHaveBeenCalled();
+      });
       await new Promise((resolve) => setTimeout(resolve, 20));
       await writeSession("after.jsonl", [headerLine({ id: "after", cwd: WORKSPACE })]);
       const requestedLater = scanner.scanSessionSummariesInDir(sessionDir);
@@ -813,9 +857,13 @@ describe("session summary scanner shared work across directories and callers", (
     const scanner = new SessionSummaryScanner();
     const realOpen = fsPromises.open;
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let closing!: () => void;
-    const closingStarted = new Promise<void>((resolve) => { closing = resolve; });
+    const closingStarted = new Promise<void>((resolve) => {
+      closing = resolve;
+    });
     const openSpy = vi.spyOn(fsPromises, "open").mockImplementationOnce(async (...args) => {
       const handle = await realOpen(...args);
       const close = handle.close.bind(handle);
@@ -956,7 +1004,13 @@ function messageLine(message: { role: string; content: unknown }): string {
 }
 
 function sessionInfoLine(name: string | undefined): string {
-  return JSON.stringify({ type: "session_info", id: nextEntryId(), parentId: "root", timestamp: "2026-01-01T00:02:00.000Z", ...(name === undefined ? {} : { name }) });
+  return JSON.stringify({
+    type: "session_info",
+    id: nextEntryId(),
+    parentId: "root",
+    timestamp: "2026-01-01T00:02:00.000Z",
+    ...(name === undefined ? {} : { name }),
+  });
 }
 
 function textContent(text: string): { type: "text"; text: string }[] {

@@ -32,7 +32,9 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
       service.attach(scope(), terminal.id, {
         output: () => undefined,
         exit: () => undefined,
-        closed: () => { closed += 1; },
+        closed: () => {
+          closed += 1;
+        },
       });
 
       service.closeForCwd(process.cwd());
@@ -56,7 +58,9 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
       service.attach(firstScope, first.id, {
         output: () => undefined,
         exit: () => undefined,
-        closed: () => { firstClosed += 1; },
+        closed: () => {
+          firstClosed += 1;
+        },
       });
 
       service.closeAll(firstScope);
@@ -231,7 +235,9 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
 
   it("records one host-attributed intent when a command fails", async () => {
     const records: ServerPluginNoticeInput[] = [];
-    const service = new TerminalService((input) => { records.push(input); });
+    const service = new TerminalService((input) => {
+      records.push(input);
+    });
     try {
       const run = service.runCommand({
         origin: "core",
@@ -250,15 +256,17 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
 
       expect(run).not.toHaveProperty("failureNotice");
       expect(service.getCommandRun(run.id)).not.toHaveProperty("failureNotice");
-      expect(records).toEqual([{
-        severity: "error",
-        message: "Workspace removal failed. See terminal output.",
-        scope: { projectId: "p1" },
-        context: {
-          commandRunId: run.id,
-          targetWorkspaceId: "target-workspace",
+      expect(records).toEqual([
+        {
+          severity: "error",
+          message: "Workspace removal failed. See terminal output.",
+          scope: { projectId: "p1" },
+          context: {
+            commandRunId: run.id,
+            targetWorkspaceId: "target-workspace",
+          },
         },
-      }]);
+      ]);
     } finally {
       service.dispose();
     }
@@ -266,7 +274,9 @@ describe.skipIf(process.platform === "win32")("TerminalService command runs", ()
 
   it("does not record a failure intent for a successful command", async () => {
     const records: ServerPluginNoticeInput[] = [];
-    const service = new TerminalService((input) => { records.push(input); });
+    const service = new TerminalService((input) => {
+      records.push(input);
+    });
     try {
       const run = service.runCommand({
         origin: "core",
@@ -399,7 +409,11 @@ function firstLiveTerminalOutput(service: TerminalService, terminalId: string): 
         output: (_data, replay) => {
           if (!replay) finish(resolve);
         },
-        exit: () => { finish(() => { reject(new Error("Continued terminal exited before its shell became ready")); }); },
+        exit: () => {
+          finish(() => {
+            reject(new Error("Continued terminal exited before its shell became ready"));
+          });
+        },
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));
@@ -412,8 +426,12 @@ function terminalExit(service: TerminalService, terminalId: string): Promise<str
   return new Promise((resolve, reject) => {
     try {
       service.attach(scope(), terminalId, {
-        output: (data) => { output.push(data); },
-        exit: () => { resolve(output.join("")); },
+        output: (data) => {
+          output.push(data);
+        },
+        exit: () => {
+          resolve(output.join(""));
+        },
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)));

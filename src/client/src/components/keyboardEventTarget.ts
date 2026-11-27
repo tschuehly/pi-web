@@ -4,6 +4,5 @@
  * shortcuts must defer so buttons click and links navigate normally.
  */
 export function keyboardEventOriginatesFromNativeActivationControl(event: KeyboardEvent): boolean {
-  return event.composedPath().some((target) => target instanceof HTMLButtonElement
-    || (target instanceof HTMLAnchorElement && target.hasAttribute("href")));
+  return event.composedPath().some((target) => target instanceof HTMLButtonElement || (target instanceof HTMLAnchorElement && target.hasAttribute("href")));
 }

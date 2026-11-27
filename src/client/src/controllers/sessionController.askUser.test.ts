@@ -3,13 +3,32 @@ import { initialAppState } from "../appState";
 import { loadAskContext, loadAskDraft, saveAskContext, saveAskDraft } from "../askDrafts";
 import type { AskUserCloseResponse, AskUserQuestion, PendingAskUser } from "../api";
 import { SessionController } from "./sessionController";
-import { defaultApi, EmitSocket, emptyPage, FakeSocket, MemoryStorage, oldSession, sessionKey, status, workspace, type AppState, type SessionStatus } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  EmitSocket,
+  emptyPage,
+  FakeSocket,
+  MemoryStorage,
+  oldSession,
+  sessionKey,
+  status,
+  workspace,
+  type AppState,
+  type SessionStatus,
+} from "./sessionController.testSupport";
 
 const databaseQuestion: AskUserQuestion = { id: "q1", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] };
 const extrasQuestion: AskUserQuestion = { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true };
 
 function ask(askId: string): PendingAskUser {
-  return { askId, askedAt: "2026-07-20T00:00:00.000Z", updatedAt: "2026-07-20T00:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [databaseQuestion, extrasQuestion] };
+  return {
+    askId,
+    askedAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-07-20T00:00:00.000Z",
+    revision: "r1",
+    turnsSinceUpdate: 0,
+    questions: [databaseQuestion, extrasQuestion],
+  };
 }
 
 function statusWithAsk(sessionId: string, ...pendingAsks: PendingAskUser[]): SessionStatus {
@@ -68,7 +87,9 @@ async function liveSession(patch: Partial<AppState> = {}, sessionStatus = status
   let state = selectedSessionState({ selectedSession: undefined, ...patch });
   const controller = new SessionController(
     () => state,
-    (statePatch) => { state = { ...state, ...statePatch }; },
+    (statePatch) => {
+      state = { ...state, ...statePatch };
+    },
     () => undefined,
     undefined,
     { api: selectableApi(sessionStatus), socket },
@@ -144,7 +165,9 @@ describe("SessionController ask submission", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -171,7 +194,9 @@ describe("SessionController ask submission", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -194,7 +219,9 @@ describe("SessionController ask submission", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -216,7 +243,9 @@ describe("SessionController ask submission", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -242,7 +271,9 @@ describe("SessionController ask submission", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -268,7 +299,9 @@ describe("SessionController ask submission", () => {
     const api: typeof defaultApi = { ...defaultApi, submitAsk: () => Promise.reject(new Error("submit failed")) };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -295,7 +328,9 @@ describe("SessionController ask submission", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

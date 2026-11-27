@@ -3,8 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createAssistantMessageEventStream, getCurrentTools, type AssistantMessage } from "@earendil-works/pi-ai";
 import {
-  createAgentSessionFromServices, createAgentSessionRuntime, createAgentSessionServices,
-  DefaultResourceLoader, SessionManager, SettingsManager,
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  DefaultResourceLoader,
+  SessionManager,
+  SettingsManager,
 } from "../../piSdk.js";
 import { expect, it, vi } from "vitest";
 import { getBuiltinExtensionFactories } from "./builtinExtensionFactories.js";
@@ -68,10 +72,11 @@ it("discovers a deferred MCP tool, preserves activation on reload, and disposes 
   const toolName = "mcp__fixture__regression_echo";
   const errors: unknown[] = [];
   let runtime: Awaited<ReturnType<typeof createAgentSessionRuntime>> | undefined;
-  const fixturePids = async () => (await readdir(markers))
-    .filter((name) => name.endsWith(".started"))
-    .map((name) => Number(name.split(".")[0]))
-    .sort((a, b) => a - b);
+  const fixturePids = async () =>
+    (await readdir(markers))
+      .filter((name) => name.endsWith(".started"))
+      .map((name) => Number(name.split(".")[0]))
+      .sort((a, b) => a - b);
 
   try {
     await mkdir(agentDir);
@@ -80,29 +85,49 @@ it("discovers a deferred MCP tool, preserves activation on reload, and disposes 
     vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
     vi.stubEnv("PI_OFFLINE", "1");
     await writeFile(join(directory, "mcp-fixture.mjs"), mcpFixture);
-    await writeFile(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {
-      fixture: { command: process.execPath, args: [join(directory, "mcp-fixture.mjs"), markers], exposure: "deferred" },
-    } }));
-    await writeFile(join(agentDir, "settings.json"), JSON.stringify({
-      defaultTools: [], cacheWarming: "off", retry: { enabled: false }, compaction: { enabled: false },
-    }));
+    await writeFile(
+      join(agentDir, "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          fixture: { command: process.execPath, args: [join(directory, "mcp-fixture.mjs"), markers], exposure: "deferred" },
+        },
+      }),
+    );
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({
+        defaultTools: [],
+        cacheWarming: "off",
+        retry: { enabled: false },
+        compaction: { enabled: false },
+      }),
+    );
     const settingsManager = SettingsManager.create(directory, agentDir);
     const modelRuntime = await createTestModelRuntime();
     await modelRuntime.setRuntimeApiKey("anthropic", "isolated-test-key");
     const services = await createAgentSessionServices({
-      cwd: directory, agentDir, settingsManager, modelRuntime,
+      cwd: directory,
+      agentDir,
+      settingsManager,
+      modelRuntime,
       resourceLoaderOptions: {
         extensionFactories: await getBuiltinExtensionFactories(),
-        noSkills: true, noPromptTemplates: true, noThemes: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
         agentsFilesOverride: () => ({ agentsFiles: [] }),
       },
     });
     expect(services.resourceLoader).toBeInstanceOf(DefaultResourceLoader);
     expect(services.resourceLoader.getExtensions().errors).toEqual([]);
-    runtime = await createAgentSessionRuntime(async ({ sessionManager }) => ({
-      ...await createAgentSessionFromServices({ services, sessionManager, model: testModel() }),
-      services, diagnostics: services.diagnostics,
-    }), { cwd: directory, agentDir, sessionManager: SessionManager.inMemory(directory) });
+    runtime = await createAgentSessionRuntime(
+      async ({ sessionManager }) => ({
+        ...(await createAgentSessionFromServices({ services, sessionManager, model: testModel() })),
+        services,
+        diagnostics: services.diagnostics,
+      }),
+      { cwd: directory, agentDir, sessionManager: SessionManager.inMemory(directory) },
+    );
     const session = runtime.session;
     // An error binding also lets reload emit session_start automatically.
     await session.bindExtensions({ onError: (error) => errors.push(error) });
@@ -126,10 +151,14 @@ it("discovers a deferred MCP tool, preserves activation on reload, and disposes 
       else expect(declared).toContain(toolName);
       const stopReason = content.some((part) => part.type === "toolCall") ? "toolUse" : "stop";
       const message: AssistantMessage = {
-        role: "assistant", api: "anthropic-messages", provider: "anthropic", model: testModel().id,
-        content, stopReason, timestamp: Date.now(),
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+        role: "assistant",
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: testModel().id,
+        content,
+        stopReason,
+        timestamp: Date.now(),
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
       };
       const stream = createAssistantMessageEventStream();
       stream.push({ type: "done", reason: stopReason, message });
@@ -139,18 +168,28 @@ it("discovers a deferred MCP tool, preserves activation on reload, and disposes 
 
     await session.prompt("Discover and call the regression echo tool");
     expect(requests).toBe(3);
-    expect(session.messages).toContainEqual(expect.objectContaining({
-      role: "toolResult", toolName: "tool_search", isError: false, details: { loaded: [toolName] },
-    }));
+    expect(session.messages).toContainEqual(
+      expect.objectContaining({
+        role: "toolResult",
+        toolName: "tool_search",
+        isError: false,
+        details: { loaded: [toolName] },
+      }),
+    );
     const initialPids = await fixturePids();
     expect(initialPids).toHaveLength(1);
     const [firstPid] = initialPids;
     if (firstPid === undefined) throw new Error("Fixture did not start");
     expect(processIsAlive(firstPid)).toBe(true);
-    expect(session.messages).toContainEqual(expect.objectContaining({
-      role: "toolResult", toolCallId: "before-reload", toolName, isError: false,
-      content: [{ type: "text", text: `fixture:before-reload:${String(firstPid)}` }],
-    }));
+    expect(session.messages).toContainEqual(
+      expect.objectContaining({
+        role: "toolResult",
+        toolCallId: "before-reload",
+        toolName,
+        isError: false,
+        content: [{ type: "text", text: `fixture:before-reload:${String(firstPid)}` }],
+      }),
+    );
 
     await session.reload();
     await expect.poll(() => session.getActiveToolNames(), { timeout: 5_000 }).toContain(toolName);
@@ -162,16 +201,20 @@ it("discovers a deferred MCP tool, preserves activation on reload, and disposes 
     expect(processIsAlive(secondPid)).toBe(true);
     await session.prompt("Call the already activated echo tool after reload");
     expect(requests).toBe(5);
-    expect(session.messages).toContainEqual(expect.objectContaining({
-      role: "toolResult", toolCallId: "after-reload", toolName, isError: false,
-      content: [{ type: "text", text: `fixture:after-reload:${String(secondPid)}` }],
-    }));
+    expect(session.messages).toContainEqual(
+      expect.objectContaining({
+        role: "toolResult",
+        toolCallId: "after-reload",
+        toolName,
+        isError: false,
+        content: [{ type: "text", text: `fixture:after-reload:${String(secondPid)}` }],
+      }),
+    );
 
     // Pi 1.0's runtime owns session_shutdown; bare AgentSession.dispose only invalidates contexts.
     await runtime.dispose();
     runtime = undefined;
-    await expect.poll(() => readdir(markers), { timeout: 5_000 })
-      .toEqual(expect.arrayContaining(pids.map((pid) => `${String(pid)}.stopped`)));
+    await expect.poll(() => readdir(markers), { timeout: 5_000 }).toEqual(expect.arrayContaining(pids.map((pid) => `${String(pid)}.stopped`)));
     await expect.poll(() => pids.filter(processIsAlive), { timeout: 5_000 }).toEqual([]);
     expect(errors).toEqual([]);
   } finally {

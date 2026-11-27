@@ -28,7 +28,9 @@ export class GoalStatusChip extends LitElement {
   private goal: GoalStatusSnapshot | undefined;
   private legacy: string | undefined;
   private sheetResizeObserver: ResizeObserver | undefined;
-  private readonly onViewportChange = () => { this.updateSheetMaximumHeight(); };
+  private readonly onViewportChange = () => {
+    this.updateSheetMaximumHeight();
+  };
   private readonly onDetailsToggle = (event: Event) => {
     if (!(event.currentTarget instanceof HTMLDetailsElement)) return;
     if (event.currentTarget.open) {
@@ -118,7 +120,9 @@ export class GoalStatusChip extends LitElement {
     const boundary = this.sheetTopBoundary();
     if (summary === null || summary === undefined || details?.open !== true || boundary === undefined) return;
     const inheritedScale = getComputedStyle(this).getPropertyValue("--pi-interface-scale");
-    const scale = Number.parseFloat(inheritedScale === "" ? getComputedStyle(this.ownerDocument.documentElement).getPropertyValue("--pi-interface-scale") : inheritedScale);
+    const scale = Number.parseFloat(
+      inheritedScale === "" ? getComputedStyle(this.ownerDocument.documentElement).getPropertyValue("--pi-interface-scale") : inheritedScale,
+    );
     const maximumHeight = goalSheetMaximumHeight(boundary.getBoundingClientRect().bottom, summary.getBoundingClientRect().top, scale);
     this.style.setProperty("--goal-sheet-max-height", `${String(maximumHeight)}px`);
   }
@@ -132,7 +136,9 @@ export class GoalStatusChip extends LitElement {
   private observeSheetGeometry(): void {
     this.sheetResizeObserver?.disconnect();
     if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => { this.updateSheetMaximumHeight(); });
+    const observer = new ResizeObserver(() => {
+      this.updateSheetMaximumHeight();
+    });
     const root = this.getRootNode();
     const flexibleContent = queryableRoot(root) ? root.querySelector("chat-view, .transcript") : null;
     for (const target of [this.nextElementSibling, this.sheetTopBoundary(), flexibleContent]) {

@@ -20,13 +20,16 @@ function snapshot() {
 }
 
 describe("parseSessionTranscriptSnapshot", () => {
-  it.each([null, { role: "assistant", content: [{ type: "text", text: "streaming" }] }, "opaque SDK payload"])("parses the complete snapshot with partial %j", (partial) => {
-    const wire = { ...snapshot(), partial };
-    expect(parseSessionTranscriptSnapshot(wire)).toEqual({
-      ...wire,
-      status: { ...wire.status, queuedMessages: [], recentlyActiveElsewhere: false },
-    });
-  });
+  it.each([null, { role: "assistant", content: [{ type: "text", text: "streaming" }] }, "opaque SDK payload"])(
+    "parses the complete snapshot with partial %j",
+    (partial) => {
+      const wire = { ...snapshot(), partial };
+      expect(parseSessionTranscriptSnapshot(wire)).toEqual({
+        ...wire,
+        status: { ...wire.status, queuedMessages: [], recentlyActiveElsewhere: false },
+      });
+    },
+  );
 
   it("accepts an empty initial snapshot", () => {
     const wire = { ...snapshot(), page: { messages: [], start: 0, total: 0 }, seq: 0 };

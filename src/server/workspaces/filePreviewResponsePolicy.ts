@@ -8,8 +8,10 @@ export interface WorkspaceFilePreviewResponsePolicy {
   readonly contentTypeOptions: "nosniff";
 }
 
-const IMAGE_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data: blob:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
-const HTML_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
+const IMAGE_CONTENT_SECURITY_POLICY =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data: blob:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
+const HTML_CONTENT_SECURITY_POLICY =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
 // Native PDF viewers refuse to run in any sandboxed context, so this policy
 // deliberately omits the `sandbox` directive and the embedding frame omits the
 // sandbox attribute. Isolation comes from the response itself: `application/pdf`
@@ -17,12 +19,16 @@ const HTML_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'non
 // can never become an active same-origin document, while `default-src 'none'`
 // denies scripts, navigation helpers, and every subresource except the
 // same-origin plugin document (`object-src 'self'`) that the viewer embeds.
-const PDF_CONTENT_SECURITY_POLICY = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'self'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
+const PDF_CONTENT_SECURITY_POLICY =
+  "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'self'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
 // Opened directly, a video URL becomes the browser's media document, which
 // loads the same URL as its media source.
-const VIDEO_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'self'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
-const DOWNLOAD_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'none'";
-const ERROR_CONTENT_SECURITY_POLICY = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
+const VIDEO_CONTENT_SECURITY_POLICY =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'self'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
+const DOWNLOAD_CONTENT_SECURITY_POLICY =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'none'";
+const ERROR_CONTENT_SECURITY_POLICY =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
 
 export function workspaceFilePreviewResponsePolicy(path: string, options: { download?: boolean } = {}): WorkspaceFilePreviewResponsePolicy {
   const filename = workspaceFileName(path);
@@ -45,7 +51,12 @@ export function workspaceFilePreviewResponsePolicy(path: string, options: { down
   return responsePolicy(classification.previewMimeType, "inline", filename, contentSecurityPolicy);
 }
 
-function responsePolicy(contentType: string, disposition: "inline" | "attachment", filename: string, contentSecurityPolicy: string): WorkspaceFilePreviewResponsePolicy {
+function responsePolicy(
+  contentType: string,
+  disposition: "inline" | "attachment",
+  filename: string,
+  contentSecurityPolicy: string,
+): WorkspaceFilePreviewResponsePolicy {
   return {
     contentType,
     contentDisposition: contentDisposition(disposition, filename),

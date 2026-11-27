@@ -2,7 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import type { SessionNotificationInboxEvent } from "../../../shared/apiTypes";
 import { SessionController, type SessionNotificationSessionBridge } from "./sessionController";
-import { defaultApi, deferred, EmitSocket, emptyPage, oldSession, runPendingAnimationFrames, status, workspace, type AppState } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  deferred,
+  EmitSocket,
+  emptyPage,
+  oldSession,
+  runPendingAnimationFrames,
+  status,
+  workspace,
+  type AppState,
+} from "./sessionController.testSupport";
 
 function inboxEvent(): SessionNotificationInboxEvent {
   return {
@@ -33,7 +43,9 @@ function inboxEvent(): SessionNotificationInboxEvent {
 }
 
 describe("SessionController notification event boundary", () => {
-  afterEach(() => { vi.restoreAllMocks(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
   it("refetches the bounded notification snapshot when the selected socket first opens", async () => {
     const socket = new EmitSocket();
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
@@ -46,7 +58,9 @@ describe("SessionController notification event boundary", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -63,7 +77,9 @@ describe("SessionController notification event boundary", () => {
     expect(refreshSelectedSession).toHaveBeenCalledOnce();
 
     socket.open();
-    await vi.waitFor(() => { expect(refreshSelectedSession).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(refreshSelectedSession).toHaveBeenCalledTimes(2);
+    });
     expect(refreshSelectedSession).toHaveBeenCalledTimes(2);
     expect(refreshSelectedSession).toHaveBeenLastCalledWith(oldSession, "local");
   });
@@ -74,7 +90,9 @@ describe("SessionController notification event boundary", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -103,7 +121,12 @@ describe("SessionController notification event boundary", () => {
     const bridge: SessionNotificationSessionBridge = {
       prepareSelectedSession: vi.fn(),
       clearSelectedSession: vi.fn(),
-      refreshSelectedSession: vi.fn(() => new Promise<void>((resolve) => { finishNotifications = resolve; })),
+      refreshSelectedSession: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finishNotifications = resolve;
+          }),
+      ),
       applyInboxEvent: vi.fn(),
     };
     const ready = vi.fn();
@@ -111,7 +134,9 @@ describe("SessionController notification event boundary", () => {
     const page = { messages: [{ role: "user", content: [{ type: "text", text: "hello from history" }] }], start: 0, total: 1 };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       updateUrl,
       undefined,
       {
@@ -127,8 +152,12 @@ describe("SessionController notification event boundary", () => {
     );
 
     let selected = false;
-    const selecting = controller.selectSession(oldSession).then(() => { selected = true; });
-    await vi.waitFor(() => { expect(selected).toBe(true); });
+    const selecting = controller.selectSession(oldSession).then(() => {
+      selected = true;
+    });
+    await vi.waitFor(() => {
+      expect(selected).toBe(true);
+    });
     expect(ready).toHaveBeenCalledExactlyOnceWith({ machineId: "local", session: oldSession });
     expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "hello from history" }]);
     expect(updateUrl).toHaveBeenCalledOnce();
@@ -152,9 +181,7 @@ describe("SessionController notification event boundary", () => {
       partial: { role: "assistant", content: [{ type: "text", text: "first" }] },
     };
     const nextSnapshot = deferred<typeof snapshot>();
-    const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>()
-      .mockResolvedValueOnce(snapshot)
-      .mockReturnValueOnce(nextSnapshot.promise);
+    const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>().mockResolvedValueOnce(snapshot).mockReturnValueOnce(nextSnapshot.promise);
     const bridge: SessionNotificationSessionBridge = {
       prepareSelectedSession: vi.fn(),
       clearSelectedSession: vi.fn(),
@@ -164,7 +191,9 @@ describe("SessionController notification event boundary", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket, notifications: bridge, api: { ...defaultApi, transcriptSnapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) } },
@@ -172,11 +201,15 @@ describe("SessionController notification event boundary", () => {
     const selecting = controller.selectSession(oldSession, { updateUrl: false });
     let refreshing: Promise<void> | undefined;
     try {
-      await vi.waitFor(() => { expect(state.messages[1]?.parts).toEqual([{ type: "text", text: "first" }]); });
+      await vi.waitFor(() => {
+        expect(state.messages[1]?.parts).toEqual([{ type: "text", text: "first" }]);
+      });
       refreshing = controller.refreshSelectedSession();
       socket.emit({ type: "assistant.delta", text: " new", seq: 2 });
       // A pending notification join must not occupy the transcript coordinator.
-      await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledTimes(2); });
+      await vi.waitFor(() => {
+        expect(transcriptSnapshot).toHaveBeenCalledTimes(2);
+      });
       nextSnapshot.resolve(snapshot);
       await vi.waitFor(() => {
         runPendingAnimationFrames();
@@ -192,7 +225,9 @@ describe("SessionController notification event boundary", () => {
       else notifications.resolve(undefined);
       await Promise.all([selecting, refreshing]);
       if (outcome === "reject") {
-        await vi.waitFor(() => { expect(warn).toHaveBeenCalledWith("Selected session notification refresh failed", expect.any(Error)); });
+        await vi.waitFor(() => {
+          expect(warn).toHaveBeenCalledWith("Selected session notification refresh failed", expect.any(Error));
+        });
         expect(Object.values(state.browserErrors)).toEqual([]);
       }
     } finally {
@@ -219,7 +254,9 @@ describe("SessionController notification event boundary", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket, notifications: bridge },

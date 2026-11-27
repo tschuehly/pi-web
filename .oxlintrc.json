@@ -1,8 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "typescript"
-  ],
+  "plugins": ["typescript"],
   "categories": {
     "correctness": "off"
   },
@@ -14,24 +12,14 @@
   "options": {
     "typeAware": true
   },
-  "ignorePatterns": [
-    "dist/**",
-    "node_modules/**",
-    "plugins/*/dist/**",
-    "**/*.js",
-    "**/*.mjs",
-    "**/*.cjs"
-  ],
+  "ignorePatterns": ["dist/**", "node_modules/**", "plugins/*/dist/**", "**/*.js", "**/*.mjs", "**/*.cjs"],
   "rules": {
     "for-direction": "error",
     "no-array-constructor": "error",
     "no-async-promise-executor": "error",
     "no-case-declarations": "error",
     "no-compare-neg-zero": "error",
-    "no-cond-assign": [
-      "error",
-      "except-parens"
-    ],
+    "no-cond-assign": ["error", "except-parens"],
     "no-constant-binary-expression": [
       "error",
       {
@@ -70,10 +58,7 @@
     ],
     "no-empty-static-block": "error",
     "no-ex-assign": "error",
-    "no-extra-boolean-cast": [
-      "error",
-      {}
-    ],
+    "no-extra-boolean-cast": ["error", {}],
     "no-fallthrough": [
       "error",
       {
@@ -87,10 +72,7 @@
         "exceptions": []
       }
     ],
-    "no-invalid-regexp": [
-      "error",
-      {}
-    ],
+    "no-invalid-regexp": ["error", {}],
     "no-irregular-whitespace": [
       "error",
       {
@@ -287,10 +269,7 @@
         "allowRegExp": false
       }
     ],
-    "typescript/return-await": [
-      "error",
-      "error-handling-correctness-only"
-    ],
+    "typescript/return-await": ["error", "error-handling-correctness-only"],
     "typescript/strict-boolean-expressions": "error",
     "typescript/switch-exhaustiveness-check": "error",
     "typescript/triple-slash-reference": "error",
@@ -313,9 +292,7 @@
   },
   "overrides": [
     {
-      "files": [
-        "pi-packages/captains-log/**"
-      ],
+      "files": ["pi-packages/captains-log/**"],
       "rules": {
         "typescript/await-thenable": "off",
         "typescript/dot-notation": "off",

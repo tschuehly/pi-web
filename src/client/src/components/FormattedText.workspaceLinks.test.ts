@@ -7,15 +7,22 @@ import { FormattedText } from "./FormattedText";
 vi.mock("../clipboard", () => ({ writeClipboardText: vi.fn().mockResolvedValue(true) }));
 useDeferredContent();
 
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+});
 
 function dispatchClick(view: FormattedText, anchor: HTMLAnchorElement, options: MouseEventInit = {}): boolean {
   let intercepted = false;
   // Observe the component's decision, then suppress the DOM harness's native navigation.
-  view.addEventListener("click", (event) => {
-    intercepted = event.defaultPrevented;
-    event.preventDefault();
-  }, { once: true });
+  view.addEventListener(
+    "click",
+    (event) => {
+      intercepted = event.defaultPrevented;
+      event.preventDefault();
+    },
+    { once: true },
+  );
   anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, ...options }));
   return intercepted;
 }
@@ -33,7 +40,9 @@ async function setup(destination = "report.txt", machineId = "remote") {
 
 it("opens recognized files through a cancelable host request, retaining the download href", async () => {
   const { view, anchor } = await setup();
-  const listener = vi.fn((event: Event) => { event.preventDefault(); });
+  const listener = vi.fn((event: Event) => {
+    event.preventDefault();
+  });
   document.body.addEventListener("workspace-file-open", listener, { once: true });
   const click = new MouseEvent("click", { bubbles: true, composed: true, cancelable: true });
   const label = anchor.querySelector("strong");
@@ -45,16 +54,21 @@ it("opens recognized files through a cancelable host request, retaining the down
   expect(anchor.href).toContain("download=1");
 });
 
-it.each(["./src/client/src/formatting/markdown.ts", "././src//client/./src/formatting/markdown.ts"])("opens %s with the server's canonical content identity", async (destination) => {
-  const { view, anchor } = await setup(destination);
-  const listener = vi.fn((event: Event) => { event.preventDefault(); });
-  view.addEventListener("workspace-file-open", listener);
-  expect(dispatchClick(view, anchor)).toBe(true);
-  const path = "src/client/src/formatting/markdown.ts";
-  expect(listener).toHaveBeenCalledOnce();
-  expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { ...view.workspaceContext, path } });
-  expect(new URL(anchor.href).searchParams.get("path")).toBe(path);
-});
+it.each(["./src/client/src/formatting/markdown.ts", "././src//client/./src/formatting/markdown.ts"])(
+  "opens %s with the server's canonical content identity",
+  async (destination) => {
+    const { view, anchor } = await setup(destination);
+    const listener = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
+    view.addEventListener("workspace-file-open", listener);
+    expect(dispatchClick(view, anchor)).toBe(true);
+    const path = "src/client/src/formatting/markdown.ts";
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { ...view.workspaceContext, path } });
+    expect(new URL(anchor.href).searchParams.get("path")).toBe(path);
+  },
+);
 
 it("leaves the native download when no host accepts the request", async () => {
   const { view, anchor } = await setup();
@@ -81,7 +95,9 @@ it("leaves explicit new-tab links native", async () => {
 it("asks the host to open a link outside the Chat folder by its absolute path", async () => {
   const { view, anchor } = await setup("../sibling/src/a.ts");
   const inside = vi.fn();
-  const outside = vi.fn((event: Event) => { event.preventDefault(); });
+  const outside = vi.fn((event: Event) => {
+    event.preventDefault();
+  });
   view.addEventListener("workspace-file-open", inside);
   view.addEventListener("outside-file-open", outside);
   expect(dispatchClick(view, anchor)).toBe(true);
@@ -89,7 +105,10 @@ it("asks the host to open a link outside the Chat folder by its absolute path", 
   expect(outside.mock.calls[0]?.[0]).toMatchObject({ detail: { machineId: "remote", path: "/sibling/src/a.ts" } });
 });
 
-it.each([["page.html", "/work/page.html"], ["../atelier/index.HTM", "/atelier/index.HTM"]])("asks the macOS app to open local HTML %s in the browser", async (destination, absolute) => {
+it.each([
+  ["page.html", "/work/page.html"],
+  ["../atelier/index.HTM", "/atelier/index.HTM"],
+])("asks the macOS app to open local HTML %s in the browser", async (destination, absolute) => {
   const openLocalFile = vi.fn(() => Promise.resolve(true));
   Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile } });
   try {
@@ -113,10 +132,12 @@ it.each([["page.html", "/work/page.html"], ["../atelier/index.HTM", "/atelier/in
 it("asks the macOS app first for every local link, so any folder opens in Finder and other files fall back to the Files pane", async () => {
   // The app opens folders (any name, dots included) and refuses plain files.
   const folders = new Set(["/Users/me/shots", "/Users/me/pi-web.feature", "~/.pi-workbench/scratch"]);
-  const openLocalFile = vi.fn((path: string) => folders.has(path) ? Promise.resolve(true) : Promise.reject(new Error("not a folder")));
+  const openLocalFile = vi.fn((path: string) => (folders.has(path) ? Promise.resolve(true) : Promise.reject(new Error("not a folder"))));
   Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile } });
   try {
-    const listener = vi.fn((event: Event) => { event.preventDefault(); });
+    const listener = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
     for (const folderPath of folders) {
       const folder = await setup(folderPath, "local");
       folder.view.addEventListener("outside-file-open", listener);
@@ -126,12 +147,17 @@ it("asks the macOS app first for every local link, so any folder opens in Finder
     await Promise.resolve();
     expect(listener).not.toHaveBeenCalled();
 
-    for (const [destination, absolute] of [["src/Makefile", "/work/src/Makefile"], ["notes.md", "/work/notes.md"]] as const) {
+    for (const [destination, absolute] of [
+      ["src/Makefile", "/work/src/Makefile"],
+      ["notes.md", "/work/notes.md"],
+    ] as const) {
       const file = await setup(destination, "local");
       file.view.addEventListener("workspace-file-open", listener);
       expect(dispatchClick(file.view, file.anchor)).toBe(true);
       expect(openLocalFile).toHaveBeenLastCalledWith(absolute);
-      await vi.waitFor(() => { expect(listener.mock.calls.at(-1)?.[0]).toMatchObject({ detail: { path: destination } }); });
+      await vi.waitFor(() => {
+        expect(listener.mock.calls.at(-1)?.[0]).toMatchObject({ detail: { path: destination } });
+      });
     }
   } finally {
     Reflect.deleteProperty(window, "piWebNative");
@@ -140,7 +166,9 @@ it("asks the macOS app first for every local link, so any folder opens in Finder
 
 it("keeps local HTML in the Files pane outside the macOS app", async () => {
   const { view, anchor } = await setup("page.html", "local");
-  const listener = vi.fn((event: Event) => { event.preventDefault(); });
+  const listener = vi.fn((event: Event) => {
+    event.preventDefault();
+  });
   view.addEventListener("workspace-file-open", listener);
   expect(dispatchClick(view, anchor)).toBe(true);
   expect(listener).toHaveBeenCalledOnce();
@@ -151,7 +179,9 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
   const revealLocalFile = vi.fn(() => Promise.resolve(true));
   Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile, revealLocalFile } });
   try {
-    const listener = vi.fn((event: Event) => { event.preventDefault(); });
+    const listener = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
     const docx = await setup("docs/Plan.docx", "local");
     docx.view.addEventListener("workspace-file-open", listener);
     expect(dispatchClick(docx.view, docx.anchor)).toBe(true);
@@ -165,7 +195,9 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
     expect(dispatchClick(markdown.view, markdown.anchor)).toBe(true);
     expect(revealLocalFile).toHaveBeenCalledOnce();
     expect(openLocalFile).toHaveBeenCalledWith("/work/docs/notes.md");
-    await vi.waitFor(() => { expect(listener).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenCalledOnce();
+    });
     expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: "docs/notes.md" } });
   } finally {
     Reflect.deleteProperty(window, "piWebNative");
@@ -174,14 +206,21 @@ it("reveals a local .docx link in Finder without opening anything, while a .md l
 
 it.each(["mp4", "MOV", "m4v", "webm"])("opens a local .%s video link in the Files pane, not Finder", async (extension) => {
   const revealLocalFile = vi.fn(() => Promise.resolve(true));
-  Object.defineProperty(window, "piWebNative", { configurable: true, value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(() => Promise.reject(new Error("not a folder"))), revealLocalFile } });
+  Object.defineProperty(window, "piWebNative", {
+    configurable: true,
+    value: { pickDirectory: vi.fn(), openLocalFile: vi.fn(() => Promise.reject(new Error("not a folder"))), revealLocalFile },
+  });
   try {
-    const listener = vi.fn((event: Event) => { event.preventDefault(); });
+    const listener = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
     const link = await setup(`clips/IMG_2430.${extension}`, "local");
     link.view.addEventListener("workspace-file-open", listener);
     expect(dispatchClick(link.view, link.anchor)).toBe(true);
     expect(revealLocalFile).not.toHaveBeenCalled();
-    await vi.waitFor(() => { expect(listener).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenCalledOnce();
+    });
     expect(listener.mock.calls[0]?.[0]).toMatchObject({ detail: { path: `clips/IMG_2430.${extension}` } });
   } finally {
     Reflect.deleteProperty(window, "piWebNative");
@@ -204,7 +243,9 @@ it.each(["xlsb", "ppsx", "odg", "flac", "aac", "mkv"])("reveals a local .%s link
 });
 
 it("opens a .docx link in the Files pane when the app cannot reveal it", async () => {
-  const listener = vi.fn((event: Event) => { event.preventDefault(); });
+  const listener = vi.fn((event: Event) => {
+    event.preventDefault();
+  });
   const remote = await setup("docs/Plan.docx");
   remote.view.addEventListener("workspace-file-open", listener);
   expect(dispatchClick(remote.view, remote.anchor)).toBe(true);
@@ -237,7 +278,8 @@ it("adds a Show in Finder button to each local file link that reveals the file w
 
     const home = await setup("~/.pi-workbench/scratch/draft.md", "local");
     const homeButton = home.anchor.nextElementSibling;
-    if (!(homeButton instanceof HTMLButtonElement) || !homeButton.classList.contains("file-reveal-button")) throw new Error("Missing Show in Finder button for a ~/ link");
+    if (!(homeButton instanceof HTMLButtonElement) || !homeButton.classList.contains("file-reveal-button"))
+      throw new Error("Missing Show in Finder button for a ~/ link");
     homeButton.click();
     expect(revealLocalFile).toHaveBeenLastCalledWith("~/.pi-workbench/scratch/draft.md");
 
@@ -250,7 +292,10 @@ it("adds a Show in Finder button to each local file link that reveals the file w
   expect(outsideApp.view.renderRoot.querySelector(".file-reveal-button")).toBeNull();
 });
 
-it.each([["docs/plans/seamless-promotion.md", "/work/docs/plans/seamless-promotion.md"], ["/Users/me/notes.md", "/Users/me/notes.md"]])("shows and copies the full path of %s while keeping the download href", async (destination, absolute) => {
+it.each([
+  ["docs/plans/seamless-promotion.md", "/work/docs/plans/seamless-promotion.md"],
+  ["/Users/me/notes.md", "/Users/me/notes.md"],
+])("shows and copies the full path of %s while keeping the download href", async (destination, absolute) => {
   const { view, anchor } = await setup(destination);
   expect(anchor.title).toBe(absolute);
   expect(anchor.href).toContain("download=1");

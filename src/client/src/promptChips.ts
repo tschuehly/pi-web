@@ -18,16 +18,27 @@ export class PromptChipStore {
   constructor(private readonly onChanged: () => void = () => undefined) {}
 
   set(pluginId: string, target: PromptChipTarget, chip: PluginPromptChip): void {
-    for (const [name, value] of [["id", chip.id], ["label", chip.label], ["text", chip.text]] as const) {
+    for (const [name, value] of [
+      ["id", chip.id],
+      ["label", chip.label],
+      ["text", chip.text],
+    ] as const) {
       if (typeof value !== "string" || value.trim() === "") throw new TypeError(`Prompt chip ${name} must be a non-empty string`);
     }
     if (chip.onRemove !== undefined && typeof chip.onRemove !== "function") throw new TypeError("Prompt chip onRemove must be a function");
     const key = chipKey(pluginId, target, chip.id);
-    this.chips.set(key, Object.freeze({
-      id: chip.id, label: chip.label, text: chip.text,
-      ...(chip.onRemove === undefined ? {} : { onRemove: chip.onRemove }),
-      pluginId, target: Object.freeze({ ...target }), key,
-    }));
+    this.chips.set(
+      key,
+      Object.freeze({
+        id: chip.id,
+        label: chip.label,
+        text: chip.text,
+        ...(chip.onRemove === undefined ? {} : { onRemove: chip.onRemove }),
+        pluginId,
+        target: Object.freeze({ ...target }),
+        key,
+      }),
+    );
     this.onChanged();
   }
 
@@ -77,7 +88,9 @@ function chipKey(pluginId: string, target: PromptChipTarget, id: string): string
 function notifyRemoval(chip: StagedPromptChip, reason: "user" | "submitted"): void {
   try {
     const result = chip.onRemove?.(reason);
-    void Promise.resolve(result).catch((error: unknown) => { console.warn(`Failed to notify prompt chip owner ${chip.pluginId}`, error); });
+    void Promise.resolve(result).catch((error: unknown) => {
+      console.warn(`Failed to notify prompt chip owner ${chip.pluginId}`, error);
+    });
   } catch (error) {
     console.warn(`Failed to notify prompt chip owner ${chip.pluginId}`, error);
   }

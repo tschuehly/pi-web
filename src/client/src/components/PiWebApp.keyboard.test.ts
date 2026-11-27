@@ -51,7 +51,9 @@ describe("PiWebApp global shortcut modality boundary", () => {
       const event = dispatchShortcutThroughApp(app, target, { key: "Escape" });
       expect(actionPaletteIsOpen(app)).toBe(false);
       expect(event.defaultPrevented).toBe(false);
-    } finally { unregister(); }
+    } finally {
+      unregister();
+    }
     dispatchShortcutThroughApp(app, target, { key: "Escape" });
     expect(actionPaletteIsOpen(app)).toBe(true);
   });
@@ -110,7 +112,9 @@ describe("PiWebApp global shortcut modality boundary", () => {
   it("does not suppress shortcuts for session-scoped state that cannot render", async () => {
     const app = new PiWebApp();
     await waitForBuiltInPlugins(app);
-    setAppState(app, { modelDialog: { instanceId: 1, origin: { machineId: "local", sessionId: "session-1", cwd: "/repo" }, title: "Select model", options: [], catalog: [] } });
+    setAppState(app, {
+      modelDialog: { instanceId: 1, origin: { machineId: "local", sessionId: "session-1", cwd: "/repo" }, title: "Select model", options: [], catalog: [] },
+    });
     const target = appendKeyTarget();
 
     const event = dispatchShortcutThroughApp(app, target);
@@ -143,7 +147,10 @@ describe("PiWebApp global shortcut modality boundary", () => {
     const focusInput = vi.fn();
     Object.defineProperty(app, "promptEditor", { configurable: true, value: { focusInput } });
     Object.defineProperty(app, "updateComplete", { configurable: true, value: Promise.resolve(true) });
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 1; });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
 
     await focusChatComposer(app);
 
@@ -163,9 +170,14 @@ describe("PiWebApp global shortcut modality boundary", () => {
     Object.defineProperty(app, "promptEditor", { configurable: true, value: { focusInput } });
     Object.defineProperty(app, "updateComplete", { configurable: true, value: Promise.resolve(true) });
     let frameCallback: FrameRequestCallback | undefined;
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frameCallback = callback; return 1; });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frameCallback = callback;
+      return 1;
+    });
     const focusing = focusChatComposer(app);
-    await vi.waitFor(() => { expect(frameCallback).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(frameCallback).toBeDefined();
+    });
     setAppState(app, { mainView: "navigation" });
     frameCallback?.(0);
     await focusing;
@@ -186,7 +198,9 @@ describe("PiWebApp global shortcut modality boundary", () => {
     });
 
     const focusing = focusChatComposer(app);
-    await vi.waitFor(() => { expect(frameCallback).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(frameCallback).toBeDefined();
+    });
 
     const surface = new ModalSurface();
     surface.initialFocus = "button";
@@ -305,8 +319,7 @@ function isAppKeyDownHandler(value: unknown): value is AppKeyDownHandler {
 }
 
 function isAutoFocusAppShell(value: unknown): value is AutoFocusAppShell {
-  return typeof value === "object" && value !== null && "shouldAutoFocusPrompt" in value
-    && typeof value.shouldAutoFocusPrompt === "function";
+  return typeof value === "object" && value !== null && "shouldAutoFocusPrompt" in value && typeof value.shouldAutoFocusPrompt === "function";
 }
 
 function appShouldAutoFocusPrompt(app: PiWebApp): boolean {

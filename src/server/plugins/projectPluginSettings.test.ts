@@ -40,10 +40,12 @@ afterEach(async () => {
 
 describe("project plugin settings snapshots", () => {
   it("merges top-level keys, replaces nested values, and isolates plugins and projects", async () => {
-    await writeConfig(project, { plugins: {
-      alpha: { settings: { nested: { projectOnly: true }, list: ["project"], optional: null, flag: false, count: 0, text: "" } },
-      beta: { settings: { owner: "beta" } },
-    } });
+    await writeConfig(project, {
+      plugins: {
+        alpha: { settings: { nested: { projectOnly: true }, list: ["project"], optional: null, flag: false, count: 0, text: "" } },
+        beta: { settings: { owner: "beta" } },
+      },
+    });
     await writeConfig(other, { plugins: { alpha: { settings: { owner: "other" } } } });
     const global = { inherited: "global", nested: { globalOnly: true }, list: ["global"], optional: "set", flag: true, count: 5, text: "default" };
 
@@ -114,7 +116,9 @@ describe("project plugin settings snapshots", () => {
 
     await expect(snapshots.initialize([project, other])).resolves.toBeUndefined();
     expect(await snapshots.resolve("alpha", {}, other, signal)).toEqual({ healthy: true });
-    await expect(snapshots.resolve("alpha", { fallback: true }, project, signal)).rejects.toThrow(`project ${project.id} (${project.path}) could not be loaded`);
+    await expect(snapshots.resolve("alpha", { fallback: true }, project, signal)).rejects.toThrow(
+      `project ${project.id} (${project.path}) could not be loaded`,
+    );
     await writeConfig(project, { plugins: { alpha: { settings: { repaired: true } } } });
     await expect(snapshots.resolve("different-plugin", {}, project, signal)).rejects.toThrow("could not be loaded");
     const restarted = new ProjectPluginSettingsSnapshots(projects);
@@ -124,9 +128,11 @@ describe("project plugin settings snapshots", () => {
   it("completes preload with an inaccessible config and retains its scoped error", async () => {
     vi.useFakeTimers();
     const denied = Object.assign(new Error("permission denied"), { code: "EACCES" });
-    const loadConfig = vi.fn((path: string): Promise<LoadedProjectPiWebConfig> => path === project.path
-      ? Promise.reject(denied)
-      : Promise.resolve({ path: join(path, PROJECT_PI_WEB_CONFIG_PATH), exists: true, config: { plugins: { alpha: { settings: { healthy: true } } } } }));
+    const loadConfig = vi.fn((path: string): Promise<LoadedProjectPiWebConfig> =>
+      path === project.path
+        ? Promise.reject(denied)
+        : Promise.resolve({ path: join(path, PROJECT_PI_WEB_CONFIG_PATH), exists: true, config: { plugins: { alpha: { settings: { healthy: true } } } } }),
+    );
     const service = new ProjectPluginSettingsSnapshots(projects, { loadConfig });
 
     await expect(service.initialize([project, other])).resolves.toBeUndefined();
@@ -155,7 +161,9 @@ describe("project plugin settings snapshots", () => {
     vi.useFakeTimers();
     const service = new ProjectPluginSettingsSnapshots(projects, { timeoutMs: 50, loadConfig });
     const completed = vi.fn();
-    const preload = service.initialize([project, other]).then(() => { completed(); });
+    const preload = service.initialize([project, other]).then(() => {
+      completed();
+    });
     const readSignal = await started.promise;
     expect(await service.resolve("alpha", {}, other, signal)).toEqual({ healthy: true });
     expect(vi.getTimerCount()).toBe(1);
@@ -256,7 +264,16 @@ describe("project plugin settings snapshots", () => {
   });
 
   it("preserves special setting keys as data without inheriting dictionary entries", async () => {
-    await writeConfig(project, { plugins: { alpha: { settings: Object.fromEntries<JsonValue>([["__proto__", { polluted: true }], ["constructor", "setting"]]) } } });
+    await writeConfig(project, {
+      plugins: {
+        alpha: {
+          settings: Object.fromEntries<JsonValue>([
+            ["__proto__", { polluted: true }],
+            ["constructor", "setting"],
+          ]),
+        },
+      },
+    });
     const result = await snapshots.resolve("alpha", {}, project, signal);
     expect(Object.hasOwn(result, "__proto__")).toBe(true);
     expect(result["__proto__"]).toEqual({ polluted: true });
@@ -281,7 +298,10 @@ function expectDeeplyFrozen(value: JsonValue): void {
 function deferred<Value>() {
   let complete: ((value: Value) => void) | undefined;
   let fail: ((reason: unknown) => void) | undefined;
-  const promise = new Promise<Value>((resolve, reject) => { complete = resolve; fail = reject; });
+  const promise = new Promise<Value>((resolve, reject) => {
+    complete = resolve;
+    fail = reject;
+  });
   return {
     promise,
     resolve(value: Value) {

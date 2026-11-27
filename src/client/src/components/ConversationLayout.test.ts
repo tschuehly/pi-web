@@ -3,8 +3,13 @@ import { conversationActivityText } from "./ConversationLayout";
 import type { SessionActivity, SessionStatus } from "../api";
 
 const idle: SessionStatus = {
-  sessionId: "test", isStreaming: false, isCompacting: false, isBashRunning: false,
-  pendingMessageCount: 0, queuedMessages: [], cost: 0,
+  sessionId: "test",
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  cost: 0,
   tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 const activity: SessionActivity = { sessionId: "test", phase: "active", label: "Working", at: "2026-10-21T00:00:00Z" };

@@ -1,5 +1,13 @@
 import type { ChatBehaviors } from "./chatBehaviors";
-import { captureScrollPosition, findScrollAnchor, ChatScrollController, type ChatAnchorScrollPosition, type ChatScrollPosition, type ChatScrollScheduler, type ChatScrollStorage } from "./chatScrollPosition";
+import {
+  captureScrollPosition,
+  findScrollAnchor,
+  ChatScrollController,
+  type ChatAnchorScrollPosition,
+  type ChatScrollPosition,
+  type ChatScrollScheduler,
+  type ChatScrollStorage,
+} from "./chatScrollPosition";
 
 export interface ChatScrollFlowsHost {
   getScroller(): HTMLDivElement | undefined;
@@ -40,7 +48,9 @@ export interface ChatScrollAfterRender {
 
 const browserFrames: ChatScrollFrameScheduler = {
   request: (callback) => requestAnimationFrame(callback),
-  cancel: (id) => { cancelAnimationFrame(id); },
+  cancel: (id) => {
+    cancelAnimationFrame(id);
+  },
 };
 
 function canLoadEarlier(host: ChatScrollFlowsHost): boolean {
@@ -62,7 +72,10 @@ class TailFlow {
   private alignForm: boolean | "ask" | "dialog" = false;
   private enabled: boolean;
 
-  constructor(private readonly host: ChatScrollFlowsHost, private readonly frames: ChatScrollFrameScheduler) {
+  constructor(
+    private readonly host: ChatScrollFlowsHost,
+    private readonly frames: ChatScrollFrameScheduler,
+  ) {
     this.enabled = host.getBehaviors().followTail;
   }
 
@@ -131,8 +144,7 @@ class TailFlow {
     // Safari can report scrollTop beyond either end during native rubber-banding.
     // Retain the original bottom through rebound when content grows mid-gesture;
     // an explicit navigation/follow write starts a fresh position sample instead.
-    const overscrollBottom = (options.preserveOverscroll === true ? this.lastPosition?.overscrollBottom : undefined)
-      ?? (rawTop > maxTop ? maxTop : undefined);
+    const overscrollBottom = (options.preserveOverscroll === true ? this.lastPosition?.overscrollBottom : undefined) ?? (rawTop > maxTop ? maxTop : undefined);
     return {
       top: Math.max(0, Math.min(rawTop, maxTop)),
       maxTop,
@@ -262,7 +274,10 @@ class HistoryFlow {
   private frame: number | undefined;
   private requestedAtTop = false;
 
-  constructor(private readonly host: ChatScrollFlowsHost, private readonly frames: ChatScrollFrameScheduler) {}
+  constructor(
+    private readonly host: ChatScrollFlowsHost,
+    private readonly frames: ChatScrollFrameScheduler,
+  ) {}
 
   schedule(): void {
     if (!this.host.getBehaviors().automaticHistory) return;
@@ -354,7 +369,10 @@ class PrependFlow {
 class ReadingPlaceFlow {
   private place: ChatAnchorScrollPosition | undefined;
 
-  constructor(private readonly host: ChatScrollFlowsHost, private readonly controller: ChatScrollController) {}
+  constructor(
+    private readonly host: ChatScrollFlowsHost,
+    private readonly controller: ChatScrollController,
+  ) {}
 
   capture(): void {
     if (!this.host.getBehaviors().holdReadingPlace) return;
@@ -395,10 +413,19 @@ export class ChatScrollFlows {
     const controller = new ChatScrollController(positionOptions.storage, positionOptions.saveScheduler);
     this.tail = new TailFlow(host, frames);
     this.reading = new ReadingPlaceFlow(host, controller);
-    this.position = new PositionFlow(host, frames, controller, () => { this.tail.syncFollowingAfterNavigation(); this.reading.capture(); }, () => {
-      this.tail.pause();
-      this.tail.recordScrollBaseline();
-    });
+    this.position = new PositionFlow(
+      host,
+      frames,
+      controller,
+      () => {
+        this.tail.syncFollowingAfterNavigation();
+        this.reading.capture();
+      },
+      () => {
+        this.tail.pause();
+        this.tail.recordScrollBaseline();
+      },
+    );
     this.history = new HistoryFlow(host, frames);
     this.prepend = new PrependFlow(host, frames, controller, () => {
       this.tail.recordScrollBaseline();

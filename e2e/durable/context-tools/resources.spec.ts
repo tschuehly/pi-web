@@ -12,13 +12,28 @@ async function resources() {
   await fixture(join(project(), "AGENTS.md"), "PROJECT_AGENT_MARKER");
   await fixture(join(root(), "agent", "APPEND_SYSTEM.md"), "GLOBAL_APPEND_MARKER");
   await fixture(join(project(), ".pi", "APPEND_SYSTEM.md"), "PROJECT_APPEND_MARKER");
-  for (const [base, name] of [[join(root(), "agent"), "global-fixture"], [join(project(), ".pi"), "project-fixture"]]) {
-    await fixture(join(base!, "skills", name!, "SKILL.md"), `---\nname: ${name}\ndescription: Read the ${name} acceptance fixture\n---\n${name}-BODY-MARKER\nSee references/notes.md.\n`);
+  for (const [base, name] of [
+    [join(root(), "agent"), "global-fixture"],
+    [join(project(), ".pi"), "project-fixture"],
+  ]) {
+    await fixture(
+      join(base!, "skills", name!, "SKILL.md"),
+      `---\nname: ${name}\ndescription: Read the ${name} acceptance fixture\n---\n${name}-BODY-MARKER\nSee references/notes.md.\n`,
+    );
   }
 }
 
 test.afterEach(async () => {
-  for (const path of [join(root(), "AGENTS.md"), join(project(), "AGENTS.md"), join(project(), ".pi"), join(root(), "agent", "AGENTS.md"), join(root(), "agent", "APPEND_SYSTEM.md"), join(root(), "agent", "skills"), join(root(), "agent", "trust.json")]) await rm(path, { recursive: true, force: true });
+  for (const path of [
+    join(root(), "AGENTS.md"),
+    join(project(), "AGENTS.md"),
+    join(project(), ".pi"),
+    join(root(), "agent", "AGENTS.md"),
+    join(root(), "agent", "APPEND_SYSTEM.md"),
+    join(root(), "agent", "skills"),
+    join(root(), "agent", "trust.json"),
+  ])
+    await rm(path, { recursive: true, force: true });
 });
 
 for (const durable of [false, true]) {
@@ -42,20 +57,36 @@ for (const durable of [false, true]) {
 test("AC-P108 installed Workbench, global gh-stack and package skill catalogs load", async ({ page }) => {
   const host = process.env["DURABLE_FLEET_REAL_HOST"] ?? process.env["PI_WEB_E2E_DURABLE_HOST"]!;
   const workbench = resolve(dirname(host), "../../..");
-  await settings({ skills: [join(workbench, "skills"), "/Users/tschuehly/.pi/agent/skills/gh-stack", "/Users/tschuehly/.pi/agent/npm/node_modules/pi-process-monitor/skills"] });
+  await settings({
+    skills: [join(workbench, "skills"), "/Users/tschuehly/.pi/agent/skills/gh-stack", "/Users/tschuehly/.pi/agent/npm/node_modules/pi-process-monitor/skills"],
+  });
   try {
     await mock.script({ turns: ["Catalog inspected."] });
     const id = await createChat(page);
     await answer(page, id, "inspect installed skill catalog", "Catalog inspected.");
     const body = JSON.stringify((await mock.journal({ kind: "chat" }))[0]!.body);
-    for (const name of ["analyze-source-for-workbench", "atelier", "customize-pi-web-presentation", "define-goal", "model-orchestration", "orient", "workstreams", "gh-stack", "monitor"]) expect(body).toContain(`<name>${name}</name>`);
+    for (const name of [
+      "analyze-source-for-workbench",
+      "atelier",
+      "customize-pi-web-presentation",
+      "define-goal",
+      "model-orchestration",
+      "orient",
+      "workstreams",
+      "gh-stack",
+      "monitor",
+    ])
+      expect(body).toContain(`<name>${name}</name>`);
     // The eighth Workbench skill explicitly sets disable-model-invocation, so it is not model guidance.
     expect(body).not.toContain("<name>autonomous-grill</name>");
-  } finally { await settings({ skills: [] }); }
+  } finally {
+    await settings({ skills: [] });
+  }
 });
 
-for (const durable of [false, true]) test(`AC-P108 P056 skill catalog and leading/inline expansion (${durable ? "Durable" : "legacy"})`, async ({ page }) => {
-  await resources();
+for (const durable of [false, true])
+  test(`AC-P108 P056 skill catalog and leading/inline expansion (${durable ? "Durable" : "legacy"})`, async ({ page }) => {
+    await resources();
     await mock.script({ turns: ["Skill expanded."] });
     const id = await createChat(page, durable);
     await answer(page, id, "/skill:project-fixture use /skill:global-fixture and /skill:global-fixture plus /skill:unknown", "Skill expanded.");
@@ -65,9 +96,13 @@ for (const durable of [false, true]) test(`AC-P108 P056 skill catalog and leadin
     expect(body).toContain("References are relative to");
     expect(body).toContain("/skill:unknown");
     expect(body).toContain("<available_skills>");
-});
+  });
 
-for (const trust of [{ name: "saved denial wins", saved: false, fallback: "always", trusted: false }, { name: "saved trust wins", saved: true, fallback: "never", trusted: true }, { name: "ask is untrusted", saved: null, fallback: "ask", trusted: false }]) {
+for (const trust of [
+  { name: "saved denial wins", saved: false, fallback: "always", trusted: false },
+  { name: "saved trust wins", saved: true, fallback: "never", trusted: true },
+  { name: "ask is untrusted", saved: null, fallback: "ask", trusted: false },
+]) {
   test(`AC-P109 ${trust.name}; project append cannot bypass trust`, async ({ page }) => {
     await resources();
     await fixture(join(root(), "agent", "trust.json"), JSON.stringify({ [project()]: trust.saved }));

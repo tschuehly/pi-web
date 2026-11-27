@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, FakeSocket, runPendingAnimationFrames, oldSession, sessionLookupId, status as idleStatus, workspace, type AppState } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  FakeSocket,
+  runPendingAnimationFrames,
+  oldSession,
+  sessionLookupId,
+  status as idleStatus,
+  workspace,
+  type AppState,
+} from "./sessionController.testSupport";
 
 const catalogModels = [
   { provider: "openai", id: "gpt-5", enabled: true },
@@ -27,24 +36,52 @@ describe("SessionController startup defaults", () => {
   it("reads and saves on the session machine without changing current status", async () => {
     const calls: unknown[] = [];
     const defaults = { defaultProvider: "openai", defaultModel: "gpt-5", defaultThinkingLevel: "high" as const };
-    let state: AppState = { ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    let state: AppState = {
+      ...initialAppState(),
+      selectedMachine: machine("remote-a"),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+    };
     const status = state.status;
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, {
-      ...defaultApi,
-      getSessionDefaults: (session, machineId) => { calls.push([session.id, machineId]); return Promise.resolve(defaults); },
-      setSessionDefaults: (session, input, machineId) => { calls.push([session.id, input, machineId]); return Promise.resolve(defaults); },
-    });
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        ...defaultApi,
+        getSessionDefaults: (session, machineId) => {
+          calls.push([session.id, machineId]);
+          return Promise.resolve(defaults);
+        },
+        setSessionDefaults: (session, input, machineId) => {
+          calls.push([session.id, input, machineId]);
+          return Promise.resolve(defaults);
+        },
+      },
+    );
     expect(await controller.getSessionDefaults()).toEqual(defaults);
     expect(await controller.setSessionDefaults({ thinkingLevel: "high" })).toEqual(defaults);
-    expect(calls).toEqual([[oldSession.id, "remote-a"], [oldSession.id, { thinkingLevel: "high" }, "remote-a"]]);
+    expect(calls).toEqual([
+      [oldSession.id, "remote-a"],
+      [oldSession.id, { thinkingLevel: "high" }, "remote-a"],
+    ]);
     expect(state.status).toBe(status);
   });
 
   it("reports failed saves and does not claim success", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, {
-      ...defaultApi, setSessionDefaults: () => Promise.reject(new Error("defaults failed")),
-    });
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        ...defaultApi,
+        setSessionDefaults: () => Promise.reject(new Error("defaults failed")),
+      },
+    );
     expect(await controller.setSessionDefaults({ thinkingLevel: "high" })).toBeUndefined();
     expect(Object.values(state.browserErrors).map((error) => error.message)).toContain("Error: defaults failed");
   });
@@ -55,12 +92,27 @@ describe("SessionController in a Durable Chat without the capability", () => {
     const durable = { ...oldSession, path: `durable:${oldSession.id}`, capabilities: [] };
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: durable, sessions: [durable] };
     const calls: string[] = [];
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, {
-      ...defaultApi,
-      getSessionDefaults: () => { calls.push("defaults"); return Promise.reject(new Error("Session defaults is not available in Durable Chats yet")); },
-      cycleModel: () => { calls.push("cycleModel"); return Promise.reject(new Error("rejected")); },
-      cycleThinkingLevel: () => { calls.push("cycleThinking"); return Promise.reject(new Error("rejected")); },
-    });
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      {
+        ...defaultApi,
+        getSessionDefaults: () => {
+          calls.push("defaults");
+          return Promise.reject(new Error("Session defaults is not available in Durable Chats yet"));
+        },
+        cycleModel: () => {
+          calls.push("cycleModel");
+          return Promise.reject(new Error("rejected"));
+        },
+        cycleThinkingLevel: () => {
+          calls.push("cycleThinking");
+          return Promise.reject(new Error("rejected"));
+        },
+      },
+    );
     expect(await controller.getSessionDefaults()).toBeUndefined();
     await controller.cycleModel("forward");
     await controller.cycleThinkingLevel();
@@ -72,7 +124,13 @@ describe("SessionController in a Durable Chat without the capability", () => {
 describe("SessionController model catalog", () => {
   it("lists the machine's catalog with per-model enabled state", async () => {
     const calls: { sessionId: string; machineId: string }[] = [];
-    let state: AppState = { ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    let state: AppState = {
+      ...initialAppState(),
+      selectedMachine: machine("remote-a"),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+    };
     const api: typeof defaultApi = {
       ...defaultApi,
       modelCatalog: (session, machineId) => {
@@ -80,7 +138,13 @@ describe("SessionController model catalog", () => {
         return Promise.resolve({ models: catalogModels });
       },
     };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     const models = await controller.listModelCatalog();
 
@@ -91,7 +155,13 @@ describe("SessionController model catalog", () => {
   it("reports catalog listing failures through the application error state", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = { ...defaultApi, modelCatalog: () => Promise.reject(new Error("catalog failed")) };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     const models = await controller.listModelCatalog();
 
@@ -101,15 +171,27 @@ describe("SessionController model catalog", () => {
 
   it("toggles one model's membership and returns the fresh catalog", async () => {
     const calls: { provider: string; modelId: string; enabled: boolean; machineId: string }[] = [];
-    let state: AppState = { ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    let state: AppState = {
+      ...initialAppState(),
+      selectedMachine: machine("remote-a"),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+    };
     const api: typeof defaultApi = {
       ...defaultApi,
       setModelEnabled: (session, provider, modelId, enabled, machineId) => {
         calls.push({ provider, modelId, enabled, machineId: machineId ?? "local" });
-        return Promise.resolve({ models: catalogModels.map((model) => model.id === "gpt-4o" ? { ...model, enabled: true } : model) });
+        return Promise.resolve({ models: catalogModels.map((model) => (model.id === "gpt-4o" ? { ...model, enabled: true } : model)) });
       },
     };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     const models = await controller.setModelEnabled("openai", "gpt-4o", true);
 
@@ -120,7 +202,13 @@ describe("SessionController model catalog", () => {
 
   it("atomically sets the model scope preset on the selected machine", async () => {
     const calls: { mode: "all" | "current"; machineId: string }[] = [];
-    let state: AppState = { ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
+    let state: AppState = {
+      ...initialAppState(),
+      selectedMachine: machine("remote-a"),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+    };
     const api: typeof defaultApi = {
       ...defaultApi,
       setModelScope: (_session, mode, machineId) => {
@@ -128,7 +216,13 @@ describe("SessionController model catalog", () => {
         return Promise.resolve({ models: catalogModels });
       },
     };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     await expect(controller.setModelScope("current")).resolves.toEqual(catalogModels);
 
@@ -138,7 +232,13 @@ describe("SessionController model catalog", () => {
   it("returns undefined for a failed toggle so the dialog can keep the row's state", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = { ...defaultApi, setModelEnabled: () => Promise.reject(new Error("toggle failed")) };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     const models = await controller.setModelEnabled("openai", "gpt-4o", true);
 
@@ -149,7 +249,13 @@ describe("SessionController model catalog", () => {
   it("reports scope preset failures through the application error state", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = { ...defaultApi, setModelScope: () => Promise.reject(new Error("scope failed")) };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     await expect(controller.setModelScope("all")).resolves.toBeUndefined();
     expect(Object.values(state.browserErrors).map((error) => error.message)).toContain("Error: scope failed");
@@ -159,11 +265,23 @@ describe("SessionController model catalog", () => {
     let state: AppState = initialAppState();
     const api: typeof defaultApi = {
       ...defaultApi,
-      modelCatalog: () => { throw new Error("must not be called"); },
-      setModelEnabled: () => { throw new Error("must not be called"); },
-      setModelScope: () => { throw new Error("must not be called"); },
+      modelCatalog: () => {
+        throw new Error("must not be called");
+      },
+      setModelEnabled: () => {
+        throw new Error("must not be called");
+      },
+      setModelScope: () => {
+        throw new Error("must not be called");
+      },
     };
-    const controller = controllerWithApi(state, (patch) => { state = { ...state, ...patch }; }, api);
+    const controller = controllerWithApi(
+      state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      api,
+    );
 
     expect(await controller.listModelCatalog()).toEqual([]);
     expect(await controller.setModelEnabled("openai", "gpt-4o", true)).toBeUndefined();
@@ -174,13 +292,41 @@ describe("SessionController model catalog", () => {
 
 describe("SessionController Working Mode versions", () => {
   it("keeps a newer live Working Mode over a delayed model-change response that carries an older one", async () => {
-    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const mode = (aligned: boolean) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     let respond!: () => void;
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { socket: new FakeSocket(), api: {
-      ...defaultApi,
-      setModel: () => new Promise((resolve) => { respond = () => { resolve({ ...idleStatus(oldSession.id), model: { provider: "openai", id: "gpt-5" }, extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 }); }; }),
-    } });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      undefined,
+      {
+        socket: new FakeSocket(),
+        api: {
+          ...defaultApi,
+          setModel: () =>
+            new Promise((resolve) => {
+              respond = () => {
+                resolve({
+                  ...idleStatus(oldSession.id),
+                  model: { provider: "openai", id: "gpt-5" },
+                  extensionStatuses: { "working-mode": mode(false) },
+                  workingModeVersion: 1,
+                });
+              };
+            }),
+        },
+      },
+    );
     const changing = controller.setModel("openai", "gpt-5");
     controller.applySessionStatus({ ...idleStatus(oldSession.id), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 });
     respond();
@@ -190,20 +336,59 @@ describe("SessionController Working Mode versions", () => {
   });
 
   it("keeps the newer Working Mode of two statuses buffered in one frame, whichever arrived last", () => {
-    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const mode = (aligned: boolean) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { socket: new FakeSocket() });
-    controller.applyGlobalEvent({ type: "status.update", status: { ...idleStatus(oldSession.id), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 } });
-    controller.applyGlobalEvent({ type: "status.update", status: { ...idleStatus(oldSession.id), messageCount: 9, extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 } });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      undefined,
+      { socket: new FakeSocket() },
+    );
+    controller.applyGlobalEvent({
+      type: "status.update",
+      status: { ...idleStatus(oldSession.id), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 },
+    });
+    controller.applyGlobalEvent({
+      type: "status.update",
+      status: { ...idleStatus(oldSession.id), messageCount: 9, extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 },
+    });
     runPendingAnimationFrames();
     expect(state.sessionStatuses[oldSession.id]).toMatchObject({ messageCount: 9, extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 });
   });
 
   it("keeps a background Chat's buffered status when the selection changes before the frame", () => {
-    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const mode = (aligned: boolean) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { socket: new FakeSocket() });
-    controller.applyGlobalEvent({ type: "status.update", status: { ...idleStatus("chat-b"), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 } });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      undefined,
+      { socket: new FakeSocket() },
+    );
+    controller.applyGlobalEvent({
+      type: "status.update",
+      status: { ...idleStatus("chat-b"), extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 },
+    });
     controller.clearActiveSession();
     runPendingAnimationFrames();
     expect(state.sessionStatuses["chat-b"]).toMatchObject({ extensionStatuses: { "working-mode": mode(true) }, workingModeVersion: 2 });

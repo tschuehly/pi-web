@@ -102,7 +102,8 @@ export async function readWorkspaceFilePreview(
     const classification = options.download === true ? undefined : classifyWebWorkspaceFile(displayPath);
     if (options.download !== true) {
       if (classification === undefined || !("previewMimeType" in classification)) throw new Error("Inline preview is not supported for this file type");
-      if (classification.mediaType !== "video" && stats.size > MAX_INLINE_PREVIEW_BYTES) throw new Error(`File is too large to preview (limit ${MAX_INLINE_PREVIEW_LABEL})`);
+      if (classification.mediaType !== "video" && stats.size > MAX_INLINE_PREVIEW_BYTES)
+        throw new Error(`File is too large to preview (limit ${MAX_INLINE_PREVIEW_LABEL})`);
     }
     const media = classification === undefined ? {} : { mediaType: classification.mediaType };
     const requested = parseByteRange(options.range, stats.size);
@@ -170,5 +171,7 @@ function validatedFileStream(handle: FileHandle, start: number, end: number): Re
   });
   // The callback keeps a teardown failure from becoming an unhandled error; the
   // returned stream still emits it, which fails the in-flight response.
-  return pipeline(source, exactLength, () => { /* surfaced on the returned stream */ });
+  return pipeline(source, exactLength, () => {
+    /* surfaced on the returned stream */
+  });
 }

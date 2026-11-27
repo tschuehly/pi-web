@@ -63,6 +63,8 @@ function parseInterruptedTurns(value: unknown): InterruptedTurnsRecord | undefin
 }
 
 export function renderDaemonRestartMessage(shutdownAt: string): string {
-  return `The PI WEB session daemon restarted at ${shutdownAt}; your previous turn was interrupted. `
-    + "Check what had finished (files, background jobs, subagents) before continuing, then continue where you left off.";
+  return (
+    `The PI WEB session daemon restarted at ${shutdownAt}; your previous turn was interrupted. `
+    + "Check what had finished (files, background jobs, subagents) before continuing, then continue where you left off."
+  );
 }

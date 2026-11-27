@@ -1,7 +1,17 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { E2E_ADHOC_SESSION_ID, E2E_MORE_CHATS, E2E_NOTES_BODY, E2E_PLAN, E2E_PROJECT_ID, E2E_REPORT_BODY, E2E_SEARCH_MATCHES, E2E_SESSION_ID, E2E_SIBLING_BODY } from "./isolatedPiWeb";
+import {
+  E2E_ADHOC_SESSION_ID,
+  E2E_MORE_CHATS,
+  E2E_NOTES_BODY,
+  E2E_PLAN,
+  E2E_PROJECT_ID,
+  E2E_REPORT_BODY,
+  E2E_SEARCH_MATCHES,
+  E2E_SESSION_ID,
+  E2E_SIBLING_BODY,
+} from "./isolatedPiWeb";
 
 // Set PI_WEB_E2E_SCREENSHOTS to a folder to keep review screenshots of the Files pane.
 const SHOTS = process.env["PI_WEB_E2E_SCREENSHOTS"];
@@ -38,13 +48,17 @@ async function shot(target: Page | Locator, name: string): Promise<void> {
 
 /** Waits until the tree drawer has finished sliding open or shut, so screenshots never catch it mid-transition. */
 async function drawerSettled(pane: Locator, open: boolean): Promise<void> {
-  await expect.poll(() => pane.evaluate((host, wantOpen) => {
-    const root = host.shadowRoot;
-    const aside = root?.querySelector("aside")?.getBoundingClientRect();
-    const body = root?.querySelector(".body")?.getBoundingClientRect();
-    if (aside === undefined || body === undefined) return false;
-    return wantOpen ? Math.abs(aside.left - body.left) < 1 : aside.right <= body.left + 1;
-  }, open)).toBe(true);
+  await expect
+    .poll(() =>
+      pane.evaluate((host, wantOpen) => {
+        const root = host.shadowRoot;
+        const aside = root?.querySelector("aside")?.getBoundingClientRect();
+        const body = root?.querySelector(".body")?.getBoundingClientRect();
+        if (aside === undefined || body === undefined) return false;
+        return wantOpen ? Math.abs(aside.left - body.left) < 1 : aside.right <= body.left + 1;
+      }, open),
+    )
+    .toBe(true);
 }
 
 /** Opens `docs/<name>` through the Files tree. */
@@ -53,7 +67,7 @@ async function openFromTree(page: Page, name: string): Promise<Locator> {
   await page.locator("workbench-files-pane").getByRole("button", { name: "Search files" }).click();
   const pane = page.locator("workbench-files-pane");
   const docs = pane.locator(".tree .row.dir", { hasText: "docs" });
-  if (await docs.getAttribute("aria-expanded") !== "true") await docs.click();
+  if ((await docs.getAttribute("aria-expanded")) !== "true") await docs.click();
   await pane.locator(`.tree .row.file[data-path="docs/${name}"]`).click();
   await expect(pane.locator(".crumbs")).toHaveAttribute("title", `docs/${name}`);
   return pane;
@@ -118,7 +132,12 @@ test("Markdown opens Live from the tree, toggles Raw, saves with ⌘S, and shows
 
   // The agent changes one word and rewrites one sentence on disk.
   const disk = await readFile(path, "utf8");
-  await writeFile(path, disk.replace("Friday", "Monday").replace("Network flakiness could delay the rollout by a day or two. Added by the user.", "Vendor approval is still pending.\nEscalate it on Tuesday."));
+  await writeFile(
+    path,
+    disk
+      .replace("Friday", "Monday")
+      .replace("Network flakiness could delay the rollout by a day or two. Added by the user.", "Vendor approval is still pending.\nEscalate it on Tuesday."),
+  );
   await expect(pane.locator(".hunk-del")).toHaveText("Friday", { timeout: 8000 });
   await expect(pane.locator(".hunk-ins")).toHaveText("Monday");
   await expect(pane.locator(".hunk-old")).toContainText("Network flakiness");
@@ -139,8 +158,15 @@ test("Markdown opens Live from the tree, toggles Raw, saves with ⌘S, and shows
   // The modal body ends inside the modal and scrolls the rest of the file.
   const editorBox = await pane.locator(".cm-scroller").boundingBox();
   expect(editorBox !== null && full !== null && editorBox.y + editorBox.height <= full.y + full.height + 1).toBe(true);
-  expect(await pane.locator(".cm-scroller").evaluate((scroller) => { scroller.scrollTop = 120; return scroller.scrollTop; })).toBeGreaterThan(0);
-  await pane.locator(".cm-scroller").evaluate((scroller) => { scroller.scrollTop = 0; });
+  expect(
+    await pane.locator(".cm-scroller").evaluate((scroller) => {
+      scroller.scrollTop = 120;
+      return scroller.scrollTop;
+    }),
+  ).toBeGreaterThan(0);
+  await pane.locator(".cm-scroller").evaluate((scroller) => {
+    scroller.scrollTop = 0;
+  });
   await shot(page, "d-full-size.png");
   await page.keyboard.press("Escape");
   await expect(pane.locator(".pane.full")).toHaveCount(0);
@@ -170,7 +196,9 @@ test("a save after an unseen agent edit shows the agent's changes for review fir
   await openChat(page);
   const pane = await openFromTree(page, "conflict.md");
   // Pause the 2s disk poll so the save itself meets the agent's edit.
-  await page.evaluate(() => { Object.defineProperty(document, "hidden", { configurable: true, get: () => true }); });
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+  });
   await pane.getByText("The launch is on").click();
   await page.keyboard.press("Meta+ArrowRight");
   await page.keyboard.type(" Confirmed.");
@@ -229,9 +257,14 @@ async function openTabsWindow(page: Page, { remote = false } = {}): Promise<void
     { sessionId: E2E_SESSION_ID, title: "Notes", machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream },
     { sessionId: E2E_MORE_CHATS[0].id, title: "Release", machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream },
     { sessionId: E2E_ADHOC_SESSION_ID, title: "Report", machineId: "local", workstream },
-    ...remote ? [{ sessionId: E2E_MORE_CHATS[1].id, title: "Remote", machineId: "remote", projectId: E2E_PROJECT_ID, workspaceId, workstream }] : [],
+    ...(remote ? [{ sessionId: E2E_MORE_CHATS[1].id, title: "Remote", machineId: "remote", projectId: E2E_PROJECT_ID, workspaceId, workstream }] : []),
   ];
-  await page.addInitScript((value) => { localStorage.setItem("pi-workbench.windows.v1", value); }, JSON.stringify({ e2e: { name: "Window 1", layout: "tabs", maximized: false, focused: E2E_SESSION_ID, lastActive: {}, chats } }));
+  await page.addInitScript(
+    (value) => {
+      localStorage.setItem("pi-workbench.windows.v1", value);
+    },
+    JSON.stringify({ e2e: { name: "Window 1", layout: "tabs", maximized: false, focused: E2E_SESSION_ID, lastActive: {}, chats } }),
+  );
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
   await page.goto(target.toString());
@@ -240,15 +273,21 @@ async function openTabsWindow(page: Page, { remote = false } = {}): Promise<void
 
 /** Serves the isolated machine a second time as "remote", so a window can hold a Chat on another machine. */
 async function addRemoteMachine(page: Page): Promise<void> {
-  await page.route((url) => url.pathname.endsWith("/api/machines"), async (route) => {
-    const response = await route.fetch();
-    const { machines } = await response.json() as { machines: { id: string; name: string }[] };
-    const local = machines.find((machine) => machine.id === "local");
-    await route.fulfill({ response, json: { machines: [...machines, { ...local, id: "remote", name: "Remote" }] } });
-  });
-  await page.route((url) => url.pathname.includes("/api/machines/remote/"), async (route) => {
-    await route.continue({ url: route.request().url().replace("/api/machines/remote/", "/api/machines/local/") });
-  });
+  await page.route(
+    (url) => url.pathname.endsWith("/api/machines"),
+    async (route) => {
+      const response = await route.fetch();
+      const { machines } = (await response.json()) as { machines: { id: string; name: string }[] };
+      const local = machines.find((machine) => machine.id === "local");
+      await route.fulfill({ response, json: { machines: [...machines, { ...local, id: "remote", name: "Remote" }] } });
+    },
+  );
+  await page.route(
+    (url) => url.pathname.includes("/api/machines/remote/"),
+    async (route) => {
+      await route.continue({ url: route.request().url().replace("/api/machines/remote/", "/api/machines/local/") });
+    },
+  );
 }
 
 const chatTab = (page: Page, sessionId: string) => page.locator(`workbench-window-tabs .chat-tab[data-session="${sessionId}"]`);
@@ -259,7 +298,7 @@ async function editNotesInFiles(page: Page): Promise<Locator> {
   const pane = page.locator("workbench-files-pane");
   await pane.getByRole("button", { name: "Search files" }).click();
   const docs = pane.locator(".tree .row.dir", { hasText: "docs" });
-  if (await docs.getAttribute("aria-expanded") !== "true") await docs.click();
+  if ((await docs.getAttribute("aria-expanded")) !== "true") await docs.click();
   await pane.locator('.tree .row.file[data-path="docs/notes.md"]').click();
   await pane.getByText(E2E_NOTES_BODY).click();
   await page.keyboard.press("End");
@@ -271,7 +310,10 @@ async function editNotesInFiles(page: Page): Promise<Locator> {
 /** Answers every discard question with Cancel, and records it. */
 function keepEdits(page: Page): string[] {
   const asked: string[] = [];
-  page.on("dialog", (dialog) => { asked.push(dialog.message()); void dialog.dismiss(); });
+  page.on("dialog", (dialog) => {
+    asked.push(dialog.message());
+    void dialog.dismiss();
+  });
   return asked;
 }
 
@@ -297,8 +339,16 @@ test("edits made in Files while another workspace's Chat loads are asked about w
   await openTabsWindow(page);
   await openFiles(page);
   let arrive = () => {};
-  const arrived = new Promise<void>((resolve) => { arrive = resolve; });
-  await page.route((url) => url.pathname.includes(E2E_ADHOC_SESSION_ID) && url.pathname.includes("/transcript-snapshot"), async (route) => { await arrived; await route.continue(); });
+  const arrived = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  await page.route(
+    (url) => url.pathname.includes(E2E_ADHOC_SESSION_ID) && url.pathname.includes("/transcript-snapshot"),
+    async (route) => {
+      await arrived;
+      await route.continue();
+    },
+  );
   await chatTab(page, E2E_ADHOC_SESSION_ID).click();
   const pane = await editNotesInFiles(page);
   expect(asked).toEqual([]);
@@ -310,7 +360,9 @@ test("edits made in Files while another workspace's Chat loads are asked about w
   // Files says it still shows the other workspace, and offers this Chat's folder once the edits may go.
   await expect(page.locator(".files-elsewhere")).toBeVisible();
   page.removeAllListeners("dialog");
-  page.once("dialog", (dialog) => { void dialog.accept(); });
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
   await page.locator(".files-elsewhere").getByRole("button").click();
   await expect(page.locator(".files-elsewhere")).toHaveCount(0);
   await pane.getByRole("button", { name: "Search files" }).click();
@@ -341,7 +393,12 @@ test("Files kept beside another machine's chooser names the machine it saves to,
   keepEdits(page);
   await addRemoteMachine(page);
   // The Remote Chat's lookup fails, so the Remote window shows its chooser instead of a Chat.
-  await page.route((url) => url.pathname.includes("/api/machines/remote/") && url.pathname.includes(E2E_MORE_CHATS[1].id), async (route) => { await route.fulfill({ status: 503, json: { error: "unavailable" } }); });
+  await page.route(
+    (url) => url.pathname.includes("/api/machines/remote/") && url.pathname.includes(E2E_MORE_CHATS[1].id),
+    async (route) => {
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+    },
+  );
   await openTabsWindow(page, { remote: true });
   await openFiles(page);
   const pane = await editNotesInFiles(page);
@@ -349,7 +406,9 @@ test("Files kept beside another machine's chooser names the machine it saves to,
   await expect(page.locator('[data-view="chooser"]')).toBeVisible();
   await expect(page.locator(".files-elsewhere")).toContainText("Files still shows Local");
   const saves: string[] = [];
-  page.on("request", (request) => { if (request.method() === "PUT" && request.url().includes("/file?")) saves.push(new URL(request.url()).pathname); });
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && request.url().includes("/file?")) saves.push(new URL(request.url()).pathname);
+  });
   try {
     await pane.getByRole("textbox", { name: "File source" }).click();
     await page.keyboard.press("Meta+s");

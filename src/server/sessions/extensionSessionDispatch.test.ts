@@ -8,9 +8,16 @@ import type { SpawnSessionModel, SpawnSessionResult, SpawnSessionThinkingLevel, 
 
 const spawned: SpawnSessionResult = { sessionId: "new-1", cwd: "/repos/a-feature", model: "openai/worker" };
 const dispatchModel: SpawnSessionModel = {
-  provider: "anthropic", id: "caller-model", name: "Caller model", api: "anthropic-messages",
-  baseUrl: "https://example.invalid", input: ["text"], reasoning: true,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 100_000, maxTokens: 4096,
+  provider: "anthropic",
+  id: "caller-model",
+  name: "Caller model",
+  api: "anthropic-messages",
+  baseUrl: "https://example.invalid",
+  input: ["text"],
+  reasoning: true,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 100_000,
+  maxTokens: 4096,
 };
 
 type LifecycleEvent = SessionStartEvent | SessionShutdownEvent;
@@ -31,12 +38,16 @@ async function registerDispatch(deps: Partial<Parameters<typeof createExtensionS
   const api = {
     on(event: string, handler: ExtensionHandler<LifecycleEvent>) {
       lifecycle.set(event, handler);
-      return () => { lifecycle.delete(event); };
+      return () => {
+        lifecycle.delete(event);
+      };
     },
     events: {
       on(channel: string, handler: (envelope: unknown) => void) {
         channels.set(channel, handler);
-        return () => { channels.delete(channel); };
+        return () => {
+          channels.delete(channel);
+        };
       },
     },
   };
@@ -77,7 +88,9 @@ async function registerDispatch(deps: Partial<Parameters<typeof createExtensionS
 
 function pendingSpawnResult() {
   let resolve!: (result: SpawnSessionResult) => void;
-  const promise = new Promise<SpawnSessionResult>((settle) => { resolve = settle; });
+  const promise = new Promise<SpawnSessionResult>((settle) => {
+    resolve = settle;
+  });
   return { promise, resolve };
 }
 
@@ -104,8 +117,12 @@ describe("extension session dispatch protocol", () => {
     await bridge.dispatch({ prompt: "  Preserve the prompt verbatim\n" });
 
     expect(spawn).toHaveBeenCalledExactlyOnceWith({
-      spawningCwd: "/repos/a", spawningSessionId: "trusted-caller",
-      prompt: "  Preserve the prompt verbatim\n", cwd: undefined, model: dispatchModel, thinkingLevel: "high",
+      spawningCwd: "/repos/a",
+      spawningSessionId: "trusted-caller",
+      prompt: "  Preserve the prompt verbatim\n",
+      cwd: undefined,
+      model: dispatchModel,
+      thinkingLevel: "high",
     });
   });
 
@@ -117,7 +134,10 @@ describe("extension session dispatch protocol", () => {
     await bridge.dispatch({ prompt: "Work" });
 
     expect(spawn).toHaveBeenCalledExactlyOnceWith({
-      spawningCwd: "/repos/a", spawningSessionId: "caller-1", prompt: "Work", cwd: undefined,
+      spawningCwd: "/repos/a",
+      spawningSessionId: "caller-1",
+      prompt: "Work",
+      cwd: undefined,
     });
   });
 
@@ -130,8 +150,13 @@ describe("extension session dispatch protocol", () => {
     await bridge.dispatch({ prompt: "Work", model: "openai/worker", thinkingLevel });
 
     expect(spawn).toHaveBeenCalledExactlyOnceWith({
-      spawningCwd: "/repos/a", spawningSessionId: "caller-1", prompt: "Work", cwd: undefined,
-      model: dispatchModel, modelSpec: "openai/worker", thinkingLevel,
+      spawningCwd: "/repos/a",
+      spawningSessionId: "caller-1",
+      prompt: "Work",
+      cwd: undefined,
+      model: dispatchModel,
+      modelSpec: "openai/worker",
+      thinkingLevel,
     });
     expect(ctx.model).toBe(dispatchModel);
     expect(ctx.thinkingLevel).toBe("high");
@@ -148,8 +173,12 @@ describe("extension session dispatch protocol", () => {
     await bridge.dispatch({ prompt: "Work", ...input });
 
     expect(spawn).toHaveBeenCalledExactlyOnceWith({
-      spawningCwd: "/repos/a", spawningSessionId: "caller-1", prompt: "Work", cwd: undefined,
-      model: dispatchModel, ...forwarded,
+      spawningCwd: "/repos/a",
+      spawningSessionId: "caller-1",
+      prompt: "Work",
+      cwd: undefined,
+      model: dispatchModel,
+      ...forwarded,
     });
   });
 
@@ -166,8 +195,12 @@ describe("extension session dispatch protocol", () => {
     await bridge.dispatch({ prompt: "After model selection" });
 
     expect(spawn).toHaveBeenLastCalledWith({
-      spawningCwd: "/repos/a", spawningSessionId: "caller-1", prompt: "After model selection", cwd: undefined,
-      model: selectedModel, thinkingLevel: "off",
+      spawningCwd: "/repos/a",
+      spawningSessionId: "caller-1",
+      prompt: "After model selection",
+      cwd: undefined,
+      model: selectedModel,
+      thinkingLevel: "off",
     });
     expect(spawn).toHaveBeenCalledTimes(2);
   });
@@ -179,8 +212,12 @@ describe("extension session dispatch protocol", () => {
     await bridge.start(contextFor("trusted-caller", dispatchModel, "high"));
     const metadata = { "@example/workflow": { identity: { leg: 1 }, flags: [true, null] } };
     const input = {
-      prompt: "Original prompt", cwd: "/repos/a-feature", name: "Feature work", metadata,
-      model: "openai/worker", thinkingLevel: "low",
+      prompt: "Original prompt",
+      cwd: "/repos/a-feature",
+      name: "Feature work",
+      metadata,
+      model: "openai/worker",
+      thinkingLevel: "low",
     };
 
     const result = bridge.dispatch(input);
@@ -196,10 +233,15 @@ describe("extension session dispatch protocol", () => {
     await expect(result).resolves.toBe(spawned);
 
     expect(spawn).toHaveBeenCalledExactlyOnceWith({
-      spawningCwd: "/repos/a", spawningSessionId: "trusted-caller",
-      prompt: "Original prompt", cwd: "/repos/a-feature", name: "Feature work",
+      spawningCwd: "/repos/a",
+      spawningSessionId: "trusted-caller",
+      prompt: "Original prompt",
+      cwd: "/repos/a-feature",
+      name: "Feature work",
       metadata: { "@example/workflow": { identity: { leg: 1 }, flags: [true, null] } },
-      model: dispatchModel, modelSpec: "openai/worker", thinkingLevel: "low",
+      model: dispatchModel,
+      modelSpec: "openai/worker",
+      thinkingLevel: "low",
     });
     const invocation = spawn.mock.calls[0]?.[0];
     expect(invocation?.metadata).not.toBe(metadata);
@@ -237,7 +279,10 @@ describe("extension session dispatch lifecycle and capabilities", () => {
     await bridge.start(contextFor("replacement-caller"));
     await bridge.dispatch({ prompt: "Replacement session" });
     expect(spawn).toHaveBeenLastCalledWith({
-      spawningCwd: "/repos/a", spawningSessionId: "replacement-caller", prompt: "Replacement session", cwd: undefined,
+      spawningCwd: "/repos/a",
+      spawningSessionId: "replacement-caller",
+      prompt: "Replacement session",
+      cwd: undefined,
     });
     expect(spawn).toHaveBeenCalledTimes(2);
   });
@@ -270,16 +315,27 @@ describe("extension session dispatch lifecycle and capabilities", () => {
     const bridge = await registerDispatch({ spawn, isEnabled });
     await bridge.start();
     const withoutAccept = {
-      get input(): unknown { throw new Error("Ignored envelope input must not be read"); },
+      get input(): unknown {
+        throw new Error("Ignored envelope input must not be read");
+      },
     };
 
-    for (const envelope of [undefined, null, [], "text", 1, {}, withoutAccept,
+    for (const envelope of [
+      undefined,
+      null,
+      [],
+      "text",
+      1,
+      {},
+      withoutAccept,
       { input: { prompt: "Work" }, accept: undefined },
       { input: { prompt: "Work" }, accept: null },
       { input: { prompt: "Work" }, accept: "not a callback" },
       { input: { prompt: "Work" }, accept: {} },
     ]) {
-      expect(() => { bridge.emit(envelope); }).not.toThrow();
+      expect(() => {
+        bridge.emit(envelope);
+      }).not.toThrow();
     }
     expect(spawn).not.toHaveBeenCalled();
     expect(isEnabled).not.toHaveBeenCalled();
@@ -346,18 +402,25 @@ describe("extension session dispatch input schema", () => {
 
     await expect(bridge.dispatch(input)).resolves.toBe(spawned);
     expect(spawn).toHaveBeenCalledExactlyOnceWith({
-      spawningCwd: "/repos/a", spawningSessionId: "caller-1", prompt: "Work", cwd: undefined, ...forwarded,
+      spawningCwd: "/repos/a",
+      spawningSessionId: "caller-1",
+      prompt: "Work",
+      cwd: undefined,
+      ...forwarded,
     });
   });
 
-  it.each(["spawningSessionId", "spawningCwd", "sessionId", "parentSessionId", "modelSpec", "extra"])("rejects forbidden field %s rather than allowing identity or internal-field spoofing", async (field) => {
-    const spawn = vi.fn<SpawnSessionToolDeps["spawn"]>().mockResolvedValue(spawned);
-    const bridge = await registerDispatch({ spawn });
-    await bridge.start(contextFor("trusted-caller", dispatchModel, "high"));
+  it.each(["spawningSessionId", "spawningCwd", "sessionId", "parentSessionId", "modelSpec", "extra"])(
+    "rejects forbidden field %s rather than allowing identity or internal-field spoofing",
+    async (field) => {
+      const spawn = vi.fn<SpawnSessionToolDeps["spawn"]>().mockResolvedValue(spawned);
+      const bridge = await registerDispatch({ spawn });
+      await bridge.start(contextFor("trusted-caller", dispatchModel, "high"));
 
-    await expect(bridge.dispatch({ prompt: "Work", [field]: "spoofed" })).rejects.toThrow();
-    expect(spawn).not.toHaveBeenCalled();
-  });
+      await expect(bridge.dispatch({ prompt: "Work", [field]: "spoofed" })).rejects.toThrow();
+      expect(spawn).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects unknown non-enumerable and symbol keys as well as ordinary keys", async () => {
     const spawn = vi.fn<SpawnSessionToolDeps["spawn"]>().mockResolvedValue(spawned);

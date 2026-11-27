@@ -22,7 +22,12 @@ export interface ModelPriceSource {
   getModel(provider: string, modelId: string): { cost: { cacheRead: number } } | undefined;
 }
 
-interface PreviousRequest { promptTokens: number; modelKey: string; timestamp: number; reportedCache: boolean }
+interface PreviousRequest {
+  promptTokens: number;
+  modelKey: string;
+  timestamp: number;
+  reportedCache: boolean;
+}
 
 function detectMiss(prev: PreviousRequest | undefined, message: AssistantMessage, models: ModelPriceSource): CacheMiss | undefined {
   const usage = message.usage;
@@ -33,9 +38,8 @@ function detectMiss(prev: PreviousRequest | undefined, message: AssistantMessage
   if (missedTokens <= NOISE_FLOOR_TOKENS) return undefined;
   const paidTokens = usage.input + usage.cacheWrite;
   const paidPerToken = paidTokens > 0 ? (usage.cost.input + usage.cost.cacheWrite) / paidTokens : 0;
-  const readPerToken = usage.cacheRead > 0
-    ? usage.cost.cacheRead / usage.cacheRead
-    : (models.getModel(message.provider, message.model)?.cost.cacheRead ?? 0) / 1_000_000;
+  const readPerToken =
+    usage.cacheRead > 0 ? usage.cost.cacheRead / usage.cacheRead : (models.getModel(message.provider, message.model)?.cost.cacheRead ?? 0) / 1_000_000;
   return {
     missedTokens,
     missedCost: missedTokens * Math.max(0, paidPerToken - readPerToken),
@@ -48,7 +52,12 @@ function asPreviousRequest(message: AssistantMessage, reportedCache: boolean): P
   const usage = message.usage;
   const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
   if (promptTokens <= 0) return undefined;
-  return { promptTokens, modelKey: `${message.provider}/${message.model}`, timestamp: message.timestamp, reportedCache: reportedCache || usage.cacheRead + usage.cacheWrite > 0 };
+  return {
+    promptTokens,
+    modelKey: `${message.provider}/${message.model}`,
+    timestamp: message.timestamp,
+    reportedCache: reportedCache || usage.cacheRead + usage.cacheWrite > 0,
+  };
 }
 
 function scan(entries: readonly SessionEntry[], models: ModelPriceSource): { prev: PreviousRequest | undefined; misses: Map<AssistantMessage, CacheMiss> } {

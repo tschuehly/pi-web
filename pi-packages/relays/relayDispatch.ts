@@ -65,8 +65,11 @@ async function validateDocument(packet: string, document: string): Promise<void>
     const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
     if (bytesRead > MAX_PACKET_DOCUMENT_BYTES) throw new Error(`Relay ${document} exceeds the document size limit`);
     let text: string;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytesRead)); }
-    catch { throw new Error(`Relay ${document} must be UTF-8 text`); }
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytesRead));
+    } catch {
+      throw new Error(`Relay ${document} must be UTF-8 text`);
+    }
     if (text.trim() === "" || text.includes("\0")) throw new Error(`Relay ${document} must contain saved text`);
   } finally {
     await file.close();

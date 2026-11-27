@@ -76,7 +76,9 @@ describe("Docker command assets", () => {
     expect(dockerfile).toContain("command -v pi");
     expect(dockerfile).not.toContain("@earendil-works/pi-coding-agent@");
     expect(devDockerfile).toContain("COPY --chmod=0755 docker/pi-web-docker /usr/local/bin/pi-web-docker");
-    expect(devDockerfile).toContain("COPY --chmod=0755 docker/internal/bin/hostexec docker/internal/bin/pi-web-service docker/internal/bin/pi-web-image-doctor /usr/local/bin/");
+    expect(devDockerfile).toContain(
+      "COPY --chmod=0755 docker/internal/bin/hostexec docker/internal/bin/pi-web-service docker/internal/bin/pi-web-image-doctor /usr/local/bin/",
+    );
     expect(devDockerfile).toContain("COPY --chmod=0755 docker/internal/dev/sync-node-modules /usr/local/sbin/pi-web-dev-sync-node-modules");
     expect(devDockerfile).toContain("/opt/pi-web-dev-dependencies/node_modules");
     // The seed can be hidden by the host /opt mount; the CLI must use the active volume.
@@ -93,15 +95,15 @@ describe("Docker command assets", () => {
     expect(installer).toContain("write_asset internal/bin/pi-web-reconcile-mise 0755");
     expect(installer).toContain("write_asset pi-web-docker 0755");
     expect(installer).toContain("write_asset internal/host-profile.sh 0644");
-    expect(installer).toContain("compose_cmd --project-name \"$compose_project_name\"");
+    expect(installer).toContain('compose_cmd --project-name "$compose_project_name"');
     expect(installer).toContain("PI_WEB_DOCKER_INSTALL_DIR=$install_dir");
     expect(installer).toContain("PI_WEB_DOCKER_REF=$asset_ref");
     expect(installer).toContain("COMPOSE_PROJECT_NAME=$compose_project_name");
     expect(devWrapper).toContain("$repo_root/docker/internal/host-profile.sh");
-    expect(devWrapper).toContain("--project-name \"$compose_project_name\"");
+    expect(devWrapper).toContain('--project-name "$compose_project_name"');
     expect(devWrapper).toContain("PI_WEB_DOCKER_DEV_REPO_ROOT=$repo_root");
     expect(devWrapper).toContain("COMPOSE_PROJECT_NAME=$compose_project_name");
-    expect(runtimeCompose).toContain("PI_WEB_DOCKER_RUNTIME: \"1\"");
+    expect(runtimeCompose).toContain('PI_WEB_DOCKER_RUNTIME: "1"');
     expect(runtimeCompose).toContain("PI_WEB_DOCKER_MODE: runtime");
     expect(runtimeCompose).toContain("PI_WEB_DOCKER_INSTALL_DIR: ${PI_WEB_DOCKER_INSTALL_DIR:?set by docker/install.sh}");
     expect(runtimeCompose).toContain("PI_WEB_DOCKER_HELPER_IMAGE: ${PI_WEB_IMAGE:-pi-web:local}");
@@ -141,23 +143,22 @@ describe("Docker command assets", () => {
     expect(runtimeCompose.match(/env_file: \*pi-web-env-file/g)).toHaveLength(2);
     expect(devCompose.match(/env_file: \*pi-web-dev-env-file/g)).toHaveLength(2);
     expect(installer).toContain("container_env_file=$data_dir/container.env");
-    expect(installer).toContain("pi_web_docker_write_container_env_template \"$container_env_file\"");
+    expect(installer).toContain('pi_web_docker_write_container_env_template "$container_env_file"');
     expect(devWrapper).toContain("container_env_file=$pi_web_data_dir/container.env");
-    expect(devWrapper).toContain("pi_web_docker_write_container_env_template \"$container_env_file\"");
+    expect(devWrapper).toContain('pi_web_docker_write_container_env_template "$container_env_file"');
     expect(hostProfile).toContain("pi_web_docker_write_container_env_template() {");
   });
 
   it("layers the dev-only container environment after shared defaults without including it in runtime", async () => {
-    const [devCompose, runtimeCompose] = await Promise.all([
-      readRepoFile("docker/compose.dev.yml"),
-      readRepoFile("docker/compose.yml"),
-    ]);
+    const [devCompose, runtimeCompose] = await Promise.all([readRepoFile("docker/compose.dev.yml"), readRepoFile("docker/compose.yml")]);
     const devEnvFiles = /^x-pi-web-dev-env-file: &pi-web-dev-env-file\n((?:[ \t]+[^\n]*\n)+)/m.exec(devCompose)?.[1];
 
-    expect(devEnvFiles?.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("- "))).toEqual([
-      "- ${PI_WEB_DOCKER_DATA_DIR:-${HOME}/.local/share/pi-web-docker/data}/container.env",
-      "- ../.pi-web/docker-compose-dev.container.env",
-    ]);
+    expect(
+      devEnvFiles
+        ?.split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("- ")),
+    ).toEqual(["- ${PI_WEB_DOCKER_DATA_DIR:-${HOME}/.local/share/pi-web-docker/data}/container.env", "- ../.pi-web/docker-compose-dev.container.env"]);
     expect(devCompose.match(/env_file: \*pi-web-dev-env-file/g)).toHaveLength(2);
     expect(runtimeCompose).not.toContain("docker-compose-dev.container.env");
   });
@@ -228,19 +229,26 @@ describe("Docker command assets", () => {
     const socketPath = join(home, ".docker", "run", "docker.sock");
 
     await withUnixSocket(socketPath, async () => {
-      await execUtf8("sh", [
-        join(repoRoot, "docker", "install.sh"),
-        "--install-dir", installDir,
-        "--data-dir", join(installDir, "data"),
-        "--asset-ref", "test-assets",
-        "--skip-compose",
-      ], {
-        ...cleanProcessEnv(),
-        PATH: `${fakeDocker.binDir}:${process.env["PATH"] ?? ""}`,
-        HOME: home,
-        FAKE_DOCKER_LOG: fakeDocker.logPath,
-        PI_WEB_DOCKER_ASSET_BASE: "https://assets.example.test/docker",
-      });
+      await execUtf8(
+        "sh",
+        [
+          join(repoRoot, "docker", "install.sh"),
+          "--install-dir",
+          installDir,
+          "--data-dir",
+          join(installDir, "data"),
+          "--asset-ref",
+          "test-assets",
+          "--skip-compose",
+        ],
+        {
+          ...cleanProcessEnv(),
+          PATH: `${fakeDocker.binDir}:${process.env["PATH"] ?? ""}`,
+          HOME: home,
+          FAKE_DOCKER_LOG: fakeDocker.logPath,
+          PI_WEB_DOCKER_ASSET_BASE: "https://assets.example.test/docker",
+        },
+      );
     });
 
     expect(await readFile(join(installDir, "Dockerfile"), "utf8")).toContain("COPY --chmod=0755 pi-web-docker /usr/local/bin/pi-web-docker");
@@ -266,9 +274,12 @@ describe("Docker command assets", () => {
     };
     const installArgs = [
       join(repoRoot, "docker", "install.sh"),
-      "--install-dir", installDir,
-      "--data-dir", dataDir,
-      "--asset-dir", join(repoRoot, "docker"),
+      "--install-dir",
+      installDir,
+      "--data-dir",
+      dataDir,
+      "--asset-dir",
+      join(repoRoot, "docker"),
       "--skip-compose",
     ];
 
@@ -367,60 +378,72 @@ describe("Docker command assets", () => {
     expect(log).not.toContain("--project-name ambient-project");
   });
 
-  dockerCommandIt("runs development commands through generated env while preserving host user ids", async () => {
-    const devRoot = await createDevRepoFixture();
-    const fakeDocker = await installFakeDocker();
-    await installFakeUname(fakeDocker.binDir, "Darwin");
-    await installFakeId(fakeDocker.binDir, 1234, 2345);
-    const home = join(tempDir, "home");
-    const runtimeDataDir = join(tempDir, "runtime-data");
-    const runtimeEnvFile = join(tempDir, "runtime.env");
-    const socketPath = join(home, ".docker", "run", "docker.sock");
-    await writeFile(runtimeEnvFile, [
-      "PI_WEB_UID=0",
-      "PI_WEB_GID=0",
-      `PI_WEB_DOCKER_DATA_DIR=${runtimeDataDir}`,
-      "PI_WEB_BIND_ADDR=0.0.0.0",
-      "COMPOSE_PROJECT_NAME=runtime-project",
-      "",
-    ].join("\n"));
+  dockerCommandIt(
+    "runs development commands through generated env while preserving host user ids",
+    async () => {
+      const devRoot = await createDevRepoFixture();
+      const fakeDocker = await installFakeDocker();
+      await installFakeUname(fakeDocker.binDir, "Darwin");
+      await installFakeId(fakeDocker.binDir, 1234, 2345);
+      const home = join(tempDir, "home");
+      const runtimeDataDir = join(tempDir, "runtime-data");
+      const runtimeEnvFile = join(tempDir, "runtime.env");
+      const socketPath = join(home, ".docker", "run", "docker.sock");
+      await writeFile(
+        runtimeEnvFile,
+        [
+          "PI_WEB_UID=0",
+          "PI_WEB_GID=0",
+          `PI_WEB_DOCKER_DATA_DIR=${runtimeDataDir}`,
+          "PI_WEB_BIND_ADDR=0.0.0.0",
+          "COMPOSE_PROJECT_NAME=runtime-project",
+          "",
+        ].join("\n"),
+      );
 
-    await withUnixSocket(socketPath, async () => {
-      await runDockerCommand(["--dev", "status"], devHostEnv(fakeDocker, devRoot, home, { PI_WEB_DOCKER_RUNTIME_ENV_FILE: runtimeEnvFile }));
-    });
+      await withUnixSocket(socketPath, async () => {
+        await runDockerCommand(["--dev", "status"], devHostEnv(fakeDocker, devRoot, home, { PI_WEB_DOCKER_RUNTIME_ENV_FILE: runtimeEnvFile }));
+      });
 
-    const generatedEnvPath = join(devRoot, ".pi-web", "docker-compose-dev.generated.env");
-    const generatedEnv = await readFile(generatedEnvPath, "utf8");
-    expect(generatedEnv).toContain("PI_WEB_UID=1234\n");
-    expect(generatedEnv).toContain("PI_WEB_GID=2345\n");
-    expect(generatedEnv).toContain("DOCKER_GID=0\n");
-    expect(generatedEnv).toContain(`PI_WEB_DOCKER_DATA_DIR=${runtimeDataDir}\n`);
-    expect(generatedEnv).toContain(`PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}\n`);
-    expect(generatedEnv).toContain("COMPOSE_PROJECT_NAME=pi-web-dev\n");
-    expect(generatedEnv).toContain("PI_WEB_DEV_API_BIND_ADDR=0.0.0.0\n");
-    expect(generatedEnv).not.toContain("COMPOSE_PROJECT_NAME=runtime-project");
+      const generatedEnvPath = join(devRoot, ".pi-web", "docker-compose-dev.generated.env");
+      const generatedEnv = await readFile(generatedEnvPath, "utf8");
+      expect(generatedEnv).toContain("PI_WEB_UID=1234\n");
+      expect(generatedEnv).toContain("PI_WEB_GID=2345\n");
+      expect(generatedEnv).toContain("DOCKER_GID=0\n");
+      expect(generatedEnv).toContain(`PI_WEB_DOCKER_DATA_DIR=${runtimeDataDir}\n`);
+      expect(generatedEnv).toContain(`PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}\n`);
+      expect(generatedEnv).toContain("COMPOSE_PROJECT_NAME=pi-web-dev\n");
+      expect(generatedEnv).toContain("PI_WEB_DEV_API_BIND_ADDR=0.0.0.0\n");
+      expect(generatedEnv).not.toContain("COMPOSE_PROJECT_NAME=runtime-project");
 
-    await withUnixSocket(socketPath, async () => {
-      await runDockerCommand(["--dev", "status"], devHostEnv(fakeDocker, devRoot, home, {
-        COMPOSE_PROJECT_NAME: "ambient-dev-project",
-        PI_WEB_DOCKER_RUNTIME_ENV_FILE: runtimeEnvFile,
-      }));
-    });
-    const regeneratedEnv = await readFile(generatedEnvPath, "utf8");
-    expect(regeneratedEnv).toContain("COMPOSE_PROJECT_NAME=pi-web-dev\n");
-    expect(regeneratedEnv).toContain(`PI_WEB_DOCKER_DATA_DIR=${runtimeDataDir}\n`);
-    expect(regeneratedEnv).not.toContain("COMPOSE_PROJECT_NAME=ambient-dev-project");
+      await withUnixSocket(socketPath, async () => {
+        await runDockerCommand(
+          ["--dev", "status"],
+          devHostEnv(fakeDocker, devRoot, home, {
+            COMPOSE_PROJECT_NAME: "ambient-dev-project",
+            PI_WEB_DOCKER_RUNTIME_ENV_FILE: runtimeEnvFile,
+          }),
+        );
+      });
+      const regeneratedEnv = await readFile(generatedEnvPath, "utf8");
+      expect(regeneratedEnv).toContain("COMPOSE_PROJECT_NAME=pi-web-dev\n");
+      expect(regeneratedEnv).toContain(`PI_WEB_DOCKER_DATA_DIR=${runtimeDataDir}\n`);
+      expect(regeneratedEnv).not.toContain("COMPOSE_PROJECT_NAME=ambient-dev-project");
 
-    const localConfig = await readFile(join(devRoot, ".pi-web", "docker-compose-dev.local.env"), "utf8");
-    expect(localConfig).toContain("docker/pi-web-docker --dev creates this file once");
-    expect(localConfig).toContain("PI_WEB_UID and PI_WEB_GID default to the current host user");
-    const override = await readFile(join(devRoot, ".pi-web", "docker-compose-dev.host.generated.yml"), "utf8");
-    expect(override).toContain(socketPath);
-    // Dev Compose owns both checkout aliases; the shared host profile owns no checkout mounts.
-    expect(override).not.toContain(`source: '${devRoot}'`);
-    const log = await readFile(fakeDocker.logPath, "utf8");
-    expect(log).toContain(`compose --project-name pi-web-dev --env-file ${generatedEnvPath} -f ${devRoot}/docker/compose.dev.yml -f ${devRoot}/.pi-web/docker-compose-dev.host.generated.yml ps`);
-  }, 15_000);
+      const localConfig = await readFile(join(devRoot, ".pi-web", "docker-compose-dev.local.env"), "utf8");
+      expect(localConfig).toContain("docker/pi-web-docker --dev creates this file once");
+      expect(localConfig).toContain("PI_WEB_UID and PI_WEB_GID default to the current host user");
+      const override = await readFile(join(devRoot, ".pi-web", "docker-compose-dev.host.generated.yml"), "utf8");
+      expect(override).toContain(socketPath);
+      // Dev Compose owns both checkout aliases; the shared host profile owns no checkout mounts.
+      expect(override).not.toContain(`source: '${devRoot}'`);
+      const log = await readFile(fakeDocker.logPath, "utf8");
+      expect(log).toContain(
+        `compose --project-name pi-web-dev --env-file ${generatedEnvPath} -f ${devRoot}/docker/compose.dev.yml -f ${devRoot}/.pi-web/docker-compose-dev.host.generated.yml ps`,
+      );
+    },
+    15_000,
+  );
 
   dockerCommandIt("rejects development commands as root unless explicitly allowed", async () => {
     const fakeDocker = await installFakeDocker();
@@ -473,10 +496,7 @@ describe("Docker command assets", () => {
     await writeFile(join(devRoot, "modified.txt"), "changed\n", "utf8");
     await writeFile(join(devRoot, "untracked.txt"), "untracked\n", "utf8");
 
-    const result = await runDockerCommandAllowFailure(
-      ["--dev", "update"],
-      devHostEnv(fakeDocker, devRoot, join(tempDir, "home")),
-    );
+    const result = await runDockerCommandAllowFailure(["--dev", "update"], devHostEnv(fakeDocker, devRoot, join(tempDir, "home")));
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("refusing to update the Docker development stack because the checkout has uncommitted changes");
@@ -511,10 +531,7 @@ describe("Docker command assets", () => {
     const head = (await execUtf8("git", ["-C", devRoot, "rev-parse", "HEAD"], cleanProcessEnv())).stdout.trim();
     await writeFile(join(devRoot, ".git", "MERGE_HEAD"), `${head}\n`, "utf8");
 
-    const result = await runDockerCommandAllowFailure(
-      ["--dev", "update"],
-      devHostEnv(fakeDocker, devRoot, join(tempDir, "home")),
-    );
+    const result = await runDockerCommandAllowFailure(["--dev", "update"], devHostEnv(fakeDocker, devRoot, join(tempDir, "home")));
 
     expect(result.exitCode).not.toBe(0);
     expect(result.stderr).toContain("while a Git merge is in progress");
@@ -594,13 +611,15 @@ describe("Docker command assets", () => {
     await writeFile(join(devRoot, "in-progress-work.txt"), "dirty by design\n", "utf8");
     await runDockerCommand(["--dev", "start"], env);
 
-    expect(await readFile(helperLog, "utf8")).toBe([
-      "allow=0 args=build --pull",
-      "allow=0 args=up -d --force-recreate --remove-orphans",
-      "allow=0 args=exec -T --workdir / web env PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/pi-web-reconcile-mise",
-      "allow=0 args=up -d --build",
-      "",
-    ].join("\n"));
+    expect(await readFile(helperLog, "utf8")).toBe(
+      [
+        "allow=0 args=build --pull",
+        "allow=0 args=up -d --force-recreate --remove-orphans",
+        "allow=0 args=exec -T --workdir / web env PATH=/usr/local/bin:/usr/bin:/bin /usr/local/bin/pi-web-reconcile-mise",
+        "allow=0 args=up -d --build",
+        "",
+      ].join("\n"),
+    );
   });
 
   dockerCommandIt.each([
@@ -612,9 +631,12 @@ describe("Docker command assets", () => {
     const devRoot = await createCleanDevGitRepoWithFakeHelper(helperLog);
     const fakeDocker = await installFakeDocker();
     await installFakeId(fakeDocker.binDir, 1234, 2345);
-    const result = await runDockerCommandAllowFailure(["--dev", "update"], devHostEnv(fakeDocker, devRoot, join(tempDir, "home"), {
-      FAKE_COMPOSE_FAIL: failedCommand,
-    }));
+    const result = await runDockerCommandAllowFailure(
+      ["--dev", "update"],
+      devHostEnv(fakeDocker, devRoot, join(tempDir, "home"), {
+        FAKE_COMPOSE_FAIL: failedCommand,
+      }),
+    );
     expect(result.exitCode).toBe(17);
     const calls = (await readFile(helperLog, "utf8")).trim().split("\n");
     expect(calls.at(-1)).toBe(`allow=0 args=${failedCommand}`);
@@ -633,20 +655,23 @@ describe("Docker command assets", () => {
     expect(await readFile(helperLog, "utf8")).toBe(plan.steps.map((step) => `allow=0 args=${step.args.join(" ")}\n`).join(""));
   });
 
-  dockerCommandIt.each(["restart web", "up -d --no-deps --no-recreate --wait --wait-timeout 120 web"])("does not restart sessiond when %s fails", async (failedCommand) => {
-    const helperLog = join(tempDir, "dev-helper.log");
-    const devRoot = await createDevRepoFixtureWithFakeHelper(helperLog);
-    const fakeDocker = await installFakeDocker();
-    await installFakeId(fakeDocker.binDir, 1234, 2345);
-    const result = await runDockerCommandAllowFailure(["--dev", "restart"], {
-      ...devHostEnv(fakeDocker, devRoot, join(tempDir, "home")),
-      FAKE_COMPOSE_FAIL: failedCommand,
-    });
-    expect(result.exitCode).toBe(17);
-    const log = await readFile(helperLog, "utf8");
-    expect(log).toContain(`args=${failedCommand}\n`);
-    expect(log).not.toContain("args=restart sessiond");
-  });
+  dockerCommandIt.each(["restart web", "up -d --no-deps --no-recreate --wait --wait-timeout 120 web"])(
+    "does not restart sessiond when %s fails",
+    async (failedCommand) => {
+      const helperLog = join(tempDir, "dev-helper.log");
+      const devRoot = await createDevRepoFixtureWithFakeHelper(helperLog);
+      const fakeDocker = await installFakeDocker();
+      await installFakeId(fakeDocker.binDir, 1234, 2345);
+      const result = await runDockerCommandAllowFailure(["--dev", "restart"], {
+        ...devHostEnv(fakeDocker, devRoot, join(tempDir, "home")),
+        FAKE_COMPOSE_FAIL: failedCommand,
+      });
+      expect(result.exitCode).toBe(17);
+      const log = await readFile(helperLog, "utf8");
+      expect(log).toContain(`args=${failedCommand}\n`);
+      expect(log).not.toContain("args=restart sessiond");
+    },
+  );
 
   dockerCommandIt("starts development detached helpers as the generated dev user", async () => {
     const devRoot = await createDevGeneratedEnv({ uid: 1234, gid: 2345, dockerGid: 3456 });
@@ -781,14 +806,18 @@ describe("Docker command assets", () => {
     expect(log.includes("/usr/local/bin/pi-web-reconcile-mise")).toBe(failure !== "installer");
   });
 
-  dockerCommandIt.each(["", "install", "upgrade", "reshim"])("runs global reconciliation with isolated discovery and fresh metadata (failure=%s)", async (failure) => {
-    const binDir = join(tempDir, "bin");
-    await mkdir(binDir);
-    await installFakeId(binDir, 1234, 2345);
-    const logPath = join(tempDir, "mise.log");
-    const mise = join(binDir, "mise");
-    // Fake only the mise boundary; requests must not be reparsed or bumped by our shell.
-    await writeFile(mise, `#!/bin/sh
+  dockerCommandIt.each(["", "install", "upgrade", "reshim"])(
+    "runs global reconciliation with isolated discovery and fresh metadata (failure=%s)",
+    async (failure) => {
+      const binDir = join(tempDir, "bin");
+      await mkdir(binDir);
+      await installFakeId(binDir, 1234, 2345);
+      const logPath = join(tempDir, "mise.log");
+      const mise = join(binDir, "mise");
+      // Fake only the mise boundary; requests must not be reparsed or bumped by our shell.
+      await writeFile(
+        mise,
+        `#!/bin/sh
 set -eu
 [ "$PWD" = / ]
 [ "$MISE_CEILING_PATHS" = / ]
@@ -800,21 +829,23 @@ if [ "$1" = "$MISE_TEST_FAILURE" ]; then
   echo "mise-$1-failed" >&2
   exit 9
 fi
-`);
-    await chmod(mise, 0o755);
-    const result = await execUtf8AllowFailure("sh", [join(repoRoot, "docker/internal/bin/pi-web-reconcile-mise")], {
-      ...cleanProcessEnv(),
-      PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
-      MISE_TEST_LOG: logPath,
-      MISE_TEST_FAILURE: failure,
-      MISE_CD: repoRoot,
-    });
-    const commands = ["install", "upgrade --global --no-prune", "reshim"];
-    const count = failure ? ["install", "upgrade", "reshim"].indexOf(failure) + 1 : 3;
-    expect((await readFile(logPath, "utf8")).trim().split("\n")).toEqual(commands.slice(0, count));
-    expect(result.exitCode).toBe(failure ? 9 : 0);
-    if (failure) expect(result.stderr).toContain(`mise-${failure}-failed`);
-  });
+`,
+      );
+      await chmod(mise, 0o755);
+      const result = await execUtf8AllowFailure("sh", [join(repoRoot, "docker/internal/bin/pi-web-reconcile-mise")], {
+        ...cleanProcessEnv(),
+        PATH: `${binDir}:${process.env["PATH"] ?? ""}`,
+        MISE_TEST_LOG: logPath,
+        MISE_TEST_FAILURE: failure,
+        MISE_CD: repoRoot,
+      });
+      const commands = ["install", "upgrade --global --no-prune", "reshim"];
+      const count = failure ? ["install", "upgrade", "reshim"].indexOf(failure) + 1 : 3;
+      expect((await readFile(logPath, "utf8")).trim().split("\n")).toEqual(commands.slice(0, count));
+      expect(result.exitCode).toBe(failure ? 9 : 0);
+      if (failure) expect(result.stderr).toContain(`mise-${failure}-failed`);
+    },
+  );
 
   dockerCommandIt("rejects root global reconciliation before running mise", async () => {
     const binDir = join(tempDir, "bin");
@@ -836,12 +867,11 @@ fi
     ]);
     const envFile = join(installDir, ".env");
 
-    const result = await execUtf8("sh", [
-      join(repoRoot, "docker", "install.sh"),
-      "--install-dir", installDir,
-      "--asset-dir", join(repoRoot, "docker"),
-      "--skip-compose",
-    ], { ...cleanProcessEnv(), PI_WEB_DOCKER_RUNTIME: "1" });
+    const result = await execUtf8(
+      "sh",
+      [join(repoRoot, "docker", "install.sh"), "--install-dir", installDir, "--asset-dir", join(repoRoot, "docker"), "--skip-compose"],
+      { ...cleanProcessEnv(), PI_WEB_DOCKER_RUNTIME: "1" },
+    );
 
     // Detection here would report this Linux test host. The recorded Mac setup
     // has to win, including the Docker Desktop socket path.
@@ -858,18 +888,22 @@ fi
     const devRoot = await createDevRepoFixture();
     const fakeDocker = await installFakeDocker();
     await mkdir(join(devRoot, ".pi-web"), { recursive: true });
-    await writeFile(join(devRoot, ".pi-web", "docker-compose-dev.generated.env"), [
-      "PI_WEB_UID=1234",
-      "PI_WEB_GID=2345",
-      "DOCKER_GID=3456",
-      `PI_WEB_DOCKER_DATA_DIR=${join(tempDir, "dev-reuse-data")}`,
-      `PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}`,
-      "PI_WEB_DOCKER_HOST_PROFILE=mac-docker-desktop",
-      "PI_WEB_DOCKER_SOCKET_SOURCE=/Users/dev/.docker/run/docker.sock",
-      "HOSTEXEC_MODE=disabled",
-      "COMPOSE_PROJECT_NAME=pi-web-dev-test",
-      "",
-    ].join("\n"), "utf8");
+    await writeFile(
+      join(devRoot, ".pi-web", "docker-compose-dev.generated.env"),
+      [
+        "PI_WEB_UID=1234",
+        "PI_WEB_GID=2345",
+        "DOCKER_GID=3456",
+        `PI_WEB_DOCKER_DATA_DIR=${join(tempDir, "dev-reuse-data")}`,
+        `PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}`,
+        "PI_WEB_DOCKER_HOST_PROFILE=mac-docker-desktop",
+        "PI_WEB_DOCKER_SOCKET_SOURCE=/Users/dev/.docker/run/docker.sock",
+        "HOSTEXEC_MODE=disabled",
+        "COMPOSE_PROJECT_NAME=pi-web-dev-test",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
 
     // Dev Compose also runs inside detached helper containers. Detecting there
     // would rewrite a Mac dev stack's mounts as if the host were native Linux.
@@ -891,12 +925,11 @@ fi
 
     // Intentional failure path: a container cannot detect the host, so there is
     // nothing to fall back to for a first install.
-    const result = await execUtf8AllowFailure("sh", [
-      join(repoRoot, "docker", "install.sh"),
-      "--install-dir", freshDir,
-      "--asset-dir", join(repoRoot, "docker"),
-      "--skip-compose",
-    ], { ...cleanProcessEnv(), PI_WEB_DOCKER_RUNTIME: "1" });
+    const result = await execUtf8AllowFailure(
+      "sh",
+      [join(repoRoot, "docker", "install.sh"), "--install-dir", freshDir, "--asset-dir", join(repoRoot, "docker"), "--skip-compose"],
+      { ...cleanProcessEnv(), PI_WEB_DOCKER_RUNTIME: "1" },
+    );
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("run the installer on the Docker host first");
@@ -939,20 +972,24 @@ function execUtf8AllowFailure(file: string, args: string[], env: NodeJS.ProcessE
 async function createRuntimeInstall(): Promise<string> {
   const installDir = join(tempDir, "runtime");
   await mkdir(installDir, { recursive: true });
-  await writeFile(join(installDir, ".env"), [
-    "PI_WEB_UID=1234",
-    "PI_WEB_GID=2345",
-    "DOCKER_GID=3456",
-    `PI_WEB_DOCKER_DATA_DIR=${join(installDir, "data")}`,
-    `PI_WEB_DOCKER_INSTALL_DIR=${installDir}`,
-    "PI_WEB_DOCKER_EXTRA_HOST_PATHS=\"/srv/pi-web-extra /opt/pi-web-extra\"",
-    "PI_WEB_BIND_ADDR=127.0.0.1",
-    "PI_WEB_PORT=12345",
-    "PI_WEB_EXTRA_APT_PACKAGES=\"git-lfs jq\"",
-    "PI_WEB_IMAGE=pi-web:test",
-    "COMPOSE_PROJECT_NAME=pi-web-test",
-    "",
-  ].join("\n"), "utf8");
+  await writeFile(
+    join(installDir, ".env"),
+    [
+      "PI_WEB_UID=1234",
+      "PI_WEB_GID=2345",
+      "DOCKER_GID=3456",
+      `PI_WEB_DOCKER_DATA_DIR=${join(installDir, "data")}`,
+      `PI_WEB_DOCKER_INSTALL_DIR=${installDir}`,
+      'PI_WEB_DOCKER_EXTRA_HOST_PATHS="/srv/pi-web-extra /opt/pi-web-extra"',
+      "PI_WEB_BIND_ADDR=127.0.0.1",
+      "PI_WEB_PORT=12345",
+      'PI_WEB_EXTRA_APT_PACKAGES="git-lfs jq"',
+      "PI_WEB_IMAGE=pi-web:test",
+      "COMPOSE_PROJECT_NAME=pi-web-test",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   await writeFile(join(installDir, "compose.yml"), "name: pi-web\nservices: {}\n", "utf8");
   await writeFile(join(installDir, "compose.override.yml"), "services: {}\n", "utf8");
   // Real installs always ship this helper, and runtime commands source it to
@@ -962,10 +999,14 @@ async function createRuntimeInstall(): Promise<string> {
   // Updates run the installed installer to refresh Docker assets. Record its
   // arguments instead of fetching real assets.
   const installerPath = join(installDir, "install.sh");
-  await writeFile(installerPath, `#!/usr/bin/env sh
+  await writeFile(
+    installerPath,
+    `#!/usr/bin/env sh
 set -eu
 printf 'install.sh %s\n' "$*" >>${shellSingleQuote(join(installDir, "installer-calls.log"))}
-`, "utf8");
+`,
+    "utf8",
+  );
   await chmod(installerPath, 0o755);
   return installDir;
 }
@@ -978,19 +1019,23 @@ printf 'install.sh %s\n' "$*" >>${shellSingleQuote(join(installDir, "installer-c
 async function createRecordedHostInstall(name: string, envLines: string[], overrideContents?: string): Promise<string> {
   const installDir = join(tempDir, name);
   await mkdir(installDir, { recursive: true });
-  await writeFile(join(installDir, ".env"), [
-    "PI_WEB_UID=1234",
-    "PI_WEB_GID=2345",
-    "DOCKER_GID=3456",
-    `PI_WEB_DOCKER_DATA_DIR=${join(installDir, "data")}`,
-    `PI_WEB_DOCKER_INSTALL_DIR=${installDir}`,
-    "PI_WEB_BIND_ADDR=127.0.0.1",
-    "PI_WEB_PORT=12345",
-    "PI_WEB_IMAGE=pi-web:test",
-    "COMPOSE_PROJECT_NAME=pi-web-test",
-    ...envLines,
-    "",
-  ].join("\n"), "utf8");
+  await writeFile(
+    join(installDir, ".env"),
+    [
+      "PI_WEB_UID=1234",
+      "PI_WEB_GID=2345",
+      "DOCKER_GID=3456",
+      `PI_WEB_DOCKER_DATA_DIR=${join(installDir, "data")}`,
+      `PI_WEB_DOCKER_INSTALL_DIR=${installDir}`,
+      "PI_WEB_BIND_ADDR=127.0.0.1",
+      "PI_WEB_PORT=12345",
+      "PI_WEB_IMAGE=pi-web:test",
+      "COMPOSE_PROJECT_NAME=pi-web-test",
+      ...envLines,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   await writeFile(join(installDir, "compose.override.yml"), overrideContents ?? "services: {}\n", "utf8");
   return installDir;
 }
@@ -1009,31 +1054,44 @@ async function createDevRepoFixtureWithFakeHelper(logPath: string): Promise<stri
   const devRoot = join(tempDir, "dev-repo-fake-helper");
   const helperPath = join(devRoot, "docker", "internal", "dev", "compose");
   await mkdir(dirname(helperPath), { recursive: true });
-  await writeFile(helperPath, `#!/usr/bin/env sh
+  await writeFile(
+    helperPath,
+    `#!/usr/bin/env sh
 set -eu
 printf 'allow=%s args=%s\n' "\${PI_WEB_DOCKER_ALLOW_ROOT:-}" "$*" >>${shellSingleQuote(logPath)}
 if [ "$*" = "\${FAKE_COMPOSE_FAIL:-}" ]; then exit 17; fi
-`, "utf8");
+`,
+    "utf8",
+  );
   await chmod(helperPath, 0o755);
   return devRoot;
 }
 
 async function createCleanDevGitRepoWithFakeHelper(logPath: string): Promise<string> {
   const devRoot = await createDevRepoFixtureWithFakeHelper(logPath);
-  await Promise.all([
-    writeFile(join(devRoot, "staged.txt"), "clean\n", "utf8"),
-    writeFile(join(devRoot, "modified.txt"), "clean\n", "utf8"),
-  ]);
+  await Promise.all([writeFile(join(devRoot, "staged.txt"), "clean\n", "utf8"), writeFile(join(devRoot, "modified.txt"), "clean\n", "utf8")]);
   const env = cleanProcessEnv();
   await execUtf8("git", ["init", "--quiet", devRoot], env);
   await execUtf8("git", ["-C", devRoot, "add", "."], env);
-  await execUtf8("git", [
-    "-C", devRoot,
-    "-c", "user.name=PI WEB Test",
-    "-c", "user.email=pi-web-test@example.invalid",
-    "-c", "core.hooksPath=/dev/null",
-    "commit", "--quiet", "--no-gpg-sign", "-m", "test fixture",
-  ], env);
+  await execUtf8(
+    "git",
+    [
+      "-C",
+      devRoot,
+      "-c",
+      "user.name=PI WEB Test",
+      "-c",
+      "user.email=pi-web-test@example.invalid",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "commit",
+      "--quiet",
+      "--no-gpg-sign",
+      "-m",
+      "test fixture",
+    ],
+    env,
+  );
   return devRoot;
 }
 
@@ -1041,13 +1099,25 @@ async function commitFixtureFile(repoRootPath: string, relativePath: string, con
   const env = cleanProcessEnv();
   await writeFile(join(repoRootPath, relativePath), contents, "utf8");
   await execUtf8("git", ["-C", repoRootPath, "add", relativePath], env);
-  await execUtf8("git", [
-    "-C", repoRootPath,
-    "-c", "user.name=PI WEB Test",
-    "-c", "user.email=pi-web-test@example.invalid",
-    "-c", "core.hooksPath=/dev/null",
-    "commit", "--quiet", "--no-gpg-sign", "-m", `test fixture ${relativePath}`,
-  ], env);
+  await execUtf8(
+    "git",
+    [
+      "-C",
+      repoRootPath,
+      "-c",
+      "user.name=PI WEB Test",
+      "-c",
+      "user.email=pi-web-test@example.invalid",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "commit",
+      "--quiet",
+      "--no-gpg-sign",
+      "-m",
+      `test fixture ${relativePath}`,
+    ],
+    env,
+  );
   return await gitHead(repoRootPath);
 }
 
@@ -1076,20 +1146,24 @@ async function addTrackedUpstreamCommit(devRoot: string, relativePath: string): 
 async function createDevGeneratedEnv(ids: { uid: number; gid: number; dockerGid: number }): Promise<string> {
   const devRoot = join(tempDir, "dev-runtime");
   await mkdir(join(devRoot, ".pi-web"), { recursive: true });
-  await writeFile(join(devRoot, ".pi-web", "docker-compose-dev.generated.env"), [
-    `PI_WEB_UID=${String(ids.uid)}`,
-    `PI_WEB_GID=${String(ids.gid)}`,
-    `DOCKER_GID=${String(ids.dockerGid)}`,
-    `PI_WEB_DOCKER_DATA_DIR=${join(tempDir, "dev-data")}`,
-    `PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}`,
-    "PI_WEB_DEV_API_BIND_ADDR=127.0.0.1",
-    "PI_WEB_DEV_BIND_ADDR=127.0.0.1",
-    "PI_WEB_DEV_API_PORT=8504",
-    "PI_WEB_DEV_PORT=8505",
-    "PI_WEB_DEV_IMAGE=pi-web:test",
-    "COMPOSE_PROJECT_NAME=pi-web-dev-test",
-    "",
-  ].join("\n"), "utf8");
+  await writeFile(
+    join(devRoot, ".pi-web", "docker-compose-dev.generated.env"),
+    [
+      `PI_WEB_UID=${String(ids.uid)}`,
+      `PI_WEB_GID=${String(ids.gid)}`,
+      `DOCKER_GID=${String(ids.dockerGid)}`,
+      `PI_WEB_DOCKER_DATA_DIR=${join(tempDir, "dev-data")}`,
+      `PI_WEB_DOCKER_DEV_REPO_ROOT=${devRoot}`,
+      "PI_WEB_DEV_API_BIND_ADDR=127.0.0.1",
+      "PI_WEB_DEV_BIND_ADDR=127.0.0.1",
+      "PI_WEB_DEV_API_PORT=8504",
+      "PI_WEB_DEV_PORT=8505",
+      "PI_WEB_DEV_IMAGE=pi-web:test",
+      "COMPOSE_PROJECT_NAME=pi-web-dev-test",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
   return devRoot;
 }
 
@@ -1098,7 +1172,9 @@ async function installFakeDocker(): Promise<FakeDocker> {
   const logPath = join(tempDir, "docker.log");
   const dockerPath = join(binDir, "docker");
   await mkdir(binDir, { recursive: true });
-  await writeFile(dockerPath, `#!/usr/bin/env sh
+  await writeFile(
+    dockerPath,
+    `#!/usr/bin/env sh
 set -eu
 : "\${FAKE_DOCKER_LOG:?}"
 printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
@@ -1183,14 +1259,18 @@ case "\${1:-}" in
 esac
 printf 'unexpected fake docker args: %s\n' "$*" >&2
 exit 9
-`, "utf8");
+`,
+    "utf8",
+  );
   await chmod(dockerPath, 0o755);
   return { binDir, logPath };
 }
 
 async function installFakeCurl(binDir: string): Promise<void> {
   const curlPath = join(binDir, "curl");
-  await writeFile(curlPath, `#!/usr/bin/env sh
+  await writeFile(
+    curlPath,
+    `#!/usr/bin/env sh
 set -eu
 asset_root=${shellSingleQuote(join(repoRoot, "docker"))}
 output=
@@ -1221,29 +1301,39 @@ src=$asset_root/$rel
 [ -f "$src" ] || { printf 'missing fake curl asset: %s\n' "$src" >&2; exit 2; }
 mkdir -p "$(dirname "$output")"
 cp "$src" "$output"
-`, "utf8");
+`,
+    "utf8",
+  );
   await chmod(curlPath, 0o755);
 }
 
 async function installFakeUname(binDir: string, osName: string): Promise<void> {
   const unamePath = join(binDir, "uname");
-  await writeFile(unamePath, `#!/usr/bin/env sh
+  await writeFile(
+    unamePath,
+    `#!/usr/bin/env sh
 set -eu
 printf '%s\n' ${shellSingleQuote(osName)}
-`, "utf8");
+`,
+    "utf8",
+  );
   await chmod(unamePath, 0o755);
 }
 
 async function installFakeId(binDir: string, uid: number, gid: number): Promise<void> {
   const idPath = join(binDir, "id");
-  await writeFile(idPath, `#!/usr/bin/env sh
+  await writeFile(
+    idPath,
+    `#!/usr/bin/env sh
 set -eu
 case "\${1:-}" in
   -u) printf '%s\n' ${String(uid)} ;;
   -g) printf '%s\n' ${String(gid)} ;;
   *) printf '%s\n' ${String(uid)} ;;
 esac
-`, "utf8");
+`,
+    "utf8",
+  );
   await chmod(idPath, 0o755);
 }
 

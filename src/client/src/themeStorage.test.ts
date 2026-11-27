@@ -3,7 +3,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { clearStoredThemePreference, readStoredThemePreference, THEME_STORAGE_KEY, writeStoredThemePreference } from "./theme";
 
-afterEach(() => { localStorage.clear(); });
+afterEach(() => {
+  localStorage.clear();
+});
 
 describe("device theme storage", () => {
   it("preserves existing theme/Auto preferences and removes them when following the default", () => {

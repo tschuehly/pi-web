@@ -33,7 +33,7 @@ describe("buildDirectory", () => {
     await writeFile(join(packageDir, "src/index.ts"), 'import { name } from "./name.js"; export default function register(): string { return name; }');
     await writeFile(join(packageDir, "src/name.ts"), 'export const name: string = "Captain’s Log";');
     await writeFile(join(packageDir, "src/index.test.ts"), 'throw new Error("tests must not ship");');
-    await writeFile(join(packageDir, "src/types.d.ts"), 'export type Name = string;');
+    await writeFile(join(packageDir, "src/types.d.ts"), "export type Name = string;");
 
     const target = join(tempDir, "dist/pi-packages");
     await buildPiPackages(source, target);
@@ -167,7 +167,7 @@ async function recursiveFiles(root, base = root) {
   const files = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await recursiveFiles(path, base));
+    if (entry.isDirectory()) files.push(...(await recursiveFiles(path, base)));
     else if (entry.isFile()) files.push(relative(base, path).split(sep).join("/"));
   }
   return files.sort((left, right) => left.localeCompare(right));

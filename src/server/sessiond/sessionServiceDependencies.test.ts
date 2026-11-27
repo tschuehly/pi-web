@@ -25,10 +25,16 @@ function daemonCollaborators(patch: Partial<SessionServiceDependencyInput> = {})
     modelRuntime: testModelRuntime,
     sessionManager: sessionGateway([]),
     workspaceActivity: new WorkspaceActivityService(),
-    logger: { info() { /* no-op */ } },
+    logger: {
+      info() {
+        /* no-op */
+      },
+    },
     notificationStore: new SessionNotificationStore(),
     unreadStore: new SessionUnreadStore(),
-    onUnreadChanged: () => { /* no-op */ },
+    onUnreadChanged: () => {
+      /* no-op */
+    },
     externalSessionIds: () => [],
     catalogRefreshStatus: { isRefreshInFlight: () => false },
     config: { read: () => Promise.reject(new Error("config read not expected in this test")) },
@@ -59,9 +65,7 @@ async function startupDetails(deps: PiSessionServiceDependencies): Promise<strin
   } finally {
     await service.dispose();
   }
-  return hub.globalEvents.flatMap((event) =>
-    event.type === "session.startup" && event.activity.detail !== undefined ? [event.activity.detail] : [],
-  );
+  return hub.globalEvents.flatMap((event) => (event.type === "session.startup" && event.activity.detail !== undefined ? [event.activity.detail] : []));
 }
 
 describe("sessiond session service dependency assembly", () => {
@@ -69,9 +73,13 @@ describe("sessiond session service dependency assembly", () => {
     // The note is only reachable in the product because the assembly hands the
     // refresher to the session service. Asserting the note rather than the
     // property means dropping that line fails here instead of passing silently.
-    const details = await startupDetails(sessionServiceDependencies(daemonCollaborators({
-      catalogRefreshStatus: { isRefreshInFlight: () => true },
-    })));
+    const details = await startupDetails(
+      sessionServiceDependencies(
+        daemonCollaborators({
+          catalogRefreshStatus: { isRefreshInFlight: () => true },
+        }),
+      ),
+    );
 
     expect(details).toEqual([
       "Starting the Pi session · provider model lists are refreshing",

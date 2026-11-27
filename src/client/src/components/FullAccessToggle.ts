@@ -31,13 +31,18 @@ export class FullAccessToggle extends LitElement {
     if (state !== "on" && state !== "off") return null;
     const on = state === "on";
     const label = this.waiting ? WAITING_LABEL : on ? FULL_LABEL : FENCED_LABEL;
-    return html`<button type="button" class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"} aria-label=${`Full access — ${label}`} title=${label} ?disabled=${this.waiting} @click=${() => { void this.toggle(on); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${on ? SHIELD_OFF : SHIELD}</svg>${on ? html`<span class="value">Full access</span>` : null}</button>`;
+    return html`<button type="button" class=${on ? "on" : ""} aria-pressed=${on ? "true" : "false"} aria-label=${`Full access — ${label}`} title=${label} ?disabled=${this.waiting} @click=${() => {
+      void this.toggle(on);
+    }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${on ? SHIELD_OFF : SHIELD}</svg>${on ? html`<span class="value">Full access</span>` : null}</button>`;
   }
 
   private async toggle(on: boolean): Promise<void> {
     this.waiting = true;
-    try { await this.onRunCommand?.(on ? "/full-access off" : "/full-access on"); }
-    finally { this.waiting = false; }
+    try {
+      await this.onRunCommand?.(on ? "/full-access off" : "/full-access on");
+    } finally {
+      this.waiting = false;
+    }
   }
 
   static override styles = css`

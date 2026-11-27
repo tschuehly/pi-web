@@ -44,30 +44,56 @@ export class InstallLatestDialog extends LitElement {
   override render(): TemplateResult {
     const { preview, phase } = this;
     return html`
-      <modal-surface .onClose=${() => { this.remove(); }} .busy=${phase === "sending"} .initialFocus=${".cancel"} .label=${"Install latest"}>
+      <modal-surface .onClose=${() => {
+        this.remove();
+      }} .busy=${phase === "sending"} .initialFocus=${".cancel"} .label=${"Install latest"}>
         <header><h1>Install latest</h1></header>
         <div class="body">
           ${phase === "loading" ? html`<p role="status">Checking for new merges…</p>` : null}
-          ${preview === undefined ? null : html`
+          ${
+            preview === undefined
+              ? null
+              : html`
             <dl>
               <dt>Pi Workbench</dt><dd><code>${short(preview.installed.workbench)} → ${short(preview.latest.workbench)}</code></dd>
               <dt>PI WEB</dt><dd><code>${short(preview.installed.piWeb)} → ${short(preview.latest.piWeb)}</code></dd>
             </dl>
             ${preview.blocked === undefined ? null : html`<p class="dialog-error" role="alert">${preview.blocked}</p>`}
-            ${preview.upToDate ? html`<p class="result">Up to date: ${pair(preview.installed)} is the latest.</p>` : html`
-              ${nothingInstalled(preview.installed)
-                ? html`<p class="result">Nothing installed yet: Install sets up the latest pair ${pair(preview.latest)}.</p>`
-                : html`<ul class="merges" aria-label="New merges">
+            ${
+              preview.upToDate
+                ? html`<p class="result">Up to date: ${pair(preview.installed)} is the latest.</p>`
+                : html`
+              ${
+                nothingInstalled(preview.installed)
+                  ? html`<p class="result">Nothing installed yet: Install sets up the latest pair ${pair(preview.latest)}.</p>`
+                  : html`<ul class="merges" aria-label="New merges">
                 ${preview.merges.map((merge) => html`<li><span class="repo">${merge.repo}</span> <code>${short(merge.sha)}</code> ${merge.subject}</li>`)}
-              </ul>`}
-              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. A macOS confirmation appears on this Mac first; Install runs only after you click Allow there. It refuses if another install happened or a newer merge landed since this check, or while subagents or workers run.</p>`}`}
+              </ul>`
+              }
+              <p class="warning">Install switches Pi Workbench and PI WEB to the latest pair at once. PI WEB restarts about 3 seconds later, which interrupts every open session except Durable Chats. A macOS confirmation appears on this Mac first; Install runs only after you click Allow there. It refuses if another install happened or a newer merge landed since this check, or while subagents or workers run.</p>`
+            }`
+          }
           ${phase === "sending" ? html`<p role="status">Answer the macOS confirmation on this Mac…</p>` : null}
           ${this.message === "" ? null : html`<p class=${phase === "done" ? "result" : "dialog-error"} role=${phase === "done" ? "status" : "alert"}>${this.message}</p>`}
         </div>
         <footer>
-          <button class="cancel" @click=${() => { this.remove(); }}>${phase === "done" ? "Close" : "Cancel"}</button>
-          ${phase === "review" && (this.message !== "" || preview?.blocked !== undefined) ? html`<button class="recheck" @click=${() => { void this.load(); }}>Check again</button>` : null}
-          ${phase === "done" ? null : html`<button class="install" ?disabled=${phase !== "review" || preview === undefined || preview.upToDate || preview.blocked !== undefined} @click=${() => { void this.install(); }}>${preview?.upToDate === true ? "Up to date" : "Install"}</button>`}
+          <button class="cancel" @click=${() => {
+            this.remove();
+          }}>${phase === "done" ? "Close" : "Cancel"}</button>
+          ${
+            phase === "review" && (this.message !== "" || preview?.blocked !== undefined)
+              ? html`<button class="recheck" @click=${() => {
+                  void this.load();
+                }}>Check again</button>`
+              : null
+          }
+          ${
+            phase === "done"
+              ? null
+              : html`<button class="install" ?disabled=${phase !== "review" || preview === undefined || preview.upToDate || preview.blocked !== undefined} @click=${() => {
+                  void this.install();
+                }}>${preview?.upToDate === true ? "Up to date" : "Install"}</button>`
+          }
         </footer>
       </modal-surface>
     `;
@@ -116,5 +142,7 @@ export function openInstallLatestDialog(): void {
 }
 
 declare global {
-  interface HTMLElementTagNameMap { "install-latest-dialog": InstallLatestDialog }
+  interface HTMLElementTagNameMap {
+    "install-latest-dialog": InstallLatestDialog;
+  }
 }

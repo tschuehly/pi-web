@@ -15,9 +15,15 @@ afterEach(() => {
 
 function session(id: string, overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
-    id, path: `/sessions/${id}.jsonl`, cwd: "/workspace",
-    created: "2026-06-09T00:00:00.000Z", modified: "2026-06-09T00:00:00.000Z",
-    messageCount: 1, firstMessage: id, persisted: true, ...overrides,
+    id,
+    path: `/sessions/${id}.jsonl`,
+    cwd: "/workspace",
+    created: "2026-06-09T00:00:00.000Z",
+    modified: "2026-06-09T00:00:00.000Z",
+    messageCount: 1,
+    firstMessage: id,
+    persisted: true,
+    ...overrides,
   };
 }
 
@@ -116,7 +122,11 @@ describe("SessionList row identity and derived data", () => {
     const agent = session("agent", { parentSessionPath: parent.path, agentSubsession: true });
     const list = await mount([parent, agent]);
     const readAgentActivity = vi.fn(() => ({ sessionId: agent.id, phase: "active" as const, label: "Working", at: "now" }));
-    list.activities = { get agent() { return readAgentActivity(); } };
+    list.activities = {
+      get agent() {
+        return readAgentActivity();
+      },
+    };
     await list.updateComplete;
     const toggle = () => button(list.shadowRoot, ".agent-subsession-toggle");
     expect(toggle().querySelector(".activity-indicator.session")).not.toBeNull();

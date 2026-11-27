@@ -32,7 +32,16 @@
           "question": "3) Why?",
           "detail": "Free text only."
         },
-        { "id": "backup", "question": "Enable backup?", "detail": "A switch.", "kind": "boolean", "default": true, "labels": ["Back up", "Skip"], "options": [], "minimum": 1 },
+        {
+          "id": "backup",
+          "question": "Enable backup?",
+          "detail": "A switch.",
+          "kind": "boolean",
+          "default": true,
+          "labels": ["Back up", "Skip"],
+          "options": [],
+          "minimum": 1
+        },
         {
           "id": "folder",
           "question": "Backup folder?",
@@ -45,9 +54,27 @@
           "integer": true,
           "showIf": { "question": "backup", "values": ["true", "true"] }
         },
-        { "id": "count", "question": "How many copies?", "detail": "A number.", "kind": "number", "default": 7, "minimum": 1, "maximum": 10, "integer": true, "multiple": false, "maxLength": 3 },
+        {
+          "id": "count",
+          "question": "How many copies?",
+          "detail": "A number.",
+          "kind": "number",
+          "default": 7,
+          "minimum": 1,
+          "maximum": 10,
+          "integer": true,
+          "multiple": false,
+          "maxLength": 3
+        },
         { "id": "due", "question": "Due when?", "detail": "A date.", "kind": "date", "default": "2026-12-01", "multiline": true },
-        { "id": "plain", "question": "Note?", "detail": "One line.", "kind": "text", "multiline": false, "showIf": { "question": "backup", "values": ["false"] } }
+        {
+          "id": "plain",
+          "question": "Note?",
+          "detail": "One line.",
+          "kind": "text",
+          "multiline": false,
+          "showIf": { "question": "backup", "values": ["false"] }
+        }
       ]
     },
     "expected": {
@@ -79,7 +106,15 @@
           "detail": "Free text only.",
           "options": []
         },
-        { "id": "backup", "question": "Enable backup?", "detail": "A switch.", "kind": "boolean", "default": true, "labels": ["Back up", "Skip"], "options": [] },
+        {
+          "id": "backup",
+          "question": "Enable backup?",
+          "detail": "A switch.",
+          "kind": "boolean",
+          "default": true,
+          "labels": ["Back up", "Skip"],
+          "options": []
+        },
         {
           "id": "folder",
           "question": "Backup folder?",
@@ -92,14 +127,28 @@
           "options": [],
           "showIf": { "question": "backup", "values": ["true"] }
         },
-        { "id": "count", "question": "How many copies?", "detail": "A number.", "kind": "number", "default": 7, "minimum": 1, "maximum": 10, "integer": true, "options": [] },
+        {
+          "id": "count",
+          "question": "How many copies?",
+          "detail": "A number.",
+          "kind": "number",
+          "default": 7,
+          "minimum": 1,
+          "maximum": 10,
+          "integer": true,
+          "options": []
+        },
         { "id": "due", "question": "Due when?", "detail": "A date.", "kind": "date", "default": "2026-12-01", "options": [] },
         { "id": "plain", "question": "Note?", "detail": "One line.", "kind": "text", "options": [], "showIf": { "question": "backup", "values": ["false"] } }
       ]
     }
   },
   "approval": {
-    "accepted": [[true, true], [false, null], [null, null]],
+    "accepted": [
+      [true, true],
+      [false, null],
+      [null, null]
+    ],
     "invalid": { "value": "yes", "error": "approval must be true or false" },
     "withoutQuestions": { "name": "approval-only set without questions", "questions": [], "expected": [], "error": "An ask must contain at least one question" }
   },
@@ -123,7 +172,15 @@
     {
       "name": "duplicate option value",
       "questions": [
-        { "id": "q", "question": "Pick?", "detail": "d", "options": [{ "value": "a", "label": "A" }, { "value": "a", "label": "Again" }] }
+        {
+          "id": "q",
+          "question": "Pick?",
+          "detail": "d",
+          "options": [
+            { "value": "a", "label": "A" },
+            { "value": "a", "label": "Again" }
+          ]
+        }
       ],
       "error": "Duplicate option value a in question q"
     },
@@ -137,44 +194,32 @@
     },
     {
       "name": "blank question text",
-      "questions": [
-        { "id": "q", "question": "  ", "detail": "d" }
-      ],
+      "questions": [{ "id": "q", "question": "  ", "detail": "d" }],
       "error": "text of question q must not be empty"
     },
     {
       "name": "options on a boolean question",
-      "questions": [
-        { "id": "flag", "question": "On?", "detail": "d", "kind": "boolean", "options": [{ "value": "y", "label": "Yes" }] }
-      ],
+      "questions": [{ "id": "flag", "question": "On?", "detail": "d", "kind": "boolean", "options": [{ "value": "y", "label": "Yes" }] }],
       "error": "Question flag of kind boolean takes no options or multiple"
     },
     {
       "name": "a default out of range",
-      "questions": [
-        { "id": "n", "question": "How many?", "detail": "d", "kind": "number", "maximum": 10, "default": 11 }
-      ],
+      "questions": [{ "id": "n", "question": "How many?", "detail": "d", "kind": "number", "maximum": 10, "default": 11 }],
       "error": "default of question n must be at most 10"
     },
     {
       "name": "a bad date default",
-      "questions": [
-        { "id": "d", "question": "When?", "detail": "d", "kind": "date", "default": "2026-13-01" }
-      ],
+      "questions": [{ "id": "d", "question": "When?", "detail": "d", "kind": "date", "default": "2026-13-01" }],
       "error": "default of question d must be a date as YYYY-MM-DD"
     },
     {
       "name": "a blank text default",
-      "questions": [
-        { "id": "t", "question": "Note?", "detail": "t", "kind": "text", "default": "   " }
-      ],
+      "questions": [{ "id": "t", "question": "Note?", "detail": "t", "kind": "text", "default": "   " }],
       "error": "default of question t must not be blank"
     },
     {
       "name": "a multiline default on a one-line text question",
-      "questions": [
-        { "id": "t", "question": "Note?", "detail": "t", "kind": "text", "default": "first\nsecond" }
-      ],
+      "questions": [{ "id": "t", "question": "Note?", "detail": "t", "kind": "text", "default": "first\nsecond" }],
       "error": "default of question t must be one line"
     },
     {
@@ -195,50 +240,46 @@
     },
     {
       "name": "labels on a choice question",
-      "questions": [
-        { "id": "pick", "question": "Pick?", "detail": "d", "options": [{ "value": "y", "label": "Yes" }], "labels": ["Ship it", "Hold"] }
-      ],
+      "questions": [{ "id": "pick", "question": "Pick?", "detail": "d", "options": [{ "value": "y", "label": "Yes" }], "labels": ["Ship it", "Hold"] }],
       "error": "labels of question pick need kind boolean, not choice"
     },
     {
       "name": "labels on a text question",
-      "questions": [
-        { "id": "t", "question": "Name?", "detail": "d", "kind": "text", "labels": ["Ship it", "Hold"] }
-      ],
+      "questions": [{ "id": "t", "question": "Name?", "detail": "d", "kind": "text", "labels": ["Ship it", "Hold"] }],
       "error": "labels of question t need kind boolean, not text"
     },
     {
       "name": "three labels on a boolean question",
-      "questions": [
-        { "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship it", "Hold", "Maybe"] }
-      ],
+      "questions": [{ "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship it", "Hold", "Maybe"] }],
       "error": "labels of question flag must be two one-line texts of at most 40 characters, [true, false]"
     },
     {
       "name": "a blank label",
-      "questions": [
-        { "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship it", " "] }
-      ],
+      "questions": [{ "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship it", " "] }],
       "error": "labels of question flag must be two one-line texts of at most 40 characters, [true, false]"
     },
     {
       "name": "a label over 40 characters",
-      "questions": [
-        { "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship it now, all of it, to every customer", "Hold"] }
-      ],
+      "questions": [{ "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship it now, all of it, to every customer", "Hold"] }],
       "error": "labels of question flag must be two one-line texts of at most 40 characters, [true, false]"
     },
     {
       "name": "a two-line label",
-      "questions": [
-        { "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship\nit", "Hold"] }
-      ],
+      "questions": [{ "id": "flag", "question": "Ship?", "detail": "d", "kind": "boolean", "labels": ["Ship\nit", "Hold"] }],
       "error": "labels of question flag must be two one-line texts of at most 40 characters, [true, false]"
     },
     {
       "name": "option labelled Custom",
       "questions": [
-        { "id": "q", "question": "Pick?", "detail": "d", "options": [{ "value": "keep", "label": "Keep it" }, { "value": "fix", "label": " Correct it (custom) " }] }
+        {
+          "id": "q",
+          "question": "Pick?",
+          "detail": "d",
+          "options": [
+            { "value": "keep", "label": "Keep it" },
+            { "value": "fix", "label": " Correct it (custom) " }
+          ]
+        }
       ],
       "error": "Option fix is labelled Custom; a Custom choice is always added, so drop this option"
     }

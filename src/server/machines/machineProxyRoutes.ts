@@ -1,6 +1,11 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { WebSocket } from "ws";
-import { FEDERATED_HTTP_ROUTES, FEDERATED_WEBSOCKET_ROUTES, WORKSPACE_FILE_PREVIEW_ROUTE_PATH, type FederatedHttpRouteSpec } from "../../shared/federatedRoutes.js";
+import {
+  FEDERATED_HTTP_ROUTES,
+  FEDERATED_WEBSOCKET_ROUTES,
+  WORKSPACE_FILE_PREVIEW_ROUTE_PATH,
+  type FederatedHttpRouteSpec,
+} from "../../shared/federatedRoutes.js";
 import {
   PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS,
   pluginBackendScopeFromRoute,
@@ -12,16 +17,24 @@ import {
   type PluginBackendChannelProxyScope,
   pluginBackendChannelProxyAdmissionPool,
 } from "../plugins/pluginBackendChannelProxyAdmission.js";
-import {
-  coordinatePluginBackendChannelProxy,
-  PluginBackendChannelProxyConnectionError,
-} from "../plugins/pluginBackendChannelProxyCoordinator.js";
+import { coordinatePluginBackendChannelProxy, PluginBackendChannelProxyConnectionError } from "../plugins/pluginBackendChannelProxyCoordinator.js";
 import { requestCancellation } from "../requestCancellation.js";
 import { isSessionImageMimeType } from "../sessions/sessionMediaIndex.js";
 import { bridgeSockets, markPluginBackendChannelUpgradeRequest } from "../webSocketBridge.js";
 import { applyWorkspaceFilePreviewErrorResponsePolicy, applyWorkspaceFilePreviewResponsePolicy } from "../workspaces/filePreviewResponseHeaders.js";
-import { workspaceFilePreviewErrorResponsePolicy, workspaceFilePreviewResponsePolicy, type WorkspaceFilePreviewResponsePolicy } from "../workspaces/filePreviewResponsePolicy.js";
-import { DEFAULT_REMOTE_REQUEST_TIMEOUT_MS, RemoteMachineRequestError, type MachineClient, type MachineHttpResponse, type MachineJsonResponse, type MachineRequestOptions } from "./machineClient.js";
+import {
+  workspaceFilePreviewErrorResponsePolicy,
+  workspaceFilePreviewResponsePolicy,
+  type WorkspaceFilePreviewResponsePolicy,
+} from "../workspaces/filePreviewResponsePolicy.js";
+import {
+  DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
+  RemoteMachineRequestError,
+  type MachineClient,
+  type MachineHttpResponse,
+  type MachineJsonResponse,
+  type MachineRequestOptions,
+} from "./machineClient.js";
 import { MachineService } from "./machineService.js";
 
 export const REMOTE_HTTP_ROUTES = FEDERATED_HTTP_ROUTES;
@@ -58,9 +71,7 @@ export function registerMachineProxyRoutes(
       url: `/api/machines/:machineId${spec.path}`,
       ...("bodyLimit" in spec ? { bodyLimit: spec.bodyLimit } : {}),
       handler: async (request, reply) => {
-        const cancellation = "propagateCancellation" in spec
-          ? requestCancellation(request, reply)
-          : undefined;
+        const cancellation = "propagateCancellation" in spec ? requestCancellation(request, reply) : undefined;
         try {
           return await proxyHttpRequest(
             machines,
@@ -158,19 +169,14 @@ async function proxyHttpRequest(
 
     const startedAt = Date.now();
     const requestOptions = proxyRequestOptions(spec, body, contentType, signal);
-    const upstream = requestOptions === undefined
-      ? await client.request(method, remotePath, body)
-      : await client.request(method, remotePath, body, requestOptions);
+    const upstream =
+      requestOptions === undefined ? await client.request(method, remotePath, body) : await client.request(method, remotePath, body, requestOptions);
     if (sessionMedia) return await proxySessionMediaResponse(reply, upstream);
 
-    const responseBody = upstream.body === undefined || responseBodyLimit === undefined
-      ? upstream.body
-      : await readBoundedRemoteBody(
-          upstream.body,
-          responseBodyLimit,
-          remainingResponseTimeout(startedAt, spec.timeoutMs),
-          signal,
-        );
+    const responseBody =
+      upstream.body === undefined || responseBodyLimit === undefined
+        ? upstream.body
+        : await readBoundedRemoteBody(upstream.body, responseBodyLimit, remainingResponseTimeout(startedAt, spec.timeoutMs), signal);
     if (isUnknownRemotePluginBackendRoute(spec, method, remotePath, upstream.statusCode, responseBody)) {
       return await reply.code(409).send({
         error: "Remote machine plugin lifecycle is incompatible",
@@ -205,8 +211,7 @@ function applySessionMediaResponsePolicy(reply: FastifyReply): void {
 function proxySessionMediaResponse(reply: FastifyReply, upstream: MachineHttpResponse): FastifyReply {
   const successful = isSuccessfulStatus(upstream.statusCode);
   const contentType = firstHeaderValue(upstream.headers["content-type"])?.split(";", 1)[0]?.trim().toLowerCase();
-  if ((successful && isSessionImageMimeType(contentType))
-    || (!successful && contentType === "application/json" && upstream.body !== undefined)) {
+  if ((successful && isSessionImageMimeType(contentType)) || (!successful && contentType === "application/json" && upstream.body !== undefined)) {
     applySafeHeaders(reply, upstream.headers);
     // Remote security headers are never authoritative. Canonical JSON plus this
     // policy also makes a mislabeled error page inert, without buffering errors
@@ -221,7 +226,14 @@ function proxySessionMediaResponse(reply: FastifyReply, upstream: MachineHttpRes
   return reply.code(upstream.statusCode).send({ error: "Remote session media request failed", statusCode: upstream.statusCode });
 }
 
-async function proxySelectedMachineConfigRequest(client: MachineClient, machineId: string, method: string, remotePath: string, body: unknown, reply: FastifyReply): Promise<FastifyReply> {
+async function proxySelectedMachineConfigRequest(
+  client: MachineClient,
+  machineId: string,
+  method: string,
+  remotePath: string,
+  body: unknown,
+  reply: FastifyReply,
+): Promise<FastifyReply> {
   if (method === "GET") {
     return sendSelectedMachineConfigResponse(reply, await client.requestJson("GET", remotePath), machineId);
   }
@@ -309,10 +321,7 @@ function proxyBoundedPluginChannel(
     scope: context.scope,
     async connectUpstream(signal) {
       if (machineId === "local") {
-        throw new PluginBackendChannelProxyConnectionError(
-          1011,
-          "Local machine route is not registered for this endpoint",
-        );
+        throw new PluginBackendChannelProxyConnectionError(1011, "Local machine route is not registered for this endpoint");
       }
 
       let client: MachineClient | undefined;
@@ -387,9 +396,7 @@ function isUnknownRemotePluginBackendRoute(
   statusCode: number,
   body: NodeJS.ReadableStream | Buffer | undefined,
 ): boolean {
-  if (!spec.path.startsWith("/paired-plugin-backends/")
-    || statusCode !== 404
-    || !(body instanceof Buffer)) return false;
+  if (!spec.path.startsWith("/paired-plugin-backends/") || statusCode !== 404 || !(body instanceof Buffer)) return false;
   try {
     const value: unknown = JSON.parse(body.toString("utf8"));
     if (!isRecord(value) || value["statusCode"] !== 404 || value["error"] !== "Not Found") return false;
@@ -458,9 +465,7 @@ function readBoundedRemoteBody(body: NodeJS.ReadableStream, maxBytes: number, ti
       rejectPromise(error);
     };
     const onData = (chunk: unknown): void => {
-      const buffer = typeof chunk === "string"
-        ? Buffer.from(chunk)
-        : chunk instanceof Uint8Array ? Buffer.from(chunk) : undefined;
+      const buffer = typeof chunk === "string" ? Buffer.from(chunk) : chunk instanceof Uint8Array ? Buffer.from(chunk) : undefined;
       if (buffer === undefined) {
         fail(new RemoteMachineRequestError("Remote machine returned an invalid response body", 502));
         return;

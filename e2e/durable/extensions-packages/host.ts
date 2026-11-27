@@ -14,7 +14,7 @@ for (const key of Object.keys(process.env)) if (/(?:API_KEY|TOKEN|PROXY)$/.test(
 const original = net.Socket.prototype.connect;
 net.Socket.prototype.connect = function (this: net.Socket, ...args: Parameters<typeof original>) {
   const arg = args[0] as unknown;
-  const address = typeof arg === "object" && arg !== null ? arg as { host?: string; path?: string } : undefined;
+  const address = typeof arg === "object" && arg !== null ? (arg as { host?: string; path?: string }) : undefined;
   const host = address?.host ?? (typeof args[1] === "string" ? args[1] : undefined);
   if (host && !["127.0.0.1", "localhost", "::1"].includes(host)) {
     appendFileSync(join(root, "network.jsonl"), `${JSON.stringify({ blocked: host })}\n`);

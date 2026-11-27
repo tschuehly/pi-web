@@ -4,7 +4,11 @@ import { resolveAppUrl } from "../appUrl";
 export class HttpRequestError extends Error {
   override name = "HttpRequestError";
 
-  constructor(message: string, readonly status: number, options: ErrorOptions = {}) {
+  constructor(
+    message: string,
+    readonly status: number,
+    options: ErrorOptions = {},
+  ) {
     super(message, options);
   }
 }

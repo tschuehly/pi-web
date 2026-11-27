@@ -3,7 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService, type PiSessionRuntime } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 import { isSessionActive } from "../../shared/activity.js";
 import type { SessionActivity, SessionStartupProgressEvent } from "../../shared/apiTypes.js";
 import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
@@ -25,11 +33,11 @@ function startupEvents(hub: CapturingSessionEventHub): SessionStartupProgressEve
 }
 
 function startupText(hub: CapturingSessionEventHub): string[] {
-  return startupEvents(hub).map(({ activity }) => activity.detail === undefined ? activity.label : `${activity.label}: ${activity.detail}`);
+  return startupEvents(hub).map(({ activity }) => (activity.detail === undefined ? activity.label : `${activity.label}: ${activity.detail}`));
 }
 
 function activityUpdates(hub: CapturingSessionEventHub): SessionActivity[] {
-  return hub.globalEvents.flatMap((event) => event.type === "activity.update" ? [event.activity] : []);
+  return hub.globalEvents.flatMap((event) => (event.type === "activity.update" ? [event.activity] : []));
 }
 
 /** Records whether the startup channel wrote any per-workspace activity state. */
@@ -38,10 +46,18 @@ function recordingWorkspaceActivity() {
   return {
     calls,
     workspaceActivity: {
-      applySessionStatus: () => { calls.push("applySessionStatus"); },
-      applySessionActivity: () => { calls.push("applySessionActivity"); },
-      removeSession: () => { calls.push("removeSession"); },
-      reconcileSessionActivity: () => { calls.push("reconcileSessionActivity"); },
+      applySessionStatus: () => {
+        calls.push("applySessionStatus");
+      },
+      applySessionActivity: () => {
+        calls.push("applySessionActivity");
+      },
+      removeSession: () => {
+        calls.push("removeSession");
+      },
+      reconcileSessionActivity: () => {
+        calls.push("reconcileSessionActivity");
+      },
     },
   };
 }
@@ -66,9 +82,11 @@ function startupService(options: StartupServiceOptions = {}) {
     heartbeatIntervalMs: 60_000,
     ...(options.workstreamLaunchStore === undefined ? {} : { workstreamLaunchStore: options.workstreamLaunchStore }),
     ...(options.workspaceActivity === undefined ? {} : { workspaceActivity: options.workspaceActivity }),
-    ...(options.catalogRefreshInFlight === undefined ? {} : {
-      catalogRefreshStatus: { isRefreshInFlight: () => options.catalogRefreshInFlight === true },
-    }),
+    ...(options.catalogRefreshInFlight === undefined
+      ? {}
+      : {
+          catalogRefreshStatus: { isRefreshInFlight: () => options.catalogRefreshInFlight === true },
+        }),
   });
   return { hub, fake, service };
 }
@@ -99,10 +117,7 @@ describe("PiSessionService session startup progress", () => {
     const started = service.start("/workspace");
     await new Promise<void>((resolve) => setImmediate(resolve));
 
-    expect(startupText(hub)).toEqual([
-      "Creating session: Starting the Pi session",
-      "Creating session: Loading session extensions",
-    ]);
+    expect(startupText(hub)).toEqual(["Creating session: Starting the Pi session", "Creating session: Loading session extensions"]);
 
     bindResult.resolve(undefined);
     await started;
@@ -136,11 +151,7 @@ describe("PiSessionService session startup progress", () => {
     await withoutStatus.service.start("/workspace");
 
     for (const hub of [withStatus.hub, withoutStatus.hub]) {
-      expect(startupText(hub)).toEqual([
-        "Creating session: Starting the Pi session",
-        "Creating session: Loading session extensions",
-        "idle",
-      ]);
+      expect(startupText(hub)).toEqual(["Creating session: Starting the Pi session", "Creating session: Loading session extensions", "idle"]);
     }
     await withStatus.service.dispose();
     await withoutStatus.service.dispose();
@@ -151,11 +162,7 @@ describe("PiSessionService session startup progress", () => {
 
     await service.status(sessionRef("session-1"));
 
-    expect(startupText(hub)).toEqual([
-      "Opening session: Starting the Pi session",
-      "Opening session: Loading session extensions",
-      "idle",
-    ]);
+    expect(startupText(hub)).toEqual(["Opening session: Starting the Pi session", "Opening session: Loading session extensions", "idle"]);
     await service.dispose();
   });
 
@@ -176,11 +183,7 @@ describe("PiSessionService session startup progress", () => {
 
     // The token labels the browser row that is waiting, so it must ride every
     // report of this construction, the closing idle one included.
-    expect(startupEvents(hub).map((event) => event.startupToken)).toEqual([
-      "pending-session-3-k2x9",
-      "pending-session-3-k2x9",
-      "pending-session-3-k2x9",
-    ]);
+    expect(startupEvents(hub).map((event) => event.startupToken)).toEqual(["pending-session-3-k2x9", "pending-session-3-k2x9", "pending-session-3-k2x9"]);
     // The token is an opaque throwaway label, never the session's identity.
     expect(startupEvents(hub).map((event) => event.activity.sessionId)).toEqual(["session-1", "session-1", "session-1"]);
     await service.dispose();
@@ -194,14 +197,16 @@ describe("PiSessionService session startup progress", () => {
       expect(await service.list("/workspace")).toEqual([expect.objectContaining({ id: row.id, startupToken: "creating:reserved" })]);
       expect(await service.list("/workspace", { sessionId: row.id })).toEqual([expect.objectContaining({ id: row.id, startupToken: "creating:reserved" })]);
       expect(hub.globalEvents.find((event) => event.type === "session.created")).toMatchObject({ session: { startupToken: "creating:reserved" } });
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("forgets a creation token once its session closes or fails to start", async () => {
     const failure = new Error("runtime unavailable");
     let fail = false;
     const fake = fakeRuntime();
-    const { service } = startupService({ createAgentRuntime: () => fail ? Promise.reject(failure) : Promise.resolve(fake.runtime) });
+    const { service } = startupService({ createAgentRuntime: () => (fail ? Promise.reject(failure) : Promise.resolve(fake.runtime)) });
     // The token map is daemon-lifetime state; it must not grow with every Chat ever created.
     const tokens = (): Map<unknown, unknown> => {
       const map: unknown = Reflect.get(service, "startupTokens");
@@ -216,7 +221,9 @@ describe("PiSessionService session startup progress", () => {
       fail = true;
       await expect(service.start("/workspace", { startupToken: "creating:failed" })).rejects.toBe(failure);
       expect(tokens().size).toBe(0);
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("reserves Workstream launches before startup and reconciles exact persisted evidence without relaunch", async () => {
@@ -228,22 +235,37 @@ describe("PiSessionService session startup progress", () => {
     const created = first.service.start("/workspace", { startupToken: "pi-web:launch-one" });
     try {
       await vi.waitFor(async () => {
-        expect(await new WorkstreamLaunchStore(storePath).lookup("pi-web:launch-one")).toEqual({ token: "pi-web:launch-one", cwd: "/workspace", status: "pending" });
+        expect(await new WorkstreamLaunchStore(storePath).lookup("pi-web:launch-one")).toEqual({
+          token: "pi-web:launch-one",
+          cwd: "/workspace",
+          status: "pending",
+        });
       });
       expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "unknown" });
       await expect(first.service.start("/workspace", { startupToken: "pi-web:launch-one" })).rejects.toThrow(/already reserved/);
       runtimeResult.resolve(first.fake.runtime);
       expect((await created).id).toBe("session-1");
-      expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "found", sessionId: "session-1", cwd: "/workspace" });
+      expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({
+        status: "found",
+        sessionId: "session-1",
+        cwd: "/workspace",
+      });
       expect(await first.service.lookupWorkstreamLaunch("pi-web:launch-one", "/other")).toEqual({ status: "unknown" });
       await first.service.dispose();
       const restored = startupService({ workstreamLaunchStore: new WorkstreamLaunchStore(storePath), sessionRecords: [sessionRecord("session-1")] });
       const lost = startupService({ workstreamLaunchStore: new WorkstreamLaunchStore(storePath) });
       try {
-        expect(await restored.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "found", sessionId: "session-1", cwd: "/workspace" });
+        expect(await restored.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({
+          status: "found",
+          sessionId: "session-1",
+          cwd: "/workspace",
+        });
         expect(await lost.service.lookupWorkstreamLaunch("pi-web:launch-one", "/workspace")).toEqual({ status: "unknown" });
         expect(await restored.service.lookupWorkstreamLaunch("pi-web:absent", "/workspace")).toEqual({ status: "unknown" });
-      } finally { await restored.service.dispose(); await lost.service.dispose(); }
+      } finally {
+        await restored.service.dispose();
+        await lost.service.dispose();
+      }
     } finally {
       runtimeResult.resolve(first.fake.runtime);
       await created.catch(() => undefined);
@@ -300,11 +322,7 @@ describe("PiSessionService session startup progress", () => {
 
     // The last word on this startup must not be an "active" phase the service is
     // no longer inside; otherwise a waiting row keeps a label that is now false.
-    expect(startupText(hub)).toEqual([
-      "Creating session: Starting the Pi session",
-      "Creating session: Loading session extensions",
-      "idle",
-    ]);
+    expect(startupText(hub)).toEqual(["Creating session: Starting the Pi session", "Creating session: Loading session extensions", "idle"]);
     await service.dispose();
   });
 

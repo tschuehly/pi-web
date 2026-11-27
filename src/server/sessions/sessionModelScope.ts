@@ -31,9 +31,10 @@ export interface ResolvedSessionModelOptions {
 /** Resolve pi's cwd-bound cycling scope without overriding explicit or restored session state. */
 export async function resolveSessionModelOptions(input: ResolveSessionModelOptionsInput): Promise<ResolvedSessionModelOptions> {
   const patterns = input.services.settingsManager.getEnabledModels();
-  const resolved = patterns !== undefined && patterns.length > 0
-    ? await resolveModelScopeWithDiagnostics(patterns, input.services.modelRuntime)
-    : { scopedModels: [], diagnostics: [] };
+  const resolved =
+    patterns !== undefined && patterns.length > 0
+      ? await resolveModelScopeWithDiagnostics(patterns, input.services.modelRuntime)
+      : { scopedModels: [], diagnostics: [] };
   const diagnostics: AgentSessionRuntimeDiagnostic[] = resolved.diagnostics.map((diagnostic) => ({
     type: diagnostic.type,
     message: diagnostic.message,
@@ -57,12 +58,12 @@ export async function resolveSessionModelOptions(input: ResolveSessionModelOptio
 
   const defaultProvider = input.services.settingsManager.getDefaultProvider();
   const defaultModelId = input.services.settingsManager.getDefaultModel();
-  const defaultModel = defaultProvider !== undefined && defaultModelId !== undefined
-    ? input.services.modelRuntime.getModel(defaultProvider, defaultModelId)
-    : undefined;
-  const selected = defaultModel === undefined
-    ? resolved.scopedModels[0]
-    : resolved.scopedModels.find((candidate) => modelsAreEqual(candidate.model, defaultModel)) ?? resolved.scopedModels[0];
+  const defaultModel =
+    defaultProvider !== undefined && defaultModelId !== undefined ? input.services.modelRuntime.getModel(defaultProvider, defaultModelId) : undefined;
+  const selected =
+    defaultModel === undefined
+      ? resolved.scopedModels[0]
+      : (resolved.scopedModels.find((candidate) => modelsAreEqual(candidate.model, defaultModel)) ?? resolved.scopedModels[0]);
   if (selected === undefined) throw new Error("Scoped model resolution returned an empty selection");
 
   return {
@@ -71,7 +72,9 @@ export async function resolveSessionModelOptions(input: ResolveSessionModelOptio
     model: selected.model,
     ...(input.initialThinkingLevel !== undefined
       ? { thinkingLevel: input.initialThinkingLevel }
-      : selected.thinkingLevel === undefined ? {} : { thinkingLevel: selected.thinkingLevel }),
+      : selected.thinkingLevel === undefined
+        ? {}
+        : { thinkingLevel: selected.thinkingLevel }),
   };
 }
 

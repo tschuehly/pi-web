@@ -14,10 +14,22 @@ afterEach(() => {
 
 function status(): SessionStatus {
   return {
-    sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false,
-    pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
-    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" }, applied: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" } }) },
+    sessionId: "session-1",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+    extensionStatuses: {
+      [WORKING_MODE_STATUS_KEY]: JSON.stringify({
+        schemaVersion: 2,
+        phase: "selected",
+        selected: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" },
+        applied: { alignment: "Align", attention: "Default", checking: "Test", orchestration: "Main" },
+      }),
+    },
   };
 }
 
@@ -35,7 +47,9 @@ describe("PromptEditor Working Mode controls", () => {
     await editor.updateComplete;
 
     const actions = required(editor.shadowRoot?.querySelector(".actions"));
-    const order = [...actions.children].map((child) => child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName);
+    const order = [...actions.children].map((child) =>
+      child.classList.contains("usage") ? "usage" : child.classList.contains("composer-actions") ? "composer-actions" : child.localName,
+    );
     expect(order).toEqual(["model-effort-picker", "usage", "working-mode-controls", "full-access-toggle", "composer-actions"]);
     const composerActions = required(actions.querySelector<HTMLElement>(".composer-actions"));
     expect([...composerActions.children].map((child) => child.getAttribute("aria-label"))).toEqual(["Attach files", "Send message", "Stop current work"]);
@@ -48,7 +62,9 @@ describe("PromptEditor Working Mode controls", () => {
     expect(axisIcon(controls, "attention").className).toBe("axis attention");
     expect(axisIcon(controls, "attention").textContent).toBe("");
     expect(trigger(controls).title).toBe("Alignment: Align, Attention: Default, Checking: Test, Orchestration: Main");
-    expect(WorkingModeControls.styles.cssText).toMatch(/@container composer \(max-width: 560px\)\s*\{\s*\.axis > \.value, \.aligned-chip > \.value\s*\{\s*display:\s*none/);
+    expect(WorkingModeControls.styles.cssText).toMatch(
+      /@container composer \(max-width: 560px\)\s*\{\s*\.axis > \.value, \.aligned-chip > \.value\s*\{\s*display:\s*none/,
+    );
   });
 
   it("opens one Working Mode pane that applies several changes and stays open", async () => {
@@ -64,7 +80,12 @@ describe("PromptEditor Working Mode controls", () => {
     await controls.updateComplete;
     expect(trigger(controls).getAttribute("aria-expanded")).toBe("true");
     const groups = [...required(pane(controls)).querySelectorAll('[role="radiogroup"]')];
-    expect(groups.map((group) => controls.shadowRoot?.getElementById(group.getAttribute("aria-labelledby") ?? "")?.textContent)).toEqual(["Alignment", "Attention", "Checking", "Orchestration"]);
+    expect(groups.map((group) => controls.shadowRoot?.getElementById(group.getAttribute("aria-labelledby") ?? "")?.textContent)).toEqual([
+      "Alignment",
+      "Attention",
+      "Checking",
+      "Orchestration",
+    ]);
     expect(radio(controls, "attention", "Phone").textContent.trim()).toBe("Phone");
     expect(radio(controls, "attention", "Phone").querySelector("svg")).not.toBeNull();
     expect(radio(controls, "alignment", "Align").getAttribute("aria-checked")).toBe("true");
@@ -191,7 +212,13 @@ describe("PromptEditor Working Mode controls", () => {
     expect(editor.shadowRoot?.querySelector(".usage")?.localName).toBe("ul");
     expectHiddenMetric(editor, "input", "Input tokens: 434000");
     expectHiddenMetric(editor, "output", "Output tokens: 34000");
-    expectMetric(editor, "context", "213k / 272k", "Context: 212704 of 272000 tokens used (78.234567%)", "Context: 212704 of 272000 tokens used (78.234567%)\nInput tokens: 434000\nOutput tokens: 34000");
+    expectMetric(
+      editor,
+      "context",
+      "213k / 272k",
+      "Context: 212704 of 272000 tokens used (78.234567%)",
+      "Context: 212704 of 272000 tokens used (78.234567%)\nInput tokens: 434000\nOutput tokens: 34000",
+    );
     expect(metric(editor, "context").querySelector(".context-meter")?.classList.contains("context-warning")).toBe(true);
     expect(metric(editor, "context").querySelector(".context-ring")).toBeNull();
     expectMetric(editor, "cost", "$12.42", "Session cost: $12.42");
@@ -240,11 +267,17 @@ describe("PromptEditor Working Mode controls", () => {
     expect(button.textContent.replace(/\s+/g, "")).toBe("claude-opus-5-5·high");
     expect(button.getAttribute("aria-label")).toBe("Model: anthropic/claude-opus-5-5, thinking high. Change model or thinking");
     button.click();
-    await vi.waitFor(() => { expect(picker.shadowRoot?.querySelectorAll('[role="option"]').length).toBe(4); });
+    await vi.waitFor(() => {
+      expect(picker.shadowRoot?.querySelectorAll('[role="option"]').length).toBe(4);
+    });
 
     const popover = required(picker.shadowRoot?.querySelector('[role="dialog"]'));
     expect([...popover.children].map((child) => child.getAttribute("role") ?? child.localName)).toEqual(["radiogroup", "combobox", "listbox"]);
-    expect([...popover.querySelectorAll('[role="radio"]')].map((radio) => `${radio.textContent}:${radio.getAttribute("aria-checked") ?? ""}`)).toEqual(["off:false", "low:false", "high:true"]);
+    expect([...popover.querySelectorAll('[role="radio"]')].map((radio) => `${radio.textContent}:${radio.getAttribute("aria-checked") ?? ""}`)).toEqual([
+      "off:false",
+      "low:false",
+      "high:true",
+    ]);
     expect([...popover.querySelectorAll(".provider")].map((provider) => provider.textContent)).toEqual(["anthropic", "openai"]);
     expect(popover.querySelector('[aria-selected="true"]')?.textContent.trim()).toBe("claude-opus-5-5");
     expect(picker.shadowRoot?.activeElement).toBe(search(picker));
@@ -254,7 +287,9 @@ describe("PromptEditor Working Mode controls", () => {
     await picker.updateComplete;
     expect(picker.shadowRoot?.querySelector('[role="dialog"]')).not.toBeNull();
 
-    required(popover.querySelector<HTMLButtonElement>('[data-level="high"]')).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, composed: true }));
+    required(popover.querySelector<HTMLButtonElement>('[data-level="high"]')).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, composed: true }),
+    );
     expect(onSetThinkingLevel).toHaveBeenLastCalledWith("low");
 
     required(popover.querySelector<HTMLElement>('[role="option"]:not([aria-selected="true"])')).click();
@@ -271,7 +306,9 @@ describe("PromptEditor Working Mode controls", () => {
     const picker = await modelPicker(editor);
 
     modelTrigger(picker).click();
-    await vi.waitFor(() => { expect(picker.shadowRoot?.querySelectorAll('[role="option"]').length).toBe(4); });
+    await vi.waitFor(() => {
+      expect(picker.shadowRoot?.querySelectorAll('[role="option"]').length).toBe(4);
+    });
     const input = search(picker);
     expect(input.getAttribute("aria-activedescendant")).toBe(required(picker.shadowRoot?.querySelector('[aria-selected="true"]')).id);
     input.value = "gpt";
@@ -304,7 +341,10 @@ describe("PromptEditor Working Mode controls", () => {
 
   it("groups models by provider and matches the search against id, provider, and name", () => {
     const groups = modelPickerGroups([...MODELS, { provider: "", id: "anonymous" }], "");
-    expect(groups.map((group) => [group.provider, group.models.map((model) => model.id)])).toEqual([["anthropic", ["claude-opus-5-5", "claude-sonnet-5"]], ["openai", ["gpt-6", "gpt-6-mini"]]]);
+    expect(groups.map((group) => [group.provider, group.models.map((model) => model.id)])).toEqual([
+      ["anthropic", ["claude-opus-5-5", "claude-sonnet-5"]],
+      ["openai", ["gpt-6", "gpt-6-mini"]],
+    ]);
     expect(modelPickerGroups(MODELS, "OPENAI/").flatMap((group) => group.models.map((model) => model.id))).toEqual(["gpt-6", "gpt-6-mini"]);
     expect(modelPickerGroups(MODELS, "sonnet").flatMap((group) => group.models.map((model) => model.id))).toEqual(["claude-sonnet-5"]);
   });
@@ -352,7 +392,10 @@ function search(picker: ModelEffortPicker): HTMLInputElement {
 }
 
 function withModes(selected: Record<WorkingModeAxis, string>, aligned = false): SessionStatus {
-  return { ...status(), extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected, applied: null, aligned }) } };
+  return {
+    ...status(),
+    extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "selected", selected, applied: null, aligned }) },
+  };
 }
 
 async function workingMode(editor: PromptEditor): Promise<WorkingModeControls> {

@@ -4,7 +4,8 @@ import { detectPromptCompletionTrigger } from "./promptCompletions";
 describe("detectPromptCompletionTrigger", () => {
   it("detects leading slash command queries and leaves @ and # as plain text", () => {
     expect(detectPromptCompletionTrigger("/model")).toEqual({ kind: "command", query: "model", from: 0, to: 6 });
-    for (const draft of ["open @src/main", "open @ A FILE", "open !@A", "open @\"src", "#", "use #claude", "# Title"]) expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
+    for (const draft of ["open @src/main", "open @ A FILE", "open !@A", 'open @"src', "#", "use #claude", "# Title"])
+      expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
   });
 
   it("completes skill directives at whitespace boundaries throughout a prompt", () => {
@@ -33,8 +34,13 @@ describe("detectPromptCompletionTrigger", () => {
 
   it("leaves literal examples alone across lines but accepts later real directives", () => {
     for (const example of [
-      'say "/skill:rev"', "say '/skill:rev'", "say `/skill:rev`",
-      "> /skill:rev", "```ts\n/skill:rev\n```", "~~~\n/skill:rev\n~~~", "x\n\n    /skill:rev",
+      'say "/skill:rev"',
+      "say '/skill:rev'",
+      "say `/skill:rev`",
+      "> /skill:rev",
+      "```ts\n/skill:rev\n```",
+      "~~~\n/skill:rev\n~~~",
+      "x\n\n    /skill:rev",
     ]) {
       const inside = example.indexOf("/skill:rev");
       expect(detectPromptCompletionTrigger(example, inside + 10)).toBeUndefined();
@@ -72,12 +78,33 @@ describe("detectPromptCompletionTrigger", () => {
   });
 
   it("does not suggest malformed, ambiguous, URL or code-like tokens", () => {
-    for (const draft of ["/skill:rev!!", "/skill:rev,more", "/skill:rev/path", "/skill:rev.ts", "/skill:rev=foo", "/skill:rev()",  "read https://host/skill:rev", "read src/skill:rev", "run `/skill:rev` now", "foo/skill:rev"]) {
+    for (const draft of [
+      "/skill:rev!!",
+      "/skill:rev,more",
+      "/skill:rev/path",
+      "/skill:rev.ts",
+      "/skill:rev=foo",
+      "/skill:rev()",
+      "read https://host/skill:rev",
+      "read src/skill:rev",
+      "run `/skill:rev` now",
+      "foo/skill:rev",
+    ]) {
       expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
     }
     expect(detectPromptCompletionTrigger("/skill:rev!!", 10)).toBeUndefined();
-    expect(detectPromptCompletionTrigger("/skill:Rev_Name", 15, new Set(["skill:Rev_Name"]))).toEqual({ kind: "command", query: "skill:Rev_Name", from: 0, to: 15 });
-    expect(detectPromptCompletionTrigger("/skill:legacy.name", 18, new Set(["skill:legacy.name"]))).toEqual({ kind: "command", query: "skill:legacy.name", from: 0, to: 18 });
+    expect(detectPromptCompletionTrigger("/skill:Rev_Name", 15, new Set(["skill:Rev_Name"]))).toEqual({
+      kind: "command",
+      query: "skill:Rev_Name",
+      from: 0,
+      to: 15,
+    });
+    expect(detectPromptCompletionTrigger("/skill:legacy.name", 18, new Set(["skill:legacy.name"]))).toEqual({
+      kind: "command",
+      query: "skill:legacy.name",
+      from: 0,
+      to: 18,
+    });
   });
 
   it("opens the skill picker for a bare slash after whitespace or at a later line start", () => {
@@ -85,7 +112,7 @@ describe("detectPromptCompletionTrigger", () => {
     expect(detectPromptCompletionTrigger("please /rev")).toEqual({ kind: "command", query: "rev", from: 7, to: 11 });
     expect(detectPromptCompletionTrigger("first\n/re")).toEqual({ kind: "command", query: "re", from: 6, to: 9 });
     expect(detectPromptCompletionTrigger("ask /rev, later", 8)).toEqual({ kind: "command", query: "rev", from: 4, to: 8 });
-    for (const draft of ["and/or", "see https://host/rev", "open /usr/bin", "run `/rev", "```\n/rev", "say \"/rev\" ok"]) {
+    for (const draft of ["and/or", "see https://host/rev", "open /usr/bin", "run `/rev", "```\n/rev", 'say "/rev" ok']) {
       expect(detectPromptCompletionTrigger(draft)).toBeUndefined();
     }
   });

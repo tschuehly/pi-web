@@ -19,7 +19,14 @@ import type { DisplayedMessageActionAvailabilityContext, MessageActionAvailabili
 import type { RegisteredMessageAction } from "../plugins/messageActions";
 import { machineSessionKey } from "../machineKeys";
 import { parseWorkingModeSnapshot, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
-import { canonicalEntryActionHeaders, currentExchangeGroups, groupChatMessages, groupConsecutiveImageOutputs, type ChatDisplayGroup, type ChatGroup } from "../chatGroups";
+import {
+  canonicalEntryActionHeaders,
+  currentExchangeGroups,
+  groupChatMessages,
+  groupConsecutiveImageOutputs,
+  type ChatDisplayGroup,
+  type ChatGroup,
+} from "../chatGroups";
 import type { ReplyQuote } from "../replyQuotes";
 import { ChatScrollFlows } from "../ChatScrollFlows";
 import type { ConversationMeter } from "./ConversationMeter";
@@ -56,13 +63,13 @@ export function filterChatGroups(groups: ChatGroup[], filter: TranscriptFilter):
   const project = (message: ChatLine, index: number): ChatGroup[] => {
     const role = message.role;
     if (role !== "user" && role !== "assistant") return [];
-    if (filter === "human" && role !== "user" || filter === "assistant" && role !== "assistant") return [];
+    if ((filter === "human" && role !== "user") || (filter === "assistant" && role !== "assistant")) return [];
     const parts = message.parts.filter((part) => part.type === "text" || part.type === "image");
     return parts.length === 0 ? [] : [{ kind: "message", message: parts.length === message.parts.length ? message : { ...message, parts }, index }];
   };
-  return groups.flatMap((group) => group.kind === "group"
-    ? group.messages.flatMap(({ message, index }) => project(message, index))
-    : project(group.message, group.index));
+  return groups.flatMap((group) =>
+    group.kind === "group" ? group.messages.flatMap(({ message, index }) => project(message, index)) : project(group.message, group.index),
+  );
 }
 
 /** `entry:<entryId>`, `ask:<askId>`, or `dialog:<dialogId>` in one Chat. */
@@ -160,10 +167,17 @@ function chatMessageModelLabel(message: ChatLine): string | undefined {
 }
 
 /** Where the reader is in the whole conversation (0–100), and how much of it is loaded, for the conversation meter. */
-export function conversationMeterPosition(input: { messageStart: number; loaded: number; total: number; hasMore: boolean; following: boolean; firstVisibleIndex: () => number | undefined }): { positionPercent: number; loadedPercent: number } {
+export function conversationMeterPosition(input: {
+  messageStart: number;
+  loaded: number;
+  total: number;
+  hasMore: boolean;
+  following: boolean;
+  firstVisibleIndex: () => number | undefined;
+}): { positionPercent: number; loadedPercent: number } {
   const total = !input.hasMore && input.messageStart === 0 ? Math.max(1, input.loaded) : Math.max(1, input.total, input.messageStart + input.loaded);
   const last = total - 1;
-  const visible = input.following ? last : input.firstVisibleIndex() ?? input.messageStart;
+  const visible = input.following ? last : (input.firstVisibleIndex() ?? input.messageStart);
   const index = Math.min(last, Math.max(0, Number.isFinite(visible) ? visible : input.messageStart));
   return {
     positionPercent: last <= 0 ? 100 : (index / last) * 100,
@@ -190,16 +204,24 @@ export class ChatView extends LitElement {
   @property({ attribute: false }) messageActions: readonly RegisteredMessageAction[] = [];
   @property({ attribute: false }) messageActionContext?: Omit<MessageActionAvailabilityContext, "message">;
   @property({ attribute: false }) onMessageAction?: (input: MessageActionAvailabilityContext, actionId: string) => Promise<MessageActionResult>;
-  @property({ attribute: false }) onDisplayedMessageAction?: (input: DisplayedMessageActionAvailabilityContext, actionId: string) => Promise<MessageActionResult>;
-  private readonly messageActionController = new ChatMessageActionController(() => ({
-    machineId: this.machineId,
-    sessionId: this.sessionId,
-    connected: this.isConnected,
-    actions: this.supportedMessageActions(),
-    availability: this.messageActionContext,
-    onEntry: this.onMessageAction,
-    onDisplay: this.onDisplayedMessageAction,
-  }), () => { this.requestUpdate(); });
+  @property({ attribute: false }) onDisplayedMessageAction?: (
+    input: DisplayedMessageActionAvailabilityContext,
+    actionId: string,
+  ) => Promise<MessageActionResult>;
+  private readonly messageActionController = new ChatMessageActionController(
+    () => ({
+      machineId: this.machineId,
+      sessionId: this.sessionId,
+      connected: this.isConnected,
+      actions: this.supportedMessageActions(),
+      availability: this.messageActionContext,
+      onEntry: this.onMessageAction,
+      onDisplay: this.onDisplayedMessageAction,
+    }),
+    () => {
+      this.requestUpdate();
+    },
+  );
   @property({ type: Number }) messageStart = 0;
   @property({ type: Number }) messageEnd = 0;
   @property({ type: Number }) messageTotal = 0;
@@ -260,20 +282,28 @@ export class ChatView extends LitElement {
   private readonly transientDisclosures = new Map<string, boolean>();
   private readonly scrollFlows = new ChatScrollFlows({
     getScroller: () => this.chat ?? undefined,
-    onFollowingChange: (following) => { this.followingLive = following; },
+    onFollowingChange: (following) => {
+      this.followingLive = following;
+    },
     getAnchors: () => this.scrollAnchorElements(),
     getSessionId: () => this.sessionId,
     // A filtered view is a projection: it neither saves positions nor pages history on its own.
-    getBehaviors: () => this.transcriptFilter === "everything" ? this.behaviors : { ...this.behaviors, rememberPosition: false, automaticHistory: false },
+    getBehaviors: () => (this.transcriptFilter === "everything" ? this.behaviors : { ...this.behaviors, rememberPosition: false, automaticHistory: false }),
     hasMore: () => this.hasMore,
     isHistoryReady: () => this.historyReady,
     isLoadingMore: () => this.loadingMore || this.loadMoreRequested,
     canRequestEarlier: () => this.onLoadMore !== undefined,
-    requestEarlier: () => { this.requestLoadMore(); },
-    getOpenForm: (kind) => this.renderRoot.querySelector<HTMLElement>(kind === "dialog"
-      ? ".chat-content > extension-dialog-card.open-dialog-card"
-      : kind === "ask" ? ".chat-content > ask-user-card.open-question-card:last-of-type"
-      : ".chat-content > ask-user-card.open-question-card, .chat-content > extension-dialog-card.open-dialog-card") ?? undefined,
+    requestEarlier: () => {
+      this.requestLoadMore();
+    },
+    getOpenForm: (kind) =>
+      this.renderRoot.querySelector<HTMLElement>(
+        kind === "dialog"
+          ? ".chat-content > extension-dialog-card.open-dialog-card"
+          : kind === "ask"
+            ? ".chat-content > ask-user-card.open-question-card:last-of-type"
+            : ".chat-content > ask-user-card.open-question-card, .chat-content > extension-dialog-card.open-dialog-card",
+      ) ?? undefined,
   });
   private groupedMessagesInput?: ChatLine[];
   private groupedMessagesStart = 0;
@@ -282,18 +312,27 @@ export class ChatView extends LitElement {
   private imageSession: SessionRef | undefined;
   private touchY: number | undefined;
   private loadMoreRequested = false;
-  private readonly onViewportResize = () => { this.scrollFlows.onViewportResize(); };
+  private readonly onViewportResize = () => {
+    this.scrollFlows.onViewportResize();
+  };
   // Composer growth, drawers and Grid dividers shrink the transcript without resizing the window.
-  private readonly transcriptResize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver((entries) => {
-    if (entries.some((entry) => entry.target === this.observedTranscript)) this.onViewportResize();
-    // Images and nested tool disclosures can grow without resizing the viewport or updating ChatView.
-    else if (this.scrollFlows.followingLive) this.scrollFlows.onContentLayoutChanged();
-  });
+  private readonly transcriptResize =
+    typeof ResizeObserver === "undefined"
+      ? undefined
+      : new ResizeObserver((entries) => {
+          if (entries.some((entry) => entry.target === this.observedTranscript)) this.onViewportResize();
+          // Images and nested tool disclosures can grow without resizing the viewport or updating ChatView.
+          else if (this.scrollFlows.followingLive) this.scrollFlows.onContentLayoutChanged();
+        });
   private observedTranscript: Element | undefined;
   // Formatting completes independently of message updates. Reuse the existing
   // layout/restore flow without making content loading wait for enhancement.
-  private readonly onContentLayoutChanged = () => { this.scrollFlows.onViewportResize(); };
-  private readonly onContentLayoutWillChange = () => { this.scrollFlows.holdReadingPlace(); };
+  private readonly onContentLayoutChanged = () => {
+    this.scrollFlows.onViewportResize();
+  };
+  private readonly onContentLayoutWillChange = () => {
+    this.scrollFlows.holdReadingPlace();
+  };
   private readonly handleScroll = () => {
     this.scrollFlows.onScroll();
     this.scheduleMeterUpdate();
@@ -329,9 +368,15 @@ export class ChatView extends LitElement {
     if (this.touchY !== undefined && y !== undefined && y > this.touchY && !this.scrollsNestedOutputUp(event)) this.scrollFlows.onUpIntent();
     this.touchY = y;
   };
-  private readonly handleTouchEnd = () => { this.touchY = undefined; };
-  private readonly handleJumpTop = () => { this.scrollFlows.jumpToTop(); };
-  private readonly handleJumpEnd = () => { this.scrollFlows.jumpToEnd(); };
+  private readonly handleTouchEnd = () => {
+    this.touchY = undefined;
+  };
+  private readonly handleJumpTop = () => {
+    this.scrollFlows.jumpToTop();
+  };
+  private readonly handleJumpEnd = () => {
+    this.scrollFlows.jumpToEnd();
+  };
   private readonly openImageZoom = (src: string, alt: string): void => {
     if (this.behaviors.loadImages) this.imageGalleryDialog?.show([{ src, alt }]);
   };
@@ -356,7 +401,9 @@ export class ChatView extends LitElement {
   /** Mouse, touch and keyboard selections all end up here, settled briefly so a drag does not re-render per step. */
   private readonly onSelectionChange = (): void => {
     clearTimeout(this.selectionTimer);
-    this.selectionTimer = setTimeout(() => { this.showReplyForSelection(); }, 150);
+    this.selectionTimer = setTimeout(() => {
+      this.showReplyForSelection();
+    }, 150);
   };
   private showReplyForSelection(): void {
     const selected = this.onReplyToSelection === undefined || this.shadowRoot === null ? undefined : messageSelection(this.shadowRoot);
@@ -371,7 +418,13 @@ export class ChatView extends LitElement {
     const end = rects.item(rects.length - 1) ?? selected.range.getBoundingClientRect();
     // Client rects are zoomed screen pixels under the interface scale (CSS zoom); `left`/`top` are layout pixels.
     const scale = wrapElement.offsetWidth > 0 ? wrap.width / wrapElement.offsetWidth : 1;
-    this.replySelection = { entryId: selected.entryId, excerpt, left: Math.max(0, Math.min((end.right - wrap.left) / scale, wrapElement.offsetWidth - 96)), top: (end.bottom - wrap.top) / scale + 6, scrollTop: this.chat?.scrollTop ?? 0 };
+    this.replySelection = {
+      entryId: selected.entryId,
+      excerpt,
+      left: Math.max(0, Math.min((end.right - wrap.left) / scale, wrapElement.offsetWidth - 96)),
+      top: (end.bottom - wrap.top) / scale + 6,
+      scrollTop: this.chat?.scrollTop ?? 0,
+    };
   }
   private readonly replyToSelection = (): void => {
     const quote = this.replySelection;
@@ -391,7 +444,12 @@ export class ChatView extends LitElement {
     event.preventDefault();
     const paragraph = link.parentElement;
     const quote = paragraph?.parentElement;
-    const isSource = paragraph?.localName === "p" && paragraph.firstChild === link && quote?.localName === "blockquote" && quote.firstElementChild === paragraph && (quote.parentElement?.closest("blockquote") ?? null) === null;
+    const isSource =
+      paragraph?.localName === "p"
+      && paragraph.firstChild === link
+      && quote?.localName === "blockquote"
+      && quote.firstElementChild === paragraph
+      && (quote.parentElement?.closest("blockquote") ?? null) === null;
     if (isSource) this.revealTarget = { machineId: this.machineId, sessionId: this.sessionId, anchor: `entry:${entryId}` };
   };
 
@@ -472,12 +530,26 @@ export class ChatView extends LitElement {
     this.scrollFlows.afterRender({
       sessionChanged: changed.has("sessionId") || changed.has("machineId"),
       contentChanged: this.scrollContentChanged(changed),
-      historyChanged: changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("historyReady"),
-      openedForm: changed.has("pendingDialogs") && this.isNewOpenDialog(changed.get("pendingDialogs")) ? "dialog"
-        : changed.has("pendingAsks") && this.isNewPendingAsk(changed.get("pendingAsks")) ? "ask" : false,
+      historyChanged:
+        changed.has("messages") || changed.has("messageStart") || changed.has("hasMore") || changed.has("loadingMore") || changed.has("historyReady"),
+      openedForm:
+        changed.has("pendingDialogs") && this.isNewOpenDialog(changed.get("pendingDialogs"))
+          ? "dialog"
+          : changed.has("pendingAsks") && this.isNewPendingAsk(changed.get("pendingAsks"))
+            ? "ask"
+            : false,
     });
-    if (changed.has("messages") || changed.has("messageStart") || changed.has("messageTotal") || changed.has("hasMore") || changed.has("followingLive") || changed.has("workbench")) this.scheduleMeterUpdate();
-    if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs")) this.scheduleReveal();
+    if (
+      changed.has("messages")
+      || changed.has("messageStart")
+      || changed.has("messageTotal")
+      || changed.has("hasMore")
+      || changed.has("followingLive")
+      || changed.has("workbench")
+    )
+      this.scheduleMeterUpdate();
+    if (changed.has("revealTarget") || changed.has("sessionId") || changed.has("messages") || changed.has("pendingAsks") || changed.has("pendingDialogs"))
+      this.scheduleReveal();
     // A filtered view is a projection: returning to Everything returns to the place saved when it was left.
     if (changed.get("transcriptFilter") !== undefined && this.transcriptFilter === "everything") this.scrollFlows.restorePosition();
     if (changed.has("followingLive") || changed.has("behaviors") || changed.has("onNavigationChange")) {
@@ -497,38 +569,45 @@ export class ChatView extends LitElement {
     // build retains when repeat items are removed.
     const transcriptIdentity = machineSessionKey(this.machineId, this.sessionId);
     const seen = new Map<string, number>();
-    const keys = this.renderKeys.reconcile(transcriptIdentity, groups.map((group) => {
-      const source = group.kind === "tool-images" ? group.outputs[0] : group;
-      const index = source.kind === "group" ? source.startIndex : source.index;
-      const message = source.kind === "group" ? source.messages[0]?.message : source.message;
-      const presentation = source.kind === "group" ? source.presentation : undefined;
-      const identity = chatLineScrollIdentity(message);
-      // One entry can split into several groups of a kind (thinking, then activity); repeat keys must stay unique.
-      const base = JSON.stringify([group.kind, presentation, identity ?? index, message?.role]);
-      const occurrence = seen.get(base) ?? 0;
-      seen.set(base, occurrence + 1);
-      return {
-        slot: JSON.stringify([base, occurrence]),
-        ...(identity === undefined ? {} : { identity: JSON.stringify([group.kind, presentation, identity, occurrence]) }),
-      };
-    }));
-    const exchange = this.transcriptFilter === "everything"
-      ? currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore)
-      : { history: [], current: groups, startsOutsideLoadedPage: false };
-    const renderGroups = (slice: ChatDisplayGroup[], offset: number) => repeat(
-      slice,
-      (_group, index) => keys[offset + index],
-      (group, index) => {
-        if (group.kind === "group") return this.renderMessageGroup(group, this.isLiveTailGroup(groups, offset + index), entryActionHeaders);
-        if (group.kind === "tool-images") return this.renderToolImageOutputs(group, entryActionHeaders);
-        return this.renderMessage(group.message, group.index, entryActionHeaders);
-      },
+    const keys = this.renderKeys.reconcile(
+      transcriptIdentity,
+      groups.map((group) => {
+        const source = group.kind === "tool-images" ? group.outputs[0] : group;
+        const index = source.kind === "group" ? source.startIndex : source.index;
+        const message = source.kind === "group" ? source.messages[0]?.message : source.message;
+        const presentation = source.kind === "group" ? source.presentation : undefined;
+        const identity = chatLineScrollIdentity(message);
+        // One entry can split into several groups of a kind (thinking, then activity); repeat keys must stay unique.
+        const base = JSON.stringify([group.kind, presentation, identity ?? index, message?.role]);
+        const occurrence = seen.get(base) ?? 0;
+        seen.set(base, occurrence + 1);
+        return {
+          slot: JSON.stringify([base, occurrence]),
+          ...(identity === undefined ? {} : { identity: JSON.stringify([group.kind, presentation, identity, occurrence]) }),
+        };
+      }),
     );
+    const exchange =
+      this.transcriptFilter === "everything"
+        ? currentExchangeGroups(this.messages, groups, this.messageStart, this.hasMore)
+        : { history: [], current: groups, startsOutsideLoadedPage: false };
+    const renderGroups = (slice: ChatDisplayGroup[], offset: number) =>
+      repeat(
+        slice,
+        (_group, index) => keys[offset + index],
+        (group, index) => {
+          if (group.kind === "group") return this.renderMessageGroup(group, this.isLiveTailGroup(groups, offset + index), entryActionHeaders);
+          if (group.kind === "tool-images") return this.renderToolImageOutputs(group, entryActionHeaders);
+          return this.renderMessage(group.message, group.index, entryActionHeaders);
+        },
+      );
     return html`
       ${this.renderTopNotices()}
       <div class=${this.behaviors.visualEffects ? "chat-wrap" : "chat-wrap plain"}>
         ${this.renderTranscriptFilter()}
-        <div class="chat" @click=${this.onQuoteSourceClick} @image-open=${(event: CustomEvent<ImageOpenDetail>) => { this.openImageZoom(event.detail.src, event.detail.alt); }}
+        <div class="chat" @click=${this.onQuoteSourceClick} @image-open=${(event: CustomEvent<ImageOpenDetail>) => {
+          this.openImageZoom(event.detail.src, event.detail.alt);
+        }}
           ?data-holds-place=${this.behaviors.holdReadingPlace}
           @scroll=${this.behaviors.rememberPosition || this.behaviors.followTail || this.behaviors.automaticHistory || this.behaviors.holdReadingPlace || this.replySelection !== undefined ? this.handleScroll : undefined}
           @toggle=${this.behaviors.followTail ? this.handleDisclosureToggle : undefined}
@@ -541,16 +620,23 @@ export class ChatView extends LitElement {
           @touchcancel=${this.handlesScrollIntent ? this.handleTouchEnd : undefined}>
           <div class="chat-content">
             ${this.renderHistoryBoundary()}
-            ${keyed(transcriptIdentity, html`
-              ${exchange.history.length === 0 ? nothing : html`
+            ${keyed(
+              transcriptIdentity,
+              html`
+              ${
+                exchange.history.length === 0
+                  ? nothing
+                  : html`
                 <details class="exchange-history" open>
                   <summary>${renderDisclosureChevron()}Earlier conversation · ${exchange.history.length} ${exchange.history.length === 1 ? "item" : "items"}</summary>
                   <div class="exchange-history-body">${renderGroups(exchange.history, 0)}</div>
                 </details>
-              `}
+              `
+              }
               ${exchange.startsOutsideLoadedPage ? html`<div class="exchange-boundary" role="note">Current loaded tail · the latest user message is in earlier history</div>` : nothing}
               ${renderGroups(exchange.current, exchange.history.length)}
-            `)}
+            `,
+            )}
             ${this.transcriptFilter !== "everything" && groups.length === 0 ? html`<p class="filter-empty" role="status">No messages matching ${this.filterLabel()} in loaded history.${this.hasMore ? " Load earlier messages to continue." : ""}</p>` : nothing}
             ${this.renderQueuedMessages()}
             ${this.renderSessionActivity()}
@@ -583,12 +669,18 @@ export class ChatView extends LitElement {
       const meter = this.meter ?? undefined;
       const chat = this.chat ?? undefined;
       if (meter === undefined || chat === undefined) return;
-      const position = conversationMeterPosition({ messageStart: this.messageStart, loaded: this.messages.length, total: this.messageTotal, hasMore: this.hasMore, following: this.followingLive,
+      const position = conversationMeterPosition({
+        messageStart: this.messageStart,
+        loaded: this.messages.length,
+        total: this.messageTotal,
+        hasMore: this.hasMore,
+        following: this.followingLive,
         firstVisibleIndex: () => {
           const top = chat.getBoundingClientRect().top;
           const first = [...chat.querySelectorAll<HTMLElement>("[data-index]")].find((element) => element.getBoundingClientRect().bottom > top + 1);
           return first === undefined ? undefined : Number(first.dataset["index"]);
-        } });
+        },
+      });
       meter.positionPercent = position.positionPercent;
       meter.loadedPercent = position.loadedPercent;
     });
@@ -622,10 +714,7 @@ export class ChatView extends LitElement {
   private renderWarnings() {
     const rows = chatSessionWarningRows(this.status);
     if (!this.warningsVisible || rows.length === 0) return null;
-    return renderSessionWarnings(rows,
-      this.onToggleWarnings === undefined ? undefined : this.handleToggleWarnings,
-      this.onDismissWarning,
-    );
+    return renderSessionWarnings(rows, this.onToggleWarnings === undefined ? undefined : this.handleToggleWarnings, this.onDismissWarning);
   }
 
   private groupedMessages(): ChatGroup[] {
@@ -641,11 +730,13 @@ export class ChatView extends LitElement {
   }
 
   private isSessionLive(): boolean {
-    return this.isSendingPrompt
+    return (
+      this.isSendingPrompt
       || this.status?.isStreaming === true
       || this.status?.isCompacting === true
       || this.status?.isBashRunning === true
-      || this.activity?.phase === "active";
+      || this.activity?.phase === "active"
+    );
   }
 
   private renderQueuedMessages() {
@@ -664,8 +755,15 @@ export class ChatView extends LitElement {
       pending: this.queuedMessageActionPending,
       unavailable: this.status?.queueMessageActionsUnavailable,
       onClear: this.onClearServerQueue === undefined ? undefined : this.handleClearServerQueue,
-      onCopy: (text) => { void this.copyQueuedMessage(text); },
-      onAction: this.onQueuedMessageAction === undefined || !chatSupports(this.status, "queue.edit") ? undefined : (action, index, messages) => { this.actOnQueuedMessage(action, index, messages); },
+      onCopy: (text) => {
+        void this.copyQueuedMessage(text);
+      },
+      onAction:
+        this.onQueuedMessageAction === undefined || !chatSupports(this.status, "queue.edit")
+          ? undefined
+          : (action, index, messages) => {
+              this.actOnQueuedMessage(action, index, messages);
+            },
       onPromote: chatSupports(this.status, "queue.promote") ? this.onPromoteQueuedMessage : undefined,
       onPromoteAll: chatSupports(this.status, "queue.promote") ? this.onPromoteAllQueuedMessages : undefined,
       compacting: this.status?.isCompacting === true,
@@ -694,7 +792,13 @@ export class ChatView extends LitElement {
 
   private actOnQueuedMessage(action: QueuedMessageAction, index: number, messages: QueuedSessionMessage[]): void {
     if (this.queuedMessageActionPending || this.status?.queueMessageActionsUnavailable !== undefined) return;
-    void this.onQueuedMessageAction?.({ machineId: this.machineId, sessionId: this.sessionId, action, index, expectedQueue: messages.map((message) => ({ ...message })) });
+    void this.onQueuedMessageAction?.({
+      machineId: this.machineId,
+      sessionId: this.sessionId,
+      action,
+      index,
+      expectedQueue: messages.map((message) => ({ ...message })),
+    });
   }
 
   private renderExtensionDialogs() {
@@ -713,17 +817,23 @@ export class ChatView extends LitElement {
           ></extension-dialog-card>
         `,
       )}
-      ${open === undefined ? null : html`
+      ${
+        open === undefined
+          ? null
+          : html`
         <extension-dialog-card
           class="open-dialog-card"
           .dialog=${open}
           .onAnswer=${this.onAnswerDialog}
           .onCancel=${this.onCancelDialog}
         ></extension-dialog-card>
-        ${queuedCount > 0
-          ? html`<p class="queued-dialogs" role="status">${String(queuedCount)} more extension ${queuedCount === 1 ? "dialog" : "dialogs"} queued</p>`
-          : null}
-      `}
+        ${
+          queuedCount > 0
+            ? html`<p class="queued-dialogs" role="status">${String(queuedCount)} more extension ${queuedCount === 1 ? "dialog" : "dialogs"} queued</p>`
+            : null
+        }
+      `
+      }
     `;
   }
 
@@ -741,9 +851,12 @@ export class ChatView extends LitElement {
   private renderHistoryBoundary() {
     const range = this.historyRangeLabel();
     if (this.loadingMore) return html`<div class="history-boundary"><span>Loading earlier messages…</span>${range}</div>`;
-    if (this.hasMore) return html`
+    if (this.hasMore)
+      return html`
       <div class="history-boundary">
-        <button type="button" class="history-load-button ui-button ui-button--compact" ?disabled=${this.loadMoreRequested} @click=${() => { this.requestLoadMore(); }}>Load earlier messages</button>
+        <button type="button" class="history-load-button ui-button ui-button--compact" ?disabled=${this.loadMoreRequested} @click=${() => {
+          this.requestLoadMore();
+        }}>Load earlier messages</button>
         ${this.behaviors.automaticHistory ? html`<span>Scroll up to load earlier messages</span>` : null}
         ${range}
       </div>
@@ -777,7 +890,9 @@ export class ChatView extends LitElement {
       anchors: { message: chatMessageAnchorKey, event: chatEventAnchorKey },
       disclosure: {
         isOpen: (key, defaultOpen) => this.isDisclosureOpen(key, defaultOpen),
-        toggle: (key, event, defaultOpen) => { this.onDisclosureToggle(key, event, defaultOpen); },
+        toggle: (key, event, defaultOpen) => {
+          this.onDisclosureToggle(key, event, defaultOpen);
+        },
         thinkingOpen: this.thinkingOpen(),
       },
       metadata: {
@@ -785,7 +900,9 @@ export class ChatView extends LitElement {
       },
       actions: this.messageActionController,
       askDraftSessionId: this.askDraftSessionId,
-      openImageGallery: (images, index) => { this.openToolImageGallery(images, index); },
+      openImageGallery: (images, index) => {
+        this.openToolImageGallery(images, index);
+      },
     };
   }
 
@@ -807,7 +924,9 @@ export class ChatView extends LitElement {
     return transcript.renderMessageGroup(this.transcriptRenderContext(), group, defaultOpen, entryActionHeaders, {
       open,
       anchor: this.groupAnchorKey(group, growsAtEnd),
-      toggle: (event) => { this.onDisclosureToggle(disclosureKey, event, defaultOpen); },
+      toggle: (event) => {
+        this.onDisclosureToggle(disclosureKey, event, defaultOpen);
+      },
     });
   }
 
@@ -831,9 +950,7 @@ export class ChatView extends LitElement {
   }
 
   private isDisclosureOpen(key: string, defaultOpen: boolean): boolean {
-    return this.behaviors.rememberDisclosures
-      ? this.disclosures.isOpen(key, defaultOpen)
-      : this.transientDisclosures.get(key) ?? defaultOpen;
+    return this.behaviors.rememberDisclosures ? this.disclosures.isOpen(key, defaultOpen) : (this.transientDisclosures.get(key) ?? defaultOpen);
   }
 
   private onDisclosureToggle(key: string, event: Event, defaultOpen: boolean) {
@@ -850,7 +967,16 @@ export class ChatView extends LitElement {
   }
 
   private scrollContentChanged(changed: Map<string, unknown>): boolean {
-    return changed.has("messages") || changed.has("historyReady") || changed.has("messageEnd") || changed.has("messageTotal") || changed.has("pendingAsks") || changed.has("pendingDialogs") || changed.has("closedDialogs") || changed.has("transcriptFilter");
+    return (
+      changed.has("messages")
+      || changed.has("historyReady")
+      || changed.has("messageEnd")
+      || changed.has("messageTotal")
+      || changed.has("pendingAsks")
+      || changed.has("pendingDialogs")
+      || changed.has("closedDialogs")
+      || changed.has("transcriptFilter")
+    );
   }
 
   private requestLoadMore(): void {
@@ -866,7 +992,10 @@ export class ChatView extends LitElement {
   }
 
   private renderOpenAsks() {
-    return repeat(this.pendingAsks, (ask) => ask.askId, (ask) => html`
+    return repeat(
+      this.pendingAsks,
+      (ask) => ask.askId,
+      (ask) => html`
       <ask-user-card
         class="open-question-card"
         data-scroll-anchor-id=${`ask:${ask.askId}`}
@@ -877,25 +1006,47 @@ export class ChatView extends LitElement {
         .imagesEnabled=${/* Explicitly reported: a legacy Chat reports no capabilities and takes no answer images. */ this.status?.capabilities?.includes("ask-images") === true}
         .onSubmit=${this.onSubmitAsk}
       ></ask-user-card>
-    `);
+    `,
+    );
   }
 
   private renderTranscriptFilter() {
-    return html`<div class="transcript-filter" @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape" && this.filterMenuOpen) { event.stopPropagation(); this.filterMenuOpen = false; this.renderRoot.querySelector<HTMLButtonElement>(".filter-toggle")?.focus(); } }} @focusout=${(event: FocusEvent) => { if (event.currentTarget instanceof HTMLElement && (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget))) this.filterMenuOpen = false; }}>
-      <button type="button" class="filter-toggle" aria-label=${`Filter transcript: ${this.filterLabel()}`} title=${`Filter transcript: ${this.filterLabel()}`} aria-expanded=${String(this.filterMenuOpen)} data-filter-active=${String(this.transcriptFilter !== "everything")} aria-controls=${this.filterMenuOpen ? "transcript-filter-options" : nothing} @click=${() => { this.filterMenuOpen = !this.filterMenuOpen; }}>
+    return html`<div class="transcript-filter" @keydown=${(event: KeyboardEvent) => {
+      if (event.key === "Escape" && this.filterMenuOpen) {
+        event.stopPropagation();
+        this.filterMenuOpen = false;
+        this.renderRoot.querySelector<HTMLButtonElement>(".filter-toggle")?.focus();
+      }
+    }} @focusout=${(event: FocusEvent) => {
+      if (event.currentTarget instanceof HTMLElement && (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)))
+        this.filterMenuOpen = false;
+    }}>
+      <button type="button" class="filter-toggle" aria-label=${`Filter transcript: ${this.filterLabel()}`} title=${`Filter transcript: ${this.filterLabel()}`} aria-expanded=${String(this.filterMenuOpen)} data-filter-active=${String(this.transcriptFilter !== "everything")} aria-controls=${this.filterMenuOpen ? "transcript-filter-options" : nothing} @click=${() => {
+        this.filterMenuOpen = !this.filterMenuOpen;
+      }}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M7 12h10m-7 6h4"></path></svg>
       </button>
-      ${this.filterMenuOpen ? html`<div id="transcript-filter-options" class="filter-options" role="group" aria-label="Transcript messages">
+      ${
+        this.filterMenuOpen
+          ? html`<div id="transcript-filter-options" class="filter-options" role="group" aria-label="Transcript messages">
         ${this.transcriptFilter === "everything" ? null : this.renderFilterOption("everything", "Everything")}
         ${this.renderFilterOption("human", "Human only")}
         ${this.renderFilterOption("assistant", "Assistant only")}
         ${this.renderFilterOption("human-assistant", "Human + Assistant")}
-      </div>` : null}
+      </div>`
+          : null
+      }
     </div>`;
   }
 
   private filterLabel(): string {
-    return this.transcriptFilter === "human" ? "Human only" : this.transcriptFilter === "assistant" ? "Assistant only" : this.transcriptFilter === "human-assistant" ? "Human + Assistant" : "Everything";
+    return this.transcriptFilter === "human"
+      ? "Human only"
+      : this.transcriptFilter === "assistant"
+        ? "Assistant only"
+        : this.transcriptFilter === "human-assistant"
+          ? "Human + Assistant"
+          : "Everything";
   }
 
   private renderFilterOption(filter: TranscriptFilter, label: string) {
@@ -912,7 +1063,11 @@ export class ChatView extends LitElement {
     if (selection === undefined) return null;
     const top = selection.top - ((this.chat?.scrollTop ?? 0) - selection.scrollTop);
     // Lucide "reply".
-    return html`<button type="button" class="reply-selection" aria-label="Reply to selection" title="Reply to selection" style=${`left: ${String(selection.left)}px; top: ${String(top)}px`} @mousedown=${(event: MouseEvent) => { event.preventDefault(); }} @click=${this.replyToSelection}>
+    return html`<button type="button" class="reply-selection" aria-label="Reply to selection" title="Reply to selection" style=${`left: ${String(selection.left)}px; top: ${String(top)}px`} @mousedown=${(
+      event: MouseEvent,
+    ) => {
+      event.preventDefault();
+    }} @click=${this.replyToSelection}>
       <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path><path d="m9 17-5-5 5-5"></path></svg><span>Reply</span>
     </button>`;
   }
@@ -924,8 +1079,10 @@ export class ChatView extends LitElement {
     this.revealFrame = requestAnimationFrame(() => {
       this.revealFrame = undefined;
       if (this.revealTarget !== target || target.sessionId !== this.sessionId || target.machineId !== this.machineId) return;
-      const element = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-entry-id], [data-scroll-anchor-id]"))
-        .find((candidate) => candidate.getAttribute("data-scroll-anchor-id") === target.anchor || `entry:${candidate.getAttribute("data-entry-id") ?? ""}` === target.anchor);
+      const element = Array.from(this.renderRoot.querySelectorAll<HTMLElement>("[data-entry-id], [data-scroll-anchor-id]")).find(
+        (candidate) =>
+          candidate.getAttribute("data-scroll-anchor-id") === target.anchor || `entry:${candidate.getAttribute("data-entry-id") ?? ""}` === target.anchor,
+      );
       const chat = this.chat;
       if (element === undefined || chat === undefined) {
         // ponytail: an anchor outside the loaded page keeps the usual restored position; page back to it if owners miss it.
@@ -937,7 +1094,9 @@ export class ChatView extends LitElement {
       chat.scrollTop += element.getBoundingClientRect().top - chat.getBoundingClientRect().top;
       this.scrollFlows.onScroll();
       element.setAttribute("data-notification-reveal", "");
-      setTimeout(() => { element.removeAttribute("data-notification-reveal"); }, 2000);
+      setTimeout(() => {
+        element.removeAttribute("data-notification-reveal");
+      }, 2000);
     });
   }
 
@@ -968,7 +1127,6 @@ export class ChatView extends LitElement {
       : `${this.sessionId}:${chatLineIdentity(group.endIndex, group.messages.at(-1)?.message)}`;
   }
 
-
   private groupAnchorKey(group: Extract<ChatGroup, { kind: "group" }>, live: boolean): string | undefined {
     // Historical groups can absorb earlier events; live groups grow at the end.
     // Skip transient members rather than persisting their display indexes.
@@ -981,7 +1139,9 @@ export class ChatView extends LitElement {
   }
 
   // Workbench additions on the base chat theme: filter, reply, reveal, folds, cards, and the dense grid tile.
-  static override styles = [chatStyles, css`
+  static override styles = [
+    chatStyles,
+    css`
     /* holdReadingPlace: the scroll flows keep the reading place, so the browser must not move it too. */
     .chat[data-holds-place] { overflow-anchor: none; }
     [data-notification-reveal] { animation: notification-reveal 2s ease-out; }
@@ -1133,5 +1293,6 @@ export class ChatView extends LitElement {
     :host([dense]) conversation-meter { opacity: 0; transition: opacity .15s ease; }
     :host([dense]:hover) conversation-meter { opacity: .5; }
     :host([dense]) .scroll-to-bottom { width: 28px; height: 28px; bottom: 8px; border: 0; background: var(--pi-surface-hover); box-shadow: 0 2px 8px var(--pi-shadow-soft, transparent); }
-  `];
+  `,
+  ];
 }

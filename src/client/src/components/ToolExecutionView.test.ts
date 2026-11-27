@@ -34,11 +34,13 @@ it("keeps command details and complete output while updating live status and err
   expect(view.renderRoot.querySelector(".detail-result")).toBeNull();
   expect(details?.open).toBe(false);
   if (details === null) throw new Error("Expected text disclosure");
-  details.open = true; details.dispatchEvent(new Event("toggle"));
+  details.open = true;
+  details.dispatchEvent(new Event("toggle"));
   await view.updateComplete;
   expect(view.renderRoot.querySelector(".detail-target-value")?.textContent).toBe(command);
   expect(view.renderRoot.querySelector(".detail-result pre")?.textContent).toBe(output);
-  details.open = false; details.dispatchEvent(new Event("toggle"));
+  details.open = false;
+  details.dispatchEvent(new Event("toggle"));
   await view.updateComplete;
   expect(view.renderRoot.querySelector(".detail-result")).toBeNull();
 
@@ -47,7 +49,8 @@ it("keeps command details and complete output while updating live status and err
   expect(view.renderRoot.querySelector(".status-label")?.textContent).toBe("failed");
   expect(view.renderRoot.querySelector(".error-text")).toBeNull();
   expect(details.open).toBe(false);
-  details.open = true; details.dispatchEvent(new Event("toggle"));
+  details.open = true;
+  details.dispatchEvent(new Event("toggle"));
   await view.updateComplete;
   expect(view.renderRoot.querySelector(".detail-result pre")?.textContent).toBe("Command failed");
 });
@@ -94,15 +97,18 @@ it("retains diff disclosure state, expands long diffs, and copies the full diff"
   expect(copy?.textContent).toBe("Copy diff");
 });
 
-
 describe("toolRowSummary", () => {
   it("shortens file paths to their last two segments", () => {
-    expect(toolRowSummary(execution({
-      toolName: "read",
-      args: { path: "/Users/example/project/src/file.ts" },
-      status: "success",
-      resultText: "contents",
-    }))).toEqual({ argument: "src/file.ts", result: "contents" });
+    expect(
+      toolRowSummary(
+        execution({
+          toolName: "read",
+          args: { path: "/Users/example/project/src/file.ts" },
+          status: "success",
+          resultText: "contents",
+        }),
+      ),
+    ).toEqual({ argument: "src/file.ts", result: "contents" });
   });
 
   it("keeps command and generic argument previews short and single-line", () => {

@@ -1,4 +1,27 @@
-import type { AuthProviderOption, CommandOption, CommandResult, ExtensionDialogAnswer, ExtensionDialogCloseReason, Machine, MachineHealth, MachineRuntime, OAuthFlowState, PendingAskUser, PendingExtensionDialog, PiWebStatusResponse, Project, QueuedSessionMessage, SessionActivity, SessionInfo, SessionModelCatalogEntry, SessionStatus, SessionTreeSnapshot, TerminalCommandRun, Workspace, WorkspaceProviderResolution } from "./api";
+import type {
+  AuthProviderOption,
+  CommandOption,
+  CommandResult,
+  ExtensionDialogAnswer,
+  ExtensionDialogCloseReason,
+  Machine,
+  MachineHealth,
+  MachineRuntime,
+  OAuthFlowState,
+  PendingAskUser,
+  PendingExtensionDialog,
+  PiWebStatusResponse,
+  Project,
+  QueuedSessionMessage,
+  SessionActivity,
+  SessionInfo,
+  SessionModelCatalogEntry,
+  SessionStatus,
+  SessionTreeSnapshot,
+  TerminalCommandRun,
+  Workspace,
+  WorkspaceProviderResolution,
+} from "./api";
 import type { ChatLine } from "./chatTypes";
 import type { MachineStatusSnapshot } from "../../shared/machineStatus";
 import type { QualifiedContributionId } from "./plugins/ids";
@@ -69,8 +92,31 @@ export interface AppState {
   workspaceDeletionRuns: Record<string, TerminalCommandRun>;
   commandDialog: Extract<CommandResult, { type: "select" }> | undefined;
   treeDialog: SessionTreeSnapshot | undefined;
-  modelDialog: { instanceId: number; origin: ModelDialogOrigin; title: string; options: CommandOption[]; catalog: SessionModelCatalogEntry[]; selectedValue?: string; defaultValue?: string; defaultsLoading?: boolean; /** The Chat cannot save defaults (a Durable Chat may not yet): no default pins. */ noDefaults?: true; /** The Chat cannot change the enabled models: no toggles or presets. */ fixedScope?: true } | undefined;
-  thinkingDialog: { title: string; options: CommandOption[]; selectedValue?: string; origin?: ModelDialogOrigin; defaultValue?: string; defaultsLoading?: boolean; noDefaults?: true } | undefined;
+  modelDialog:
+    | {
+        instanceId: number;
+        origin: ModelDialogOrigin;
+        title: string;
+        options: CommandOption[];
+        catalog: SessionModelCatalogEntry[];
+        selectedValue?: string;
+        defaultValue?: string;
+        defaultsLoading?: boolean;
+        /** The Chat cannot save defaults (a Durable Chat may not yet): no default pins. */ noDefaults?: true;
+        /** The Chat cannot change the enabled models: no toggles or presets. */ fixedScope?: true;
+      }
+    | undefined;
+  thinkingDialog:
+    | {
+        title: string;
+        options: CommandOption[];
+        selectedValue?: string;
+        origin?: ModelDialogOrigin;
+        defaultValue?: string;
+        defaultsLoading?: boolean;
+        noDefaults?: true;
+      }
+    | undefined;
   authDialog: AuthDialogState | undefined;
   actionPaletteOpen: boolean;
   projectDialogOpen: boolean;
@@ -106,13 +152,9 @@ export type AuthDialogState =
   | { step: "oauth"; flow: OAuthFlowState; machineId: string; responding?: boolean; inputValue?: string; error?: string }
   | { step: "logout"; machineId: string; providers: AuthProviderOption[] };
 
-export type WorkspaceScopedStateReset = Pick<AppState,
-  | "sessions"
-  | "clientQueuedSessionMessages"
-  | "startingSessionCount"
-  | "selectedNotificationInbox"
-  | "treeDialog"
-  | "error"
+export type WorkspaceScopedStateReset = Pick<
+  AppState,
+  "sessions" | "clientQueuedSessionMessages" | "startingSessionCount" | "selectedNotificationInbox" | "treeDialog" | "error"
 >;
 
 export function resetWorkspaceScopedState(): WorkspaceScopedStateReset {

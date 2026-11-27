@@ -27,7 +27,7 @@ describe("host stylesheet integration capability", () => {
     const registerRoot = vi.fn(() => release);
     const result = plugin.activate(activationContext());
     const requests: PluginCapability[] = [];
-    const resolve = <Value,>(requested: PluginCapability<Value>): Value => {
+    const resolve = <Value>(requested: PluginCapability<Value>): Value => {
       requests.push(requested);
       return requested.parse({ registerRoot, createController: vi.fn(), subscribe: vi.fn(() => vi.fn()) });
     };
@@ -51,11 +51,14 @@ describe("host stylesheet integration capability", () => {
     expect(release).toHaveBeenCalledOnce();
   });
 
-  it.each([undefined, null, {}, { registerRoot: vi.fn() }, { registerRoot: vi.fn(), createController: vi.fn() }])("rejects an invalid host integration value: %j", (value) => {
-    const capability = plugin.requires[0];
-    if (capability === undefined) throw new Error("Relay stylesheet integration requirement missing");
-    expect(() => capability.parse(value)).toThrow("Stylesheet integration capability v1 requires registerRoot and createController");
-  });
+  it.each([undefined, null, {}, { registerRoot: vi.fn() }, { registerRoot: vi.fn(), createController: vi.fn() }])(
+    "rejects an invalid host integration value: %j",
+    (value) => {
+      const capability = plugin.requires[0];
+      if (capability === undefined) throw new Error("Relay stylesheet integration requirement missing");
+      expect(() => capability.parse(value)).toThrow("Stylesheet integration capability v1 requires registerRoot and createController");
+    },
+  );
 });
 
 describe("Relay session-row contribution", () => {
@@ -75,10 +78,17 @@ describe("Relay session-row contribution", () => {
     expect(indicator?.getAttribute("aria-label")).toBe("Open Relay workflow & notes, leg R1-a");
     indicator?.click();
 
-    expect(context.navigate).toHaveBeenCalledExactlyOnceWith({
-      machineId: "remote-1", projectId: "project & 1", workspaceId: "worktree/1", view: "workspace",
-      tool: `${runtimePluginId}:workspace.relays`, query: { relay: "custom packets/workflow & notes" },
-    }, { mode: "patch" });
+    expect(context.navigate).toHaveBeenCalledExactlyOnceWith(
+      {
+        machineId: "remote-1",
+        projectId: "project & 1",
+        workspaceId: "worktree/1",
+        view: "workspace",
+        tool: `${runtimePluginId}:workspace.relays`,
+        query: { relay: "custom packets/workflow & notes" },
+      },
+      { mode: "patch" },
+    );
     expect(context.files.listFiles).not.toHaveBeenCalled();
     expect(context.files.readFile).not.toHaveBeenCalled();
   });
@@ -98,8 +108,13 @@ describe("Relay session-row contribution", () => {
 
 function activationContext(): PluginActivationContext {
   return {
-    apiVersion: 4, pluginId: "@jmfederico/pi-relay", runtimePluginId, html, svg,
-    signal: new AbortController().signal, lifetimeSignal: new AbortController().signal,
+    apiVersion: 4,
+    pluginId: "@jmfederico/pi-relay",
+    runtimePluginId,
+    html,
+    svg,
+    signal: new AbortController().signal,
+    lifetimeSignal: new AbortController().signal,
   };
 }
 
@@ -114,7 +129,14 @@ function rowContext(value: SessionUiMetadata | undefined, archived = false) {
   return {
     machine: { id: "remote-1", name: "Remote", kind: "remote" },
     workspace: { id: "worktree/1", projectId: "project & 1", path: "/repo/tree", label: "Feature", isMain: false },
-    session: { id: "relay-row", name: "Leg 1 – Relay workflow", cwd: "/repo/tree", ...(value === undefined ? {} : { metadata: value }), archived, pending: false },
+    session: {
+      id: "relay-row",
+      name: "Leg 1 – Relay workflow",
+      cwd: "/repo/tree",
+      ...(value === undefined ? {} : { metadata: value }),
+      archived,
+      pending: false,
+    },
     // Deliberately different selection: membership/navigation belongs to this row.
     state: { selectedMachine: { id: "local", name: "Local", kind: "local" } },
     navigate: vi.fn(() => Promise.resolve()),

@@ -16,7 +16,10 @@ describe("PromptEditor image attachment accessibility", () => {
     class FileReaderStub {
       result: string | null = null;
       onload: (() => void) | null = null;
-      readAsDataURL(): void { this.result = "data:image/png;base64,UE5H"; this.onload?.(); }
+      readAsDataURL(): void {
+        this.result = "data:image/png;base64,UE5H";
+        this.onload?.();
+      }
     }
     vi.stubGlobal("FileReader", FileReaderStub);
     const first = new PromptEditor();
@@ -25,7 +28,9 @@ describe("PromptEditor image attachment accessibility", () => {
     await first.updateComplete;
     pasteImage(first, "first.png");
     pasteImage(first, "second.png");
-    await vi.waitFor(() => { expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toHaveLength(2);
+    });
     first.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Remove [PIC_1] image first.png"]')?.click();
     await first.updateComplete;
     first.remove();
@@ -36,10 +41,13 @@ describe("PromptEditor image attachment accessibility", () => {
     await remounted.updateComplete;
     expect(remounted.shadowRoot?.querySelectorAll(".attachment-chip")).toHaveLength(1);
     pasteImage(remounted, "third.png");
-    await vi.waitFor(() => { expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments).toHaveLength(2);
+    });
     await remounted.updateComplete;
     expect(loadStagedAttachmentDraft("local:remount-image-ids").attachments.map(({ id, kind }) => ({ id, kind }))).toEqual([
-      { id: "attachment-2", kind: "image" }, { id: "attachment-3", kind: "image" },
+      { id: "attachment-2", kind: "image" },
+      { id: "attachment-3", kind: "image" },
     ]);
     remounted.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Remove [PIC_3] image third.png"]')?.click();
     await remounted.updateComplete;
@@ -76,22 +84,30 @@ describe("PromptEditor image attachment accessibility", () => {
 
     editor.shadowRoot?.querySelector<HTMLButtonElement>(selector)?.click();
     expect(onSend).toHaveBeenCalledOnce();
-    expect(onSend).toHaveBeenCalledWith("compare with [PIC_2]", behavior, [expect.objectContaining({ reference: "[PIC_2]", data: "UE5H" })], "inline", undefined);
+    expect(onSend).toHaveBeenCalledWith(
+      "compare with [PIC_2]",
+      behavior,
+      [expect.objectContaining({ reference: "[PIC_2]", data: "UE5H" })],
+      "inline",
+      undefined,
+    );
   });
 
   it("shows the stable reference in the preview and accessible remove label", async () => {
     const editor = new PromptEditor();
     document.body.append(editor);
     await editor.updateComplete;
-    Reflect.set(editor, "attachments", [{
-      id: "attachment-1",
-      kind: "image",
-      reference: "[PIC_4]",
-      name: "duplicate.png",
-      mimeType: "image/png",
-      data: "UE5H",
-      size: 3,
-    }]);
+    Reflect.set(editor, "attachments", [
+      {
+        id: "attachment-1",
+        kind: "image",
+        reference: "[PIC_4]",
+        name: "duplicate.png",
+        mimeType: "image/png",
+        data: "UE5H",
+        size: 3,
+      },
+    ]);
     editor.requestUpdate();
     await editor.updateComplete;
 
@@ -108,15 +124,17 @@ describe("PromptEditor image attachment accessibility", () => {
     await editor.updateComplete;
     editor.replaceText("before [PIC_4] after");
     editor.view?.dispatch({ selection: { anchor: 7 } });
-    const attachments = [{
-      id: "attachment-1",
-      kind: "image" as const,
-      reference: "[PIC_4]",
-      name: "retry.png",
-      mimeType: "image/png",
-      data: "UE5H",
-      size: 3,
-    }];
+    const attachments = [
+      {
+        id: "attachment-1",
+        kind: "image" as const,
+        reference: "[PIC_4]",
+        name: "retry.png",
+        mimeType: "image/png",
+        data: "UE5H",
+        size: 3,
+      },
+    ];
     Reflect.set(editor, "attachments", attachments);
     Reflect.set(editor, "nextImageReference", 5);
     const send: unknown = Reflect.get(editor, "send");

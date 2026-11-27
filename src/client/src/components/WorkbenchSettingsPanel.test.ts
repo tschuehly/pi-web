@@ -56,7 +56,11 @@ describe("WorkbenchSettingsPanel sleep control", () => {
   });
 
   it("disables the action when the actual state cannot be read", async () => {
-    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: () => Promise.reject(new Error("SLEEP_CONTROL_READ_FAILED: fixture")), setSleepDisabled: vi.fn() };
+    window.piWebNative = {
+      pickDirectory: () => Promise.resolve(null),
+      getSleepDisabled: () => Promise.reject(new Error("SLEEP_CONTROL_READ_FAILED: fixture")),
+      setSleepDisabled: vi.fn(),
+    };
     const panel = await mountPanel();
     trigger(panel).click();
     await settle(panel);
@@ -123,7 +127,9 @@ describe("WorkbenchSettingsPanel sleep control", () => {
 
   it("serializes pending changes and displays the native result", async () => {
     let finish!: (value: boolean) => void;
-    const pending = new Promise<boolean>((resolve) => { finish = resolve; });
+    const pending = new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
     const setter = vi.fn(() => pending);
     const getter = vi.fn().mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("SLEEP_CONTROL_READ_FAILED: unexpected reread"));
     window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: setter };
@@ -151,7 +157,11 @@ describe("WorkbenchSettingsPanel sleep control", () => {
     ["SLEEP_CONTROL_CHANGE_FAILED:", "failed"],
   ])("reports %s and rereads actual state", async (prefix, expected) => {
     const getter = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: getter, setSleepDisabled: () => Promise.reject(new Error(`${prefix} fixture`)) };
+    window.piWebNative = {
+      pickDirectory: () => Promise.resolve(null),
+      getSleepDisabled: getter,
+      setSleepDisabled: () => Promise.reject(new Error(`${prefix} fixture`)),
+    };
     window.confirm = vi.fn().mockReturnValue(true);
     const panel = await mountPanel();
     trigger(panel).click();
@@ -181,7 +191,11 @@ describe("WorkbenchSettingsPanel zoom geometry", () => {
   it.each([1, 1.25, 1.5, 2])("bounds the panel below its anchor at 1000x600 and scale %s", async (scale) => {
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1000);
     vi.spyOn(window, "innerHeight", "get").mockReturnValue(600);
-    window.piWebNative = { pickDirectory: () => Promise.resolve(null), getSleepDisabled: () => Promise.resolve(false), setSleepDisabled: () => Promise.resolve(true) };
+    window.piWebNative = {
+      pickDirectory: () => Promise.resolve(null),
+      getSleepDisabled: () => Promise.resolve(false),
+      setSleepDisabled: () => Promise.resolve(true),
+    };
     const popover = await openPanelAt(scale, { bottom: 40 * scale, right: 924 });
     const top = Number.parseFloat(popover.style.top);
     const availableHeight = window.innerHeight / scale - top - 12;

@@ -40,8 +40,10 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
   assert.equal(sdk.getPackageDir(), process.env["PI_WEB_PI_PACKAGE_DIR"], "Use the selected host SDK");
   const { PiSessionEventConnections } = await import(pathToFileURL(join(packageRoot, "dist/server/sessions/piSessionEventConnections.js")).href);
   const modelRuntime = await sdk.ModelRuntime.create({
-    credentials: new ai.InMemoryCredentialStore(), modelsPath: null,
-    modelsStorePath: join(root, "models-store.json"), allowModelNetwork: false,
+    credentials: new ai.InMemoryCredentialStore(),
+    modelsPath: null,
+    modelsStorePath: join(root, "models-store.json"),
+    allowModelNetwork: false,
   });
   await modelRuntime.setRuntimeApiKey("anthropic", "isolated-smoke-key");
   const model = modelRuntime.getModel("anthropic", "claude-sonnet-4-5-20250929");
@@ -54,20 +56,33 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
   const connectFailures = new Map();
   const createRealSession = async (sessionManager = sdk.SessionManager.inMemory(root)) => {
     const settingsManager = sdk.SettingsManager.inMemory({
-      packages: [captainRoot], retry: { enabled: false }, compaction: { enabled: false },
+      packages: [captainRoot],
+      retry: { enabled: false },
+      compaction: { enabled: false },
     });
     const bus = sdk.createEventBus();
     const loader = new sdk.DefaultResourceLoader({
-      cwd: root, agentDir: root, settingsManager, eventBus: bus,
-      noSkills: true, noPromptTemplates: true, noThemes: true,
+      cwd: root,
+      agentDir: root,
+      settingsManager,
+      eventBus: bus,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
       agentsFilesOverride: () => ({ agentsFiles: [] }),
     });
     await loader.reload();
     assert.deepEqual(loader.getExtensions().errors, []);
     assert.equal(loader.getExtensions().extensions.length, 1, "Only installed native companion should load");
     const { session } = await sdk.createAgentSession({
-      cwd: root, agentDir: root, resourceLoader: loader, settingsManager,
-      sessionManager, modelRuntime, model, noTools: "all",
+      cwd: root,
+      agentDir: root,
+      resourceLoader: loader,
+      settingsManager,
+      sessionManager,
+      modelRuntime,
+      model,
+      noTools: "all",
     });
     sessions.set(session.sessionId, session);
     // Install before binding extensions: even an unexpected startup prompt cannot
@@ -79,15 +94,16 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
         if (released) return;
         released = true;
         const message = {
-          role: "assistant", content: [{ type: "text", text }],
-          api: streamModel.api, provider: streamModel.provider, model: streamModel.id,
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason, timestamp: Date.now(),
+          role: "assistant",
+          content: [{ type: "text", text }],
+          api: streamModel.api,
+          provider: streamModel.provider,
+          model: streamModel.id,
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          stopReason,
+          timestamp: Date.now(),
         };
-        stream.push(stopReason === "aborted"
-          ? { type: "error", reason: stopReason, error: message }
-          : { type: "done", reason: stopReason, message });
+        stream.push(stopReason === "aborted" ? { type: "error", reason: stopReason, error: message } : { type: "done", reason: stopReason, message });
         stream.end(message);
       };
       turns.push({ sessionId: session.sessionId, messages: structuredClone(context.messages), finish });
@@ -105,35 +121,49 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
     const source = await createRealSession();
     const startBackend = async () => {
       const backend = plugin.activate({
-        apiVersion: 3, pluginId: entry.id, packageRoot: captainRoot,
-        dataDirectory: join(root, "log-data"), settings: {},
-        signal: lifetime.signal, lifetimeSignal: lifetime.signal,
+        apiVersion: 3,
+        pluginId: entry.id,
+        packageRoot: captainRoot,
+        dataDirectory: join(root, "log-data"),
+        settings: {},
+        signal: lifetime.signal,
+        lifetimeSignal: lifetime.signal,
         logger: { debug() {}, info() {}, warn() {}, error: (error) => errors.push(error) },
-        execFile() { throw new Error("Unexpected backend shell execution"); },
+        execFile() {
+          throw new Error("Unexpected backend shell execution");
+        },
       });
       await backend.start({
         signal: lifetime.signal,
-        capabilities: { resolve: (capability) => {
-          if (capability.id === "pi-sessions") return capability.parse({
-            version: 1,
-            create: async (selection) => {
-              assert.deepEqual(selection, { projectId: "project", workspaceId: "workspace" });
-              createCount++;
-              const created = await createRealSession();
-              return { sessionId: created.sessionId };
-            },
-            run() { throw new Error("Captain must message its native companion, not call run"); },
-          });
-          assert.equal(capability.id, "pi-session-events");
-          return capability.parse({ version: 1, connect: async (selection) => {
-            assert.deepEqual(selection, { projectId: "project", workspaceId: "workspace", sessionId: selection.sessionId });
-            selectedSessions.push(selection.sessionId);
-            if (connectFailures.has(selection.sessionId)) throw new Error(connectFailures.get(selection.sessionId));
-            const selected = sessions.get(selection.sessionId);
-            assert.ok(selected, "Connect must select a real fixture session");
-            return connections.connect(selected, lifetime.signal);
-          } });
-        } },
+        capabilities: {
+          resolve: (capability) => {
+            if (capability.id === "pi-sessions")
+              return capability.parse({
+                version: 1,
+                create: async (selection) => {
+                  assert.deepEqual(selection, { projectId: "project", workspaceId: "workspace" });
+                  createCount++;
+                  const created = await createRealSession();
+                  return { sessionId: created.sessionId };
+                },
+                run() {
+                  throw new Error("Captain must message its native companion, not call run");
+                },
+              });
+            assert.equal(capability.id, "pi-session-events");
+            return capability.parse({
+              version: 1,
+              connect: async (selection) => {
+                assert.deepEqual(selection, { projectId: "project", workspaceId: "workspace", sessionId: selection.sessionId });
+                selectedSessions.push(selection.sessionId);
+                if (connectFailures.has(selection.sessionId)) throw new Error(connectFailures.get(selection.sessionId));
+                const selected = sessions.get(selection.sessionId);
+                assert.ok(selected, "Connect must select a real fixture session");
+                return connections.connect(selected, lifetime.signal);
+              },
+            });
+          },
+        },
       });
       return backend;
     };
@@ -154,7 +184,10 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
       const frames = [];
       const pushed = new Map();
       const channel = await activation.peer.openChannel({
-        ...context, operation: LOG_CHANNEL, input: null, signal: controller.signal,
+        ...context,
+        operation: LOG_CHANNEL,
+        input: null,
+        signal: controller.signal,
         send(frame) {
           const json = JSON.stringify(frame);
           assert.ok(Buffer.byteLength(json) <= 64 * 1024, "Push must fit the host channel frame limit");
@@ -188,11 +221,12 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
       turns[index].finish(answer);
       await withDeadline(pending, "fixture reply settles");
     };
-    const sourceSnapshot = () => structuredClone({
-      entries: source.sessionManager.getEntries(),
-      messages: source.messages,
-      name: source.sessionManager.getSessionName(),
-    });
+    const sourceSnapshot = () =>
+      structuredClone({
+        entries: source.sessionManager.getEntries(),
+        messages: source.messages,
+        name: source.sessionManager.getSessionName(),
+      });
     const sourceTurns = () => turns.filter((turn) => turn.sessionId === source.sessionId).length;
     const admit = async (sourceSessionId = source.sessionId) => {
       const log = await openLog();
@@ -239,8 +273,16 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
       const turn = turns[index];
       assert.equal(turn.sessionId, pirateId);
       assert.equal(messageText(turn.messages.at(-1)), captainPrompt(text), "Latest source final text must reach pirate intact");
-      assert.equal(turn.messages.filter((message) => message.role === "user" && messageText(message) === PIRATE_INTRO).length, 1, "Introduce each pirate conversation exactly once");
-      if (previousAnswer) assert.ok(turn.messages.some((message) => message.role === "assistant" && messageText(message) === previousAnswer), "Reused pirate retains prior translation context");
+      assert.equal(
+        turn.messages.filter((message) => message.role === "user" && messageText(message) === PIRATE_INTRO).length,
+        1,
+        "Introduce each pirate conversation exactly once",
+      );
+      if (previousAnswer)
+        assert.ok(
+          turn.messages.some((message) => message.role === "assistant" && messageText(message) === previousAnswer),
+          "Reused pirate retains prior translation context",
+        );
       assert.equal(operation.log.pushed.get(operation.id)?.status, "running");
       if (reconnect) {
         await operation.log.close();
@@ -337,11 +379,16 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
     assert.equal(archive.length, records.length, "Recovery preserves completed and failed translations");
     for (const record of records) {
       assert.deepEqual(await read(record.id), record, "Archive survives backend reload");
-      assert.deepEqual(archive.find((item) => item.id === record.id), { ...record, text: "" });
+      assert.deepEqual(
+        archive.find((item) => item.id === record.id),
+        { ...record, text: "" },
+      );
     }
     assert.ok(selectedSessions.includes(source.sessionId));
     assert.deepEqual(errors, []);
-    console.log("Installed Captain's Log translator passed: source unchanged/no source turns, latest final text, first-only short introduction, context reuse, human reopen, automatic exact-unhosted replacement, arbitrary failure without replacement, busy/no-final/self-source errors, reconnect and durable archive.");
+    console.log(
+      "Installed Captain's Log translator passed: source unchanged/no source turns, latest final text, first-only short introduction, context reuse, human reopen, automatic exact-unhosted replacement, arbitrary failure without replacement, busy/no-final/self-source errors, reconnect and durable archive.",
+    );
   } finally {
     lifetime.abort();
     for (const close of channelClosures) await close();
@@ -356,24 +403,35 @@ export async function smokeInstalledCaptainsLog({ packageRoot, fixtureRoot }) {
 }
 
 function messageText(message) {
-  return typeof message.content === "string" ? message.content
-    : message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+  return typeof message.content === "string"
+    ? message.content
+    : message.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n");
 }
 
 async function withDeadline(promise, label) {
   let timer;
   try {
-    return await Promise.race([promise, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Captain's Log smoke timed out: ${label}`)), 10_000);
-    })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Captain's Log smoke timed out: ${label}`)), 10_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function eventually(check, label) {
   const deadline = Date.now() + 10_000;
   for (;;) {
-    try { await check(); return; }
-    catch (error) {
+    try {
+      await check();
+      return;
+    } catch (error) {
       if (Date.now() >= deadline) throw new Error(`Captain's Log smoke timed out: ${label}`, { cause: error });
       await delay(10);
     }

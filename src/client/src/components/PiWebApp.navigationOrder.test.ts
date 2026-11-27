@@ -9,7 +9,9 @@ import { PiWebApp } from "./PiWebApp";
 import { AppNavigationPanel } from "./appShell/AppNavigationPanel";
 
 class NavigationOrderApp extends PiWebApp {
-  override connectedCallback(): void { LitElement.prototype.connectedCallback.call(this); }
+  override connectedCallback(): void {
+    LitElement.prototype.connectedCallback.call(this);
+  }
 }
 customElements.define("navigation-order-test-app", NavigationOrderApp);
 
@@ -30,10 +32,25 @@ it("renders saved scoped orders and saves menu moves and root pins without order
   const workspace: Workspace = { id: "ws", projectId: "a", label: "main", path: "/repo", isMain: true, effectiveConfig: {} };
   const root = session("root");
   const sessions = [root, session("other")];
-  Reflect.set(app, "state", { ...initialAppState(), projects, selectedProject: projects[0], workspaces: [workspace], selectedWorkspace: workspace, sessions, mainView: "navigation" });
+  Reflect.set(app, "state", {
+    ...initialAppState(),
+    projects,
+    selectedProject: projects[0],
+    workspaces: [workspace],
+    selectedWorkspace: workspace,
+    sessions,
+    mainView: "navigation",
+  });
   const save = vi.fn<NavigationOrderPort["save"]>((_scope, ids, revision) => Promise.resolve({ ids: [...ids], revision: revision + 1 }));
   const load = vi.fn<NavigationOrderPort["load"]>((scope) => Promise.resolve({ ids: scope.kind === "projects" ? ["b", "a"] : [], revision: 0 }));
-  const controller = new NavigationOrderController({ load, save }, { onChange: () => { Reflect.set(app, "navigationOrderVersion", Number(Reflect.get(app, "navigationOrderVersion")) + 1); } });
+  const controller = new NavigationOrderController(
+    { load, save },
+    {
+      onChange: () => {
+        Reflect.set(app, "navigationOrderVersion", Number(Reflect.get(app, "navigationOrderVersion")) + 1);
+      },
+    },
+  );
   Reflect.set(app, "navigationOrder", controller);
   const projectScope: NavigationOrderScope = { kind: "projects", machineId: "local" };
   await controller.ensure(projectScope);
@@ -75,5 +92,14 @@ function project(id: string): Project {
   return { id, name: id, path: `/repo/${id}`, createdAt: "2026-10-01T00:00:00Z" };
 }
 function session(id: string): SessionInfo {
-  return { id, name: id, path: `/sessions/${id}.jsonl`, cwd: "/repo", created: "2026-10-01T00:00:00Z", modified: "2026-10-01T00:00:00Z", messageCount: 1, firstMessage: id };
+  return {
+    id,
+    name: id,
+    path: `/sessions/${id}.jsonl`,
+    cwd: "/repo",
+    created: "2026-10-01T00:00:00Z",
+    modified: "2026-10-01T00:00:00Z",
+    messageCount: 1,
+    firstMessage: id,
+  };
 }

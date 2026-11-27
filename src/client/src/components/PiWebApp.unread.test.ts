@@ -35,7 +35,9 @@ describe("PiWebApp session unread wiring", () => {
     expect([...navigationUnreadSessionIds(app)]).toEqual([background.id]);
     expect(fetchMock).not.toHaveBeenCalled();
     exposeSelectedChat(app);
-    await vi.waitFor(() => { expect(navigationUnreadSessionIds(app).size).toBe(0); });
+    await vi.waitFor(() => {
+      expect(navigationUnreadSessionIds(app).size).toBe(0);
+    });
     expect(mobileNavigationTab(app)).not.toHaveProperty("badge");
 
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -53,7 +55,9 @@ describe("PiWebApp session unread wiring", () => {
     const documentState = { visible: false, focused: false };
     vi.stubGlobal("document", {
       baseURI: "https://pi.example.test/",
-      get visibilityState() { return documentState.visible ? "visible" : "hidden"; },
+      get visibilityState() {
+        return documentState.visible ? "visible" : "hidden";
+      },
       hasFocus: () => documentState.focused,
     });
     const app = createApp();
@@ -70,7 +74,9 @@ describe("PiWebApp session unread wiring", () => {
     documentState.focused = true;
     setState(app, { error: "refresh" });
     invokeUpdated(app);
-    await vi.waitFor(() => { expect(navigationUnreadSessionIds(app).size).toBe(0); });
+    await vi.waitFor(() => {
+      expect(navigationUnreadSessionIds(app).size).toBe(0);
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -88,7 +94,9 @@ describe("PiWebApp session unread wiring", () => {
 
     setMobileNavigationLayout(app, false);
     invokeUpdated(app);
-    await vi.waitFor(() => { expect(navigationUnreadSessionIds(app).size).toBe(0); });
+    await vi.waitFor(() => {
+      expect(navigationUnreadSessionIds(app).size).toBe(0);
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -108,7 +116,9 @@ describe("PiWebApp session unread wiring", () => {
 
     modalOpen = false;
     invokeUpdated(app);
-    await vi.waitFor(() => { expect(navigationUnreadSessionIds(app).size).toBe(0); });
+    await vi.waitFor(() => {
+      expect(navigationUnreadSessionIds(app).size).toBe(0);
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
@@ -146,7 +156,9 @@ describe("PiWebApp session unread wiring", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     setState(app, { machines: [localMachine] });
-    await vi.waitFor(() => { expect([...navigationUnreadSessionIds(app)]).toEqual([background.id]); });
+    await vi.waitFor(() => {
+      expect([...navigationUnreadSessionIds(app)]).toEqual([background.id]);
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://pi.example.test/api/machines/local/sessions/unread");
   });
@@ -166,11 +178,16 @@ describe("PiWebApp session unread wiring", () => {
 
     const refreshing = refreshUnread(app, "local");
     invokeDisconnected(app);
-    response.resolve(new Response(JSON.stringify({
-      catalogId: "catalog-a",
-      catalogRevision: 1,
-      sessions: [unreadSummary(selected, 1)],
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    response.resolve(
+      new Response(
+        JSON.stringify({
+          catalogId: "catalog-a",
+          catalogRevision: 1,
+          sessions: [unreadSummary(selected, 1)],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     await refreshing;
 
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -199,7 +216,9 @@ describe("PiWebApp session unread wiring", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     navigationMarkSessionRead(app)(alpha);
-    await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://pi.example.test/api/machines/local/sessions/alpha/unread/acknowledge");
     const init = fetchMock.mock.calls[0]?.[1];
     expect(JSON.parse(typeof init?.body === "string" ? init.body : "{}")).toEqual({
@@ -207,7 +226,9 @@ describe("PiWebApp session unread wiring", () => {
       catalogId: "catalog-a",
       throughCompletionOrder: 1,
     });
-    await vi.waitFor(() => { expect(navigationUnreadSessionIds(app).size).toBe(0); });
+    await vi.waitFor(() => {
+      expect(navigationUnreadSessionIds(app).size).toBe(0);
+    });
   });
 
   it("acknowledges every session in a bulk mark-read request from navigation", async () => {
@@ -225,11 +246,15 @@ describe("PiWebApp session unread wiring", () => {
     expect(fetchMock).not.toHaveBeenCalled();
 
     navigationMarkSessionsRead(app)([alpha, beta]);
-    await vi.waitFor(() => { expect(fetchMock).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
     const requests = fetchMock.mock.calls.map((call) => call[0]);
     expect(requests).toContain("https://pi.example.test/api/machines/local/sessions/alpha/unread/acknowledge");
     expect(requests).toContain("https://pi.example.test/api/machines/local/sessions/beta/unread/acknowledge");
-    await vi.waitFor(() => { expect(navigationUnreadSessionIds(app).size).toBe(0); });
+    await vi.waitFor(() => {
+      expect(navigationUnreadSessionIds(app).size).toBe(0);
+    });
   });
 });
 
@@ -247,8 +272,12 @@ function createApp(storedValues: Record<string, string> = {}, mobileNavigation =
   const values = new Map(Object.entries(storedValues));
   const storage = {
     getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => { values.set(key, value); },
-    removeItem: (key: string) => { values.delete(key); },
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    },
+    removeItem: (key: string) => {
+      values.delete(key);
+    },
   };
   const matchMedia = (query: string) => ({
     matches: mobileNavigation && query.includes("max-width: 760px"),
@@ -301,9 +330,10 @@ function exposeSelectedChat(app: PiWebApp): void {
   const cwd: unknown = Reflect.get(selectedSession, "cwd");
   if (typeof sessionId !== "string" || typeof cwd !== "string") throw new Error("Selected chat identity is invalid");
   const selectedMachine: unknown = Reflect.get(state, "selectedMachine");
-  const machineId = typeof selectedMachine === "object" && selectedMachine !== null && typeof Reflect.get(selectedMachine, "id") === "string"
-    ? String(Reflect.get(selectedMachine, "id"))
-    : "local";
+  const machineId =
+    typeof selectedMachine === "object" && selectedMachine !== null && typeof Reflect.get(selectedMachine, "id") === "string"
+      ? String(Reflect.get(selectedMachine, "id"))
+      : "local";
   if (!Reflect.set(app, "readyChatIdentity", JSON.stringify([machineId, sessionId, cwd]))) {
     throw new Error("Could not mark selected chat ready");
   }
@@ -419,7 +449,9 @@ function unreadEvent(
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
   return {
     promise,
     resolve(value) {
@@ -433,10 +465,12 @@ function stubJsonFetch(body: unknown) {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     void input;
     void init;
-    return Promise.resolve(new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    return Promise.resolve(
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;

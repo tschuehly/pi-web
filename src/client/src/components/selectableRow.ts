@@ -45,10 +45,22 @@ export function handleSelectableRowKeyboard(event: SelectableNavigationKeyboardE
     options.activate();
     return true;
   }
-  if (event.key === "ArrowUp") return handleRowFocusKey(event, () => { focusRelativeSelectableRow(event.currentTarget, -1); });
-  if (event.key === "ArrowDown") return handleRowFocusKey(event, () => { focusRelativeSelectableRow(event.currentTarget, 1); });
-  if (event.key === "Home") return handleRowFocusKey(event, () => { focusIndexedSelectableRow(event.currentTarget, 0); });
-  if (event.key === "End") return handleRowFocusKey(event, () => { focusIndexedSelectableRow(event.currentTarget, -1); });
+  if (event.key === "ArrowUp")
+    return handleRowFocusKey(event, () => {
+      focusRelativeSelectableRow(event.currentTarget, -1);
+    });
+  if (event.key === "ArrowDown")
+    return handleRowFocusKey(event, () => {
+      focusRelativeSelectableRow(event.currentTarget, 1);
+    });
+  if (event.key === "Home")
+    return handleRowFocusKey(event, () => {
+      focusIndexedSelectableRow(event.currentTarget, 0);
+    });
+  if (event.key === "End")
+    return handleRowFocusKey(event, () => {
+      focusIndexedSelectableRow(event.currentTarget, -1);
+    });
   if (event.key === "ArrowLeft" && options.previousSection !== undefined) return handleRowFocusKey(event, options.previousSection);
   if (event.key === "ArrowRight" && options.nextSection !== undefined) return handleRowFocusKey(event, options.nextSection);
   if (event.key === "Escape" && options.cancel !== undefined) return handleRowFocusKey(event, options.cancel);
@@ -56,7 +68,8 @@ export function handleSelectableRowKeyboard(event: SelectableNavigationKeyboardE
 }
 
 export function focusSelectedOrFirstSelectableRow(root: ParentNode, options: { fallbackSelector?: string | undefined } = {}): boolean {
-  const target = root.querySelector<HTMLElement>(".action-row.selected")
+  const target =
+    root.querySelector<HTMLElement>(".action-row.selected")
     ?? root.querySelector<HTMLElement>(".action-row")
     ?? (options.fallbackSelector === undefined ? undefined : root.querySelector<HTMLElement>(options.fallbackSelector));
   if (target === undefined || target === null) return false;
@@ -100,8 +113,7 @@ function selectableRowsForTarget(target: EventTarget | null | undefined): HTMLEl
 }
 
 function isSelectableRowRoot(root: Node): root is Document | DocumentFragment {
-  return (typeof Document !== "undefined" && root instanceof Document)
-    || (typeof DocumentFragment !== "undefined" && root instanceof DocumentFragment);
+  return (typeof Document !== "undefined" && root instanceof Document) || (typeof DocumentFragment !== "undefined" && root instanceof DocumentFragment);
 }
 
 function currentSelectableRow(target: EventTarget | null | undefined): HTMLElement | undefined {

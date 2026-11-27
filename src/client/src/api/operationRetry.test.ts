@@ -6,11 +6,14 @@ describe("withOperationRetry", () => {
   it("retries a transport failure and a proxy 502 under the same operation id", async () => {
     const ids: string[] = [];
     const failures = [new NetworkRequestError("Load failed"), new HttpRequestError("Session daemon unavailable", 502)];
-    const result = await withOperationRetry((id) => {
-      ids.push(id);
-      const failure = failures.shift();
-      return failure === undefined ? Promise.resolve("accepted") : Promise.reject(failure);
-    }, { delayMs: 0 });
+    const result = await withOperationRetry(
+      (id) => {
+        ids.push(id);
+        const failure = failures.shift();
+        return failure === undefined ? Promise.resolve("accepted") : Promise.reject(failure);
+      },
+      { delayMs: 0 },
+    );
     expect(result).toBe("accepted");
     expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(1);
@@ -19,10 +22,26 @@ describe("withOperationRetry", () => {
 
   it("does not retry a refused request, and gives up after the last attempt", async () => {
     let calls = 0;
-    await expect(withOperationRetry(() => { calls++; return Promise.reject(new HttpRequestError("text field must be a non-empty string", 400)); }, { delayMs: 0 })).rejects.toThrow(/non-empty/);
+    await expect(
+      withOperationRetry(
+        () => {
+          calls++;
+          return Promise.reject(new HttpRequestError("text field must be a non-empty string", 400));
+        },
+        { delayMs: 0 },
+      ),
+    ).rejects.toThrow(/non-empty/);
     expect(calls).toBe(1);
     calls = 0;
-    await expect(withOperationRetry(() => { calls++; return Promise.reject(new NetworkRequestError("offline")); }, { delayMs: 0, attempts: 2 })).rejects.toThrow("offline");
+    await expect(
+      withOperationRetry(
+        () => {
+          calls++;
+          return Promise.reject(new NetworkRequestError("offline"));
+        },
+        { delayMs: 0, attempts: 2 },
+      ),
+    ).rejects.toThrow("offline");
     expect(calls).toBe(2);
   });
 

@@ -17,10 +17,15 @@ test("/pair: a wrong edit reaches the reviewer as a digest; its urgent message s
   await command(page, main, "/pair --trigger edits");
 
   // The reviewer (the mock's openai path) answers the first digest with one urgent finding, later ones with "ok".
-  await mock.script({ provider: "openai", match: "Live review digest", turns: [[{ toolCall: { name: "send_chat_message", args: { chat: mainKey, text: finding, urgent: true } } }], "ok"] });
+  await mock.script({
+    provider: "openai",
+    match: "Live review digest",
+    turns: [[{ toolCall: { name: "send_chat_message", args: { chat: mainKey, text: finding, urgent: true } } }], "ok"],
+  });
   // The main Chat writes the bug, then its next request waits at a barrier until the reviewer's message is in.
   await mock.script({
-    provider: "anthropic", match: `task-${tag}`,
+    provider: "anthropic",
+    match: `task-${tag}`,
     turns: [
       [{ toolCall: { name: "write", args: { path: file, content: "for (let i = 0; i <= n; i++) total += xs[i];\n" } } }],
       [{ barrier: held }, { toolCall: { name: "read", args: { path: file } } }],
@@ -39,7 +44,9 @@ test("/pair: a wrong edit reaches the reviewer as a digest; its urgent message s
   expect(body).toContain(`Files touched: ${file}`);
   expect(body).toContain("Stay silent unless");
   // Its message was delivered as a steer of the running turn, without limits or a hop.
-  await expect.poll(async () => (await mock.journal({ provider: "openai", contains: "it steers the chat's current turn" })).length, { timeout: 30_000 }).toBeGreaterThan(0);
+  await expect
+    .poll(async () => (await mock.journal({ provider: "openai", contains: "it steers the chat's current turn" })).length, { timeout: 30_000 })
+    .toBeGreaterThan(0);
   await mock.release(held);
 
   await expect(chat(page).getByText("Fixed after review.", { exact: true }).first()).toBeVisible({ timeout: 30_000 });

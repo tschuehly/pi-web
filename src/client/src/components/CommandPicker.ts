@@ -36,13 +36,21 @@ export class CommandPicker extends LitElement {
         .onClose=${() => this.onCancel?.()}
         .initialFocus=${this.searchable ? "input" : ".options"}
         .label=${this.title}
-        @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.handleKeyDown(event);
+        }}
       >
         <header class="ui-dialog-header">
           <strong class="ui-dialog-title">${this.title}</strong>
           <button class="ui-button ui-button--icon" aria-label="Close" @click=${() => this.onCancel?.()}>×</button>
         </header>
-        ${this.searchable ? html`<div class="ui-dialog-search-row"><input class="ui-dialog-search" placeholder="Search" .value=${this.query} @input=${(event: Event) => { this.handleSearchInput(event); }}></div>` : null}
+        ${
+          this.searchable
+            ? html`<div class="ui-dialog-search-row"><input class="ui-dialog-search" placeholder="Search" .value=${this.query} @input=${(event: Event) => {
+                this.handleSearchInput(event);
+              }}></div>`
+            : null
+        }
         ${this.onSetDefault ? defaultPinHelp : nothing}
         <div class="options ui-selection-list" tabindex="0">
           ${options.map((option, index) => {
@@ -50,13 +58,24 @@ export class CommandPicker extends LitElement {
               class=${`ui-button ui-selection-option ${index === this.selectedIndex ? "selected" : ""}`}
               aria-current=${index === this.selectedIndex ? "true" : nothing}
               ${scrollWhenSelected(index === this.selectedIndex, option.value)}
-              @focus=${() => { this.selectedIndex = index; }}
+              @focus=${() => {
+                this.selectedIndex = index;
+              }}
               @click=${() => this.onPick?.(option.value)}
             >
               <span>${option.label}</span>
               ${option.description !== undefined && option.description !== "" ? html`<small class="ui-selection-detail">${option.description}</small>` : null}
             </button>`;
-            return this.onSetDefault ? html`<div class="default-row ui-selection-row">${pick}${defaultPin(option.label, option.value === this.defaultValue, this.defaultsLoading || this.defaultPending, () => { void this.setDefault(option.value); })}</div>` : pick;
+            return this.onSetDefault
+              ? html`<div class="default-row ui-selection-row">${pick}${defaultPin(
+                  option.label,
+                  option.value === this.defaultValue,
+                  this.defaultsLoading || this.defaultPending,
+                  () => {
+                    void this.setDefault(option.value);
+                  },
+                )}</div>`
+              : pick;
           })}
           ${options.length === 0 ? html`<div class="empty ui-dialog-empty">No matching options</div>` : null}
         </div>

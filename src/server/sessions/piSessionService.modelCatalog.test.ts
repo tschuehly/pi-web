@@ -78,14 +78,17 @@ async function persistedEnabledModels(agentDir: string): Promise<{ found: boolea
 }
 
 async function expectPersistedEnabledModels(agentDir: string, expected: string[] | undefined): Promise<void> {
-  await vi.waitFor(async () => {
-    const persisted = await persistedEnabledModels(agentDir);
-    if (expected === undefined) {
-      expect(persisted.found).toBe(false);
-    } else {
-      expect(persisted).toEqual({ found: true, value: expected });
-    }
-  }, { timeout: 5_000 });
+  await vi.waitFor(
+    async () => {
+      const persisted = await persistedEnabledModels(agentDir);
+      if (expected === undefined) {
+        expect(persisted.found).toBe(false);
+      } else {
+        expect(persisted).toEqual({ found: true, value: expected });
+      }
+    },
+    { timeout: 5_000 },
+  );
 }
 
 const catalogIds = (catalog: readonly { provider: string; id: string }[]): string[] => catalog.map((entry) => `${entry.provider}/${entry.id}`);
@@ -99,12 +102,20 @@ describe("PiSessionService global startup defaults", () => {
       await mkdir(join(ref.cwd, ".pi"), { recursive: true });
       await writeFile(join(ref.cwd, ".pi", "settings.json"), JSON.stringify({ defaultModel: "project-model", defaultThinkingLevel: "off" }));
       expect(await service.getSessionDefaults(ref)).toEqual({ defaultProvider: PROVIDER, defaultModel: DEFAULT_MODEL, defaultThinkingLevel: "low" });
-      expect(await service.setSessionDefaults(ref, { provider: PROVIDER, modelId: FIRST_MODEL })).toEqual({ defaultProvider: PROVIDER, defaultModel: FIRST_MODEL, defaultThinkingLevel: "low" });
+      expect(await service.setSessionDefaults(ref, { provider: PROVIDER, modelId: FIRST_MODEL })).toEqual({
+        defaultProvider: PROVIDER,
+        defaultModel: FIRST_MODEL,
+        defaultThinkingLevel: "low",
+      });
       const path = join(agentDir, "settings.json");
       const persisted: unknown = JSON.parse(await readFile(path, "utf8"));
       if (!isRecord(persisted)) throw new Error("Expected persisted settings object");
       await writeFile(path, JSON.stringify({ ...persisted, defaultModel: DEFAULT_MODEL, customSetting: "external edit" }));
-      expect(await service.setSessionDefaults(ref, { thinkingLevel: "max" })).toEqual({ defaultProvider: PROVIDER, defaultModel: DEFAULT_MODEL, defaultThinkingLevel: "max" });
+      expect(await service.setSessionDefaults(ref, { thinkingLevel: "max" })).toEqual({
+        defaultProvider: PROVIDER,
+        defaultModel: DEFAULT_MODEL,
+        defaultThinkingLevel: "max",
+      });
       expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ defaultThinkingLevel: "max", customSetting: "external edit" });
       expect(JSON.parse(await readFile(join(ref.cwd, ".pi", "settings.json"), "utf8"))).toEqual({ defaultModel: "project-model", defaultThinkingLevel: "off" });
       const after = await service.status(ref);
@@ -249,7 +260,10 @@ describe("PiSessionService model catalog", () => {
     await mkdir(join(workspaceA, ".pi"), { recursive: true });
     await mkdir(workspaceB, { recursive: true });
     await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels: [`${PROVIDER}/${FIRST_MODEL}`] }));
-    await writeFile(join(workspaceA, ".pi", "settings.json"), JSON.stringify({ enabledModels: [`${PROVIDER}/${FIRST_MODEL}`, `${PROVIDER}/${DEFAULT_MODEL}`] }));
+    await writeFile(
+      join(workspaceA, ".pi", "settings.json"),
+      JSON.stringify({ enabledModels: [`${PROVIDER}/${FIRST_MODEL}`, `${PROVIDER}/${DEFAULT_MODEL}`] }),
+    );
     new ProjectTrustStore(agentDir).set(workspaceA, true);
 
     const hub = new CapturingSessionEventHub();
@@ -266,7 +280,9 @@ describe("PiSessionService model catalog", () => {
       const projectSession = await service.start(workspaceA);
       const projectRef = { id: projectSession.id, cwd: workspaceA };
       const globalRef = { id: globalSession.id, cwd: workspaceB };
-      expect(catalogIds((await service.availableModels(globalRef)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual([`${PROVIDER}/${FIRST_MODEL}`]);
+      expect(catalogIds((await service.availableModels(globalRef)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual([
+        `${PROVIDER}/${FIRST_MODEL}`,
+      ]);
       const projectIds = catalogIds((await service.availableModels(projectRef)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })));
       expect(projectIds).toEqual([`${PROVIDER}/${FIRST_MODEL}`, `${PROVIDER}/${DEFAULT_MODEL}`]);
 
@@ -278,7 +294,9 @@ describe("PiSessionService model catalog", () => {
         `${PROVIDER}/${FIRST_MODEL}`,
         `${target.provider}/${target.id}`,
       ]);
-      expect(catalogIds((await service.availableModels(projectRef)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual(projectIds);
+      expect(catalogIds((await service.availableModels(projectRef)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual(
+        projectIds,
+      );
       expect((await service.modelCatalog(projectRef)).every((entry) => entry.editable === false)).toBe(true);
       expect((await service.modelCatalog(globalRef)).every((entry) => entry.editable !== false)).toBe(true);
       await expect(service.setModelScope(projectRef, "all")).rejects.toThrow("workspace's .pi/settings.json");
@@ -345,7 +363,9 @@ describe("PiSessionService model catalog", () => {
       // The response is the fresh post-edit read: no scope, so plain catalog order.
       expect(catalogIds(restored)).toEqual(catalogIds(catalog));
       await expectPersistedEnabledModels(agentDir, undefined);
-      expect(catalogIds((await service.availableModels(ref)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual(catalogIds(catalog));
+      expect(catalogIds((await service.availableModels(ref)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual(
+        catalogIds(catalog),
+      );
     } finally {
       await service.dispose();
     }
@@ -381,7 +401,9 @@ describe("PiSessionService model catalog", () => {
       await service.setModelEnabled(ref, target.provider, target.id, true);
 
       await expectPersistedEnabledModels(agentDir, ["anthropic/not-a-real-model", `${target.provider}/${target.id}`]);
-      expect(catalogIds((await service.availableModels(ref)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual([`${target.provider}/${target.id}`]);
+      expect(catalogIds((await service.availableModels(ref)).map((model) => ({ provider: model.provider ?? "", id: model.id ?? "" })))).toEqual([
+        `${target.provider}/${target.id}`,
+      ]);
     } finally {
       await service.dispose();
     }

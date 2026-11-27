@@ -10,7 +10,15 @@ import { createRuntimeRoutedSessionService, routeMcpAuth } from "./runtimeRouted
 import type { SessionRouteService } from "./sessionService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
-const legacyChat: ClientSession = { id: "legacy-1", cwd: "/work/a", path: "/sessions/legacy-1.jsonl", created: "2026-10-01T00:00:00.000Z", modified: "2026-10-01T00:00:00.000Z", messageCount: 2, firstMessage: "old" };
+const legacyChat: ClientSession = {
+  id: "legacy-1",
+  cwd: "/work/a",
+  path: "/sessions/legacy-1.jsonl",
+  created: "2026-10-01T00:00:00.000Z",
+  modified: "2026-10-01T00:00:00.000Z",
+  messageCount: 2,
+  firstMessage: "old",
+};
 
 /** The legacy service as the router sees it: every call recorded, every answer canned. */
 function legacyService(): { service: SessionRouteService; calls: string[] } {
@@ -25,10 +33,14 @@ function legacyService(): { service: SessionRouteService; calls: string[] } {
     deleteArchivedMany: { deleted: true, deletedSessionIds: [], failures: [], generatedAt: "2026-10-22T00:00:00.000Z" },
   };
   const handler: ProxyHandler<object> = {
-    get: (_target, name: string) => (...args: unknown[]) => {
-      calls.push(`${name}${name === "start" ? JSON.stringify(args[1] ?? null) : name === "archiveMany" || name === "deleteArchivedMany" ? JSON.stringify(args[0]) : ""}`);
-      return Promise.resolve(answers[name]);
-    },
+    get:
+      (_target, name: string) =>
+      (...args: unknown[]) => {
+        calls.push(
+          `${name}${name === "start" ? JSON.stringify(args[1] ?? null) : name === "archiveMany" || name === "deleteArchivedMany" ? JSON.stringify(args[0]) : ""}`,
+        );
+        return Promise.resolve(answers[name]);
+      },
   };
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- a recording double of the whole route contract.
   const service = new Proxy({}, handler) as SessionRouteService;
@@ -39,7 +51,9 @@ class ReadyHost extends EventEmitter implements DurableHostProcess {
   readonly methods: string[] = [];
   constructor() {
     super();
-    queueMicrotask(() => { this.emit("message", { ready: { protocol: DURABLE_HOST_PROTOCOL } }); });
+    queueMicrotask(() => {
+      this.emit("message", { ready: { protocol: DURABLE_HOST_PROTOCOL } });
+    });
   }
   send(message: unknown): boolean {
     if (typeof message !== "object" || message === null || !("id" in message) || !("method" in message) || typeof message.method !== "string") return false;
@@ -52,11 +66,15 @@ class ReadyHost extends EventEmitter implements DurableHostProcess {
     });
     return true;
   }
-  kill(): boolean { return true; }
+  kill(): boolean {
+    return true;
+  }
 }
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 async function router(defaultRuntime?: "durable") {
   const root = await mkdtemp(join(tmpdir(), "pi-web-routed-"));
@@ -66,7 +84,11 @@ async function router(defaultRuntime?: "durable") {
   const durable = new DurableChatService({
     locator: new SessionRuntimeLocator(root),
     events: new SessionEventHub(),
-    launch: () => { const host = new ReadyHost(); hosts.push(host); return host; },
+    launch: () => {
+      const host = new ReadyHost();
+      hosts.push(host);
+      return host;
+    },
     storesDir: join(root, "durable"),
   });
   return { routed: createRuntimeRoutedSessionService(legacy.service, durable, defaultRuntime), durable, calls: legacy.calls, hosts };
@@ -113,9 +135,32 @@ describe("runtime-routed session service", () => {
     const ref = await routed.start("/work/a", { runtime: "durable" });
     const calls: string[] = [];
     const legacyAuth = {
-      mcpAuthServers: (target: { id: string }) => { calls.push(`servers:${target.id}`); return Promise.resolve({ servers: [] }); },
-      startMcpAuth: (target: { id: string }) => { calls.push(`start:${target.id}`); return Promise.resolve({ flowId: "f", target: "mcp" as const, providerId: "mcp", providerName: "MCP server", status: "running" as const, progress: [] }); },
-      mcpAuthFlows: { get: () => { throw new Error("unused"); }, respond: () => { throw new Error("unused"); }, cancel: () => { throw new Error("unused"); } },
+      mcpAuthServers: (target: { id: string }) => {
+        calls.push(`servers:${target.id}`);
+        return Promise.resolve({ servers: [] });
+      },
+      startMcpAuth: (target: { id: string }) => {
+        calls.push(`start:${target.id}`);
+        return Promise.resolve({
+          flowId: "f",
+          target: "mcp" as const,
+          providerId: "mcp",
+          providerName: "MCP server",
+          status: "running" as const,
+          progress: [],
+        });
+      },
+      mcpAuthFlows: {
+        get: () => {
+          throw new Error("unused");
+        },
+        respond: () => {
+          throw new Error("unused");
+        },
+        cancel: () => {
+          throw new Error("unused");
+        },
+      },
     };
     const auth = routeMcpAuth(legacyAuth, durable);
     await expect(auth.mcpAuthServers({ id: ref.id, cwd: "/work/a" })).rejects.toThrow("MCP sign-in is not available in Durable Chats yet");
@@ -128,7 +173,9 @@ describe("runtime-routed session service", () => {
     const { routed, calls } = await router();
     const ref = await routed.start("/work/a", { runtime: "durable" });
     await expect(Promise.resolve().then(() => routed.cycleModel(ref, "forward"))).rejects.toThrow("Cycling models is not available in Durable Chats yet");
-    await expect(Promise.resolve().then(() => routed.navigateTree(ref, { targetId: "1", expectedLeafId: null, summary: { mode: "none" } }))).rejects.toThrow(/not available in Durable Chats yet/);
+    await expect(Promise.resolve().then(() => routed.navigateTree(ref, { targetId: "1", expectedLeafId: null, summary: { mode: "none" } }))).rejects.toThrow(
+      /not available in Durable Chats yet/,
+    );
     // Questions and attention are answered by the Chat's host (none open here).
     await expect(routed.attentionRequest(ref)).resolves.toBeUndefined();
     await expect(routed.openAsks(ref)).resolves.toEqual([]);
@@ -161,7 +208,10 @@ describe("runtime-routed session service", () => {
     const durableChat = await routed.start("/work/a", { runtime: "durable" });
     await expect(Promise.resolve().then(() => routed.archive(durableChat))).rejects.toThrow("Archiving is not available in Durable Chats yet");
     await expect(Promise.resolve().then(() => routed.restore(durableChat))).rejects.toThrow("Archiving is not available in Durable Chats yet");
-    const bulk = await routed.archiveMany([{ id: legacyChat.id, cwd: "/work/a" }, { id: durableChat.id, cwd: "/work/a" }]);
+    const bulk = await routed.archiveMany([
+      { id: legacyChat.id, cwd: "/work/a" },
+      { id: durableChat.id, cwd: "/work/a" },
+    ]);
     expect(bulk.archivedSessionIds).toEqual([legacyChat.id]);
     expect(bulk.failures).toEqual([{ sessionId: durableChat.id, error: "Archiving is not available in Durable Chats yet" }]);
     expect(calls).toContain(`archiveMany${JSON.stringify([{ id: legacyChat.id, cwd: "/work/a" }])}`);

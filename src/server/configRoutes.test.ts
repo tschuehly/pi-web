@@ -1,6 +1,12 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parsePiWebConfigResponseBody, parseSelectedMachineConfigRequest, registerConfigRoutes, registerLocalMachineConfigRoutes, type PiWebConfigService } from "./configRoutes.js";
+import {
+  parsePiWebConfigResponseBody,
+  parseSelectedMachineConfigRequest,
+  registerConfigRoutes,
+  registerLocalMachineConfigRoutes,
+  type PiWebConfigService,
+} from "./configRoutes.js";
 import type { PiWebConfigResponse, PiWebConfigValues } from "../shared/apiTypes.js";
 
 let app: FastifyInstance;
@@ -109,19 +115,22 @@ describe("config routes", () => {
     }
   });
 
-  it.each([0, -1, 1.5, 2147483648, "10000", null, false, {}, []])("rejects invalid naming timeout %j before writing and in remote responses", async (timeoutMs) => {
-    const config = { sessionNaming: { timeoutMs } };
-    for (const url of ["/api/config", "/api/machines/local/config"]) {
-      const result = await app.inject({ method: "PUT", url, payload: { config } });
-      expect(result.statusCode).toBe(400);
-      expect(result.json<{ error: string }>().error).toContain("sessionNaming.timeoutMs");
-    }
-    expect(service.write).not.toHaveBeenCalled();
-    const response = responseFor({}, true);
-    for (const field of ["config", "effectiveConfig"]) {
-      expect(() => parsePiWebConfigResponseBody({ ...response, [field]: config })).toThrow("sessionNaming.timeoutMs");
-    }
-  });
+  it.each([0, -1, 1.5, 2147483648, "10000", null, false, {}, []])(
+    "rejects invalid naming timeout %j before writing and in remote responses",
+    async (timeoutMs) => {
+      const config = { sessionNaming: { timeoutMs } };
+      for (const url of ["/api/config", "/api/machines/local/config"]) {
+        const result = await app.inject({ method: "PUT", url, payload: { config } });
+        expect(result.statusCode).toBe(400);
+        expect(result.json<{ error: string }>().error).toContain("sessionNaming.timeoutMs");
+      }
+      expect(service.write).not.toHaveBeenCalled();
+      const response = responseFor({}, true);
+      for (const field of ["config", "effectiveConfig"]) {
+        expect(() => parsePiWebConfigResponseBody({ ...response, [field]: config })).toThrow("sessionNaming.timeoutMs");
+      }
+    },
+  );
 
   it("rejects invalid session naming in remote config responses", () => {
     const response = responseFor({}, true);
@@ -142,25 +151,31 @@ describe("config routes", () => {
     expect(service.write).not.toHaveBeenCalled();
   });
 
-  it.each(["steer", "followUp"] as const)("accepts defaultStreamingBehavior %s through config routes and response parsing", async (defaultStreamingBehavior) => {
-    const config = { defaultStreamingBehavior };
-    const response = await app.inject({ method: "PUT", url: "/api/config", payload: { config } });
-    expect(response.statusCode).toBe(200);
-    expect(savedConfig).toEqual(config);
-    expect(parsePiWebConfigResponseBody(response.json())).toMatchObject({ config, effectiveConfig: config });
-  });
+  it.each(["steer", "followUp"] as const)(
+    "accepts defaultStreamingBehavior %s through config routes and response parsing",
+    async (defaultStreamingBehavior) => {
+      const config = { defaultStreamingBehavior };
+      const response = await app.inject({ method: "PUT", url: "/api/config", payload: { config } });
+      expect(response.statusCode).toBe(200);
+      expect(savedConfig).toEqual(config);
+      expect(parsePiWebConfigResponseBody(response.json())).toMatchObject({ config, effectiveConfig: config });
+    },
+  );
 
-  it.each(["", "followup", "queue", null, false, 42, {}, []])("rejects invalid defaultStreamingBehavior %j before writing and in responses", async (defaultStreamingBehavior) => {
-    const config = { defaultStreamingBehavior };
-    const response = await app.inject({ method: "PUT", url: "/api/config", payload: { config } });
-    expect(response.statusCode).toBe(400);
-    expect(response.json<{ error: string }>().error).toContain("defaultStreamingBehavior");
-    expect(service.write).not.toHaveBeenCalled();
-    const valid = responseFor({}, true);
-    for (const field of ["config", "effectiveConfig"]) {
-      expect(() => parsePiWebConfigResponseBody({ ...valid, [field]: config })).toThrow("defaultStreamingBehavior");
-    }
-  });
+  it.each(["", "followup", "queue", null, false, 42, {}, []])(
+    "rejects invalid defaultStreamingBehavior %j before writing and in responses",
+    async (defaultStreamingBehavior) => {
+      const config = { defaultStreamingBehavior };
+      const response = await app.inject({ method: "PUT", url: "/api/config", payload: { config } });
+      expect(response.statusCode).toBe(400);
+      expect(response.json<{ error: string }>().error).toContain("defaultStreamingBehavior");
+      expect(service.write).not.toHaveBeenCalled();
+      const valid = responseFor({}, true);
+      for (const field of ["config", "effectiveConfig"]) {
+        expect(() => parsePiWebConfigResponseBody({ ...valid, [field]: config })).toThrow("defaultStreamingBehavior");
+      }
+    },
+  );
 
   it("keeps defaultStreamingBehavior gateway-only", async () => {
     savedConfig.defaultStreamingBehavior = "steer";
@@ -174,7 +189,11 @@ describe("config routes", () => {
   });
 
   it("rejects malformed theme defaults before writing", async () => {
-    const response = await app.inject({ method: "PUT", url: "/api/config", payload: { config: { defaultTheme: { themeId: "themes:pi-web-dark", auto: "yes" } } } });
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/config",
+      payload: { config: { defaultTheme: { themeId: "themes:pi-web-dark", auto: "yes" } } },
+    });
     expect(response.statusCode).toBe(400);
     expect(response.json<{ error: string }>().error).toContain("defaultTheme");
     expect(service.write).not.toHaveBeenCalled();
@@ -184,7 +203,11 @@ describe("config routes", () => {
     savedConfig.defaultTheme = { themeId: "themes:pi-web-light", auto: true };
     const read = await app.inject({ method: "GET", url: "/api/machines/local/config" });
     expect(read.json<PiWebConfigResponse>().config).not.toHaveProperty("defaultTheme");
-    const write = await app.inject({ method: "PUT", url: "/api/machines/local/config", payload: { config: { defaultTheme: { themeId: "themes:classic", auto: false } } } });
+    const write = await app.inject({
+      method: "PUT",
+      url: "/api/machines/local/config",
+      payload: { config: { defaultTheme: { themeId: "themes:classic", auto: false } } },
+    });
     expect(write.statusCode).toBe(400);
     expect(service.write).not.toHaveBeenCalled();
     expect(savedConfig.defaultTheme.themeId).toBe("themes:pi-web-light");
@@ -240,7 +263,10 @@ describe("config routes", () => {
 
   it.each([
     { agent: { command: "agent", dir: "relative/agent" }, error: "agent.dir must be a host-absolute path" },
-    { agent: { command: "agent", dir: "/srv/agent", futureSetting: true }, error: 'agent accepts only the deprecated keys "command" and "dir"; unknown key "futureSetting"' },
+    {
+      agent: { command: "agent", dir: "/srv/agent", futureSetting: true },
+      error: 'agent accepts only the deprecated keys "command" and "dir"; unknown key "futureSetting"',
+    },
   ])("rejects unsafe agent profile payloads before writing", async ({ agent, error }) => {
     const response = await app.inject({
       method: "PUT",

@@ -36,12 +36,19 @@ describe("workspace upload helpers", () => {
     const progress: WorkspaceFileUploadProgress[] = [];
     const file = new File(["hello"], "hello.txt", { type: "text/plain" });
 
-    const task = uploadWorkspaceFile("p 1", "w/1", { path: "manual/hello.txt", file }, {
-      machineId: "remote a",
-      overwrite: false,
-      xhrFactory: xhrs.factory,
-      onProgress: (event) => { progress.push(event); },
-    });
+    const task = uploadWorkspaceFile(
+      "p 1",
+      "w/1",
+      { path: "manual/hello.txt", file },
+      {
+        machineId: "remote a",
+        overwrite: false,
+        xhrFactory: xhrs.factory,
+        onProgress: (event) => {
+          progress.push(event);
+        },
+      },
+    );
 
     const xhr = xhrs.only();
     expect(xhr.method).toBe("PUT");
@@ -74,10 +81,15 @@ describe("workspace upload helpers", () => {
     const xhrs = new FakeXhrQueue();
     const file = new File(["hello"], "nested.txt", { type: "text/plain" });
 
-    const task = uploadWorkspaceFile("p1", "w1", { path: "uploads/nested.txt", file }, {
-      createDirs: false,
-      xhrFactory: xhrs.factory,
-    });
+    const task = uploadWorkspaceFile(
+      "p1",
+      "w1",
+      { path: "uploads/nested.txt", file },
+      {
+        createDirs: false,
+        xhrFactory: xhrs.factory,
+      },
+    );
 
     const xhr = xhrs.only();
     expect(xhr.url).toBe("https://pi.example.test/api/machines/local/projects/p1/workspaces/w1/file?path=uploads%2Fnested.txt&createDirs=false");
@@ -105,7 +117,6 @@ class FakeXhrQueue {
     expect(this.instances).toHaveLength(1);
     return this.instances[0] ?? failTest("missing XHR instance");
   }
-
 }
 
 class FakeXMLHttpRequest implements WorkspaceUploadXhr {

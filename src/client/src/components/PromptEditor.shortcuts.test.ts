@@ -58,7 +58,9 @@ async function completionEditor(draft: string): Promise<PromptEditor> {
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((settle) => { resolve = settle; });
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
   return { promise, resolve };
 }
 
@@ -92,7 +94,9 @@ describe("composer keyboard handling", () => {
       editor.canSteer = false;
       editor.isCompacting = false;
       const globalStartSession = vi.fn();
-      const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
+      const capture = (event: KeyboardEvent) => {
+        if (!editor.ownsKeyboardEvent(event)) globalStartSession();
+      };
       window.addEventListener("keydown", capture, true);
       try {
         press(editor, "Enter", modifier);
@@ -106,52 +110,64 @@ describe("composer keyboard handling", () => {
     }
   });
 
-  it.each<PromptEnterPreference>(["auto", "send", "newline"])("queues follow-ups with Cmd/Ctrl+Enter while streaming for the %s preference before global shortcuts", async (preference) => {
-    localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
-    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
-      const editor = await mount(undefined);
-      editor.canSteer = true;
-      editor.isCompacting = false;
-      const globalStartSession = vi.fn();
-      const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
-      window.addEventListener("keydown", capture, true);
-      try {
-        press(editor, "Enter", modifier);
-        expect(editor.onSend).toHaveBeenCalledWith("Hello", "followUp", undefined, undefined, undefined);
-        expect(globalStartSession).not.toHaveBeenCalled();
-      } finally {
-        window.removeEventListener("keydown", capture, true);
-        editor.remove();
-        vi.restoreAllMocks();
+  it.each<PromptEnterPreference>(["auto", "send", "newline"])(
+    "queues follow-ups with Cmd/Ctrl+Enter while streaming for the %s preference before global shortcuts",
+    async (preference) => {
+      localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
+      for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+        const editor = await mount(undefined);
+        editor.canSteer = true;
+        editor.isCompacting = false;
+        const globalStartSession = vi.fn();
+        const capture = (event: KeyboardEvent) => {
+          if (!editor.ownsKeyboardEvent(event)) globalStartSession();
+        };
+        window.addEventListener("keydown", capture, true);
+        try {
+          press(editor, "Enter", modifier);
+          expect(editor.onSend).toHaveBeenCalledWith("Hello", "followUp", undefined, undefined, undefined);
+          expect(globalStartSession).not.toHaveBeenCalled();
+        } finally {
+          window.removeEventListener("keydown", capture, true);
+          editor.remove();
+          vi.restoreAllMocks();
+        }
       }
-    }
-  });
+    },
+  );
 
-  it.each<PromptEnterPreference>(["auto", "send", "newline"])("queues follow-ups with Cmd/Ctrl+Enter while compacting for the %s preference before global shortcuts", async (preference) => {
-    localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
-    for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
-      const editor = await mount(undefined);
-      editor.canSteer = false;
-      editor.isCompacting = true;
-      const globalStartSession = vi.fn();
-      const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
-      window.addEventListener("keydown", capture, true);
-      try {
-        press(editor, "Enter", modifier);
-        expect(editor.onSend).toHaveBeenCalledWith("Hello", "followUp", undefined, undefined, undefined);
-        expect(globalStartSession).not.toHaveBeenCalled();
-      } finally {
-        window.removeEventListener("keydown", capture, true);
-        editor.remove();
-        vi.restoreAllMocks();
+  it.each<PromptEnterPreference>(["auto", "send", "newline"])(
+    "queues follow-ups with Cmd/Ctrl+Enter while compacting for the %s preference before global shortcuts",
+    async (preference) => {
+      localStorage.setItem(PROMPT_ENTER_PREFERENCE_STORAGE_KEY, preference);
+      for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
+        const editor = await mount(undefined);
+        editor.canSteer = false;
+        editor.isCompacting = true;
+        const globalStartSession = vi.fn();
+        const capture = (event: KeyboardEvent) => {
+          if (!editor.ownsKeyboardEvent(event)) globalStartSession();
+        };
+        window.addEventListener("keydown", capture, true);
+        try {
+          press(editor, "Enter", modifier);
+          expect(editor.onSend).toHaveBeenCalledWith("Hello", "followUp", undefined, undefined, undefined);
+          expect(globalStartSession).not.toHaveBeenCalled();
+        } finally {
+          window.removeEventListener("keydown", capture, true);
+          editor.remove();
+          vi.restoreAllMocks();
+        }
       }
-    }
-  });
+    },
+  );
 
   it("releases Cmd/Ctrl+Enter to global shortcuts when keyboard submission is None", async () => {
     const editor = await mount(null);
     const globalStartSession = vi.fn();
-    const capture = (event: KeyboardEvent) => { if (!editor.ownsKeyboardEvent(event)) globalStartSession(); };
+    const capture = (event: KeyboardEvent) => {
+      if (!editor.ownsKeyboardEvent(event)) globalStartSession();
+    };
     window.addEventListener("keydown", capture, true);
     try {
       press(editor, "Enter", { ctrlKey: true });
@@ -165,7 +181,9 @@ describe("composer keyboard handling", () => {
   it("reports ownsKeyboardEvent false for Cmd/Ctrl+Enter and releases to global shortcuts when keyboard submission is None", async () => {
     const editor = await mount(null);
     const ownership: { key: string; owns: boolean }[] = [];
-    const capture = (event: KeyboardEvent) => { ownership.push({ key: `${event.ctrlKey ? "ctrl+" : ""}${event.metaKey ? "meta+" : ""}${event.key}`, owns: editor.ownsKeyboardEvent(event) }); };
+    const capture = (event: KeyboardEvent) => {
+      ownership.push({ key: `${event.ctrlKey ? "ctrl+" : ""}${event.metaKey ? "meta+" : ""}${event.key}`, owns: editor.ownsKeyboardEvent(event) });
+    };
     window.addEventListener("keydown", capture, true);
     try {
       press(editor, "Enter");
@@ -240,7 +258,9 @@ describe("composer keyboard handling", () => {
   it("claims send keys before global dispatch even when sending is unavailable", async () => {
     const editor = await mount("mod+enter");
     const ownership: boolean[] = [];
-    const capture = (event: KeyboardEvent) => { ownership.push(editor.ownsKeyboardEvent(event)); };
+    const capture = (event: KeyboardEvent) => {
+      ownership.push(editor.ownsKeyboardEvent(event));
+    };
     window.addEventListener("keydown", capture, true);
     try {
       editor.replaceText("");
@@ -285,16 +305,23 @@ describe("composer keyboard handling", () => {
   });
 
   it.each(["Tab", "Enter"])("replaces an inline skill token in the middle with %s without sending", async (key) => {
-    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }, { name: "tree", source: "builtin" }]);
+    vi.spyOn(api, "commands").mockResolvedValue([
+      { name: "skill:review", source: "skill" },
+      { name: "tree", source: "builtin" },
+    ]);
     const editor = await mount("enter");
     editor.sessionId = "test-session";
     editor.cwd = "/repo";
     await editor.updateComplete;
     const draft = "/skill:a /skill:rev later";
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: 19 } });
-    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review"); });
+    await vi.waitFor(() => {
+      expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review");
+    });
     editor.view?.dispatch({ selection: { anchor: 16 } });
-    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review"); });
+    await vi.waitFor(() => {
+      expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review");
+    });
     press(editor, key);
     expect(editor.view?.state.doc.toString()).toBe("/skill:a /skill:review later");
     expect(editor.onSend).not.toHaveBeenCalled();
@@ -308,7 +335,9 @@ describe("composer keyboard handling", () => {
     await editor.updateComplete;
     const draft = "hi /skill:re";
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
-    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review"); });
+    await vi.waitFor(() => {
+      expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).toContain("/skill:review");
+    });
     editor.view?.dispatch({ changes: { from: 3, to: 4 }, selection: { anchor: 3 } });
     await editor.updateComplete;
     expect(editor.shadowRoot?.querySelector("autocomplete-menu")?.shadowRoot?.textContent).not.toContain("/skill:review");
@@ -347,7 +376,9 @@ describe("composer keyboard handling", () => {
     editor.cwd = "/repo";
     await editor.updateComplete;
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
-    await vi.waitFor(() => { expect(api.commands).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(api.commands).toHaveBeenCalledOnce();
+    });
 
     press(editor, "Escape");
     pending.resolve([tree]);
@@ -368,7 +399,9 @@ describe("composer keyboard handling", () => {
     await editor.updateComplete;
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
     saveDraft(machineSessionKey("local", "session-2"), "/tr");
-    await vi.waitFor(() => { expect(api.commands).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(api.commands).toHaveBeenCalledOnce();
+    });
 
     editor.sessionId = "session-2";
     await editor.updateComplete;
@@ -383,7 +416,9 @@ describe("composer keyboard handling", () => {
   it("reconciles native completion dismissal with editor shortcuts without moving focus", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([{ name: "tree", source: "builtin" }]);
     const editor = await mount("enter");
-    editor.sessionId = "test-session"; editor.cwd = "/repo"; await editor.updateComplete;
+    editor.sessionId = "test-session";
+    editor.cwd = "/repo";
+    await editor.updateComplete;
     editor.view?.focus();
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: "/tr" }, selection: { anchor: 3 } });
     await vi.waitFor(() => {

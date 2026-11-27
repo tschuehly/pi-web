@@ -68,7 +68,8 @@ export class ChatDisclosureController {
     }
 
     const nextOpen = defaultOpen ? !nextClosedDefaultOpenKeys.has(groupKey) : nextOpenKeys.has(groupKey);
-    if (nextOpen === wasOpen && setsEqual(nextOpenKeys, this.openGroupKeys) && setsEqual(nextClosedDefaultOpenKeys, this.closedDefaultOpenGroupKeys)) return false;
+    if (nextOpen === wasOpen && setsEqual(nextOpenKeys, this.openGroupKeys) && setsEqual(nextClosedDefaultOpenKeys, this.closedDefaultOpenGroupKeys))
+      return false;
 
     this.openGroupKeys = nextOpenKeys;
     this.closedDefaultOpenGroupKeys = nextClosedDefaultOpenKeys;

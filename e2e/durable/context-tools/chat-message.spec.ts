@@ -4,7 +4,10 @@ import { test, expect, mock, project, createChat, answer, messages, text, chat, 
 test.use({ trace: "retain-on-failure", screenshot: "only-on-failure" });
 test.setTimeout(120_000);
 
-test("send_chat_message: A lists chats, messages closed B by key, B wakes and replies; A's 3rd message inside 5 minutes is refused", async ({ page, browser }, info) => {
+test("send_chat_message: A lists chats, messages closed B by key, B wakes and replies; A's 3rd message inside 5 minutes is refused", async ({
+  page,
+  browser,
+}, info) => {
   const tag = Date.now().toString(36);
   const [aKey, bKey] = [`sender${tag}-relay-chat`, `target${tag}-relay-chat`];
   const [aMarker, bText, reply] = [`a-${tag}`, `rebase-${tag}`, `reply-${tag}`];
@@ -23,7 +26,10 @@ test("send_chat_message: A lists chats, messages closed B by key, B wakes and re
   await mock.script({ match: reply, turns: ["A got the reply."] });
 
   // A: lists, then sends to B by key.
-  await mock.script({ match: aMarker, turns: [[{ toolCall: { name: "send_chat_message", args: { action: "list" } } }], [sendTo(bKey, `Please ${bText} on main.`)], "A sent."] });
+  await mock.script({
+    match: aMarker,
+    turns: [[{ toolCall: { name: "send_chat_message", args: { action: "list" } } }], [sendTo(bKey, `Please ${bText} on main.`)], "A sent."],
+  });
   const a = await createChat(page);
   await command(page, a, `/name Sender${tag} relay chat`);
   await answer(page, a, aMarker, "A sent.");
@@ -53,7 +59,9 @@ test("send_chat_message: A lists chats, messages closed B by key, B wakes and re
   const [, , second, third] = await results(a);
   expect(second?.isError, text(second?.content)).not.toBe(true);
   expect(third?.isError).toBe(true);
-  expect(text(third?.content)).toMatch(new RegExp(`send_chat_message: you sent 2 messages to ${bKey} in the last 5 minutes; stop and report to the owner instead of retrying\\.`));
+  expect(text(third?.content)).toMatch(
+    new RegExp(`send_chat_message: you sent 2 messages to ${bKey} in the last 5 minutes; stop and report to the owner instead of retrying\\.`),
+  );
 
   // The message shows in B's Chat as a labelled custom message.
   await bPage.reload();

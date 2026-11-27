@@ -6,7 +6,9 @@ for (const scale of [1, 1.25, 1.5, 0.8]) {
   test(`message actions open beside the trigger at scale ${String(scale)}`, async ({ page }) => {
     const url = process.env["PI_WEB_E2E_CHAT_URL"];
     if (url === undefined) throw new Error("Isolated PI WEB was not started");
-    await page.addInitScript((value) => { localStorage.setItem("pi-web-app-scale", value); }, String(scale));
+    await page.addInitScript((value) => {
+      localStorage.setItem("pi-web-app-scale", value);
+    }, String(scale));
     await page.goto(url);
     const message = page.locator('chat-view article[data-entry-id="e2e00002"]');
     const trigger = message.getByRole("button", { name: "Message actions" });

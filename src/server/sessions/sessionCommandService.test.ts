@@ -20,7 +20,9 @@ function activeSession(overrides: Partial<TestCommandSession> = {}): CommandActi
     extensionRunner: { getRegisteredCommands: () => [{ invocationName: "ext" }] },
     resourceLoader: { getSkills: () => ({ skills: [{ name: "skill-a" }] }) },
     sessionManager: { getLeafId: () => "leaf-1" },
-    setSessionName: vi.fn((name: string) => { session.sessionName = name; }),
+    setSessionName: vi.fn((name: string) => {
+      session.sessionName = name;
+    }),
     compact: vi.fn(async () => {
       await Promise.resolve();
       return { summary: "short summary", tokensBefore: 123 };
@@ -113,19 +115,24 @@ describe("SessionCommandService", () => {
 
   it("reloads runtime resources through the injected lifecycle callback", async () => {
     const active = activeSession();
-    const reloadSession = vi.fn(async () => { await Promise.resolve(); });
+    const reloadSession = vi.fn(async () => {
+      await Promise.resolve();
+    });
     const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), { reloadSession });
 
     await expect(service.run("s1", "/reload")).resolves.toEqual({
       type: "done",
-      message: "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes.",
+      message:
+        "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes.",
     });
     expect(reloadSession).toHaveBeenCalledWith(active.runtime.session);
   });
 
   it("rejects runtime reload while the session has active work", async () => {
     const active = activeSession({ isBashRunning: true });
-    const reloadSession = vi.fn(async () => { await Promise.resolve(); });
+    const reloadSession = vi.fn(async () => {
+      await Promise.resolve();
+    });
     const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), { reloadSession });
 
     await expect(service.run("s1", "/reload")).resolves.toEqual({
@@ -208,7 +215,12 @@ describe("SessionCommandService", () => {
 
     expect(result).toMatchObject({ type: "select", title: "Fork from message", options: [{ value: "newest" }, { value: "middle" }, { value: "oldest" }] });
     if (result.type !== "select") throw new Error("Expected select result");
-    await expect(service.respond("s1", result.requestId, "newest")).resolves.toMatchObject({ type: "done", message: "Session forked", session: { id: "s1" }, promptDraft: "newest message" });
+    await expect(service.respond("s1", result.requestId, "newest")).resolves.toMatchObject({
+      type: "done",
+      message: "Session forked",
+      session: { id: "s1" },
+      promptDraft: "newest message",
+    });
     expect(active.runtime.fork).toHaveBeenCalledWith("newest", { position: "before" });
     await expect(service.respond("s1", result.requestId, "newest")).resolves.toEqual({ type: "unsupported", message: "Command request expired" });
   });
@@ -221,9 +233,15 @@ describe("SessionCommandService", () => {
       return Promise.resolve({ cancelled: false, selectedText: "newest message" });
     });
     const events = eventPublisher();
-    const service = new SessionCommandService(() => getActive(active), vi.fn(), events, {}, {
-      listSessionNames: () => Promise.resolve(["Build auth", "Build auth — Fork 1"]),
-    });
+    const service = new SessionCommandService(
+      () => getActive(active),
+      vi.fn(),
+      events,
+      {},
+      {
+        listSessionNames: () => Promise.resolve(["Build auth", "Build auth — Fork 1"]),
+      },
+    );
 
     const result = await service.run("s1", "/fork");
     if (result.type !== "select") throw new Error("Expected select result");
@@ -243,9 +261,15 @@ describe("SessionCommandService", () => {
       active.runtime.session = cloned;
       return Promise.resolve({ cancelled: false });
     });
-    const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), {}, {
-      listSessionNames: () => Promise.resolve(["Build auth", "Build auth — Copy 1"]),
-    });
+    const service = new SessionCommandService(
+      () => getActive(active),
+      vi.fn(),
+      eventPublisher(),
+      {},
+      {
+        listSessionNames: () => Promise.resolve(["Build auth", "Build auth — Copy 1"]),
+      },
+    );
 
     await expect(service.run("s1", "/clone")).resolves.toMatchObject({
       type: "done",
@@ -261,12 +285,20 @@ describe("SessionCommandService", () => {
     const names = deferred<readonly string[]>();
     const listSessionNames = vi.fn(() => names.promise);
     let navigationActive = false;
-    const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), {
-      isTreeNavigationActive: () => navigationActive,
-    }, { listSessionNames });
+    const service = new SessionCommandService(
+      () => getActive(active),
+      vi.fn(),
+      eventPublisher(),
+      {
+        isTreeNavigationActive: () => navigationActive,
+      },
+      { listSessionNames },
+    );
 
     const clone = service.run("s1", "/clone");
-    await vi.waitFor(() => { expect(listSessionNames).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(listSessionNames).toHaveBeenCalledOnce();
+    });
     navigationActive = true;
     names.resolve([]);
 
@@ -285,7 +317,9 @@ describe("SessionCommandService", () => {
     const service = new SessionCommandService(() => getActive(active), vi.fn(), eventPublisher(), {}, { listSessionNames });
 
     const clone = service.run("s1", "/clone");
-    await vi.waitFor(() => { expect(listSessionNames).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(listSessionNames).toHaveBeenCalledOnce();
+    });
     leafId = "leaf-after-navigation";
     names.resolve([]);
 
@@ -383,9 +417,15 @@ describe("SessionCommandService", () => {
       return Promise.resolve({ cancelled: false, selectedText: "some text" });
     });
     const events = eventPublisher();
-    const service = new SessionCommandService(() => getActive(active), vi.fn(), events, {}, {
-      listSessionNames: () => Promise.resolve(["Build auth"]),
-    });
+    const service = new SessionCommandService(
+      () => getActive(active),
+      vi.fn(),
+      events,
+      {},
+      {
+        listSessionNames: () => Promise.resolve(["Build auth"]),
+      },
+    );
 
     await expect(service.forkEntry("s1", "entry-9")).resolves.toMatchObject({
       type: "done",

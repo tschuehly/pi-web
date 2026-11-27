@@ -14,7 +14,9 @@ export function cacheMissNotice(miss: CacheMiss | undefined): string | undefined
   const cost = miss.missedCost >= 0.01 ? ` (~$${miss.missedCost.toFixed(2)})` : "";
   const label = miss.modelChanged
     ? "Cache miss after model switch"
-    : miss.idleMs >= CACHE_TTL_MS ? `Cache miss after ${String(Math.round(miss.idleMs / 60_000))}m idle` : "Cache miss";
+    : miss.idleMs >= CACHE_TTL_MS
+      ? `Cache miss after ${String(Math.round(miss.idleMs / 60_000))}m idle`
+      : "Cache miss";
   return `${label}: ${formatTokens(miss.missedTokens)} tokens re-billed${cost}`;
 }
 
@@ -54,7 +56,10 @@ export function cacheMissNoticesByEntryId(entries: readonly unknown[], models: M
 export function cacheScanEntries(messages: readonly unknown[], keep: "whole" | "usage" = "whole"): Record<string, unknown>[] {
   return messages.flatMap((message) => {
     if (!isRecord(message)) return [];
-    if ((message["role"] === "system" && message["source"] === "compaction") || (message["role"] === "custom" && message["customType"] === "context-checkpoint")) {
+    if (
+      (message["role"] === "system" && message["source"] === "compaction")
+      || (message["role"] === "custom" && message["customType"] === "context-checkpoint")
+    ) {
       return [{ type: "compaction" }];
     }
     if (!paidTurn(message)) return [];
@@ -66,8 +71,13 @@ export function cacheScanEntries(messages: readonly unknown[], keep: "whole" | "
 
 /** The TUI shows no notice for aborted or failed turns. */
 function paidTurn(message: unknown): message is AssistantMessage {
-  return isRecord(message) && message["role"] === "assistant" && isRecord(message["usage"])
-    && message["stopReason"] !== "aborted" && message["stopReason"] !== "error";
+  return (
+    isRecord(message)
+    && message["role"] === "assistant"
+    && isRecord(message["usage"])
+    && message["stopReason"] !== "aborted"
+    && message["stopReason"] !== "error"
+  );
 }
 
 /** Durable Pi session entries; the SDK scan tolerates any entry type it does not count. */

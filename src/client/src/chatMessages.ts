@@ -2,7 +2,13 @@ import { ASK_USER_ANSWERS_CUSTOM_TYPE } from "../../shared/apiTypes";
 import { parseAskUserOutcome } from "./api/parsers";
 import { isSessionMediaId, validImageDimensions } from "../../shared/sessionMedia";
 import type { ChatImagePart, ChatLine, ChatPart, GoalLifecycleDetails, ToolExecutionPart, ToolPreview, WorkingModeDial } from "./chatTypes";
-import { validGoalId, WORKING_MODE_AXES as WORKING_MODE_VALUES, WORKING_MODE_AXIS_NAMES, workingModeState, type WorkingModeState } from "./extensionStatusSnapshots";
+import {
+  validGoalId,
+  WORKING_MODE_AXES as WORKING_MODE_VALUES,
+  WORKING_MODE_AXIS_NAMES,
+  workingModeState,
+  type WorkingModeState,
+} from "./extensionStatusSnapshots";
 
 export function normalizeMessages(messages: unknown[]): ChatLine[] {
   return linkEarlierAskImages(coalesceToolExecutions(messages.flatMap(normalizeMessage)).filter((message) => message.parts.length > 0));
@@ -15,9 +21,13 @@ export function normalizeMessages(messages: unknown[]): ChatLine[] {
  */
 export function linkEarlierAskImages(lines: ChatLine[]): ChatLine[] {
   type RecordPart = Extract<ChatPart, { type: "askUserRecord" }>;
-  const records = lines.flatMap((line) => line.parts.flatMap((part) => part.type === "askUserRecord" ? [part] : []));
+  const records = lines.flatMap((line) => line.parts.flatMap((part) => (part.type === "askUserRecord" ? [part] : [])));
   if (!records.some((part) => part.outcome.images?.some((image) => image.revision !== undefined) === true)) return lines;
-  const sends = new Map(records.flatMap((part) => part.outcome.partial === true && part.outcome.revision !== undefined ? [[`${part.outcome.askId}@${part.outcome.revision}`, part] as const] : []));
+  const sends = new Map(
+    records.flatMap((part) =>
+      part.outcome.partial === true && part.outcome.revision !== undefined ? [[`${part.outcome.askId}@${part.outcome.revision}`, part] as const] : [],
+    ),
+  );
   const linked = (part: RecordPart): RecordPart => {
     const images = part.outcome.images;
     if (images === undefined || images.every((image) => image.revision === undefined)) return part;
@@ -30,7 +40,7 @@ export function linkEarlierAskImages(lines: ChatLine[]): ChatLine[] {
     return next.every((each, index) => each === part.images?.[index]) ? part : { ...part, images: next };
   };
   return lines.map((line) => {
-    const parts = line.parts.map((part) => part.type === "askUserRecord" ? linked(part) : part);
+    const parts = line.parts.map((part) => (part.type === "askUserRecord" ? linked(part) : part));
     return parts.every((part, index) => part === line.parts[index]) ? line : { ...line, parts };
   });
 }
@@ -57,12 +67,10 @@ export function appendText(messages: ChatLine[], role: ChatLine["role"], text: s
   const last = messages.at(-1);
   const lastPart = last?.parts.at(-1);
   if (last?.role === role && !last.parts.some((part) => part.type === "skillRead") && lastPart?.type === "text") {
-    return [
-      ...messages.slice(0, -1),
-      { ...last, parts: [...last.parts.slice(0, -1), { type: "text", text: lastPart.text + text }] },
-    ];
+    return [...messages.slice(0, -1), { ...last, parts: [...last.parts.slice(0, -1), { type: "text", text: lastPart.text + text }] }];
   }
-  if (last?.role === role && !last.parts.some((part) => part.type === "skillRead")) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "text", text }] }];
+  if (last?.role === role && !last.parts.some((part) => part.type === "skillRead"))
+    return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "text", text }] }];
   return [...messages, textMessage(role, text)];
 }
 
@@ -71,19 +79,17 @@ export function appendThinking(messages: ChatLine[], text: string): ChatLine[] {
   const last = messages.at(-1);
   const lastPart = last?.parts.at(-1);
   if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead") && lastPart?.type === "thinking") {
-    return [
-      ...messages.slice(0, -1),
-      { ...last, parts: [...last.parts.slice(0, -1), { type: "thinking", text: lastPart.text + text }] },
-    ];
+    return [...messages.slice(0, -1), { ...last, parts: [...last.parts.slice(0, -1), { type: "thinking", text: lastPart.text + text }] }];
   }
-  if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead")) return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "thinking", text }] }];
+  if (last?.role === "assistant" && !last.parts.some((part) => part.type === "skillRead"))
+    return [...messages.slice(0, -1), { ...last, parts: [...last.parts, { type: "thinking", text }] }];
   return [...messages, { role: "assistant", parts: [{ type: "thinking", text }] }];
 }
 
 export function normalizeMessage(message: unknown): ChatLine[] {
   if (isChatLine(message)) {
     if (!message.parts.some((part) => getString(part, "type") === "image")) return [message];
-    return [{ ...message, parts: message.parts.flatMap((part) => getString(part, "type") === "image" ? normalizeImage(part) : [part]) }];
+    return [{ ...message, parts: message.parts.flatMap((part) => (getString(part, "type") === "image" ? normalizeImage(part) : [part])) }];
   }
   const lifecycle = goalLifecycleDetails(message);
   if (lifecycle !== undefined) return [withMessageMeta({ role: "system", parts: [{ type: "goalLifecycle", details: lifecycle }] }, message)];
@@ -97,14 +103,17 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   const rawRole = getString(message, "role");
   const role = normalizeRole(rawRole);
   const contentParts = normalizeContent(getProperty(message, "content"), message);
-  const supersededRecord = rawRole === "toolResult"
-    ? askUserRecordFromToolDetails(getString(message, "toolName") ?? "", getProperty(message, "details"))
-    : undefined;
+  const supersededRecord =
+    rawRole === "toolResult" ? askUserRecordFromToolDetails(getString(message, "toolName") ?? "", getProperty(message, "details")) : undefined;
   // Every tool result needs a result part, even when its output is empty or
   // image-only, so coalescing can finish the call without losing chronology.
-  const resultParts = rawRole === "toolResult" && !contentParts.some((part) => part.type === "toolResult")
-    ? [toolResultPartFromText(contentParts.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n"), message), ...contentParts.filter((part) => part.type === "image")]
-    : contentParts;
+  const resultParts =
+    rawRole === "toolResult" && !contentParts.some((part) => part.type === "toolResult")
+      ? [
+          toolResultPartFromText(contentParts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"), message),
+          ...contentParts.filter((part) => part.type === "image"),
+        ]
+      : contentParts;
   const parts = [...resultParts, ...(supersededRecord === undefined ? [] : [supersededRecord])];
   const skillLines = role === "user" ? normalizeSkillInvocation(parts) : undefined;
   if (skillLines !== undefined) return skillLines.map((line) => withMessageMeta(line, message));
@@ -114,11 +123,13 @@ export function normalizeMessage(message: unknown): ChatLine[] {
   const visible = parts.filter((part) => part.type !== "empty");
   const displayRole = role === "assistant" && visible.length > 0 && visible.every((part) => part.type === "skillRead") ? "skill" : role;
   const severity = isReportedFailure(message) ? { severity: "error" as const } : {};
-  const lines = visible.length > 0 ? [withMessageMeta({ role: displayRole, parts: visible, ...(source === undefined ? {} : { source }), ...severity }, message)] : [];
+  const lines =
+    visible.length > 0 ? [withMessageMeta({ role: displayRole, parts: visible, ...(source === undefined ? {} : { source }), ...severity }, message)] : [];
   const errorLine = assistantErrorLine(message);
   const cacheMissNotice = role === "assistant" ? getString(message, "cacheMissNotice") : undefined;
-  const noticeLine: ChatLine | undefined = cacheMissNotice === undefined || cacheMissNotice === "" ? undefined : { ...textMessage("system", cacheMissNotice), severity: "warning" };
-  return [...lines, ...[errorLine, noticeLine].flatMap((line) => line === undefined ? [] : [withMessageMeta(line, message)])];
+  const noticeLine: ChatLine | undefined =
+    cacheMissNotice === undefined || cacheMissNotice === "" ? undefined : { ...textMessage("system", cacheMissNotice), severity: "warning" };
+  return [...lines, ...[errorLine, noticeLine].flatMap((line) => (line === undefined ? [] : [withMessageMeta(line, message)]))];
 }
 
 /** A custom message whose details report a failed Worker receipt; it must stay prominent, never fold among routine notices. */
@@ -128,10 +139,16 @@ function isReportedFailure(message: unknown): boolean {
 
 function subagentCompletionText(message: unknown): string | undefined {
   const details = getProperty(message, "details");
-  if (getString(message, "role") !== "custom" || getString(message, "customType") !== "pi-workbench:child-completion"
-    || !isRecord(details) || Array.isArray(details) || details["attention"] !== "terminal-results"
+  if (
+    getString(message, "role") !== "custom"
+    || getString(message, "customType") !== "pi-workbench:child-completion"
+    || !isRecord(details)
+    || Array.isArray(details)
+    || details["attention"] !== "terminal-results"
     // A failed Worker receipt shares the attention value; it stays a prominent failure (isReportedFailure).
-    || "receiptStatus" in details) return undefined;
+    || "receiptStatus" in details
+  )
+    return undefined;
   const content = getString(message, "content");
   return content === "" ? undefined : content;
 }
@@ -147,15 +164,38 @@ function backgroundBashPart(message: unknown): Extract<ChatPart, { type: "backgr
   const logPath = getString(details, "logPath");
   const exitCode = getProperty(details, "exitCode");
   const content = getString(message, "content");
-  if (id === undefined || id === "" || command === undefined || command === "" || logPath === undefined || logPath === ""
-    || elapsedSeconds === undefined || !Number.isInteger(elapsedSeconds) || elapsedSeconds < 0
+  if (
+    id === undefined
+    || id === ""
+    || command === undefined
+    || command === ""
+    || logPath === undefined
+    || logPath === ""
+    || elapsedSeconds === undefined
+    || !Number.isInteger(elapsedSeconds)
+    || elapsedSeconds < 0
     || (state !== "complete" && state !== "failed" && state !== "cancelled")
-    || (exitCode !== undefined && (typeof exitCode !== "number" || !Number.isInteger(exitCode))) || content === undefined) return undefined;
+    || (exitCode !== undefined && (typeof exitCode !== "number" || !Number.isInteger(exitCode)))
+    || content === undefined
+  )
+    return undefined;
   // Durable jobs write `Full output:`; older persisted completions carry the session-shutdown wording.
   const marker = [`\nFull output: ${logPath}\n`, `\nFull output (available until session shutdown): ${logPath}\n`].find((text) => content.includes(text));
   if (marker === undefined) return undefined;
   const output = content.slice(content.indexOf(marker) + marker.length).replace(/^\[showing recent output only\]\n/, "");
-  return { type: "backgroundBash", details: { id, command, ...(description === undefined || description === "" ? {} : { description }), state, elapsedSeconds, logPath, ...(typeof exitCode === "number" ? { exitCode } : {}) }, output };
+  return {
+    type: "backgroundBash",
+    details: {
+      id,
+      command,
+      ...(description === undefined || description === "" ? {} : { description }),
+      state,
+      elapsedSeconds,
+      logPath,
+      ...(typeof exitCode === "number" ? { exitCode } : {}),
+    },
+    output,
+  };
 }
 
 function assistantErrorLine(message: unknown): ChatLine | undefined {
@@ -167,18 +207,23 @@ function assistantErrorLine(message: unknown): ChatLine | undefined {
 
 function isChatLine(message: unknown): message is ChatLine {
   const role = getString(message, "role");
-  return (role === "user" || role === "assistant" || role === "tool" || role === "system" || role === "bash" || role === "skill")
-    && Array.isArray(getProperty(message, "parts"));
+  return (
+    (role === "user" || role === "assistant" || role === "tool" || role === "system" || role === "bash" || role === "skill")
+    && Array.isArray(getProperty(message, "parts"))
+  );
 }
 
 function normalizeSkillInvocation(parts: ChatPart[]): ChatLine[] | undefined {
   if (parts.length !== 1 || parts[0]?.type !== "text") return undefined;
   const text = parts[0].text;
   const skill = parseSkillBlock(text);
-  if (skill !== undefined) return [
-    { role: "user", parts: [{ type: "skillInvocation", name: skill.name, location: skill.location, content: skill.content }] },
-    ...(skill.userMessage === undefined ? [] : [{ role: "user" as const, parts: inlineSkillParts(skill.userMessage) ?? [{ type: "text" as const, text: skill.userMessage }] }]),
-  ];
+  if (skill !== undefined)
+    return [
+      { role: "user", parts: [{ type: "skillInvocation", name: skill.name, location: skill.location, content: skill.content }] },
+      ...(skill.userMessage === undefined
+        ? []
+        : [{ role: "user" as const, parts: inlineSkillParts(skill.userMessage) ?? [{ type: "text" as const, text: skill.userMessage }] }]),
+    ];
   const segments = inlineSkillParts(text);
   return segments === undefined ? undefined : [{ role: "user", parts: segments }];
 }
@@ -277,32 +322,45 @@ function normalizeContent(content: unknown, message: unknown): ChatPart[] {
   }
   if (!Array.isArray(content)) return objectFallback(content);
 
-  return content.flatMap((part): ChatPart[] => {
-    const type = getString(part, "type");
-    const text = getString(part, "text");
-    const displayText = getString(part, "displayText");
-    const display = displayText === undefined ? {} : { displayText };
-    if (type === "text") return text !== undefined && text !== "" ? [{ type: "text", text, ...display }] : [];
-    if (type === "thinking") {
-      const thinking = getString(part, "thinking") ?? text;
-      return thinking !== undefined && thinking !== "" ? [{ type: "thinking", text: thinking, ...display }] : [];
-    }
-    if (type === "toolCall") {
-      const toolName = getString(part, "name") ?? "tool";
-      const args = getProperty(part, "arguments");
-      const toolCallId = getString(part, "id");
-      const skillRead = toolName === "read" ? parseSkillReadPath(getString(args, "path")) : undefined;
-      if (skillRead !== undefined) return [{ type: "skillRead", ...skillRead, ...(toolCallId === undefined ? {} : { toolCallId }) }];
-      return [{ type: "toolCall", ...(toolCallId === undefined ? {} : { toolCallId }), toolName, summary: summarizeArgs(args), ...(args === undefined ? {} : { args }) }];
-    }
-    if (type === "image") return normalizeImage(part);
-    return objectFallback(part);
-  }).map((part) => part.type === "text" && getString(message, "role") === "toolResult"
-    ? toolResultPartFromText(part.text, message)
-    : part);
+  return content
+    .flatMap((part): ChatPart[] => {
+      const type = getString(part, "type");
+      const text = getString(part, "text");
+      const displayText = getString(part, "displayText");
+      const display = displayText === undefined ? {} : { displayText };
+      if (type === "text") return text !== undefined && text !== "" ? [{ type: "text", text, ...display }] : [];
+      if (type === "thinking") {
+        const thinking = getString(part, "thinking") ?? text;
+        return thinking !== undefined && thinking !== "" ? [{ type: "thinking", text: thinking, ...display }] : [];
+      }
+      if (type === "toolCall") {
+        const toolName = getString(part, "name") ?? "tool";
+        const args = getProperty(part, "arguments");
+        const toolCallId = getString(part, "id");
+        const skillRead = toolName === "read" ? parseSkillReadPath(getString(args, "path")) : undefined;
+        if (skillRead !== undefined) return [{ type: "skillRead", ...skillRead, ...(toolCallId === undefined ? {} : { toolCallId }) }];
+        return [
+          {
+            type: "toolCall",
+            ...(toolCallId === undefined ? {} : { toolCallId }),
+            toolName,
+            summary: summarizeArgs(args),
+            ...(args === undefined ? {} : { args }),
+          },
+        ];
+      }
+      if (type === "image") return normalizeImage(part);
+      return objectFallback(part);
+    })
+    .map((part) => (part.type === "text" && getString(message, "role") === "toolResult" ? toolResultPartFromText(part.text, message) : part));
 }
 
-const WORKING_MODE_AXES = [["alignment", "Alignment"], ["attention", "Attention"], ["checking", "Checking"], ["orchestration", "Orchestration"]] as const;
+const WORKING_MODE_AXES = [
+  ["alignment", "Alignment"],
+  ["attention", "Attention"],
+  ["checking", "Checking"],
+  ["orchestration", "Orchestration"],
+] as const;
 
 /** Pi Workbench Working Mode block: values from details, per-dial guidance from the model-facing text. */
 function workingModeDials(message: unknown): WorkingModeDial[] | undefined {
@@ -310,11 +368,14 @@ function workingModeDials(message: unknown): WorkingModeDial[] | undefined {
   const selection = getProperty(getProperty(message, "details"), "selection");
   if (!WORKING_MODE_AXES.every(([key]) => typeof getProperty(selection, key) === "string")) return undefined;
   const content = getProperty(message, "content");
-  const text = typeof content === "string" ? content
-    : Array.isArray(content) ? content.map((part) => getString(part, "text") ?? "").join("\n") : "";
+  const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((part) => getString(part, "text") ?? "").join("\n") : "";
   return WORKING_MODE_AXES.map(([key, label]) => {
     const value = getString(selection, key) ?? "";
-    const guidance = text.split("\n").find((line) => line.startsWith(`${label} — ${value}: `))?.slice(`${label} — ${value}: `.length).trim();
+    const guidance = text
+      .split("\n")
+      .find((line) => line.startsWith(`${label} — ${value}: `))
+      ?.slice(`${label} — ${value}: `.length)
+      .trim();
     return guidance !== undefined && guidance !== "" ? { label, value, guidance } : { label, value };
   });
 }
@@ -346,8 +407,15 @@ export function workingModeSummary(dials: readonly WorkingModeDial[], previous: 
 }
 
 const GOAL_LIFECYCLE_STATES = {
-  start: "active", resume: "active", pause: "paused", wait: "waiting", block: "blocked",
-  usage_limit: "usage_limited", budget_limit: "budget_limited", complete: "complete", clear: "cleared",
+  start: "active",
+  resume: "active",
+  pause: "paused",
+  wait: "waiting",
+  block: "blocked",
+  usage_limit: "usage_limited",
+  budget_limit: "budget_limited",
+  complete: "complete",
+  clear: "cleared",
 } as const;
 
 function goalLifecycleDetails(message: unknown): GoalLifecycleDetails | undefined {
@@ -355,20 +423,32 @@ function goalLifecycleDetails(message: unknown): GoalLifecycleDetails | undefine
   const details = getProperty(message, "details");
   if (!isRecord(details) || Array.isArray(details)) return undefined;
   const keys = Object.keys(details);
-  if (!["schemaVersion", "goalId", "transition", "state"].every((key) => Object.hasOwn(details, key))
+  if (
+    !["schemaVersion", "goalId", "transition", "state"].every((key) => Object.hasOwn(details, key))
     || keys.some((key) => !["schemaVersion", "goalId", "transition", "state", "reason", "summary"].includes(key))
-    || details["schemaVersion"] !== 1 || !validGoalId(details["goalId"])) return undefined;
+    || details["schemaVersion"] !== 1
+    || !validGoalId(details["goalId"])
+  )
+    return undefined;
   const transition = details["transition"];
   if (!isGoalLifecycleTransition(transition) || details["state"] !== GOAL_LIFECYCLE_STATES[transition]) return undefined;
   const reason = Object.hasOwn(details, "reason") ? details["reason"] : undefined;
   const summary = Object.hasOwn(details, "summary") ? details["summary"] : undefined;
-  if ((Object.hasOwn(details, "reason") && !validLifecycleText(reason))
-    || (Object.hasOwn(details, "summary") && !validLifecycleText(summary))) return undefined;
+  if ((Object.hasOwn(details, "reason") && !validLifecycleText(reason)) || (Object.hasOwn(details, "summary") && !validLifecycleText(summary)))
+    return undefined;
   try {
     if (new TextEncoder().encode(JSON.stringify(details)).byteLength > 3_500) return undefined;
-  } catch { return undefined; }
-  return { schemaVersion: 1, goalId: details["goalId"], transition, state: GOAL_LIFECYCLE_STATES[transition],
-    ...(typeof reason === "string" ? { reason } : {}), ...(typeof summary === "string" ? { summary } : {}) };
+  } catch {
+    return undefined;
+  }
+  return {
+    schemaVersion: 1,
+    goalId: details["goalId"],
+    transition,
+    state: GOAL_LIFECYCLE_STATES[transition],
+    ...(typeof reason === "string" ? { reason } : {}),
+    ...(typeof summary === "string" ? { summary } : {}),
+  };
 }
 
 function isGoalLifecycleTransition(value: unknown): value is keyof typeof GOAL_LIFECYCLE_STATES {
@@ -376,8 +456,17 @@ function isGoalLifecycleTransition(value: unknown): value is keyof typeof GOAL_L
 }
 
 function validLifecycleText(value: unknown): value is string {
-  return typeof value === "string" && value !== "" && Array.from(value).length <= 400
-    && value === value.replace(/(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/gu, "").replace(/\p{Cc}/gu, " ").replace(/\s+/gu, " ").trim();
+  return (
+    typeof value === "string"
+    && value !== ""
+    && Array.from(value).length <= 400
+    && value
+      === value
+        .replace(/(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/gu, "")
+        .replace(/\p{Cc}/gu, " ")
+        .replace(/\s+/gu, " ")
+        .trim()
+  );
 }
 
 function normalizeImage(part: unknown): ChatPart[] {
@@ -386,9 +475,14 @@ function normalizeImage(part: unknown): ChatPart[] {
   const dimensions = validImageDimensions(getProperty(part, "width"), getProperty(part, "height"));
   if (mediaId !== undefined) {
     const byteSize = getNumber(part, "byteSize");
-    if (isSessionMediaId(mediaId)
-      && mimeType !== undefined && /^image\/[a-z0-9][a-z0-9.+-]*$/iu.test(mimeType)
-      && byteSize !== undefined && Number.isSafeInteger(byteSize) && byteSize >= 0) {
+    if (
+      isSessionMediaId(mediaId)
+      && mimeType !== undefined
+      && /^image\/[a-z0-9][a-z0-9.+-]*$/iu.test(mimeType)
+      && byteSize !== undefined
+      && Number.isSafeInteger(byteSize)
+      && byteSize >= 0
+    ) {
       return [{ type: "image", mediaId, mimeType, byteSize, ...dimensions }];
     }
   } else {
@@ -403,11 +497,15 @@ function askUserRecordPart(message: unknown): Extract<ChatPart, { type: "askUser
   const record = parsedAskUserRecord(getProperty(message, "details"));
   // A host that took images sends text then image blocks; a string content carries none.
   const content = getProperty(message, "content");
-  const blocks = Array.isArray(content) ? content.filter((part) => getString(part, "type") === "image").flatMap((part) => normalizeImage(part).filter((each): each is ChatImagePart => each.type === "image")) : [];
+  const blocks = Array.isArray(content)
+    ? content
+        .filter((part) => getString(part, "type") === "image")
+        .flatMap((part) => normalizeImage(part).filter((each): each is ChatImagePart => each.type === "image"))
+    : [];
   if (record === undefined || blocks.length === 0) return record;
   // The blocks are this send's images in order; an earlier send's (tagged with its revision) are in that send's entry.
   let next = 0;
-  return { ...record, images: (record.outcome.images ?? []).map((image) => image.revision === undefined ? blocks[next++] : undefined) };
+  return { ...record, images: (record.outcome.images ?? []).map((image) => (image.revision === undefined ? blocks[next++] : undefined)) };
 }
 
 /** Project the withdrawn (or legacy superseded) ask carried by an `ask_user` tool result, if any. */
@@ -482,9 +580,16 @@ function coalesceToolExecutions(lines: ChatLine[]): ChatLine[] {
       }
 
       if (part.type === "toolResult") {
-        if (part.toolCallId !== undefined && part.toolName === "read" && skillReadIds.has(part.toolCallId) && !part.isError
-          && getString(part.details, "diff") === undefined && previewFromDetails(part.details)?.diff === undefined
-          && !line.parts.some((item) => item.type === "image" || item.type === "askUserRecord")) continue;
+        if (
+          part.toolCallId !== undefined
+          && part.toolName === "read"
+          && skillReadIds.has(part.toolCallId)
+          && !part.isError
+          && getString(part.details, "diff") === undefined
+          && previewFromDetails(part.details)?.diff === undefined
+          && !line.parts.some((item) => item.type === "image" || item.type === "askUserRecord")
+        )
+          continue;
         const target = part.toolCallId === undefined ? undefined : pendingTools.get(part.toolCallId);
         if (target !== undefined && mergeToolResultInto(result, target, part, line.meta)) {
           pendingTools.delete(part.toolCallId ?? "");
@@ -517,7 +622,12 @@ function toolExecutionFromCall(part: Extract<ChatPart, { type: "toolCall" }>): T
   };
 }
 
-function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; partIndex: number }, result: Extract<ChatPart, { type: "toolResult" }>, meta: ChatLine["meta"]): boolean {
+function mergeToolResultInto(
+  lines: ChatLine[],
+  target: { lineIndex: number; partIndex: number },
+  result: Extract<ChatPart, { type: "toolResult" }>,
+  meta: ChatLine["meta"],
+): boolean {
   const line = lines[target.lineIndex];
   const current = line?.parts[target.partIndex];
   if (line === undefined || current?.type !== "toolExecution") return false;
@@ -530,7 +640,11 @@ function mergeToolResultInto(lines: ChatLine[], target: { lineIndex: number; par
     ...(result.details === undefined ? {} : { details: result.details }),
     ...(preview === undefined ? {} : { preview }),
   };
-  lines[target.lineIndex] = { ...line, parts: [...line.parts.slice(0, target.partIndex), next, ...line.parts.slice(target.partIndex + 1)], ...(meta === undefined ? {} : { meta }) };
+  lines[target.lineIndex] = {
+    ...line,
+    parts: [...line.parts.slice(0, target.partIndex), next, ...line.parts.slice(target.partIndex + 1)],
+    ...(meta === undefined ? {} : { meta }),
+  };
   return true;
 }
 
@@ -563,7 +677,9 @@ export function summarizeArgs(args: unknown): string {
   if (typeof args["oldText"] === "string" && typeof args["newText"] === "string") return "edit text replacement";
   const edits = args["edits"];
   if (Array.isArray(edits)) return `${String(edits.length)} edit${edits.length === 1 ? "" : "s"}`;
-  const entries = Object.entries(args).filter(([, value]) => value != null).slice(0, 3);
+  const entries = Object.entries(args)
+    .filter(([, value]) => value != null)
+    .slice(0, 3);
   return entries.map(([key, value]) => `${key}: ${shortValue(value)}`).join(" · ");
 }
 

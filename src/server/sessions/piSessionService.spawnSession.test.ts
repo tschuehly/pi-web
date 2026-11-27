@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { PiSessionService, type PiAgentSession } from "./piSessionService.js";
 import type { SpawnTargetDecision } from "./spawnTargetResolver.js";
-import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, testModel, testModelRuntime, type RuntimeCreator } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  testModel,
+  testModelRuntime,
+  type RuntimeCreator,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 const TEST_MODEL_SPEC = "anthropic/claude-sonnet-4-5-20250929";
@@ -9,15 +18,22 @@ const TEST_MODEL_SPEC = "anthropic/claude-sonnet-4-5-20250929";
 describe("PiSessionService", () => {
   describe("spawnSession", () => {
     function spawnService(decision: SpawnTargetDecision) {
-      const fake = fakeRuntime("spawned-1", { sessionFile: "/tmp/spawned-1.jsonl", sessionManager: fakeSessionManager(decision.allowed ? decision.cwd : "/workspace") });
+      const fake = fakeRuntime("spawned-1", {
+        sessionFile: "/tmp/spawned-1.jsonl",
+        sessionManager: fakeSessionManager(decision.allowed ? decision.cwd : "/workspace"),
+      });
       const log: { details: Record<string, unknown>; message: string }[] = [];
       const service = new PiSessionService(new CapturingSessionEventHub(), {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime: runtimeCreator(fake.runtime),
         sessionManager: sessionGateway([]),
         spawnTargets: { resolveSpawnTarget: () => Promise.resolve(decision) },
-        logger: { info: (details, message) => { log.push({ details, message }); } },
+        logger: {
+          info: (details, message) => {
+            log.push({ details, message });
+          },
+        },
         heartbeatIntervalMs: 60_000,
       });
       return { fake, service, log };
@@ -26,12 +42,22 @@ describe("PiSessionService", () => {
     it("starts a session at the resolved target, delivers the prompt, and logs the spawn", async () => {
       const { fake, service, log } = spawnService({ allowed: true, cwd: "/workspace-feature" });
 
-      const result = await service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "continue the plan", cwd: "/workspace-feature" });
+      const result = await service.spawnSession({
+        spawningCwd: "/workspace",
+        spawningSessionId: "spawner-1",
+        prompt: "continue the plan",
+        cwd: "/workspace-feature",
+      });
 
       expect(result).toEqual({ sessionId: "spawned-1", cwd: "/workspace-feature" });
       expect(fake.calls.prompt).toEqual([{ text: "continue the plan", options: undefined }]);
       const spawnLog = log.filter(({ message }) => message === "spawn_session started a new session");
-      expect(spawnLog).toEqual([{ details: { spawningCwd: "/workspace", sessionId: "spawned-1", cwd: "/workspace-feature", promptLength: 17 }, message: "spawn_session started a new session" }]);
+      expect(spawnLog).toEqual([
+        {
+          details: { spawningCwd: "/workspace", sessionId: "spawned-1", cwd: "/workspace-feature", promptLength: 17 },
+          message: "spawn_session started a new session",
+        },
+      ]);
       await service.dispose();
     });
 
@@ -48,7 +74,7 @@ describe("PiSessionService", () => {
       };
       const service = new PiSessionService(new CapturingSessionEventHub(), {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime,
         sessionManager: sessionGateway([]),
         spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd: "/workspace-feature" }) },
@@ -72,14 +98,20 @@ describe("PiSessionService", () => {
       };
       const service = new PiSessionService(new CapturingSessionEventHub(), {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime,
         sessionManager: sessionGateway([]),
         spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd: "/workspace-feature" }) },
         heartbeatIntervalMs: 60_000,
       });
 
-      await service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "continue", cwd: "/workspace-feature", thinkingLevel: "high" });
+      await service.spawnSession({
+        spawningCwd: "/workspace",
+        spawningSessionId: "spawner-1",
+        prompt: "continue",
+        cwd: "/workspace-feature",
+        thinkingLevel: "high",
+      });
 
       expect(initialThinkingLevel).toBe("high");
       await service.dispose();
@@ -95,7 +127,7 @@ describe("PiSessionService", () => {
       };
       const service = new PiSessionService(new CapturingSessionEventHub(), {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime,
         sessionManager: sessionGateway([]),
         spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd: "/workspace-feature" }) },
@@ -109,10 +141,14 @@ describe("PiSessionService", () => {
     });
 
     it("names the spawned session's model in the result", async () => {
-      const spawned = fakeRuntime("spawned-1", { sessionFile: "/tmp/spawned-1.jsonl", model: testModel(), sessionManager: fakeSessionManager("/workspace-feature") });
+      const spawned = fakeRuntime("spawned-1", {
+        sessionFile: "/tmp/spawned-1.jsonl",
+        model: testModel(),
+        sessionManager: fakeSessionManager("/workspace-feature"),
+      });
       const service = new PiSessionService(new CapturingSessionEventHub(), {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime: runtimeCreator(spawned.runtime),
         sessionManager: sessionGateway([]),
         spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd: "/workspace-feature" }) },
@@ -128,8 +164,9 @@ describe("PiSessionService", () => {
     it("rejects an out-of-project target without starting a session", async () => {
       const { fake, service } = spawnService({ allowed: false, reason: "out-of-project", allowedCwds: ["/workspace"] });
 
-      await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/elsewhere" }))
-        .rejects.toThrow("cwd must be a workspace of this project. Allowed: /workspace");
+      await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/elsewhere" })).rejects.toThrow(
+        "cwd must be a workspace of this project. Allowed: /workspace",
+      );
       expect(fake.calls.prompt).toEqual([]);
       expect(service.activeCount()).toBe(0);
       await service.dispose();
@@ -138,8 +175,9 @@ describe("PiSessionService", () => {
     it("rejects when the spawning session is not in a registered project", async () => {
       const { service } = spawnService({ allowed: false, reason: "not-registered" });
 
-      await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: undefined }))
-        .rejects.toThrow("Spawning session is not in a registered project");
+      await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: undefined })).rejects.toThrow(
+        "Spawning session is not in a registered project",
+      );
       await service.dispose();
     });
 
@@ -147,14 +185,15 @@ describe("PiSessionService", () => {
       const fake = fakeRuntime("spawned-x");
       const service = new PiSessionService(new CapturingSessionEventHub(), {
         agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+        modelRuntime: testModelRuntime,
         createAgentRuntime: runtimeCreator(fake.runtime),
         sessionManager: sessionGateway([]),
         heartbeatIntervalMs: 60_000,
       });
 
-      await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: undefined }))
-        .rejects.toThrow("Spawning sessions is disabled");
+      await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: undefined })).rejects.toThrow(
+        "Spawning sessions is disabled",
+      );
       await service.dispose();
     });
 
@@ -167,7 +206,11 @@ describe("PiSessionService", () => {
        */
       function specService(spawnerPatch: Parameters<typeof fakeRuntime>[1] = {}) {
         const spawner = fakeRuntime("spawner-1", { sessionFile: "/tmp/spawner-1.jsonl", sessionManager: fakeSessionManager("/workspace"), ...spawnerPatch });
-        const spawned = fakeRuntime("spawned-2", { sessionFile: "/tmp/spawned-2.jsonl", model: testModel(), sessionManager: fakeSessionManager("/workspace-feature") });
+        const spawned = fakeRuntime("spawned-2", {
+          sessionFile: "/tmp/spawned-2.jsonl",
+          model: testModel(),
+          sessionManager: fakeSessionManager("/workspace-feature"),
+        });
         const initialModels: PiAgentSession["model"][] = [];
         const runtimes = [spawner.runtime, spawned.runtime];
         let index = 0;
@@ -180,7 +223,7 @@ describe("PiSessionService", () => {
         };
         const service = new PiSessionService(new CapturingSessionEventHub(), {
           agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+          modelRuntime: testModelRuntime,
           createAgentRuntime,
           sessionManager: sessionGateway([]),
           spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd: "/workspace-feature" }) },
@@ -194,7 +237,13 @@ describe("PiSessionService", () => {
         const { service, initialModels } = specService({ scopedModels: [{ model: scoped }] });
         await service.start("/workspace");
 
-        const result = await service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/workspace-feature", modelSpec: TEST_MODEL_SPEC });
+        const result = await service.spawnSession({
+          spawningCwd: "/workspace",
+          spawningSessionId: "spawner-1",
+          prompt: "go",
+          cwd: "/workspace-feature",
+          modelSpec: TEST_MODEL_SPEC,
+        });
 
         expect(initialModels).toHaveLength(2);
         expect(initialModels[0]).toBeUndefined();
@@ -209,7 +258,13 @@ describe("PiSessionService", () => {
         const { service, initialModels } = specService();
         await service.start("/workspace");
 
-        const result = await service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/workspace-feature", modelSpec: TEST_MODEL_SPEC });
+        const result = await service.spawnSession({
+          spawningCwd: "/workspace",
+          spawningSessionId: "spawner-1",
+          prompt: "go",
+          cwd: "/workspace-feature",
+          modelSpec: TEST_MODEL_SPEC,
+        });
 
         expect(initialModels[1]).toMatchObject({ provider: "anthropic", id: "claude-sonnet-4-5-20250929" });
         expect(result).toEqual({ sessionId: "spawned-2", cwd: "/workspace-feature", model: TEST_MODEL_SPEC });
@@ -220,8 +275,9 @@ describe("PiSessionService", () => {
         const { service, spawned, initialModels } = specService({ scopedModels: [{ model: testModel() }] });
         await service.start("/workspace");
 
-        await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/workspace-feature", modelSpec }))
-          .rejects.toThrow(`Unknown model "${modelSpec}". Pass an exact "provider/model-id".`);
+        await expect(
+          service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/workspace-feature", modelSpec }),
+        ).rejects.toThrow(`Unknown model "${modelSpec}". Pass an exact "provider/model-id".`);
         expect(initialModels).toEqual([undefined]);
         expect(spawned.calls.prompt).toEqual([]);
         expect(service.activeCount()).toBe(1);
@@ -232,8 +288,15 @@ describe("PiSessionService", () => {
         const { service, spawned, initialModels } = specService({ scopedModels: [{ model: testModel() }] });
         await service.start("/workspace");
 
-        await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/workspace-feature", modelSpec: "anthropic/does-not-exist" }))
-          .rejects.toThrow('Unknown model "anthropic/does-not-exist". Pass an exact "provider/model-id".');
+        await expect(
+          service.spawnSession({
+            spawningCwd: "/workspace",
+            spawningSessionId: "spawner-1",
+            prompt: "go",
+            cwd: "/workspace-feature",
+            modelSpec: "anthropic/does-not-exist",
+          }),
+        ).rejects.toThrow('Unknown model "anthropic/does-not-exist". Pass an exact "provider/model-id".');
         expect(initialModels).toEqual([undefined]);
         expect(spawned.calls.prompt).toEqual([]);
         expect(service.activeCount()).toBe(1);
@@ -244,16 +307,27 @@ describe("PiSessionService", () => {
         const { service } = specService();
         await service.start("/workspace");
 
-        await expect(service.spawnSession({ spawningCwd: "/workspace", spawningSessionId: "spawner-1", prompt: "go", cwd: "/workspace-feature", modelSpec: "ghost/model" }))
-          .rejects.toThrow('Unknown model "ghost/model". Pass an exact "provider/model-id".');
+        await expect(
+          service.spawnSession({
+            spawningCwd: "/workspace",
+            spawningSessionId: "spawner-1",
+            prompt: "go",
+            cwd: "/workspace-feature",
+            modelSpec: "ghost/model",
+          }),
+        ).rejects.toThrow('Unknown model "ghost/model". Pass an exact "provider/model-id".');
         await service.dispose();
       });
 
       it("does not resolve the spawning session when no model spec is given", async () => {
-        const spawned = fakeRuntime("spawned-2", { sessionFile: "/tmp/spawned-2.jsonl", model: testModel(), sessionManager: fakeSessionManager("/workspace-feature") });
+        const spawned = fakeRuntime("spawned-2", {
+          sessionFile: "/tmp/spawned-2.jsonl",
+          model: testModel(),
+          sessionManager: fakeSessionManager("/workspace-feature"),
+        });
         const service = new PiSessionService(new CapturingSessionEventHub(), {
           agentDir: TEST_AGENT_DIR,
-      modelRuntime: testModelRuntime,
+          modelRuntime: testModelRuntime,
           createAgentRuntime: runtimeCreator(spawned.runtime),
           sessionManager: sessionGateway([]),
           spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd: "/workspace-feature" }) },

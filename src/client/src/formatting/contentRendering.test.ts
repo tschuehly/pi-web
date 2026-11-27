@@ -69,7 +69,10 @@ describe("shared content rendering", () => {
     if (host === null) throw new Error("Expected host");
     await settleDeferredContent(host);
     expect(draw.mock.calls[0]?.[0]).toMatchObject({ machineId: "remote", text: "source", language: "test", filePath: "dir/a.test" });
-    await renderPublicMarkdown(capability.renderMarkdown({ machineId: "other", text: "```js extra\ncode\n```", toSafeHtml: renderWorkspaceMarkdownHtml }), root);
+    await renderPublicMarkdown(
+      capability.renderMarkdown({ machineId: "other", text: "```js extra\ncode\n```", toSafeHtml: renderWorkspaceMarkdownHtml }),
+      root,
+    );
     const boundary = root.querySelector<ContentRenderingBoundary>("pi-web-content-rendering-boundary");
     const fence = boundary?.renderRoot.querySelector<ContentRendererHost>("pi-web-content-renderer");
     if (fence === undefined || fence === null) throw new Error("Expected fence host");
@@ -86,7 +89,11 @@ describe("shared content rendering", () => {
     document.body.append(root);
     const refresh = async () => {
       if (kind === "text") render(capability.renderText({ machineId: "remote", text: "source", language: "diagram" }), root);
-      else await renderPublicMarkdown(capability.renderMarkdown({ machineId: "remote", text: "```diagram\nsource\n```", toSafeHtml: renderWorkspaceMarkdownHtml }), root);
+      else
+        await renderPublicMarkdown(
+          capability.renderMarkdown({ machineId: "remote", text: "```diagram\nsource\n```", toSafeHtml: renderWorkspaceMarkdownHtml }),
+          root,
+        );
       const host = root.querySelector<ContentRendererHost>("pi-web-content-renderer");
       if (host === null) throw new Error("Expected host");
       await settleDeferredContent(host);
@@ -108,12 +115,22 @@ describe("shared content rendering", () => {
   it("renders machine-scoped snapshots and refreshes unavailable renderers through the same input", async () => {
     let enabled = true;
     const registry = new PluginRegistry({ isContributionEnabled: () => enabled });
-    await registry.registerBatch(["local", "remote"].map((machineId) => ({
-      id: `${machineId}-diagram`, machineId, machineSpecific: true,
-      plugin: { apiVersion: 4, name: machineId, activate: () => ({ contributions: {
-        contentRenderers: [renderer(({ text }) => html`<div class="diagram">${machineId}: ${text}</div>`)],
-      } }) },
-    })));
+    await registry.registerBatch(
+      ["local", "remote"].map((machineId) => ({
+        id: `${machineId}-diagram`,
+        machineId,
+        machineSpecific: true,
+        plugin: {
+          apiVersion: 4,
+          name: machineId,
+          activate: () => ({
+            contributions: {
+              contentRenderers: [renderer(({ text }) => html`<div class="diagram">${machineId}: ${text}</div>`)],
+            },
+          }),
+        },
+      })),
+    );
     const element = new FormattedText();
     element.text = "```diagram\nsource\n```";
     element.contentRendering = registry.getChatContentRendering("local");
@@ -175,7 +192,10 @@ describe("shared content rendering", () => {
 
   it("restores exact renderer and mode, but not across identities, source changes or missing renderers", async () => {
     const { element, registry } = await mount("```diagram\nsource\n```", { ...renderer(), renderMode: "manual" });
-    await registry.register({ id: "z", plugin: { apiVersion: 4, name: "Z", activate: () => ({ contributions: { contentRenderers: [{ ...renderer(), renderMode: "manual" }] } }) } });
+    await registry.register({
+      id: "z",
+      plugin: { apiVersion: 4, name: "Z", activate: () => ({ contributions: { contentRenderers: [{ ...renderer(), renderMode: "manual" }] } }) },
+    });
     element.contentRendering = registry.getChatContentRendering(element.machineId);
     element.intentKey = "memory-chooser";
     await settleDeferredContent(element);
@@ -258,7 +278,10 @@ describe("shared content rendering", () => {
     button(host, "test / diagram").click();
     await settleDeferredContent(host);
     const preview = host.shadowRoot?.querySelector("b");
-    await registry.register({ id: "other", plugin: { apiVersion: 4, name: "Other", activate: () => ({ contributions: { contentRenderers: [{ ...manual, renderMode: "manual" }] } }) } });
+    await registry.register({
+      id: "other",
+      plugin: { apiVersion: 4, name: "Other", activate: () => ({ contributions: { contentRenderers: [{ ...manual, renderMode: "manual" }] } }) },
+    });
     element.contentRendering = registry.getChatContentRendering(element.machineId);
     await settleDeferredContent(element);
     await settleDeferredContent(host);
@@ -354,10 +377,16 @@ describe("shared content rendering", () => {
   it("omits embedded controls only on request and retains failure source and cancellation", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const inputs: ContentRendererInput[] = [];
-    const capability = createContentRenderingCapability(() => [{ id: "test:diagram", label: "Test / diagram", renderer: renderer((input) => {
-      inputs.push(input);
-      return html`<b>Preview</b>`;
-    }) }]);
+    const capability = createContentRenderingCapability(() => [
+      {
+        id: "test:diagram",
+        label: "Test / diagram",
+        renderer: renderer((input) => {
+          inputs.push(input);
+          return html`<b>Preview</b>`;
+        }),
+      },
+    ]);
     const root = document.createElement("div");
     document.body.append(root);
     render(capability.renderText({ machineId: "local", text: "source", controls: "external" }), root);
@@ -425,7 +454,13 @@ describe("shared content rendering", () => {
   it("contains synchronous and asynchronous failures, ignoring stale failure callbacks", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const inputs: ContentRendererInput[] = [];
-    const { element } = await mount("```diagram\none\n```", renderer((input) => { inputs.push(input); return html`<b>${input.text}</b>`; }));
+    const { element } = await mount(
+      "```diagram\none\n```",
+      renderer((input) => {
+        inputs.push(input);
+        return html`<b>${input.text}</b>`;
+      }),
+    );
     const host = await hostIn(element);
     element.text = "```diagram\ntwo\n```";
     await settleDeferredContent(element);
@@ -444,7 +479,12 @@ describe("shared content rendering", () => {
     button(host, "test / diagram").click();
     await settleDeferredContent(host);
     expect(host.shadowRoot?.querySelector("b")?.textContent).toBe("two");
-    const failed = await mount("```diagram\nthrow\n```", renderer(() => { throw new Error("sync"); }));
+    const failed = await mount(
+      "```diagram\nthrow\n```",
+      renderer(() => {
+        throw new Error("sync");
+      }),
+    );
     expect((await hostIn(failed.element)).shadowRoot?.textContent).toContain("Preview failed");
   });
 
@@ -514,9 +554,15 @@ describe("shared content rendering", () => {
   it("switches only one diagram, cancels stale work, resets failure and preserves choices during streaming", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const inputs: ContentRendererInput[] = [];
-    const draw = vi.fn((input: ContentRendererInput) => { inputs.push(input); return html`<b>Alternative</b>`; });
+    const draw = vi.fn((input: ContentRendererInput) => {
+      inputs.push(input);
+      return html`<b>Alternative</b>`;
+    });
     const { element, registry } = await mount("```diagram\nfirst\n```\n\n```diagram\nsecond\n```");
-    await registry.register({ id: "z-other", plugin: { apiVersion: 4, name: "Other", activate: () => ({ contributions: { contentRenderers: [renderer(draw)] } }) } });
+    await registry.register({
+      id: "z-other",
+      plugin: { apiVersion: 4, name: "Other", activate: () => ({ contributions: { contentRenderers: [renderer(draw)] } }) },
+    });
     element.contentRendering = registry.getChatContentRendering(element.machineId);
     await settleDeferredContent(element);
     const host = await hostIn(element);
@@ -524,8 +570,11 @@ describe("shared content rendering", () => {
     if (second === undefined) throw new Error("Expected second diagram");
     await settleDeferredContent(second);
     expect(host.renderRoot.querySelector("select")).toBeNull();
-    expect([...host.renderRoot.querySelectorAll('.views button')].map((view) => view.textContent.trim()))
-      .toEqual(["test / diagram", "z-other / diagram", "Raw"]);
+    expect([...host.renderRoot.querySelectorAll(".views button")].map((view) => view.textContent.trim())).toEqual([
+      "test / diagram",
+      "z-other / diagram",
+      "Raw",
+    ]);
     expect(draw).toHaveBeenCalledTimes(2); // New last automatic becomes the default.
     for (const item of [host, second]) {
       button(item, "test / diagram").click();

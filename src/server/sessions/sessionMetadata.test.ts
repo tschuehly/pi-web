@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { readSessionUiMetadata, requireSessionUiMetadata, SESSION_UI_METADATA_CUSTOM_TYPE, SESSION_UI_METADATA_MAX_BYTES, sessionUiMetadataFromEntry } from "./sessionMetadata.js";
+import {
+  readSessionUiMetadata,
+  requireSessionUiMetadata,
+  SESSION_UI_METADATA_CUSTOM_TYPE,
+  SESSION_UI_METADATA_MAX_BYTES,
+  sessionUiMetadataFromEntry,
+} from "./sessionMetadata.js";
 
 function entry(metadata: unknown, version = 1) {
   return { type: "custom", customType: SESSION_UI_METADATA_CUSTOM_TYPE, data: { version, metadata } };
@@ -18,9 +24,18 @@ describe("session UI metadata boundary", () => {
   });
 
   it.each([
-    null, [], "text", { "": {} }, { "bad namespace": {} }, { example: [] }, { example: null },
-    { example: 1 }, { example: { secret: undefined } }, { example: { invalid: Number.NaN } },
-    { example: { invalid: new Date() } }, { example: { invalid: () => undefined } },
+    null,
+    [],
+    "text",
+    { "": {} },
+    { "bad namespace": {} },
+    { example: [] },
+    { example: null },
+    { example: 1 },
+    { example: { secret: undefined } },
+    { example: { invalid: Number.NaN } },
+    { example: { invalid: new Date() } },
+    { example: { invalid: () => undefined } },
   ])("rejects non-JSON or non-namespaced input %j", (input) => {
     expect(() => requireSessionUiMetadata(input)).toThrow();
   });
@@ -41,8 +56,12 @@ describe("session UI metadata boundary", () => {
     for (const candidate of [
       { type: "custom", customType: "private-extension", data: metadata },
       { type: "custom_message", customType: SESSION_UI_METADATA_CUSTOM_TYPE, data: { version: 1, metadata } },
-      entry(metadata, 2), entry({ example: "not an object" }), entry(undefined), null,
-    ]) expect(sessionUiMetadataFromEntry(candidate)).toBeUndefined();
+      entry(metadata, 2),
+      entry({ example: "not an object" }),
+      entry(undefined),
+      null,
+    ])
+      expect(sessionUiMetadataFromEntry(candidate)).toBeUndefined();
   });
 
   it("folds session-wide snapshots in file order, skipping corrupt entries and allowing an explicit clear", () => {

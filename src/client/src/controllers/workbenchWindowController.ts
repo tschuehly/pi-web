@@ -31,9 +31,7 @@ export interface WindowLocks {
 }
 
 /** What one window asks another: show one of its Chats, or hand Chats over to the asking window. */
-export type WindowRequest =
-  | { kind: "select"; sessionId: string; anchor?: string | undefined }
-  | { kind: "move"; sessionIds: string[] };
+export type WindowRequest = { kind: "select"; sessionId: string; anchor?: string | undefined } | { kind: "move"; sessionIds: string[] };
 
 /** Window `from` asks window `to` (with `request`, void after `expires`), or `to` gets the answer `ok` to its request `id`. */
 interface WindowMessage {
@@ -83,17 +81,25 @@ export function browserWindowEnvironment(): WorkbenchWindowEnvironment {
     tabStorage: window.sessionStorage,
     locks,
     url: () => new URL(window.location.href),
-    replaceUrl: (url) => { window.history.replaceState(window.history.state, "", url); },
+    replaceUrl: (url) => {
+      window.history.replaceState(window.history.state, "", url);
+    },
     now: () => Date.now(),
     newId: newWindowId,
     onStorage: (listener) => {
-      const onStorage = (event: StorageEvent) => { listener(event.key); };
+      const onStorage = (event: StorageEvent) => {
+        listener(event.key);
+      };
       window.addEventListener("storage", onStorage);
-      return () => { window.removeEventListener("storage", onStorage); };
+      return () => {
+        window.removeEventListener("storage", onStorage);
+      };
     },
     onPageHide: (listener) => {
       window.addEventListener("pagehide", listener);
-      return () => { window.removeEventListener("pagehide", listener); };
+      return () => {
+        window.removeEventListener("pagehide", listener);
+      };
     },
     post: (message) => {
       const channel = new BroadcastChannel(WINDOW_CHANNEL);
@@ -102,8 +108,12 @@ export function browserWindowEnvironment(): WorkbenchWindowEnvironment {
     },
     onMessage: (listener) => {
       const channel = new BroadcastChannel(WINDOW_CHANNEL);
-      channel.onmessage = (event: MessageEvent) => { listener(event.data); };
-      return () => { channel.close(); };
+      channel.onmessage = (event: MessageEvent) => {
+        listener(event.data);
+      };
+      return () => {
+        channel.close();
+      };
     },
   };
 }
@@ -140,17 +150,32 @@ export class WorkbenchWindowController {
   ) {
     // Only the holder can hand a live claim on. Its synchronous writes finish before that handoff;
     // dispose revokes callbacks before releasing the id lock, so a closed holder cannot write late.
-    this.draftStorage = ownedDraftStorage((key) => this.run !== undefined && this.read()[this.windowId]?.chats.some((chat) =>
-      key === machineSessionKey(chat.machineId, chat.sessionId)
-      || chat.startupToken !== undefined && key === machineSessionKey(chat.machineId, chat.startupToken.startsWith("creating:") ? chat.startupToken : `creating:${chat.startupToken}`),
-    ) === true, environment.draftStorage);
+    this.draftStorage = ownedDraftStorage(
+      (key) =>
+        this.run !== undefined
+        && this.read()[this.windowId]?.chats.some(
+          (chat) =>
+            key === machineSessionKey(chat.machineId, chat.sessionId)
+            || (chat.startupToken !== undefined
+              && key === machineSessionKey(chat.machineId, chat.startupToken.startsWith("creating:") ? chat.startupToken : `creating:${chat.startupToken}`)),
+        ) === true,
+      environment.draftStorage,
+    );
   }
 
-  get id(): string { return this.windowId; }
+  get id(): string {
+    return this.windowId;
+  }
   /** False without Web Locks: this window then shares nothing with the others. */
-  get shared(): boolean { return this.environment.locks !== undefined; }
-  get store(): WindowStore { return this.current; }
-  get window(): WorkbenchWindow | undefined { return this.current[this.windowId]; }
+  get shared(): boolean {
+    return this.environment.locks !== undefined;
+  }
+  get store(): WindowStore {
+    return this.current;
+  }
+  get window(): WorkbenchWindow | undefined {
+    return this.current[this.windowId];
+  }
 
   async start(): Promise<void> {
     if (this.run !== undefined) return;
@@ -162,7 +187,9 @@ export class WorkbenchWindowController {
     if (this.run !== run) return;
     this.writeTimes(WINDOW_CLOSED_KEY, Object.fromEntries(Object.entries(this.readTimes(WINDOW_CLOSED_KEY)).filter(([id]) => id !== this.windowId)));
     this.beat();
-    this.heartbeat = setInterval(() => { this.beat(); }, HEARTBEAT_MS);
+    this.heartbeat = setInterval(() => {
+      this.beat();
+    }, HEARTBEAT_MS);
     this.unsubscribe = [
       this.environment.onStorage((key) => {
         if (key !== WINDOW_STORE_KEY) return;
@@ -170,8 +197,12 @@ export class WorkbenchWindowController {
         this.onExternalChange();
       }),
       // A reloaded page beats again on start; a closed one stays marked closed.
-      this.environment.onPageHide(() => { this.markClosed(); }),
-      this.environment.onMessage((message) => { void this.receive(message); }),
+      this.environment.onPageHide(() => {
+        this.markClosed();
+      }),
+      this.environment.onMessage((message) => {
+        void this.receive(message);
+      }),
     ];
   }
 
@@ -179,7 +210,7 @@ export class WorkbenchWindowController {
     const url = this.environment.url();
     const requested = url.searchParams.get(WINDOW_URL_PARAM) ?? this.environment.tabStorage?.getItem(TAB_WINDOW_KEY) ?? null;
     const id = await this.exclusive(async () => {
-      if (requested !== null && requested !== "" && await this.holdId(requested)) return requested;
+      if (requested !== null && requested !== "" && (await this.holdId(requested))) return requested;
       const fresh = this.environment.newId();
       await this.holdId(fresh);
       return fresh;
@@ -188,7 +219,11 @@ export class WorkbenchWindowController {
       url.searchParams.set(WINDOW_URL_PARAM, id);
       this.environment.replaceUrl(url);
     }
-    try { this.environment.tabStorage?.setItem(TAB_WINDOW_KEY, id); } catch { /* The URL still carries the id. */ }
+    try {
+      this.environment.tabStorage?.setItem(TAB_WINDOW_KEY, id);
+    } catch {
+      /* The URL still carries the id. */
+    }
     this.windowId = id;
     const claimed = id;
     // Closed windows without Chats are dropped; closed ones with Chats stay for their restored window for 7 days.
@@ -201,14 +236,19 @@ export class WorkbenchWindowController {
       const latest = this.read();
       const closedAt = this.readTimes(WINDOW_CLOSED_KEY);
       const closed: Record<string, number> = {};
-      const kept = ensureWindow(Object.fromEntries(Object.entries(latest).filter(([candidate, window]) => {
-        if (candidate === claimed || isAlive(candidate)) return true;
-        // A window closed before close times were recorded starts its 7 days now.
-        const since = closedAt[candidate] ?? now;
-        if (window.chats.length === 0 || now - since > CLOSED_WINDOW_RETENTION_MS) return false;
-        closed[candidate] = since;
-        return true;
-      })), claimed);
+      const kept = ensureWindow(
+        Object.fromEntries(
+          Object.entries(latest).filter(([candidate, window]) => {
+            if (candidate === claimed || isAlive(candidate)) return true;
+            // A window closed before close times were recorded starts its 7 days now.
+            const since = closedAt[candidate] ?? now;
+            if (window.chats.length === 0 || now - since > CLOSED_WINDOW_RETENTION_MS) return false;
+            closed[candidate] = since;
+            return true;
+          }),
+        ),
+        claimed,
+      );
       this.writeTimes(WINDOW_CLOSED_KEY, closed);
       try {
         this.write(kept);
@@ -227,7 +267,11 @@ export class WorkbenchWindowController {
     return new Promise((held) => {
       void locks.request(`${WINDOW_ID_LOCK_PREFIX}${id}`, { ifAvailable: true }, (lock) => {
         held(lock !== null);
-        return lock === null ? undefined : new Promise<void>((release) => { this.releaseId = release; });
+        return lock === null
+          ? undefined
+          : new Promise<void>((release) => {
+              this.releaseId = release;
+            });
       });
     });
   }
@@ -264,10 +308,16 @@ export class WorkbenchWindowController {
       this.current = latest;
       const holder = this.holderIn(latest, chat.sessionId, chat.startupToken);
       const reservationWindow = holder ?? this.windowId;
-      const reservation = latest[reservationWindow]?.chats.find((held) => held.sessionId !== chat.sessionId && held.sessionId.startsWith("creating:") && held.startupToken !== undefined && held.startupToken === chat.startupToken);
+      const reservation = latest[reservationWindow]?.chats.find(
+        (held) =>
+          held.sessionId !== chat.sessionId
+          && held.sessionId.startsWith("creating:")
+          && held.startupToken !== undefined
+          && held.startupToken === chat.startupToken,
+      );
       // A real-id claim is compare-and-set even for a closed target: a delayed selection must not undo a move.
       // A pending reservation cannot be moved; only its dead creator may be recovered here.
-      if (holder !== undefined && (reservation === undefined || await this.isHeld(holder))) return false;
+      if (holder !== undefined && (reservation === undefined || (await this.isHeld(holder)))) return false;
       try {
         // Open before closing the reservation, so the window never drops to one Chat and keeps its layout.
         const opened = openChat(latest, this.windowId, chat);
@@ -277,7 +327,8 @@ export class WorkbenchWindowController {
         if (latest[this.windowId]?.chats.some((held) => held.sessionId === chat.sessionId) !== true) throw error;
       }
       // Transfer the draft only after ownership commits, under the same lock as the identity change.
-      if (reservation !== undefined) moveDraft(machineSessionKey(chat.machineId, reservation.sessionId), machineSessionKey(chat.machineId, chat.sessionId), this.draftStorage);
+      if (reservation !== undefined)
+        moveDraft(machineSessionKey(chat.machineId, reservation.sessionId), machineSessionKey(chat.machineId, chat.sessionId), this.draftStorage);
       return true;
     });
   }
@@ -287,14 +338,14 @@ export class WorkbenchWindowController {
     return this.exclusive(async () => {
       const latest = this.read();
       const holder = this.holderIn(latest, sessionId);
-      if (holder !== undefined && !await this.isHeld(holder)) this.write(closeChats(latest, holder, [sessionId]));
+      if (holder !== undefined && !(await this.isHeld(holder))) this.write(closeChats(latest, holder, [sessionId]));
     });
   }
 
   /** The other live window holding `sessionId`, if any. */
   async ownerOf(sessionId: string): Promise<string | undefined> {
     const holder = this.holderIn(this.read(), sessionId);
-    return holder !== undefined && await this.isHeld(holder) ? holder : undefined;
+    return holder !== undefined && (await this.isHeld(holder)) ? holder : undefined;
   }
 
   /** Whether this window holds the Chat, read from the store as stored now: a suspended page may have missed changes. */
@@ -304,11 +355,18 @@ export class WorkbenchWindowController {
 
   /** The reservation is authoritative even before its backend id is known in this window. */
   reservationId(sessionId: string, startupToken?: string): string {
-    return Object.values(this.read()).flatMap((window) => window.chats).find((chat) => chat.sessionId === sessionId || startupToken !== undefined && chat.startupToken === startupToken)?.sessionId ?? sessionId;
+    return (
+      Object.values(this.read())
+        .flatMap((window) => window.chats)
+        .find((chat) => chat.sessionId === sessionId || (startupToken !== undefined && chat.startupToken === startupToken))?.sessionId ?? sessionId
+    );
   }
 
   private holderIn(store: WindowStore, sessionId: string, startupToken?: string): string | undefined {
-    return Object.entries(store).find(([id, window]) => id !== this.windowId && window.chats.some((chat) => chat.sessionId === sessionId || startupToken !== undefined && chat.startupToken === startupToken))?.[0];
+    return Object.entries(store).find(
+      ([id, window]) =>
+        id !== this.windowId && window.chats.some((chat) => chat.sessionId === sessionId || (startupToken !== undefined && chat.startupToken === startupToken)),
+    )?.[0];
   }
 
   /** Only a held id lock proves a window alive; without Web Locks no other window counts. */
@@ -320,7 +378,11 @@ export class WorkbenchWindowController {
   private async heldIds(): Promise<Set<string>> {
     const locks = this.environment.locks;
     if (locks === undefined) return new Set();
-    return new Set(((await locks.query()).held ?? []).flatMap(({ name }) => name?.startsWith(WINDOW_ID_LOCK_PREFIX) === true ? [name.slice(WINDOW_ID_LOCK_PREFIX.length)] : []));
+    return new Set(
+      ((await locks.query()).held ?? []).flatMap(({ name }) =>
+        name?.startsWith(WINDOW_ID_LOCK_PREFIX) === true ? [name.slice(WINDOW_ID_LOCK_PREFIX.length)] : [],
+      ),
+    );
   }
 
   /**
@@ -333,9 +395,9 @@ export class WorkbenchWindowController {
     if (owner === undefined) return "here";
     for (let attempt = 0; attempt < SELECT_ATTEMPTS; attempt += 1) {
       if (await this.ask(owner, { kind: "select", sessionId, anchor }, SELECT_REPLY_MS)) return "shown";
-      owner = await this.ownerOf(sessionId) ?? owner;
+      owner = (await this.ownerOf(sessionId)) ?? owner;
     }
-    return await this.ownerOf(sessionId) === undefined ? "here" : "unanswered";
+    return (await this.ownerOf(sessionId)) === undefined ? "here" : "unanswered";
   }
 
   /** Asks window `windowId`; false when it declines or does not answer within `timeoutMs`. */
@@ -345,8 +407,14 @@ export class WorkbenchWindowController {
     // Asking proves this window live, so the asked window can check that before it hands Chats over.
     this.beat();
     return new Promise((resolve) => {
-      const answer = (ok: boolean) => { clearTimeout(timer); this.answers.delete(id); resolve(ok); };
-      const timer = setTimeout(() => { answer(false); }, timeoutMs);
+      const answer = (ok: boolean) => {
+        clearTimeout(timer);
+        this.answers.delete(id);
+        resolve(ok);
+      };
+      const timer = setTimeout(() => {
+        answer(false);
+      }, timeoutMs);
       this.answers.set(id, answer);
       this.environment.post({ id, to: windowId, from: this.windowId, request, expires: this.environment.now() + timeoutMs });
     });
@@ -364,7 +432,9 @@ export class WorkbenchWindowController {
   }
 
   /** An id for a window this one is about to open. */
-  newWindowId(): string { return this.environment.newId(); }
+  newWindowId(): string {
+    return this.environment.newId();
+  }
 
   isAlive(windowId: string): boolean {
     return windowId === this.windowId || (this.readTimes(WINDOW_HEARTBEAT_KEY)[windowId] ?? 0) > this.environment.now() - STALE_MS;
@@ -409,7 +479,11 @@ export class WorkbenchWindowController {
   /** Window id → ms, from the heartbeat or close-time key. */
   private readTimes(key: string): Record<string, number> {
     let parsed: unknown;
-    try { parsed = JSON.parse(this.environment.storage.getItem(key) ?? "{}"); } catch { return {}; }
+    try {
+      parsed = JSON.parse(this.environment.storage.getItem(key) ?? "{}");
+    } catch {
+      return {};
+    }
     if (typeof parsed !== "object" || parsed === null) return {};
     return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, number] => typeof entry[1] === "number"));
   }
@@ -417,7 +491,9 @@ export class WorkbenchWindowController {
   private writeTimes(key: string, times: Record<string, number>): void {
     try {
       this.environment.storage.setItem(key, JSON.stringify(times));
-    } catch { /* A missing heartbeat only makes this window look closed; a missing close time restarts its 7 days. */ }
+    } catch {
+      /* A missing heartbeat only makes this window look closed; a missing close time restarts its 7 days. */
+    }
   }
 }
 
@@ -428,7 +504,14 @@ function windowMessage(message: unknown): WindowMessage | undefined {
   const from: unknown = Reflect.get(message, "from");
   if (typeof id !== "string" || typeof to !== "string" || typeof from !== "string") return undefined;
   const expires: unknown = Reflect.get(message, "expires");
-  return { id, to, from, request: windowRequest(Reflect.get(message, "request")), expires: typeof expires === "number" ? expires : undefined, ok: Reflect.get(message, "ok") === true };
+  return {
+    id,
+    to,
+    from,
+    request: windowRequest(Reflect.get(message, "request")),
+    expires: typeof expires === "number" ? expires : undefined,
+    ok: Reflect.get(message, "ok") === true,
+  };
 }
 
 function windowRequest(request: unknown): WindowRequest | undefined {

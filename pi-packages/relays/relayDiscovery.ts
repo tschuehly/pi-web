@@ -57,10 +57,7 @@ export interface RelayDirectoryNode {
 
 export type RelayTreeNode = RelayFileNode | RelayDirectoryNode;
 
-export type RelaysListing =
-  | { kind: "loaded"; relays: RelaySummary[] }
-  | { kind: "missing" }
-  | { kind: "unavailable"; detail: string };
+export type RelaysListing = { kind: "loaded"; relays: RelaySummary[] } | { kind: "missing" } | { kind: "unavailable"; detail: string };
 
 /**
  * One relay's document tree. `partial` means some content was intentionally
@@ -95,11 +92,7 @@ export async function listWorkspaceRelays(files: RelayDiscoveryFiles): Promise<R
   } catch (error) {
     return fileAccessFailure(error);
   }
-  const relays = sortRelaysByRecency(
-    listing.entries
-      .filter((entry) => entry.type === "directory")
-      .map((entry) => toRelaySummary(entry)),
-  );
+  const relays = sortRelaysByRecency(listing.entries.filter((entry) => entry.type === "directory").map((entry) => toRelaySummary(entry)));
   return { kind: "loaded", relays };
 }
 

@@ -33,9 +33,7 @@ export interface SessionTreeKeyTransition extends SessionTreeKeyState {
   readonly action?: "confirm" | "cancel";
 }
 
-export type SessionTreeSummaryValidation =
-  | { readonly ok: true; readonly choice: SessionTreeSummaryChoice }
-  | { readonly ok: false; readonly error: string };
+export type SessionTreeSummaryValidation = { readonly ok: true; readonly choice: SessionTreeSummaryChoice } | { readonly ok: false; readonly error: string };
 
 /**
  * Turn the strict flat transport projection into a safe forest. Parent links to
@@ -207,10 +205,7 @@ export function validateSessionTreeSummaryChoice(mode: SessionTreeSummaryChoice[
   return { ok: true, choice: { mode: "custom", instructions: customInstructions.trim() } };
 }
 
-function normalizedSessionTreeParents(
-  nodesById: ReadonlyMap<string, SessionTreeNode>,
-  orderedIds: readonly string[],
-): Map<string, string | null> {
+function normalizedSessionTreeParents(nodesById: ReadonlyMap<string, SessionTreeNode>, orderedIds: readonly string[]): Map<string, string | null> {
   const parentById = new Map<string, string | null>();
   for (const id of orderedIds) {
     const candidate = nodesById.get(id)?.parentId ?? null;

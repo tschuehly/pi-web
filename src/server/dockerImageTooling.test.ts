@@ -16,16 +16,25 @@ describe("Docker image tooling boundaries", () => {
       await writeFile(join(bin, "node"), "#!/bin/sh\nprintf 'project-node\\n'\n");
       await chmod(join(bin, "node"), 0o755);
       const entry = join(root, "service.cjs");
-      await writeFile(entry, `
+      await writeFile(
+        entry,
+        `
 const { spawnSync } = require('node:child_process');
 const child = spawnSync('node', [], { encoding: 'utf8' });
 if (child.status !== 0) process.exit(1);
 process.stdout.write(JSON.stringify({ path: process.env.PATH, executable: process.execPath, child: child.stdout.trim() }));
-`);
+`,
+      );
       const toolPath = `${bin}:/data/home/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin`;
       // Replace only the unavailable image-owned interpreter at the process
       // boundary. The launcher and the service's child process run normally.
-      const { stdout } = await exec("bash", ["--noprofile", "--norc", "-c", `
+      const { stdout } = await exec(
+        "bash",
+        [
+          "--noprofile",
+          "--norc",
+          "-c",
+          `
 exec() {
   [ "$1" = /usr/local/lib/pi-web-node/bin/node ] || return 99
   shift
@@ -34,16 +43,19 @@ exec() {
 # Establish the launcher's input after any host shell initialization.
 export PATH=$SERVICE_TEST_PATH
 source "$SERVICE_TEST_LAUNCHER" "$SERVICE_TEST_ENTRY"
-`], {
-        env: {
-          PATH: toolPath,
-          BASH_ENV: "",
-          SERVICE_TEST_PATH: toolPath,
-          SERVICE_TEST_NODE: process.execPath,
-          SERVICE_TEST_LAUNCHER: resolve("docker/internal/bin/pi-web-service"),
-          SERVICE_TEST_ENTRY: entry,
+`,
+        ],
+        {
+          env: {
+            PATH: toolPath,
+            BASH_ENV: "",
+            SERVICE_TEST_PATH: toolPath,
+            SERVICE_TEST_NODE: process.execPath,
+            SERVICE_TEST_LAUNCHER: resolve("docker/internal/bin/pi-web-service"),
+            SERVICE_TEST_ENTRY: entry,
+          },
         },
-      });
+      );
       const report: unknown = JSON.parse(stdout);
       expect(report).toEqual({ path: toolPath, executable: process.execPath, child: "project-node" });
     } finally {

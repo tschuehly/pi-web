@@ -21,7 +21,10 @@ import { mockModels, type JournalEntry, type Step } from "./mockModels/client";
 //   rollback`. Also set PI_WEB_E2E_BASE_URL, PI_WEB_E2E_PROJECT_DIR, PI_WEB_E2E_WORKSPACE_ID, PI_WEB_E2E_DATA_DIR,
 //   PI_WEB_E2E_MOCK_URL and PI_WEB_E2E_QUOTA_CACHE, and run with -c e2e/durableHostPromotion.trial.config.ts.
 const trialPromote = process.env["PI_WEB_E2E_PROMOTE"];
-test.skip(trialPromote === undefined && process.env["PI_WEB_E2E_SESSIOND_ENV"] === undefined, "needs PI_WEB_E2E_DURABLE_HOST and PI_WEB_E2E_DURABLE_LAUNCHD=1, or a trial");
+test.skip(
+  trialPromote === undefined && process.env["PI_WEB_E2E_SESSIOND_ENV"] === undefined,
+  "needs PI_WEB_E2E_DURABLE_HOST and PI_WEB_E2E_DURABLE_LAUNCHD=1, or a trial",
+);
 test.skip(process.env["PI_WEB_E2E_MOCK_URL"] === undefined, "the mock model server is off (PI_WEB_E2E_MOCK_MODELS=0)");
 
 const mock = mockModels();
@@ -32,15 +35,30 @@ const chat = (page: Page) => page.locator("chat-view");
 const editor = (page: Page) => page.locator("prompt-editor .cm-content");
 const questions = (page: Page) => page.locator("workbench-question-chips .bar");
 const drawer = (page: Page) => page.locator("workbench-question-chips .drawer");
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 const tc = (name: string, args: Record<string, unknown> = {}): Step => ({ toolCall: { name, args } });
-type Message = { role?: string; toolName?: string; customType?: string; content?: string | { type: string; text?: string }[]; details?: Record<string, unknown> };
-const textOf = (message: Message) => typeof message.content === "string" ? message.content : (message.content ?? []).map((part) => part.text ?? "").join("");
+type Message = {
+  role?: string;
+  toolName?: string;
+  customType?: string;
+  content?: string | { type: string; text?: string }[];
+  details?: Record<string, unknown>;
+};
+const textOf = (message: Message) => (typeof message.content === "string" ? message.content : (message.content ?? []).map((part) => part.text ?? "").join(""));
 
 /** The one host process of this Chat's store, under this run's data folder only. */
 function hostPid(sessionId: string): number {
   const store = join(dataDir(), "durable", sessionId);
-  const lines = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").filter((line) => line.includes(`--store ${store} `));
+  const lines = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" })
+    .split("\n")
+    .filter((line) => line.includes(`--store ${store} `));
   expect(lines, `exactly one host under ${store}`).toHaveLength(1);
   return Number(lines[0]?.trim().split(/\s+/)[0]);
 }
@@ -48,15 +66,22 @@ function hostPid(sessionId: string): number {
 /** The PID launchd reports for the family's job; undefined when no such job runs (a forked host). */
 function launchdPid(sessionId: string): number | undefined {
   try {
-    const printed = execFileSync("launchctl", ["print", `gui/${String(process.getuid?.())}/${E2E_DURABLE_LABEL_PREFIX}.${sessionId}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    const printed = execFileSync("launchctl", ["print", `gui/${String(process.getuid?.())}/${E2E_DURABLE_LABEL_PREFIX}.${sessionId}`], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     const pid = /^\s*pid = (\d+)$/m.exec(printed)?.[1];
     return pid === undefined ? undefined : Number(pid);
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
 async function api(page: Page, sessionId: string, path: string, data?: object) {
   const url = `${base()}api/sessions/${encodeURIComponent(sessionId)}/${path}`;
-  return data === undefined ? page.request.get(`${url}?${new URLSearchParams({ cwd: project(), limit: "1000" }).toString()}`) : page.request.post(url, { data: { cwd: project(), ...data } });
+  return data === undefined
+    ? page.request.get(`${url}?${new URLSearchParams({ cwd: project(), limit: "1000" }).toString()}`)
+    : page.request.post(url, { data: { cwd: project(), ...data } });
 }
 async function messages(page: Page, sessionId: string): Promise<Message[]> {
   const response = await api(page, sessionId, "messages");
@@ -100,7 +125,10 @@ async function promote(step: "promote-1" | "promote-2" | "rollback"): Promise<vo
     await promisify(execFile)(trialPromote, [step], { timeout: 600_000 });
     return;
   }
-  if (step !== "rollback") { services = await restartServices({ PI_WEB_DURABLE_HOST: await revision(step) }); return; }
+  if (step !== "rollback") {
+    services = await restartServices({ PI_WEB_DURABLE_HOST: await revision(step) });
+    return;
+  }
   // The new revision's daemon starts, its web service never answers: after the health window the previous services return.
   await restartServices({ PI_WEB_DURABLE_HOST: await revision("bad") }, { web: false });
   for (let i = 0; i < 10; i += 1) {
@@ -123,7 +151,10 @@ test.afterEach(async ({ page }, info) => {
 test("AC4: two promotions and a failed-health rollback keep host, requests, queue, answer and receipts; the page converges", async ({ page }) => {
   test.setTimeout(trialPromote === undefined ? 300_000 : 1_200_000);
   await mock.reset();
-  await writeFile(process.env["PI_WEB_E2E_QUOTA_CACHE"] ?? "", JSON.stringify({ version: 1, checkedAt: Date.now(), status: 0, stdout: JSON.stringify({ providers: [] }), stderr: "" }));
+  await writeFile(
+    process.env["PI_WEB_E2E_QUOTA_CACHE"] ?? "",
+    JSON.stringify({ version: 1, checkedAt: Date.now(), status: 0, stdout: JSON.stringify({ providers: [] }), stderr: "" }),
+  );
   const id = Date.now().toString(36);
   const [lead, worker, leaf, sub] = ["lead", "worker", "leaf", "sub"].map((name) => `c4-${name}-${id}`) as [string, string, string, string];
   gate = join(project(), `c4-bash-${id}`);
@@ -136,19 +167,61 @@ test("AC4: two promotions and a failed-health rollback keep host, requests, queu
   await page.getByRole("combobox", { name: "Search models" }).fill(MOCK_CLAUDE_MODEL.id);
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: MOCK_CLAUDE_MODEL.id, exact: true }).first().click();
   await call(page, sessionId, "tools_enable", { group: "workers" });
-  const workerId = String((await call(page, sessionId, "worker_create", { name: "Survivor", scope: "promotion", profile: "coordinator" })).details?.["workerId"]);
+  const workerId = String(
+    (await call(page, sessionId, "worker_create", { name: "Survivor", scope: "promotion", profile: "coordinator" })).details?.["workerId"],
+  );
   // Gone after any reload or navigation: proves the page converged on its own.
-  await page.evaluate(() => { (window as unknown as { c4Page?: string }).c4Page = "unreloaded"; });
+  await page.evaluate(() => {
+    (window as unknown as { c4Page?: string }).c4Page = "unreloaded";
+  });
 
   // The lead's second turn streams in four parts; each promotion releases one more.
-  const leadScript = await mock.script({ provider: "anthropic", match: lead, turns: [
-    [tc("worker_dispatch", { workerId, task: worker, cognitiveRole: "coordination", background: true }),
-      tc("subagent", { task: sub, profile: "scout", cognitiveRole: "routine", background: true }),
-      tc("bash", { description: "Wait for the gate", command: `echo launch >> '${gate}'; while [ ! -e '${gate}.go' ]; do sleep .1; done; echo c4-bash-done` }),
-      tc("ask_user", { context: "Promotion survival.", questions: [{ id: "target", question: "Which target?", detail: "Where the build goes.", options: [{ value: "prod", label: "Production", detail: "Live now." }, { value: "stage", label: "Staging", detail: "Test first." }] }] })],
-    [{ text: "Lead zero alpha." }, { barrier: `${lead}-1` }, { text: " Lead one beta." }, { barrier: `${lead}-2` }, { text: " Lead two gamma." }, { barrier: `${lead}-3` }, { text: " Lead three delta." }],
-  ] });
-  const workerScript = await mock.script({ provider: "anthropic", match: worker, turns: [[tc("subagent", { task: leaf, profile: "scout", cognitiveRole: "routine", background: true })], "Worker waits for its leaf.", "Worker result after the leaf."] });
+  const leadScript = await mock.script({
+    provider: "anthropic",
+    match: lead,
+    turns: [
+      [
+        tc("worker_dispatch", { workerId, task: worker, cognitiveRole: "coordination", background: true }),
+        tc("subagent", { task: sub, profile: "scout", cognitiveRole: "routine", background: true }),
+        tc("bash", {
+          description: "Wait for the gate",
+          command: `echo launch >> '${gate}'; while [ ! -e '${gate}.go' ]; do sleep .1; done; echo c4-bash-done`,
+        }),
+        tc("ask_user", {
+          context: "Promotion survival.",
+          questions: [
+            {
+              id: "target",
+              question: "Which target?",
+              detail: "Where the build goes.",
+              options: [
+                { value: "prod", label: "Production", detail: "Live now." },
+                { value: "stage", label: "Staging", detail: "Test first." },
+              ],
+            },
+          ],
+        }),
+      ],
+      [
+        { text: "Lead zero alpha." },
+        { barrier: `${lead}-1` },
+        { text: " Lead one beta." },
+        { barrier: `${lead}-2` },
+        { text: " Lead two gamma." },
+        { barrier: `${lead}-3` },
+        { text: " Lead three delta." },
+      ],
+    ],
+  });
+  const workerScript = await mock.script({
+    provider: "anthropic",
+    match: worker,
+    turns: [
+      [tc("subagent", { task: leaf, profile: "scout", cognitiveRole: "routine", background: true })],
+      "Worker waits for its leaf.",
+      "Worker result after the leaf.",
+    ],
+  });
   // Children route by profile; without a quota snapshot the scout falls back to the Claude mock, so they match by marker only.
   const leafScript = await mock.script({ match: leaf, turns: [[{ text: "Leaf working." }, { barrier: leaf }, { text: " Leaf complete." }]] });
   const subScript = await mock.script({ match: sub, turns: [[{ text: "Subagent working." }, { barrier: sub }, { text: " Subagent result." }]] });
@@ -167,27 +240,48 @@ test("AC4: two promotions and a failed-health rollback keep host, requests, queu
 
   const pid = hostPid(sessionId);
   const launchd = launchdPid(sessionId);
-  const held = async () => Object.fromEntries((await Promise.all([leadScript, leafScript, subScript].map(requests))).map((entries, index) => [["lead", "leaf", "sub"][index], entries.map((e) => [e.seq, e.outcome])]));
+  const held = async () =>
+    Object.fromEntries(
+      (await Promise.all([leadScript, leafScript, subScript].map(requests))).map((entries, index) => [
+        ["lead", "leaf", "sub"][index],
+        entries.map((e) => [e.seq, e.outcome]),
+      ]),
+    );
   /** Promote, then: same host, no new or lost provider request, queue and open question as they were. */
   const survive = async (step: "promote-1" | "promote-2" | "rollback") => {
     // Wakes of children that finished just before are still being queued: promote once the queue is still.
-    let last = "", still = 0;
-    await expect.poll(async () => {
-      const now = JSON.stringify((await status(page, sessionId)).queuedMessages.map((m) => m.text));
-      still = now === last ? still + 1 : 0;
-      last = now;
-      return still;
-    }, { intervals: [500], timeout: 30_000 }).toBeGreaterThanOrEqual(4);
+    let last = "",
+      still = 0;
+    await expect
+      .poll(
+        async () => {
+          const now = JSON.stringify((await status(page, sessionId)).queuedMessages.map((m) => m.text));
+          still = now === last ? still + 1 : 0;
+          last = now;
+          return still;
+        },
+        { intervals: [500], timeout: 30_000 },
+      )
+      .toBeGreaterThanOrEqual(4);
     const journal = (await mock.journal({ kind: "chat" })).map((e) => [e.seq, e.outcome]);
     const before = { held: await held(), queue: (await status(page, sessionId)).queuedMessages.map((m) => m.text) };
     await promote(step);
     expect(alive(pid), `${step}: the host process lives`).toBe(true);
     expect(hostPid(sessionId), `${step}: the same host`).toBe(pid);
     expect(launchdPid(sessionId), `${step}: the same launchd job PID`).toBe(launchd);
-    expect((await mock.journal({ kind: "chat" })).map((e) => [e.seq, e.outcome]), `${step}: no provider request issued, closed or lost`).toEqual(journal);
+    expect(
+      (await mock.journal({ kind: "chat" })).map((e) => [e.seq, e.outcome]),
+      `${step}: no provider request issued, closed or lost`,
+    ).toEqual(journal);
     expect(await held()).toEqual(before.held);
     await expect.poll(async () => (await status(page, sessionId)).queuedMessages.map((m) => m.text), { timeout: 30_000 }).toEqual(before.queue);
-    steps.push({ step, hostPid: hostPid(sessionId), launchdPid: launchdPid(sessionId), held: await held(), queue: before.queue.map((text) => text.slice(0, 60)) });
+    steps.push({
+      step,
+      hostPid: hostPid(sessionId),
+      launchdPid: launchdPid(sessionId),
+      held: await held(),
+      queue: before.queue.map((text) => text.slice(0, 60)),
+    });
   };
   const steps: object[] = [];
 
@@ -238,7 +332,8 @@ test("AC4: two promotions and a failed-health rollback keep host, requests, queu
   expect(transcript.filter((m) => m.customType === "background-bash")).toHaveLength(1);
   expect((await readFile(gate, "utf8")).trim()).toBe("launch");
   // Every held provider request finished once, under its first seq; nothing was cut or retried.
-  for (const script of [leadScript, leafScript, subScript]) expect((await requests(script)).map((r) => r.outcome)).toEqual(script === leadScript ? ["completed", "completed"] : ["completed"]);
+  for (const script of [leadScript, leafScript, subScript])
+    expect((await requests(script)).map((r) => r.outcome)).toEqual(script === leadScript ? ["completed", "completed"] : ["completed"]);
   const journal = await mock.journal();
   expect(journal.filter((e) => e.outcome !== "completed")).toEqual([]);
   expect(journal.flatMap((e) => e.violations)).toEqual([]);
@@ -249,5 +344,19 @@ test("AC4: two promotions and a failed-health rollback keep host, requests, queu
   expect(hostPid(sessionId)).toBe(pid);
   expect(launchd).toBe(pid);
   expect(await page.evaluate(() => (window as unknown as { c4Page?: string }).c4Page)).toBe("unreloaded");
-  await writeFile(test.info().outputPath("survival.json"), JSON.stringify({ sessionId, steps, hostPid: pid, launchdPid: launchd, held: await held(), journal: journal.map((e) => ({ seq: e.seq, provider: e.provider, answeredBy: e.answeredBy, outcome: e.outcome })) }, null, 2));
+  await writeFile(
+    test.info().outputPath("survival.json"),
+    JSON.stringify(
+      {
+        sessionId,
+        steps,
+        hostPid: pid,
+        launchdPid: launchd,
+        held: await held(),
+        journal: journal.map((e) => ({ seq: e.seq, provider: e.provider, answeredBy: e.answeredBy, outcome: e.outcome })),
+      },
+      null,
+      2,
+    ),
+  );
 });

@@ -11,7 +11,15 @@ import type { ApplicationPanelContext, PluginRuntimeContext, WorkspacePanelConte
 import { PiWebApp } from "./PiWebApp";
 import { PromptEditor } from "./PromptEditor";
 
-const session: SessionInfo = { id: "conversation", cwd: "/repo", path: "/repo/session.jsonl", created: "now", modified: "now", messageCount: 1, firstMessage: "Hi" };
+const session: SessionInfo = {
+  id: "conversation",
+  cwd: "/repo",
+  path: "/repo/session.jsonl",
+  created: "now",
+  modified: "now",
+  messageCount: 1,
+  firstMessage: "Hi",
+};
 const workspace: Workspace = { id: "workspace", projectId: "project", path: "/repo", label: "Main", isMain: true, effectiveConfig: {} };
 const local: Machine = { id: "local", name: "Local", kind: "local", createdAt: "now", updatedAt: "now" };
 const remote: Machine = { ...local, id: "remote", name: "Remote", kind: "remote" };
@@ -59,13 +67,51 @@ async function composerHost() {
   };
   const pluginPrompt = async (id: string) => {
     let prompt: PluginPromptEditor | undefined;
-    await registry.register({ id, plugin: adaptPublicPlugin({ apiVersion: 4, name: id, activate: () => ({ contributions: {
-      actions: [{ id: "capture", title: id, run: (context) => { prompt = context.prompt; } }],
-      applicationPanels: [{ id: "application", title: id, render: (context) => { prompt = context.prompt; return html`Panel`; } }],
-      workspacePanels: [{ id: "workspace", title: id, render: (context) => { prompt = context.prompt; return html`Panel`; } }],
-    } }) }) });
+    await registry.register({
+      id,
+      plugin: adaptPublicPlugin({
+        apiVersion: 4,
+        name: id,
+        activate: () => ({
+          contributions: {
+            actions: [
+              {
+                id: "capture",
+                title: id,
+                run: (context) => {
+                  prompt = context.prompt;
+                },
+              },
+            ],
+            applicationPanels: [
+              {
+                id: "application",
+                title: id,
+                render: (context) => {
+                  prompt = context.prompt;
+                  return html`Panel`;
+                },
+              },
+            ],
+            workspacePanels: [
+              {
+                id: "workspace",
+                title: id,
+                render: (context) => {
+                  prompt = context.prompt;
+                  return html`Panel`;
+                },
+              },
+            ],
+          },
+        }),
+      }),
+    });
     const context = contextFrom(app, "createPluginRuntimeContext", isRuntimeContext);
-    await registry.getActions(context).find((action) => action.pluginId === id)?.run();
+    await registry
+      .getActions(context)
+      .find((action) => action.pluginId === id)
+      ?.run();
     if (prompt === undefined) throw new Error("Enabled plugin did not receive its prompt facade");
     return { prompt, captured: () => prompt };
   };
@@ -104,8 +150,14 @@ describe("plugin context → composer → server submission", () => {
     const onRemove = vi.fn();
     prompt.setChip?.({ id: "note", label: "Note", text: "Context", onRemove });
     let accept: ((value: { accepted: true }) => void) | undefined;
-    const request = vi.fn<typeof api.prompt>(() => new Promise((resolve) => { accept = resolve; }));
-    const command = vi.fn<typeof api.runCommand>(), shell = vi.fn<typeof api.shell>();
+    const request = vi.fn<typeof api.prompt>(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+    const command = vi.fn<typeof api.runCommand>(),
+      shell = vi.fn<typeof api.shell>();
     host.sendApi(request, { runCommand: command, shell });
     const editor = await host.refresh();
     editor.replaceText(text);
@@ -118,7 +170,9 @@ describe("plugin context → composer → server submission", () => {
     expect(onRemove).not.toHaveBeenCalled();
     expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toHaveLength(1);
     accept?.({ accepted: true });
-    await vi.waitFor(() => { expect(onRemove).toHaveBeenCalledExactlyOnceWith("submitted"); });
+    await vi.waitFor(() => {
+      expect(onRemove).toHaveBeenCalledExactlyOnceWith("submitted");
+    });
     await host.refresh();
     expect(editor.shadowRoot?.querySelector(".prompt-chip")).toBeNull();
     expect(editor.view?.state.doc.toString()).toBe("");
@@ -134,13 +188,17 @@ describe("plugin context → composer → server submission", () => {
     const editor = await host.refresh();
     editor.replaceText("Question");
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
-    await vi.waitFor(() => { expect(editor.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("kept for retry"); });
+    await vi.waitFor(() => {
+      expect(editor.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("kept for retry");
+    });
     expect(editor.view?.state.doc.toString()).toBe("Question");
     expect(onRemove).not.toHaveBeenCalled();
     expect(editor.shadowRoot?.querySelector(".prompt-chip")).not.toBeNull();
     await host.refresh();
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
-    await vi.waitFor(() => { expect(onRemove).toHaveBeenCalledExactlyOnceWith("submitted"); });
+    await vi.waitFor(() => {
+      expect(onRemove).toHaveBeenCalledExactlyOnceWith("submitted");
+    });
     expect(request).toHaveBeenCalledTimes(2);
   });
 
@@ -162,7 +220,9 @@ describe("plugin context → composer → server submission", () => {
     const editor = await restored.refresh();
     expect(editor.shadowRoot?.querySelectorAll(".prompt-chip")).toHaveLength(1);
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
-    await vi.waitFor(() => { expect(callback).toHaveBeenCalledExactlyOnceWith("submitted"); });
+    await vi.waitFor(() => {
+      expect(callback).toHaveBeenCalledExactlyOnceWith("submitted");
+    });
     expect(oldCallback).not.toHaveBeenCalled();
   });
 
@@ -171,9 +231,15 @@ describe("plugin context → composer → server submission", () => {
     const first = await host.pluginPrompt("first");
     const second = await host.pluginPrompt("second");
     // Both panel context factories must supply the registration's own facade.
-    host.registry.getApplicationPanels().find((panel) => panel.pluginId === "first")?.render(contextFrom(host.app, "createApplicationPanelContext", isApplicationContext));
+    host.registry
+      .getApplicationPanels()
+      .find((panel) => panel.pluginId === "first")
+      ?.render(contextFrom(host.app, "createApplicationPanelContext", isApplicationContext));
     first.captured()?.setChip?.({ id: "same", label: "First", text: "One" });
-    host.registry.getWorkspacePanels().find((panel) => panel.pluginId === "second")?.render(contextFrom(host.app, "createWorkspacePanelContext", isWorkspaceContext, workspace));
+    host.registry
+      .getWorkspacePanels()
+      .find((panel) => panel.pluginId === "second")
+      ?.render(contextFrom(host.app, "createWorkspacePanelContext", isWorkspaceContext, workspace));
     second.captured()?.setChip?.({ id: "same", label: "Second", text: "Two" });
     let editor = await host.refresh();
     expect(editor.shadowRoot?.querySelectorAll(".prompt-chip")).toHaveLength(2);
@@ -199,14 +265,21 @@ describe("plugin context → composer → server submission", () => {
     const { prompt } = await host.pluginPrompt("source");
     prompt.setChip?.({ id: "note", label: "Note", text: "Context" });
     let accept: ((value: { accepted: true }) => void) | undefined;
-    host.sendApi(() => new Promise((resolve) => { accept = resolve; }));
+    host.sendApi(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
     const editor = await host.refresh();
     editor.replaceText("Original");
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
     const replacement = await host.remount();
     replacement.replaceText("New draft after remount");
     accept?.({ accepted: true });
-    await vi.waitFor(() => { expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toEqual([]); });
+    await vi.waitFor(() => {
+      expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toEqual([]);
+    });
     const restored = await host.remount();
     expect(restored.view?.state.doc.toString()).toBe("New draft after remount");
   });
@@ -216,14 +289,21 @@ describe("plugin context → composer → server submission", () => {
     const { prompt } = await host.pluginPrompt("source");
     prompt.setChip?.({ id: "note", label: "Note", text: "Context" });
     let accept: ((value: { accepted: true }) => void) | undefined;
-    host.sendApi(() => new Promise((resolve) => { accept = resolve; }));
+    host.sendApi(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
     const editor = await host.refresh();
     editor.replaceText("Original");
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
     await host.select(local, { ...session, id: "other" });
     editor.replaceText("Next conversation draft");
     accept?.({ accepted: true });
-    await vi.waitFor(() => { expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toEqual([]); });
+    await vi.waitFor(() => {
+      expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toEqual([]);
+    });
     expect(editor.view?.state.doc.toString()).toBe("Next conversation draft");
     await host.select(local);
     prompt.setChip?.({ id: "note", label: "Note", text: "More context" });
@@ -232,7 +312,9 @@ describe("plugin context → composer → server submission", () => {
     editor.shadowRoot?.querySelector<HTMLButtonElement>(".send-button")?.click();
     editor.replaceText("Edited during send");
     accept?.({ accepted: true });
-    await vi.waitFor(() => { expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toEqual([]); });
+    await vi.waitFor(() => {
+      expect(host.registry.promptChips.list({ machineId: "local", sessionId: session.id })).toEqual([]);
+    });
     expect(editor.view?.state.doc.toString()).toBe("Edited during send");
   });
 });

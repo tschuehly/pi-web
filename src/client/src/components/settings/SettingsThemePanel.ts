@@ -52,7 +52,9 @@ export class SettingsThemePanel extends LitElement {
         </div>
         <label class="field ui-form-field">
           <span>Theme</span>
-          <select class="ui-input" aria-label="Theme" aria-describedby=${selectedAvailable ? "theme-scope-help" : "theme-unavailable-help theme-scope-help"} ?disabled=${busy} @change=${(event: Event) => {
+          <select class="ui-input" aria-label="Theme" aria-describedby=${selectedAvailable ? "theme-scope-help" : "theme-unavailable-help theme-scope-help"} ?disabled=${busy} @change=${(
+            event: Event,
+          ) => {
             if (event.target instanceof HTMLSelectElement) this.draft = { ...this.draft, themeId: event.target.value };
           }}>
             ${!selectedAvailable ? html`<option value=${this.draft.themeId}>${this.draft.themeId} (unavailable)</option>` : null}
@@ -68,7 +70,9 @@ export class SettingsThemePanel extends LitElement {
         </label>
         <div class="theme-actions ui-settings-actions">
           <button class="primary ui-button ui-button--action ui-button--primary" ?disabled=${busy || !selectedAvailable} @click=${() => this.onUseLocal?.({ ...this.draft })}>Use in this browser</button>
-          <button class="ui-button ui-button--action" ?disabled=${busy || !selectedAvailable} @click=${() => { void this.onSetDefault?.({ ...this.draft }); }}>Set gateway default</button>
+          <button class="ui-button ui-button--action" ?disabled=${busy || !selectedAvailable} @click=${() => {
+            void this.onSetDefault?.({ ...this.draft });
+          }}>Set gateway default</button>
           <button class="ui-button ui-button--action" ?disabled=${busy || !this.hasLocalOverride} @click=${() => this.onUseDefault?.()}>Use the default</button>
         </div>
         <p class="hint" id="theme-scope-help">Setting a default leaves saved browser choices unchanged. Use the default to remove this browser's override.</p>
@@ -80,12 +84,17 @@ export class SettingsThemePanel extends LitElement {
     return this.themes.find((theme) => theme.id === id)?.name ?? `${id} (unavailable)`;
   }
 
-  static override styles = [uiButtonStyles, uiFormStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiFormStyles,
+    uiSettingsStyles,
+    css`
     :host { display: block; }
     p { margin: 0; }
     p, small { color: var(--pi-muted); line-height: 1.45; }
     .current-theme span { color: var(--pi-text-secondary); font-size: 12px; overflow-wrap: anywhere; }
     .auto-field span { display: grid; gap: 3px; }
     .hint { font-size: 12px; }
-  `];
+  `,
+  ];
 }

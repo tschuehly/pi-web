@@ -4,7 +4,10 @@ import { buildTranscriptView } from "./subsessionTranscript.js";
 const user = (text: string) => ({ role: "user", content: text });
 const assistant = (text: string) => ({ role: "assistant", content: [{ type: "text", text }] });
 const thinking = (text: string) => ({ role: "assistant", content: [{ type: "thinking", thinking: text }] });
-const toolCall = (name: string, args?: unknown) => ({ role: "assistant", content: [{ type: "toolCall", name, ...(args === undefined ? {} : { arguments: args }) }] });
+const toolCall = (name: string, args?: unknown) => ({
+  role: "assistant",
+  content: [{ type: "toolCall", name, ...(args === undefined ? {} : { arguments: args }) }],
+});
 const toolResult = (text: string, toolName = "bash", isError = false) => ({ role: "toolResult", toolName, content: text, isError });
 const custom = (text: string) => ({ role: "custom", content: text, customType: "subsession.completion" });
 

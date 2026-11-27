@@ -34,9 +34,9 @@ const providerWorkspace = {
 
 describe("SessionDaemonWorkspaceCatalog", () => {
   it("uses encoded daemon operations and preserves provider metadata without restoring removed top-level aliases", async () => {
-    const request = vi.fn<SessionDaemonRequestClient["request"]>((_method, path) => Promise.resolve(jsonResponse(
-      path.endsWith("/w%2F1") ? providerWorkspace : providerResolution([providerWorkspace]),
-    )));
+    const request = vi.fn<SessionDaemonRequestClient["request"]>((_method, path) =>
+      Promise.resolve(jsonResponse(path.endsWith("/w%2F1") ? providerWorkspace : providerResolution([providerWorkspace]))),
+    );
     const catalog = new SessionDaemonWorkspaceCatalog({ request });
 
     const resolution = await catalog.resolveProject("project a");
@@ -72,29 +72,40 @@ describe("SessionDaemonWorkspaceCatalog", () => {
   });
 
   it("parses the immutable provider runtime and startup-health snapshot", async () => {
-    const request = vi.fn<SessionDaemonRequestClient["request"]>(() => Promise.resolve(jsonResponse({
-      protocolVersion: 2,
-      terminalMode: "required",
-      safeStart: "bundled-only",
-      records: [{
-        pluginId: "paired-tools",
-        source: "local",
-        scope: "local",
-        moduleRevision: "sha256:abc",
-        browserRevision: "sha256:browser",
-        settingsRevision: "sha256:settings",
-        machineSpecific: true,
-        pairedRequestVersion: 1,
-        pairedChannelVersion: 1,
-        state: "active",
-        name: "Paired tools",
-      }],
-      health: [{ pluginId: "paired-tools", health: { status: "degraded", message: "Paired tools are old", details: { version: 1, nested: ["ok", { ready: true }] } } }],
-      diagnostics: [
-        { code: "duplicate-id", source: "local", message: "Duplicate PI WEB plugin id: paired-tools", pluginId: "paired-tools" },
-        { code: "reserved-id", source: "npm:@acme/tools", message: "Choose a different id", pluginId: "pi-web.tools" },
-      ],
-    })));
+    const request = vi.fn<SessionDaemonRequestClient["request"]>(() =>
+      Promise.resolve(
+        jsonResponse({
+          protocolVersion: 2,
+          terminalMode: "required",
+          safeStart: "bundled-only",
+          records: [
+            {
+              pluginId: "paired-tools",
+              source: "local",
+              scope: "local",
+              moduleRevision: "sha256:abc",
+              browserRevision: "sha256:browser",
+              settingsRevision: "sha256:settings",
+              machineSpecific: true,
+              pairedRequestVersion: 1,
+              pairedChannelVersion: 1,
+              state: "active",
+              name: "Paired tools",
+            },
+          ],
+          health: [
+            {
+              pluginId: "paired-tools",
+              health: { status: "degraded", message: "Paired tools are old", details: { version: 1, nested: ["ok", { ready: true }] } },
+            },
+          ],
+          diagnostics: [
+            { code: "duplicate-id", source: "local", message: "Duplicate PI WEB plugin id: paired-tools", pluginId: "paired-tools" },
+            { code: "reserved-id", source: "npm:@acme/tools", message: "Choose a different id", pluginId: "pi-web.tools" },
+          ],
+        }),
+      ),
+    );
     const catalog = new SessionDaemonWorkspaceCatalog({ request });
 
     const snapshot = await catalog.providerRuntime();
@@ -104,8 +115,24 @@ describe("SessionDaemonWorkspaceCatalog", () => {
       protocolVersion: 2,
       terminalMode: "required",
       safeStart: "bundled-only",
-      records: [{ pluginId: "paired-tools", source: "local", scope: "local", moduleRevision: "sha256:abc", browserRevision: "sha256:browser", settingsRevision: "sha256:settings", machineSpecific: true, pairedRequestVersion: 1, pairedChannelVersion: 1, state: "active", name: "Paired tools" }],
-      health: [{ pluginId: "paired-tools", health: { status: "degraded", message: "Paired tools are old", details: { version: 1, nested: ["ok", { ready: true }] } } }],
+      records: [
+        {
+          pluginId: "paired-tools",
+          source: "local",
+          scope: "local",
+          moduleRevision: "sha256:abc",
+          browserRevision: "sha256:browser",
+          settingsRevision: "sha256:settings",
+          machineSpecific: true,
+          pairedRequestVersion: 1,
+          pairedChannelVersion: 1,
+          state: "active",
+          name: "Paired tools",
+        },
+      ],
+      health: [
+        { pluginId: "paired-tools", health: { status: "degraded", message: "Paired tools are old", details: { version: 1, nested: ["ok", { ready: true }] } } },
+      ],
       diagnostics: [
         { code: "duplicate-id", source: "local", message: "Duplicate PI WEB plugin id: paired-tools", pluginId: "paired-tools" },
         { code: "reserved-id", source: "npm:@acme/tools", message: "Choose a different id", pluginId: "pi-web.tools" },
@@ -127,10 +154,17 @@ describe("SessionDaemonWorkspaceCatalog", () => {
       request: () => Promise.resolve(jsonResponse(providerResolution([{ ...providerWorkspace, path: "relative" }]))),
     });
     const missingPrecondition = new SessionDaemonWorkspaceCatalog({
-      request: () => Promise.resolve(jsonResponse(providerResolution([{
-        ...providerWorkspace,
-        removal: { actionLabel: "Disconnect view", confirmation: "Disconnect this view?" },
-      }]))),
+      request: () =>
+        Promise.resolve(
+          jsonResponse(
+            providerResolution([
+              {
+                ...providerWorkspace,
+                removal: { actionLabel: "Disconnect view", confirmation: "Disconnect this view?" },
+              },
+            ]),
+          ),
+        ),
     });
 
     await expect(mismatched.resolve("project a", "w/1")).rejects.toBeInstanceOf(WorkspaceCatalogProtocolError);
@@ -163,11 +197,12 @@ describe("SessionDaemonWorkspaceCatalog", () => {
       request: () => Promise.resolve({ statusCode: 404, headers: {}, body: JSON.stringify({ error: "Workspace not found" }) }),
     });
     const oldDaemon = new SessionDaemonWorkspaceCatalog({
-      request: () => Promise.resolve({
-        statusCode: 404,
-        headers: {},
-        body: JSON.stringify({ statusCode: 404, error: "Not Found", message: "Route GET:/workspace-catalog/projects/p1/workspaces not found" }),
-      }),
+      request: () =>
+        Promise.resolve({
+          statusCode: 404,
+          headers: {},
+          body: JSON.stringify({ statusCode: 404, error: "Not Found", message: "Route GET:/workspace-catalog/projects/p1/workspaces not found" }),
+        }),
     });
 
     const unavailableError = await unavailable.list("p1").catch((error: unknown) => error);
@@ -188,10 +223,7 @@ describe("SessionDaemonWorkspaceCatalog", () => {
     expect(missingWorkspaceError).toHaveProperty("message", "Workspace not found");
     expect(workspaceCatalogHttpStatus(missingWorkspaceError, 400)).toBe(400);
     expect(oldDaemonError).toBeInstanceOf(WorkspaceCatalogProtocolError);
-    expect(oldDaemonError).toHaveProperty(
-      "message",
-      "Session daemon does not support workspace authority operations; restart or upgrade the session daemon",
-    );
+    expect(oldDaemonError).toHaveProperty("message", "Session daemon does not support workspace authority operations; restart or upgrade the session daemon");
     expect(workspaceCatalogHttpStatus(oldDaemonError, 404)).toBe(502);
   });
 });
@@ -202,12 +234,14 @@ function providerResolution(workspaces: unknown[]) {
     projectId: "project a",
     ownerPluginId: "replacement",
     workspaces,
-    diagnostics: [{
-      code: "probe-failed",
-      message: "Passing provider probe failed",
-      tier: "primary",
-      pluginId: "passing-provider",
-    }],
+    diagnostics: [
+      {
+        code: "probe-failed",
+        message: "Passing provider probe failed",
+        tier: "primary",
+        pluginId: "passing-provider",
+      },
+    ],
   };
 }
 

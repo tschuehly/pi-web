@@ -2,10 +2,7 @@ import type { AddressInfo } from "node:net";
 import type { NetworkInterfaceInfo } from "node:os";
 
 /** Browser-ready addresses for the listener, not a guarantee of firewall or proxy access. */
-export function startupUrlLines(
-  bound: AddressInfo,
-  interfaces: NodeJS.Dict<NetworkInterfaceInfo[]>,
-): string[] {
+export function startupUrlLines(bound: AddressInfo, interfaces: NodeJS.Dict<NetworkInterfaceInfo[]>): string[] {
   const line = (label: string, address: string) => {
     const host = address.includes(":") ? `[${address}]` : address;
     return `  ${label}: http://${host}:${String(bound.port)}`;

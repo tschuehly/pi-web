@@ -16,7 +16,7 @@ export const SERVER_PLUGIN_NOTICE_PER_SOURCE_LIMIT = 25;
 export const SERVER_PLUGIN_NOTICE_GLOBAL_LIMIT = 100;
 
 const SERVER_NOTICE_SCOPE_KEYS = ["projectId", "workspaceId", "sessionId"] as const;
-type ServerNoticeScopeKey = typeof SERVER_NOTICE_SCOPE_KEYS[number];
+type ServerNoticeScopeKey = (typeof SERVER_NOTICE_SCOPE_KEYS)[number];
 
 /** Validate, detach, and freeze the visibility selectors carried by a notice. */
 export function parseServerNoticeScope(value: unknown, label: string): ServerNoticeScope {
@@ -59,10 +59,13 @@ export function serverNoticeStringExceedsUtf8ByteLimit(value: string, maxBytes: 
       byteLength += 1;
     } else if (codeUnit <= 0x7ff) {
       byteLength += 2;
-    } else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff
+    } else if (
+      codeUnit >= 0xd800
+      && codeUnit <= 0xdbff
       && index + 1 < value.length
       && value.charCodeAt(index + 1) >= 0xdc00
-      && value.charCodeAt(index + 1) <= 0xdfff) {
+      && value.charCodeAt(index + 1) <= 0xdfff
+    ) {
       byteLength += 4;
       index += 1;
     } else {

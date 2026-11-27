@@ -1,7 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PluginCatalog, DisplayedMessageActionAvailabilityContext, DisplayedMessageActionContext, DisplayedMessageActionContribution, EntryMessageActionContribution, MessageActionAvailabilityContext, MessageActionContext, MessageActionContribution } from "../../../plugin-api";
+import type {
+  PluginCatalog,
+  DisplayedMessageActionAvailabilityContext,
+  DisplayedMessageActionContext,
+  DisplayedMessageActionContribution,
+  EntryMessageActionContribution,
+  MessageActionAvailabilityContext,
+  MessageActionContext,
+  MessageActionContribution,
+} from "../../../plugin-api";
 import type { ChatLine } from "../components/shared";
-import { availableDisplayedMessageActions, availableMessageActions, displayedMessageActionMessage, MessageActionAvailabilityCache, messageActionMessage, type RegisteredMessageAction } from "./messageActions";
+import {
+  availableDisplayedMessageActions,
+  availableMessageActions,
+  displayedMessageActionMessage,
+  MessageActionAvailabilityCache,
+  messageActionMessage,
+  type RegisteredMessageAction,
+} from "./messageActions";
 import { PluginRegistry } from "./registry";
 
 const input: MessageActionAvailabilityContext = {
@@ -17,7 +33,8 @@ function plugin(...actions: MessageActionContribution[]) {
 function context(): MessageActionContext {
   return {
     ...input,
-    navigate: vi.fn(), prompt: { insertText: vi.fn(), getText: () => "", getSelection: () => null },
+    navigate: vi.fn(),
+    prompt: { insertText: vi.fn(), getText: () => "", getSelection: () => null },
     projects: { machineId: "remote", listProjects: vi.fn(), suggestDirectories: vi.fn() },
     history: { fork: vi.fn(), goBack: vi.fn() },
   };
@@ -32,7 +49,8 @@ const displayedInput: DisplayedMessageActionAvailabilityContext = {
 function displayedContext(snapshot = displayedInput): DisplayedMessageActionContext {
   return {
     ...snapshot,
-    navigate: vi.fn(), prompt: { insertText: vi.fn(), getText: () => "", getSelection: () => null },
+    navigate: vi.fn(),
+    prompt: { insertText: vi.fn(), getText: () => "", getSelection: () => null },
     projects: { machineId: snapshot.machine.id, listProjects: vi.fn(), suggestDirectories: vi.fn() },
   };
 }
@@ -49,12 +67,21 @@ it("injects v5 machine services only into entry/display invocation contexts, not
     expect(availability).not.toHaveProperty("catalog");
     return true;
   });
-  await registry.register({ id: "modern", plugin: { apiVersion: 5, name: "Modern", activate: () => ({ contributions: {
-    messageActions: [
-      { id: "entry", title: "Entry", visible, run: entryRun },
-      { id: "display", target: "display", title: "Display", visible, run: displayRun },
-    ],
-  } }) } });
+  await registry.register({
+    id: "modern",
+    plugin: {
+      apiVersion: 5,
+      name: "Modern",
+      activate: () => ({
+        contributions: {
+          messageActions: [
+            { id: "entry", title: "Entry", visible, run: entryRun },
+            { id: "display", target: "display", title: "Display", visible, run: displayRun },
+          ],
+        },
+      }),
+    },
+  });
   const entryContext = context();
   const displayContext = displayedContext();
   await registry.runMessageAction("modern:entry", input, () => entryContext);
@@ -74,7 +101,9 @@ describe("message action snapshots", () => {
   it("trims each original ordinary text part, skips blanks and excludes rendered/tool/thinking payloads", () => {
     const original = { type: "text" as const, text: "  **Original**\n  indented  \n", displayText: "Rendered substitute" };
     const message: ChatLine = {
-      entryId: "entry", role: "assistant", parts: [
+      entryId: "entry",
+      role: "assistant",
+      parts: [
         original,
         { type: "text", text: " \n\t " },
         { type: "thinking", text: "Private reasoning", displayText: "Rendered thinking" },
@@ -97,22 +126,30 @@ describe("message action snapshots", () => {
   });
 
   it("supports entryless displayed messages and yields no copy text for non-text-only headers", () => {
-    expect(displayedMessageActionMessage({ role: "user", parts: [{ type: "text", text: " Optimistic " }] }))
-      .toEqual({ role: "user", text: "Optimistic" });
-    expect(displayedMessageActionMessage({ role: "assistant", parts: [
-      { type: "text", text: " \n " },
-      { type: "thinking", text: "Thinking" },
-      { type: "toolResult", toolName: "read", text: "Result", isError: false },
-    ] })).toEqual({ role: "assistant", text: "" });
+    expect(displayedMessageActionMessage({ role: "user", parts: [{ type: "text", text: " Optimistic " }] })).toEqual({ role: "user", text: "Optimistic" });
+    expect(
+      displayedMessageActionMessage({
+        role: "assistant",
+        parts: [
+          { type: "text", text: " \n " },
+          { type: "thinking", text: "Thinking" },
+          { type: "toolResult", toolName: "read", text: "Result", isError: false },
+        ],
+      }),
+    ).toEqual({ role: "assistant", text: "" });
   });
 
   it("keeps entry snapshots identified, untrimmed and scoped to the displayed role", () => {
-    const message: ChatLine = { entryId: "entry", role: "assistant", parts: [
-      { type: "text", text: " Original ", displayText: "Rendered substitute" },
-      { type: "thinking", text: "Reasoning" },
-      { type: "text", text: "" },
-      { type: "text", text: " Tail " },
-    ] };
+    const message: ChatLine = {
+      entryId: "entry",
+      role: "assistant",
+      parts: [
+        { type: "text", text: " Original ", displayText: "Rendered substitute" },
+        { type: "thinking", text: "Reasoning" },
+        { type: "text", text: "" },
+        { type: "text", text: " Tail " },
+      ],
+    };
     const snapshot = messageActionMessage(message, "skill");
     expect(snapshot).toEqual({ entryId: "entry", role: "skill", text: " Original \n\n\n\n Tail " });
     expect(Object.isFrozen(snapshot)).toBe(true);
@@ -130,7 +167,15 @@ describe("message action availability", () => {
     const actions = [
       registered({ id: "default", title: "Default entry", visible: entryVisible, run: () => undefined }),
       registered({ target: "entry", id: "entry", title: "Explicit entry", visible: entryVisible, run: () => undefined }),
-      registered({ target: "display", id: "custom", title: "Custom", visible: displayVisible, enabled: displayEnabled, ariaLabel: displayLabel, run: () => undefined }),
+      registered({
+        target: "display",
+        id: "custom",
+        title: "Custom",
+        visible: displayVisible,
+        enabled: displayEnabled,
+        ariaLabel: displayLabel,
+        run: () => undefined,
+      }),
       registered({ target: "display", id: "fallback", title: "Fallback", run: () => undefined }),
       registered({ target: "display", id: "hidden", title: "Hidden", visible: () => false, enabled: hiddenEnabled, run: () => undefined }),
     ];
@@ -155,11 +200,15 @@ describe("message action availability", () => {
       registered({ id: "history", title: "History", visible: entryVisible, run: () => undefined }),
       registered({ target: "display", id: "copy", title: "Copy", visible: displayVisible, run: () => undefined }),
     ];
-    const source: ChatLine = { entryId: "entry", role: "assistant", parts: [
-      { type: "thinking", text: "Reasoning" },
-      { type: "text", text: " First " },
-      { type: "text", text: " Second " },
-    ] };
+    const source: ChatLine = {
+      entryId: "entry",
+      role: "assistant",
+      parts: [
+        { type: "thinking", text: "Reasoning" },
+        { type: "text", text: " First " },
+        { type: "text", text: " Second " },
+      ],
+    };
     const thinking: ChatLine = { ...source, parts: [{ type: "thinking", text: "Reasoning" }] };
     const first: ChatLine = { ...source, parts: [{ type: "text", text: " First " }] };
     const second: ChatLine = { ...source, parts: [{ type: "text", text: " Second " }] };
@@ -177,7 +226,11 @@ describe("message action availability", () => {
     expect(cache.get(source, actions, base, { ...first, role: "skill" })).not.toBe(firstActions);
     expect(entryVisible).toHaveBeenLastCalledWith({ ...base, message: { entryId: "entry", role: "skill", text: " First \n\n Second " } });
     cache.get(source, actions, { ...base, session: { ...base.session, busy: true } }, first);
-    expect(displayVisible).toHaveBeenLastCalledWith({ ...base, session: { ...base.session, busy: true }, message: { entryId: "entry", role: "assistant", text: "First" } });
+    expect(displayVisible).toHaveBeenLastCalledWith({
+      ...base,
+      session: { ...base.session, busy: true },
+      message: { entryId: "entry", role: "assistant", text: "First" },
+    });
   });
 
   it("gates default/explicit entry predicates by canonical status and caches that status independently", () => {
@@ -189,10 +242,33 @@ describe("message action availability", () => {
     const displayLabel = vi.fn(() => "Display label");
     const actions = [
       registered({ id: "default", title: "Default entry", visible: entryVisible, enabled: entryEnabled, ariaLabel: entryLabel, run: () => undefined }),
-      registered({ target: "display", id: "display", title: "Display", visible: displayVisible, enabled: displayEnabled, ariaLabel: displayLabel, run: () => undefined }),
-      registered({ target: "entry", id: "explicit", title: "Explicit entry", visible: entryVisible, enabled: entryEnabled, ariaLabel: entryLabel, run: () => undefined }),
+      registered({
+        target: "display",
+        id: "display",
+        title: "Display",
+        visible: displayVisible,
+        enabled: displayEnabled,
+        ariaLabel: displayLabel,
+        run: () => undefined,
+      }),
+      registered({
+        target: "entry",
+        id: "explicit",
+        title: "Explicit entry",
+        visible: entryVisible,
+        enabled: entryEnabled,
+        ariaLabel: entryLabel,
+        run: () => undefined,
+      }),
     ];
-    const source: ChatLine = { entryId: "shared", role: "assistant", parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "reply" }] };
+    const source: ChatLine = {
+      entryId: "shared",
+      role: "assistant",
+      parts: [
+        { type: "thinking", text: "plan" },
+        { type: "text", text: "reply" },
+      ],
+    };
     const slice: ChatLine = { ...source, parts: [{ type: "text", text: "reply" }] };
     const base = { machine: input.machine, session: input.session };
     const cache = new MessageActionAvailabilityCache();
@@ -222,8 +298,9 @@ describe("message action availability", () => {
       registered({ target: "display", id: "copy", title: "Copy", run: () => undefined }),
     ];
     const cache = new MessageActionAvailabilityCache();
-    expect(cache.get({ role: "assistant", parts: [{ type: "text", text: "Streaming" }] }, actions, input))
-      .toEqual([{ action: actions[1], enabled: true, ariaLabel: "Copy" }]);
+    expect(cache.get({ role: "assistant", parts: [{ type: "text", text: "Streaming" }] }, actions, input)).toEqual([
+      { action: actions[1], enabled: true, ariaLabel: "Copy" },
+    ]);
     expect(entryVisible).not.toHaveBeenCalled();
   });
 });
@@ -235,7 +312,12 @@ describe("displayed message action registry", () => {
     const enabled = vi.fn<NonNullable<DisplayedMessageActionContribution["enabled"]>>(() => true);
     const feedback = { title: "Copied", ariaLabel: "Copied assistant message" };
     const run = vi.fn<DisplayedMessageActionContribution["run"]>().mockResolvedValue(feedback);
-    await registry.register({ id: "runtime", sourcePluginId: "source", machineId: "remote", plugin: plugin({ target: "display", id: "copy", title: "Copy", visible, enabled, run }) });
+    await registry.register({
+      id: "runtime",
+      sourcePluginId: "source",
+      machineId: "remote",
+      plugin: plugin({ target: "display", id: "copy", title: "Copy", visible, enabled, run }),
+    });
     expect(availableDisplayedMessageActions(registry.getMessageActions("remote"), displayedInput)).toHaveLength(1);
     const invocation = displayedContext();
     const createContext = vi.fn(() => invocation);
@@ -260,12 +342,17 @@ describe("displayed message action registry", () => {
 
   it.each([undefined, "entry"] as const)("keeps target %s entry actions backward compatible and never dispatches across targets", async (target) => {
     const registry = new PluginRegistry();
-    const entryRun = vi.fn<EntryMessageActionContribution["run"]>(async ({ history }) => { await history.fork(); });
+    const entryRun = vi.fn<EntryMessageActionContribution["run"]>(async ({ history }) => {
+      await history.fork();
+    });
     const displayRun = vi.fn<DisplayedMessageActionContribution["run"]>();
-    await registry.register({ id: "runtime", plugin: plugin(
-      { ...(target === undefined ? {} : { target }), id: "history", title: "History", run: entryRun },
-      { target: "display", id: "copy", title: "Copy", run: displayRun },
-    ) });
+    await registry.register({
+      id: "runtime",
+      plugin: plugin(
+        { ...(target === undefined ? {} : { target }), id: "history", title: "History", run: entryRun },
+        { target: "display", id: "copy", title: "Copy", run: displayRun },
+      ),
+    });
     const invocation = context();
     const createEntryContext = vi.fn(() => invocation);
     const createDisplayContext = vi.fn(() => displayedContext());
@@ -298,12 +385,12 @@ describe("displayed message action registry", () => {
     action.visible = () => false;
     action.enabled = () => false;
     action.ariaLabel = () => "Replacement label";
-    action.run = () => { throw new Error("Replacement callback must not run"); };
+    action.run = () => {
+      throw new Error("Replacement callback must not run");
+    };
     const actions = registry.getMessageActions("remote");
     expect(Object.isFrozen(actions[0])).toBe(true);
-    expect(availableDisplayedMessageActions(actions, displayedInput)).toEqual([
-      { action: actions[0], enabled: true, ariaLabel: "Original label" },
-    ]);
+    expect(availableDisplayedMessageActions(actions, displayedInput)).toEqual([{ action: actions[0], enabled: true, ariaLabel: "Original label" }]);
     expect(actions[0]).toMatchObject({ id: "runtime:copy", title: "Original", target: "display" });
     const invocation = displayedContext();
     await expect(registry.runDisplayedMessageAction("runtime:copy", displayedInput, () => invocation)).resolves.toBe(feedback);
@@ -349,7 +436,12 @@ describe("message action registry", () => {
     let enabled = true;
     const registry = new PluginRegistry();
     const run = vi.fn<EntryMessageActionContribution["run"]>();
-    await registry.register({ id: "runtime", sourcePluginId: "source", machineId: "remote", plugin: plugin({ id: "note", title: "Note", enabled: () => enabled, run }) });
+    await registry.register({
+      id: "runtime",
+      sourcePluginId: "source",
+      machineId: "remote",
+      plugin: plugin({ id: "note", title: "Note", enabled: () => enabled, run }),
+    });
     expect(registry.getMessageActions("remote").map((action) => action.id)).toEqual(["runtime:note"]);
     const createContext = vi.fn(() => context());
     enabled = false;
@@ -387,12 +479,29 @@ describe("message action registry", () => {
   it.each(["entry", "display"] as const)("never publishes failed-start or duplicate %s contributions", async (target) => {
     const registry = new PluginRegistry();
     const action: MessageActionContribution = { target, id: "note", title: "Note", run: () => undefined };
-    await expect(registry.register({ id: "failed", plugin: {
-      ...plugin(action), activate: () => ({ contributions: { messageActions: [action] }, start: () => { throw new Error("start failed"); } }),
-    } })).rejects.toThrow("start failed");
-    await expect(registry.register({ id: "duplicate", plugin: {
-      ...plugin(action), activate: () => ({ contributions: { messageActions: [action, action] } }),
-    } })).rejects.toThrow("Duplicate contribution id");
+    await expect(
+      registry.register({
+        id: "failed",
+        plugin: {
+          ...plugin(action),
+          activate: () => ({
+            contributions: { messageActions: [action] },
+            start: () => {
+              throw new Error("start failed");
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("start failed");
+    await expect(
+      registry.register({
+        id: "duplicate",
+        plugin: {
+          ...plugin(action),
+          activate: () => ({ contributions: { messageActions: [action, action] } }),
+        },
+      }),
+    ).rejects.toThrow("Duplicate contribution id");
     expect(registry.getMessageActions("local")).toEqual([]);
     await registry.dispose();
   });

@@ -14,21 +14,21 @@ export interface CapturableFile {
 
 export type CapturedAttachment =
   | {
-    kind: "image";
-    name: string;
-    mimeType: string;
-    /** Base64 payload without the data: URL prefix. */
-    data: string;
-    size: number;
-  }
+      kind: "image";
+      name: string;
+      mimeType: string;
+      /** Base64 payload without the data: URL prefix. */
+      data: string;
+      size: number;
+    }
   | {
-    kind: "file";
-    name: string;
-    mimeType: string;
-    /** Base64 payload without the data: URL prefix. */
-    data: string;
-    size: number;
-  };
+      kind: "file";
+      name: string;
+      mimeType: string;
+      /** Base64 payload without the data: URL prefix. */
+      data: string;
+      size: number;
+    };
 
 export interface CaptureResult {
   attachments: CapturedAttachment[];
@@ -112,10 +112,15 @@ export function dataTransferHasFiles(data: DataTransfer): boolean {
 export function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => { reject(reader.error ?? new Error("Failed to read file")); };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to read file"));
+    };
     reader.onload = () => {
       const result = reader.result;
-      if (typeof result !== "string") { reject(new Error("Unexpected file reader result")); return; }
+      if (typeof result !== "string") {
+        reject(new Error("Unexpected file reader result"));
+        return;
+      }
       const commaIndex = result.indexOf(",");
       resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1));
     };

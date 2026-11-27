@@ -1,5 +1,11 @@
 import { sessionsApi } from "./api";
-import { SESSION_UNREAD_LIMIT, type SessionRef, type SessionUnreadCatalogSnapshot, type SessionUnreadEvent, type SessionUnreadSummary } from "../../shared/apiTypes";
+import {
+  SESSION_UNREAD_LIMIT,
+  type SessionRef,
+  type SessionUnreadCatalogSnapshot,
+  type SessionUnreadEvent,
+  type SessionUnreadSummary,
+} from "../../shared/apiTypes";
 
 const EMPTY_SESSION_IDS: ReadonlySet<string> = new Set();
 const MAX_BUFFERED_NETWORK_EVENTS = SESSION_UNREAD_LIMIT + 1;
@@ -55,9 +61,8 @@ interface ProjectionTransition {
 
 const defaultApi: SessionUnreadApi = {
   unreadCatalog: (machineId) => sessionsApi.unreadCatalog(machineId),
-  acknowledgeUnread: (session, catalogId, throughCompletionOrder, machineId) => (
-    sessionsApi.acknowledgeUnread(session, catalogId, throughCompletionOrder, machineId)
-  ),
+  acknowledgeUnread: (session, catalogId, throughCompletionOrder, machineId) =>
+    sessionsApi.acknowledgeUnread(session, catalogId, throughCompletionOrder, machineId),
 };
 
 /**
@@ -156,8 +161,11 @@ export class SessionUnreadController {
   }
 
   async refreshAll(): Promise<void> {
-    await Promise.all([...this.machines.values()]
-      .map(async (state) => { await this.refresh(state.machineId); }));
+    await Promise.all(
+      [...this.machines.values()].map(async (state) => {
+        await this.refresh(state.machineId);
+      }),
+    );
   }
 
   acknowledge(machineId: string, session: SessionRef): Promise<void> {
@@ -216,12 +224,7 @@ export class SessionUnreadController {
   ): Promise<void> {
     const observer = this.beginNetworkObservation(state, generation);
     try {
-      const snapshot = await this.api.acknowledgeUnread(
-        session,
-        catalogId,
-        throughCompletionOrder,
-        state.machineId,
-      );
+      const snapshot = await this.api.acknowledgeUnread(session, catalogId, throughCompletionOrder, state.machineId);
       if (!this.isCurrent(state, generation)) return;
       if (this.applyNetworkSnapshot(state, snapshot, observer)) void this.refresh(state.machineId);
     } catch (error: unknown) {
@@ -231,18 +234,11 @@ export class SessionUnreadController {
     }
   }
 
-  private applyNetworkSnapshot(
-    state: MachineUnreadState,
-    snapshot: SessionUnreadCatalogSnapshot,
-    observer: NetworkObserver,
-  ): boolean {
+  private applyNetworkSnapshot(state: MachineUnreadState, snapshot: SessionUnreadCatalogSnapshot, observer: NetworkObserver): boolean {
     const current = state.projection;
-    const ambiguousConcurrentEpoch = state.projectionVersion !== observer.projectionVersion
-      && current !== undefined
-      && current.catalogId !== snapshot.catalogId;
-    if (ambiguousConcurrentEpoch
-      || observer.overflowed
-      || observer.events.some((event) => event.catalogId !== snapshot.catalogId)) {
+    const ambiguousConcurrentEpoch =
+      state.projectionVersion !== observer.projectionVersion && current !== undefined && current.catalogId !== snapshot.catalogId;
+    if (ambiguousConcurrentEpoch || observer.overflowed || observer.events.some((event) => event.catalogId !== snapshot.catalogId)) {
       const changed = state.status !== "stale";
       state.status = "stale";
       if (changed) this.onChange(state.machineId);
@@ -259,8 +255,7 @@ export class SessionUnreadController {
       requiresRefresh ||= transition.requiresRefresh;
     }
 
-    if (current?.catalogId === candidate.catalogId
-      && current.catalogRevision > candidate.catalogRevision) {
+    if (current?.catalogId === candidate.catalogId && current.catalogRevision > candidate.catalogRevision) {
       if (state.projectionVersion === observer.projectionVersion && observer.projectionStatus === "fresh") {
         const changed = state.status !== "fresh";
         state.status = "fresh";
@@ -274,11 +269,7 @@ export class SessionUnreadController {
     return requiresRefresh;
   }
 
-  private beginNetworkObservation(
-    state: MachineUnreadState,
-    generation: number,
-    projectionStatus = state.status,
-  ): NetworkObserver {
+  private beginNetworkObservation(state: MachineUnreadState, generation: number, projectionStatus = state.status): NetworkObserver {
     const observer: NetworkObserver = {
       generation,
       projectionVersion: state.projectionVersion,
@@ -309,11 +300,7 @@ export class SessionUnreadController {
     return true;
   }
 
-  private installProjection(
-    state: MachineUnreadState,
-    projection: ProjectionData,
-    status: SessionUnreadProjectionStatus,
-  ): boolean {
+  private installProjection(state: MachineUnreadState, projection: ProjectionData, status: SessionUnreadProjectionStatus): boolean {
     const projectionChanged = !projectionsEqual(state.projection, projection);
     if (state.status === status && !projectionChanged) return false;
     if (projectionChanged) {
@@ -351,11 +338,7 @@ export class SessionUnreadController {
   }
 }
 
-function applyUnreadEvent(
-  projection: ProjectionData | undefined,
-  status: SessionUnreadProjectionStatus,
-  event: SessionUnreadEvent,
-): ProjectionTransition {
+function applyUnreadEvent(projection: ProjectionData | undefined, status: SessionUnreadProjectionStatus, event: SessionUnreadEvent): ProjectionTransition {
   if (projection === undefined) {
     const empty = emptyProjection(event.catalogId);
     if (event.catalogRevision !== 1) return { projection: empty, status: "stale", requiresRefresh: true };
@@ -376,11 +359,7 @@ function applyUnreadEvent(
   return applyContiguousEvent(projection, status, event);
 }
 
-function applyContiguousEvent(
-  projection: ProjectionData,
-  status: SessionUnreadProjectionStatus,
-  event: SessionUnreadEvent,
-): ProjectionTransition {
+function applyContiguousEvent(projection: ProjectionData, status: SessionUnreadProjectionStatus, event: SessionUnreadEvent): ProjectionTransition {
   const summariesByIdentity = new Map(projection.summariesByIdentity);
   const key = sessionIdentityKey(event);
   if (event.unread === null) summariesByIdentity.delete(key);
@@ -414,13 +393,14 @@ function projectionsEqual(left: ProjectionData | undefined, right: ProjectionDat
   if (left.summariesByIdentity.size !== right.summariesByIdentity.size) return false;
   for (const [key, summary] of left.summariesByIdentity) {
     const candidate = right.summariesByIdentity.get(key);
-    if (candidate?.completionOrder !== summary.completionOrder
-      || candidate.completedAt !== summary.completedAt) return false;
+    if (candidate?.completionOrder !== summary.completionOrder || candidate.completedAt !== summary.completedAt) return false;
   }
   return true;
 }
 
-function sessionIdentityKey(session: Pick<SessionRef, "id" | "cwd"> | Pick<SessionUnreadSummary, "sessionId" | "cwd"> | Pick<SessionUnreadEvent, "sessionId" | "cwd">): string {
+function sessionIdentityKey(
+  session: Pick<SessionRef, "id" | "cwd"> | Pick<SessionUnreadSummary, "sessionId" | "cwd"> | Pick<SessionUnreadEvent, "sessionId" | "cwd">,
+): string {
   const sessionId = "id" in session ? session.id : session.sessionId;
   return JSON.stringify([sessionId, session.cwd]);
 }

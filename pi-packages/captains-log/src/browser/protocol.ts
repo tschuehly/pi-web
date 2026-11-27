@@ -23,15 +23,34 @@ export type LogEntry = {
 };
 export function isLogEntry(value: unknown): value is LogEntry {
   if (typeof value !== "object" || value === null) return false;
-  return "id" in value && typeof value.id === "string" && UUID.test(value.id)
-    && "createdAt" in value && typeof value.createdAt === "string"
-    && "sessionId" in value && typeof value.sessionId === "string" && value.sessionId.length <= 512
-    && (!("sourceSessionId" in value) || value.sourceSessionId === undefined || (typeof value.sourceSessionId === "string" && !!value.sourceSessionId.trim() && value.sourceSessionId.length <= 512))
-    && "question" in value && typeof value.question === "string" && value.question.length <= MAX_QUESTION
-    && "status" in value && ["running", "completed", "failed", "interrupted"].includes(String(value.status))
-    && (!("failureCode" in value) || value.failureCode === undefined || (typeof value.failureCode === "string" && ["session-unavailable", "request-failed", "interrupted"].includes(value.failureCode)))
-    && "stages" in value && Array.isArray(value.stages) && value.stages.length <= 16 && value.stages.every((s: unknown) => typeof s === "string" && s.length <= 256)
-    && "text" in value && typeof value.text === "string" && value.text.length <= MAX_FINDINGS;
+  return (
+    "id" in value
+    && typeof value.id === "string"
+    && UUID.test(value.id)
+    && "createdAt" in value
+    && typeof value.createdAt === "string"
+    && "sessionId" in value
+    && typeof value.sessionId === "string"
+    && value.sessionId.length <= 512
+    && (!("sourceSessionId" in value)
+      || value.sourceSessionId === undefined
+      || (typeof value.sourceSessionId === "string" && !!value.sourceSessionId.trim() && value.sourceSessionId.length <= 512))
+    && "question" in value
+    && typeof value.question === "string"
+    && value.question.length <= MAX_QUESTION
+    && "status" in value
+    && ["running", "completed", "failed", "interrupted"].includes(String(value.status))
+    && (!("failureCode" in value)
+      || value.failureCode === undefined
+      || (typeof value.failureCode === "string" && ["session-unavailable", "request-failed", "interrupted"].includes(value.failureCode)))
+    && "stages" in value
+    && Array.isArray(value.stages)
+    && value.stages.length <= 16
+    && value.stages.every((s: unknown) => typeof s === "string" && s.length <= 256)
+    && "text" in value
+    && typeof value.text === "string"
+    && value.text.length <= MAX_FINDINGS
+  );
 }
 export function captainPrompt(text: string): string {
   return `Retell this as a theatrical pirate captain briefing the crew. Rewrite it from scratch: nautical metaphors, colorful pirate phrasing, and a little humor. Preserve the important facts, warnings, and next steps; keep code and commands exact. Don't merely sprinkle “arrr” onto the original. Always speak pirate.\n\nSource reply:\n${text}`;

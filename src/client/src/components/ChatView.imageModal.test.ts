@@ -29,7 +29,10 @@ afterEach(() => {
 
 describe("ChatView native image modal", () => {
   it("sizes the gallery by the inherited Workbench viewport compensation contract", () => {
-    const css = [ImageGalleryDialog.styles].flat().map((style) => style.cssText).join("\n");
+    const css = [ImageGalleryDialog.styles]
+      .flat()
+      .map((style) => style.cssText)
+      .join("\n");
     expect(css).toContain("var(--pi-workbench-viewport-width, 100vw)");
     expect(css).toContain("var(--pi-workbench-viewport-height, 100dvh)");
   });
@@ -109,11 +112,23 @@ describe("ChatView tool-image gallery", () => {
       { role: "tool", entryId: "third", parts: [imagePart("R0hJ")] },
     ]);
     const registry = new PluginRegistry();
-    await registry.register({ id: "gallery-test", plugin: { apiVersion: 5, name: "Gallery test", activate: () => ({ contributions: {
-      messageActions: [{ id: "inspect", title: "Inspect output", run: () => undefined }],
-    } }) } });
+    await registry.register({
+      id: "gallery-test",
+      plugin: {
+        apiVersion: 5,
+        name: "Gallery test",
+        activate: () => ({
+          contributions: {
+            messageActions: [{ id: "inspect", title: "Inspect output", run: () => undefined }],
+          },
+        }),
+      },
+    });
     view.messageActions = registry.getMessageActions("local");
-    view.messageActionContext = { machine: { id: "local", name: "Local", kind: "local" }, session: { id: view.sessionId, cwd: "/repo", archived: false, pending: false, busy: false } };
+    view.messageActionContext = {
+      machine: { id: "local", name: "Local", kind: "local" },
+      session: { id: view.sessionId, cwd: "/repo", archived: false, pending: false, busy: false },
+    };
     const inspect = vi.fn<NonNullable<ChatView["onMessageAction"]>>(() => Promise.resolve());
     view.onMessageAction = inspect;
     await view.updateComplete;
@@ -173,15 +188,15 @@ describe("ChatView tool-image gallery", () => {
   });
 
   it("does not cross intervening activity when navigating separate tool outputs", async () => {
-    const view = await mountGalleryView([
-      toolImages("first", ["QUJD", "REVG", "R0hJ"]),
-      toolImages("second", ["SktM", "TU5P"]),
-    ]);
+    const view = await mountGalleryView([toolImages("first", ["QUJD", "REVG", "R0hJ"]), toolImages("second", ["SktM", "TU5P"])]);
     const thumbnails = transcriptImages(view);
     expect(thumbnails).toHaveLength(5);
     const descriptions = [
-      "read output image 1 of 3", "read output image 2 of 3", "read output image 3 of 3",
-      "read output image 1 of 2", "read output image 2 of 2",
+      "read output image 1 of 3",
+      "read output image 2 of 3",
+      "read output image 3 of 3",
+      "read output image 1 of 2",
+      "read output image 2 of 2",
     ];
     for (const [index, image] of thumbnails.entries()) {
       expect(image).toHaveProperty("thumbnail", true);
@@ -292,7 +307,6 @@ describe("ChatView tool-image gallery", () => {
       }
     }
   });
-
 });
 
 function imagePart(data: string) {
@@ -300,10 +314,7 @@ function imagePart(data: string) {
 }
 
 function toolImages(entryId: string, data: string[]): ChatLine {
-  return { role: "tool", entryId, parts: [
-    { type: "toolResult", toolName: "read", text: "Read image file", isError: false },
-    ...data.map(imagePart),
-  ] };
+  return { role: "tool", entryId, parts: [{ type: "toolResult", toolName: "read", text: "Read image file", isError: false }, ...data.map(imagePart)] };
 }
 
 async function mountGalleryView(messages: ChatLine[]): Promise<ChatView> {
@@ -321,7 +332,10 @@ function transcriptImages(view: ChatView): TranscriptImage[] {
 }
 
 function imageTrigger(image: TranscriptImage | undefined): HTMLButtonElement {
-  return requiredElement(imagePresentation(requiredElement(image, "transcript image")).renderRoot.querySelector<HTMLButtonElement>(".image-button"), "thumbnail trigger");
+  return requiredElement(
+    imagePresentation(requiredElement(image, "transcript image")).renderRoot.querySelector<HTMLButtonElement>(".image-button"),
+    "thumbnail trigger",
+  );
 }
 
 function galleryButton(dialog: HTMLDialogElement, label: string): HTMLButtonElement {

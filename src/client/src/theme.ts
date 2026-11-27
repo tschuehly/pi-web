@@ -56,14 +56,41 @@ export function effectiveThemePreference(local: ThemePreference | undefined, con
 
 // Preserve the released v4 palette allowlist without turning tokens into a v5 API.
 const legacyThemeTokens = [
-  "--pi-bg", "--pi-surface", "--pi-surface-hover", "--pi-terminal-bg", "--pi-terminal-text",
-  "--pi-border", "--pi-border-muted", "--pi-text", "--pi-text-secondary", "--pi-text-bright",
-  "--pi-muted", "--pi-dim", "--pi-accent", "--pi-accent-border", "--pi-selection-bg",
-  "--pi-success", "--pi-success-border", "--pi-success-bg", "--pi-success-surface", "--pi-success-ring",
-  "--pi-warning", "--pi-warning-border", "--pi-warning-surface", "--pi-danger",
-  "--pi-purple", "--pi-purple-border", "--pi-purple-surface", "--pi-overlay",
-  "--pi-shadow-soft", "--pi-shadow", "--pi-shadow-strong", "--pi-bg-overlay-soft", "--pi-bg-overlay",
-  "--pi-success-bg-overlay", "--pi-terminal-selection",
+  "--pi-bg",
+  "--pi-surface",
+  "--pi-surface-hover",
+  "--pi-terminal-bg",
+  "--pi-terminal-text",
+  "--pi-border",
+  "--pi-border-muted",
+  "--pi-text",
+  "--pi-text-secondary",
+  "--pi-text-bright",
+  "--pi-muted",
+  "--pi-dim",
+  "--pi-accent",
+  "--pi-accent-border",
+  "--pi-selection-bg",
+  "--pi-success",
+  "--pi-success-border",
+  "--pi-success-bg",
+  "--pi-success-surface",
+  "--pi-success-ring",
+  "--pi-warning",
+  "--pi-warning-border",
+  "--pi-warning-surface",
+  "--pi-danger",
+  "--pi-purple",
+  "--pi-purple-border",
+  "--pi-purple-surface",
+  "--pi-overlay",
+  "--pi-shadow-soft",
+  "--pi-shadow",
+  "--pi-shadow-strong",
+  "--pi-bg-overlay-soft",
+  "--pi-bg-overlay",
+  "--pi-success-bg-overlay",
+  "--pi-terminal-selection",
 ] as const;
 
 export function applyPiWebTheme(theme: QualifiedThemeContribution): void {
@@ -92,10 +119,16 @@ export function resolveThemePreference(options: ResolveThemePreferenceOptions): 
   return { selectedTheme, activeTheme, selectedThemePair, fallbackTheme };
 }
 
-export function findFallbackTheme(themes: readonly QualifiedThemeContribution[], fallbackThemeId: QualifiedContributionId = CLASSIC_THEME_ID): QualifiedThemeContribution | undefined {
+export function findFallbackTheme(
+  themes: readonly QualifiedThemeContribution[],
+  fallbackThemeId: QualifiedContributionId = CLASSIC_THEME_ID,
+): QualifiedThemeContribution | undefined {
   return themes.find((candidate) => candidate.id === fallbackThemeId) ?? themes[0];
 }
 
-export function findThemePairForTheme(themePairs: readonly QualifiedThemePairContribution[], themeId: QualifiedContributionId): QualifiedThemePairContribution | undefined {
+export function findThemePairForTheme(
+  themePairs: readonly QualifiedThemePairContribution[],
+  themeId: QualifiedContributionId,
+): QualifiedThemePairContribution | undefined {
   return themePairs.find((pair) => pair.light === themeId || pair.dark === themeId);
 }

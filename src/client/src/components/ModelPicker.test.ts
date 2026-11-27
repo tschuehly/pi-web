@@ -60,12 +60,7 @@ describe("model-picker All models mode", () => {
     scopeToggle(picker, "All models").click();
     await settleRenderedDialog(picker);
 
-    expect(catalogRows(picker).map((row) => rowValue(row))).toEqual([
-      "openai/gpt-5",
-      "anthropic/claude-sonnet-4-5",
-      "openai/gpt-4o",
-      "google/gemini-2.5-pro",
-    ]);
+    expect(catalogRows(picker).map((row) => rowValue(row))).toEqual(["openai/gpt-5", "anthropic/claude-sonnet-4-5", "openai/gpt-4o", "google/gemini-2.5-pro"]);
     expect(catalogRows(picker).map((row) => rowCheckbox(row).checked)).toEqual([true, true, false, false]);
     expect(toggleAllButton(picker).textContent.trim()).toBe("Deselect all");
     const currentRow = catalogRow(picker, "openai/gpt-5");
@@ -88,14 +83,21 @@ describe("model-picker All models mode", () => {
     expect(notice.textContent).toContain("Project override");
     expect(notice.textContent).toContain(".pi/settings.json");
     expect(notice.textContent).toContain("Model availability selection is disabled");
-    expect(requiredElement(picker.shadowRoot?.querySelector<HTMLElement>(".scope-status"), "model scope status").textContent).toBe("Workspace settings control model availability");
+    expect(requiredElement(picker.shadowRoot?.querySelector<HTMLElement>(".scope-status"), "model scope status").textContent).toBe(
+      "Workspace settings control model availability",
+    );
     expect(catalogRows(picker).every((row) => rowCheckbox(row).disabled && membershipButton(row).disabled)).toBe(true);
     expect(scopeToggle(picker, "Enabled").disabled).toBe(false);
   });
 
   it("uses one atomic action to narrow the scope and blocks overlapping edits while pending", async () => {
     let resolveScope: (() => void) | undefined;
-    const onSetScope = vi.fn(() => new Promise<void>((resolve) => { resolveScope = resolve; }));
+    const onSetScope = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveScope = resolve;
+        }),
+    );
     const picker = await mountPicker({ selectedValue: "openai/gpt-5", onSetScope });
     scopeToggle(picker, "All models").click();
     await settleRenderedDialog(picker);
@@ -145,7 +147,10 @@ describe("model-picker All models mode", () => {
     scopeToggle(picker, "All models").click();
     await settleRenderedDialog(picker);
 
-    const current = requiredElement(catalogRows(picker).find((row) => row.classList.contains("selected")), "selected catalog row");
+    const current = requiredElement(
+      catalogRows(picker).find((row) => row.classList.contains("selected")),
+      "selected catalog row",
+    );
     expect(rowValue(current)).toBe("openai/gpt-4o");
     expect(current.textContent).toContain("✓ current");
   });
@@ -153,7 +158,14 @@ describe("model-picker All models mode", () => {
   it("requests a membership toggle from a row checkbox without picking or closing", async () => {
     const onPick = vi.fn<(value: string) => void>();
     let toggleApplied: (() => void) | undefined;
-    const onToggleEnabled = vi.fn(() => new Promise<void>((resolve) => { toggleApplied = () => { resolve(); }; }));
+    const onToggleEnabled = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          toggleApplied = () => {
+            resolve();
+          };
+        }),
+    );
     const picker = await mountPicker({ onPick, onToggleEnabled });
     scopeToggle(picker, "All models").click();
     await settleRenderedDialog(picker);
@@ -184,18 +196,20 @@ describe("model-picker All models mode", () => {
     expect(updated.checked).toBe(true);
     expect(updated.disabled).toBe(false);
     expect(deepActiveElement()).toBe(updated);
-    expect(catalogRows(picker).map(rowValue)).toEqual([
-      "openai/gpt-5",
-      "anthropic/claude-sonnet-4-5",
-      "openai/gpt-4o",
-      "google/gemini-2.5-pro",
-    ]);
+    expect(catalogRows(picker).map(rowValue)).toEqual(["openai/gpt-5", "anthropic/claude-sonnet-4-5", "openai/gpt-4o", "google/gemini-2.5-pro"]);
   });
 
   it("preserves the natural row and scroll position when a model is deselected", async () => {
     const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
     let toggleApplied: (() => void) | undefined;
-    const onToggleEnabled = vi.fn(() => new Promise<void>((resolve) => { toggleApplied = () => { resolve(); }; }));
+    const onToggleEnabled = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          toggleApplied = () => {
+            resolve();
+          };
+        }),
+    );
     const picker = await mountPicker({ selectedValue: "openai/gpt-5", onToggleEnabled });
     scopeToggle(picker, "All models").click();
     await settleRenderedDialog(picker);
@@ -222,12 +236,7 @@ describe("model-picker All models mode", () => {
 
     expect(scrollIntoView).not.toHaveBeenCalled();
     expect(catalogRow(picker, "anthropic/claude-sonnet-4-5")).toBe(originalRow);
-    expect(catalogRows(picker).map(rowValue)).toEqual([
-      "openai/gpt-5",
-      "anthropic/claude-sonnet-4-5",
-      "openai/gpt-4o",
-      "google/gemini-2.5-pro",
-    ]);
+    expect(catalogRows(picker).map(rowValue)).toEqual(["openai/gpt-5", "anthropic/claude-sonnet-4-5", "openai/gpt-4o", "google/gemini-2.5-pro"]);
     expect(options.scrollTop).toBe(137);
     expect(rowCheckbox(originalRow).checked).toBe(false);
     expect(onToggleEnabled).toHaveBeenCalledWith("anthropic", "claude-sonnet-4-5", false);
@@ -323,7 +332,14 @@ describe("model-picker All models mode", () => {
     pressKey(optionsList(picker), "ArrowDown");
     pressKey(optionsList(picker), "ArrowDown");
     await settleRenderedDialog(picker);
-    expect(rowValue(requiredElement(catalogRows(picker).find((row) => row.classList.contains("selected")), "selected row"))).toBe("google/gemini-2.5-pro");
+    expect(
+      rowValue(
+        requiredElement(
+          catalogRows(picker).find((row) => row.classList.contains("selected")),
+          "selected row",
+        ),
+      ),
+    ).toBe("google/gemini-2.5-pro");
 
     picker.catalog = [
       entry("openai", "gpt-5", true),
@@ -333,7 +349,10 @@ describe("model-picker All models mode", () => {
     ];
     await settleRenderedDialog(picker);
 
-    const selected = requiredElement(catalogRows(picker).find((row) => row.classList.contains("selected")), "selected row");
+    const selected = requiredElement(
+      catalogRows(picker).find((row) => row.classList.contains("selected")),
+      "selected row",
+    );
     expect(rowValue(selected)).toBe("google/gemini-2.5-pro");
   });
 });
@@ -388,8 +407,9 @@ function optionsList(picker: ModelPicker): HTMLElement {
 }
 
 function scopeToggle(picker: ModelPicker, label: string): HTMLButtonElement {
-  const button = [...(picker.shadowRoot?.querySelectorAll<HTMLButtonElement>(".scope-toggle button") ?? [])]
-    .find((candidate) => candidate.textContent.trim() === label);
+  const button = [...(picker.shadowRoot?.querySelectorAll<HTMLButtonElement>(".scope-toggle button") ?? [])].find(
+    (candidate) => candidate.textContent.trim() === label,
+  );
   return requiredElement(button, `model-picker ${label} scope toggle`);
 }
 
@@ -440,5 +460,9 @@ function typeSearch(picker: ModelPicker, query: string): void {
 }
 
 function nextAnimationFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => { resolve(); }));
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => {
+      resolve();
+    }),
+  );
 }

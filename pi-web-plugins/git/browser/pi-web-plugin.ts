@@ -2,7 +2,9 @@ import type { PiWebPlugin, PluginCapability, StylesheetIntegrationCapabilityV1 }
 import { createGitBrowserContributions } from "./git-panel.js";
 
 const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse: (value) => {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Invalid PI WEB stylesheet integration capability v1");
@@ -12,10 +14,16 @@ const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCap
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "subscribe" in value && typeof value.subscribe === "function"
-    && "createController" in value && typeof value.createController === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+  );
 }
 
 const plugin = {

@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 async function store(): Promise<{ root: string; store: WorkstreamLaunchStore }> {
   const root = await mkdtemp(join(tmpdir(), "pi-web-workstream-launch-"));

@@ -48,12 +48,18 @@ async function requests(sessionId: string): Promise<{ label: string; ran?: strin
   for (const store of await readdir(stores)) {
     if (store !== sessionId) continue;
     const log = await readFile(join(stores, store, "requests.log"), "utf8").catch(() => "");
-    return log.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { label: string });
+    return log
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { label: string });
   }
   return [];
 }
 
-test("queued messages: send now and remove; after a host restart the queue is still there to recall, and Stop returns the rest to the composer", async ({ page }) => {
+test("queued messages: send now and remove; after a host restart the queue is still there to recall, and Stop returns the rest to the composer", async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   const sessionId = await newDurableChat(page);
   await send(page, 'call:bash {"command":"echo running; sleep 30","description":"Run","foreground":true}');
@@ -67,7 +73,10 @@ test("queued messages: send now and remove; after a host restart the queue is st
   await expect(queued(page).first()).toContainText("second follow-up");
   // Match the row that shows the text: a reused row keeps its replaced Markdown hidden until it re-formats, and the host
   // briefly publishes the queue without the promoted message, so `hasText` can also match a stale hidden copy.
-  await queued(page).filter({ has: page.getByText("third follow-up", { exact: true }).filter({ visible: true }) }).getByRole("button", { name: "Remove queued message" }).click();
+  await queued(page)
+    .filter({ has: page.getByText("third follow-up", { exact: true }).filter({ visible: true }) })
+    .getByRole("button", { name: "Remove queued message" })
+    .click();
   await expect(queued(page)).toHaveCount(2);
 
   // A host restart keeps the queue; the restored Chat waits paused, and the queue is still editable.
@@ -93,7 +102,11 @@ test("an image attachment reaches the model and shows in the transcript after a 
   await page.locator("prompt-editor input.attachment-image-input").setInputFiles({ name: "pixel.png", mimeType: "image/png", buffer: png });
   await send(page, "describe the picture");
   // The composer names the image [PIC_1]; the model also gets PI WEB's legend, the user message shows without it.
-  await expect(chat(page).getByText(/^ok: \[PIC_1\] describe the picture/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/^ok: \[PIC_1\] describe the picture/)
+      .first(),
+  ).toBeVisible();
   await expect(chat(page).getByText("[PIC_1] describe the picture", { exact: true })).toBeVisible();
   const image = chat(page).locator("img").first();
   await expect(image).toBeVisible();
@@ -106,7 +119,14 @@ test("an image attachment reaches the model and shows in the transcript after a 
   await expect.poll(() => restored.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   // The host's backup copy (pi-workbench durable-pilot src/backup.ts) holds the Chat with its image and passes SQLite's check.
   const copy = join(fixture().root, "backup-staging", "chats", sessionId, "session.sqlite");
-  await expect.poll(() => readFile(copy).then((bytes) => bytes.includes("describe the picture") && bytes.includes("image/png"), () => false)).toBe(true);
+  await expect
+    .poll(() =>
+      readFile(copy).then(
+        (bytes) => bytes.includes("describe the picture") && bytes.includes("image/png"),
+        () => false,
+      ),
+    )
+    .toBe(true);
   const { DatabaseSync } = await import("node:sqlite");
   const database = new DatabaseSync(copy, { readOnly: true });
   try {
@@ -134,12 +154,28 @@ test("!cmd and !!cmd run in the workspace, are recorded, and only !cmd reaches t
   test.setTimeout(60_000);
   const sessionId = await newDurableChat(page);
   await send(page, "!echo shown-to-model");
-  await expect(chat(page).getByText(/shown-to-model/).nth(1)).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/shown-to-model/)
+      .nth(1),
+  ).toBeVisible();
   await send(page, "!!echo kept-from-model");
-  await expect(chat(page).getByText(/excluded from context/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/excluded from context/)
+      .first(),
+  ).toBeVisible();
   await page.reload();
-  await expect(chat(page).getByText(/\$ echo shown-to-model/).first()).toBeVisible();
-  await expect(chat(page).getByText(/\$ echo kept-from-model/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/\$ echo shown-to-model/)
+      .first(),
+  ).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/\$ echo kept-from-model/)
+      .first(),
+  ).toBeVisible();
   await send(page, "what ran");
   await expect(chat(page).getByText("ok: what ran").first()).toBeVisible();
   expect((await requests(sessionId)).at(-1)?.ran).toEqual(["echo shown-to-model"]);

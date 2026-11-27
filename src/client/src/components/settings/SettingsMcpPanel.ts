@@ -21,9 +21,12 @@ export class SettingsMcpPanel extends LitElement {
   }
 
   /** The parent supplies only a selected, nonarchived session on the settings machine. */
-  @property({ attribute: false, hasChanged: (next: McpAuthContext | undefined, previous: McpAuthContext | undefined) =>
-    next?.machineId !== previous?.machineId || next?.session.id !== previous?.session.id || next?.session.cwd !== previous?.session.cwd,
-  }) context: McpAuthContext | undefined;
+  @property({
+    attribute: false,
+    hasChanged: (next: McpAuthContext | undefined, previous: McpAuthContext | undefined) =>
+      next?.machineId !== previous?.machineId || next?.session.id !== previous?.session.id || next?.session.cwd !== previous?.session.cwd,
+  })
+  context: McpAuthContext | undefined;
   @property() targetLabel = "this machine";
   @property({ attribute: false }) onMcpAuth?: McpAuthHandler;
   @state() private servers: McpAuthServerOption[] = [];
@@ -49,10 +52,13 @@ export class SettingsMcpPanel extends LitElement {
   }
 
   private isCurrent(generation: number, context: McpAuthContext): boolean {
-    return this.isConnected && generation === this.generation
+    return (
+      this.isConnected
+      && generation === this.generation
       && context.machineId === this.context?.machineId
       && context.session.id === this.context.session.id
-      && context.session.cwd === this.context.session.cwd;
+      && context.session.cwd === this.context.session.cwd
+    );
   }
 
   private async reload(): Promise<void> {
@@ -83,9 +89,13 @@ export class SettingsMcpPanel extends LitElement {
   }
 
   override render(): TemplateResult {
-    const context = this.context === undefined ? undefined : {
-      machineId: this.context.machineId, session: { ...this.context.session },
-    };
+    const context =
+      this.context === undefined
+        ? undefined
+        : {
+            machineId: this.context.machineId,
+            session: { ...this.context.session },
+          };
     return html`
       <settings-panel-frame
         heading="MCP"
@@ -96,9 +106,12 @@ export class SettingsMcpPanel extends LitElement {
         .notices=${this.error === "" ? [] : [{ type: "error", content: this.error }]}
       >
         <section class="ui-settings-section">
-          ${context === undefined ? html`
+          ${
+            context === undefined
+              ? html`
             <p role="status">Select a nonarchived session on ${this.targetLabel} to manage MCP authentication. Close settings to select a session, or use Configure machine to match the selected session’s machine.</p>
-          ` : html`
+          `
+              : html`
             <div class="ui-settings-heading"><h3>Session context</h3></div>
             <div class="ui-settings-summary session-context" aria-label="MCP session context">
               <span><strong>Machine:</strong> ${this.targetLabel}</span>
@@ -106,31 +119,49 @@ export class SettingsMcpPanel extends LitElement {
               <span><strong>Workspace:</strong> ${context.session.cwd}</span>
             </div>
             <p>Logout removes local Pi credentials. It does not disable the server or revoke permission at the provider. Other sessions using those credentials are also affected.</p>
-            ${this.loading ? html`<p role="status">Loading MCP servers…</p>` : this.error !== "" ? null : this.servers.length === 0 ? html`
+            ${
+              this.loading
+                ? html`<p role="status">Loading MCP servers…</p>`
+                : this.error !== ""
+                  ? null
+                  : this.servers.length === 0
+                    ? html`
               <p role="status">No enabled MCP servers with OAuth support are available in this session.</p>
-            ` : html`
+            `
+                    : html`
               <ul class="ui-settings-list server-list" aria-label="MCP servers">
-                ${this.servers.map((server) => html`
+                ${this.servers.map(
+                  (server) => html`
                   <li class="ui-settings-row">
                     <div class="server-copy ui-settings-heading">
                       <h3>${server.name}</h3>
                       ${server.description === undefined ? null : html`<p class="server-description">${server.description}</p>`}
                     </div>
                     <div class="ui-settings-actions">
-                      <button class="ui-button ui-button--action" aria-label=${`Login to ${server.name}`} ?disabled=${this.onMcpAuth === undefined} @click=${() => { void this.authenticate("login", server.name, context); }}>Login</button>
-                      <button class="ui-button ui-button--action" aria-label=${`Logout from ${server.name}`} ?disabled=${this.onMcpAuth === undefined} @click=${() => { void this.authenticate("logout", server.name, context); }}>Logout</button>
+                      <button class="ui-button ui-button--action" aria-label=${`Login to ${server.name}`} ?disabled=${this.onMcpAuth === undefined} @click=${() => {
+                        void this.authenticate("login", server.name, context);
+                      }}>Login</button>
+                      <button class="ui-button ui-button--action" aria-label=${`Logout from ${server.name}`} ?disabled=${this.onMcpAuth === undefined} @click=${() => {
+                        void this.authenticate("logout", server.name, context);
+                      }}>Logout</button>
                     </div>
                   </li>
-                `)}
+                `,
+                )}
               </ul>
-            `}
-          `}
+            `
+            }
+          `
+          }
         </section>
       </settings-panel-frame>
     `;
   }
 
-  static override styles = [uiButtonStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiSettingsStyles,
+    css`
     :host { display: block; }
     p { line-height: 1.45; }
     .ui-settings-section > p { margin: 0; }
@@ -138,7 +169,8 @@ export class SettingsMcpPanel extends LitElement {
     .server-list { margin: 0; padding: 0; list-style: none; }
     .server-copy { flex: 1 1 240px; min-width: 0; }
     .server-description { white-space: pre-wrap; overflow-wrap: anywhere; }
-  `];
+  `,
+  ];
 }
 
 function errorMessage(error: unknown): string {

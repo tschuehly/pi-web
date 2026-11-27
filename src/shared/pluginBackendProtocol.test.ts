@@ -102,8 +102,7 @@ describe("plugin backend JSON contract", () => {
     }
 
     expect(() => cloneBoundedPluginBackendJson(new RuntimeValue(), "fixture")).toThrow("only JSON values");
-    expect(() => cloneBoundedPluginBackendJson(Object.assign(Object.create({ inherited: true }), { own: true }), "fixture"))
-      .toThrow("only JSON values");
+    expect(() => cloneBoundedPluginBackendJson(Object.assign(Object.create({ inherited: true }), { own: true }), "fixture")).toThrow("only JSON values");
     const cycle: Record<string, unknown> = {};
     cycle["self"] = cycle;
     expect(() => cloneBoundedPluginBackendJson(cycle, "fixture")).toThrow("cycles");

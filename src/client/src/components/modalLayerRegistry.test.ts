@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activeModalElement, focusTopModal, hasRenderedModal, isHiddenOrInertInComposedTree, registerRenderedModal, type RenderedModalRegistration } from "./modalLayerRegistry";
+import {
+  activeModalElement,
+  focusTopModal,
+  hasRenderedModal,
+  isHiddenOrInertInComposedTree,
+  registerRenderedModal,
+  type RenderedModalRegistration,
+} from "./modalLayerRegistry";
 import { installNativeDialogFake } from "./nativeDialog.testSupport";
 installNativeDialogFake();
 
@@ -18,7 +25,12 @@ function dialog(): HTMLDialogElement {
   return element;
 }
 function register(element: HTMLDialogElement): RenderedModalRegistration {
-  const registration = registerRenderedModal({ element, focus: () => { element.focus(); } });
+  const registration = registerRenderedModal({
+    element,
+    focus: () => {
+      element.focus();
+    },
+  });
   registrations.push(registration);
   return registration;
 }
@@ -124,7 +136,13 @@ describe("retained Workbench Chats", () => {
       if (hidden && element.open) element.close();
       else if (!hidden && !element.open) element.showModal();
     };
-    const registration = registerRenderedModal({ element, focus: () => { element.focus(); }, syncVisibility: sync });
+    const registration = registerRenderedModal({
+      element,
+      focus: () => {
+        element.focus();
+      },
+      syncVisibility: sync,
+    });
     registrations.push(registration);
     element.showModal();
     expect(hasRenderedModal(document)).toBe(true);

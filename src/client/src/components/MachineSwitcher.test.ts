@@ -67,13 +67,19 @@ describe("machine-switcher status indicator", () => {
     switcher.selected = remoteB;
     await switcher.updateComplete;
     expect(otherIndicator()?.querySelector(".activity-indicator.terminal")).not.toBeNull();
-    expect(otherIndicator()?.querySelector(".unread-ring")?.getAttribute("title")).toBe("Unread sessions on other machines · Terminal active on other machines");
+    expect(otherIndicator()?.querySelector(".unread-ring")?.getAttribute("title")).toBe(
+      "Unread sessions on other machines · Terminal active on other machines",
+    );
   });
 
   it.each(["offline", "error"] as const)("keeps unread but ignores stale work from %s unselected machines", async (status) => {
-    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {
-      "remote-a": machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
-    }, { "remote-a": { ...health(status), machineId: "remote-a" } });
+    const switcher = await mountSwitcher(
+      [machine("local", "local"), machine("remote-a", "remote")],
+      {
+        "remote-a": machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
+      },
+      { "remote-a": { ...health(status), machineId: "remote-a" } },
+    );
     const indicator = switcherButton(switcher).querySelector(".other-machines-activity");
 
     expect(indicator?.querySelector(".activity-indicator.session")).toBeNull();
@@ -85,7 +91,9 @@ describe("machine-switcher status indicator", () => {
   });
 
   it("shows an unread dot on the switcher button while the selected machine reports unread", async () => {
-    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) });
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {
+      local: machineStatusSnapshot({ machine: { "core:unread": true } }),
+    });
     const button = switcherButton(switcher);
     const dot = button.querySelector(".activity-indicator.unread");
     expect(dot).not.toBeNull();
@@ -98,10 +106,9 @@ describe("machine-switcher status indicator", () => {
   });
 
   it("marks only the unread machines among the dropdown options", async () => {
-    const switcher = await mountSwitcher(
-      [machine("local", "local"), machine("remote-a", "remote"), machine("remote-b", "remote")],
-      { "remote-b": machineStatusSnapshot({ machine: { "core:unread": true } }) },
-    );
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote"), machine("remote-b", "remote")], {
+      "remote-b": machineStatusSnapshot({ machine: { "core:unread": true } }),
+    });
 
     switcherButton(switcher).click();
     await switcher.updateComplete;
@@ -112,7 +119,9 @@ describe("machine-switcher status indicator", () => {
   });
 
   it("wraps the work dot in an unread ring when the machine is busy and unread", async () => {
-    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], { local: machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }) });
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {
+      local: machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
+    });
 
     const button = switcherButton(switcher);
     const ring = button.querySelector(".unread-ring");
@@ -140,10 +149,12 @@ it("keeps nested machine actions in the parent popup and closes only the top pop
   const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {});
   switcher.onRemove = () => undefined;
   await switcher.updateComplete;
-  switcherButton(switcher).click(); await switcher.updateComplete;
+  switcherButton(switcher).click();
+  await switcher.updateComplete;
   const actions = optionFor(switcher, "remote-a").querySelector<HTMLButtonElement>(".machine-option-actions-toggle");
   if (!actions) throw new Error("Missing machine actions");
-  actions.click(); await switcher.updateComplete;
+  actions.click();
+  await switcher.updateComplete;
   const child = switcher.shadowRoot?.querySelector<HTMLElement>(".machine-option-actions-panel");
   const parent = switcher.shadowRoot?.querySelector<HTMLElement>(".machine-switcher-menu");
   expect(parent?.contains(child ?? null)).toBe(true);
@@ -177,7 +188,9 @@ describe("machine icons", () => {
   });
 
   it("places the switcher button's activity indicator to the right of the favicon", async () => {
-    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], { local: machineStatusSnapshot({ machine: { "core:unread": true } }) });
+    const switcher = await mountSwitcher([machine("local", "local"), machine("remote-a", "remote")], {
+      local: machineStatusSnapshot({ machine: { "core:unread": true } }),
+    });
 
     const icon = requiredElement(switcherButton(switcher), ".machine-icon");
     const dot = requiredElement(switcherButton(switcher), ".activity-indicator");
@@ -193,10 +206,7 @@ describe("machine icons", () => {
     await switcher.updateComplete;
 
     const icons = [...(switcher.shadowRoot?.querySelectorAll<HTMLImageElement>(".machine-option .machine-icon") ?? [])];
-    expect(icons.map((icon) => icon.getAttribute("src"))).toEqual([
-      `${document.baseURI}favicon.svg`,
-      "https://fleet-a.example.com/favicon.svg",
-    ]);
+    expect(icons.map((icon) => icon.getAttribute("src"))).toEqual([`${document.baseURI}favicon.svg`, "https://fleet-a.example.com/favicon.svg"]);
   });
 
   it("identifies the local machine by the gateway URL in the dropdown", async () => {
@@ -285,7 +295,12 @@ describe("single-machine info bubble", () => {
   });
 });
 
-async function mountSwitcher(machines: Machine[], statusSnapshots: Record<string, MachineStatusSnapshot>, statuses: Record<string, MachineHealth> = {}, locationIndicator = false): Promise<MachineSwitcher> {
+async function mountSwitcher(
+  machines: Machine[],
+  statusSnapshots: Record<string, MachineStatusSnapshot>,
+  statuses: Record<string, MachineHealth> = {},
+  locationIndicator = false,
+): Promise<MachineSwitcher> {
   const switcher = new MachineSwitcher();
   switcher.machines = machines;
   const selected = machines[0];

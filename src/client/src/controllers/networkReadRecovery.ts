@@ -14,7 +14,9 @@ export async function readWithNetworkRecovery<T>(read: () => Promise<T>, isCurre
       if (!isCurrent()) return undefined;
       const delay = RETRY_DELAYS_MS[retries];
       if (!(error instanceof NetworkRequestError) || delay === undefined) throw error;
-      await new Promise<void>((resolve) => { setTimeout(resolve, delay); });
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delay);
+      });
       if (!isCurrent()) return undefined;
       retries += 1;
       continue;

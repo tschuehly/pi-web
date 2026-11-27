@@ -20,8 +20,12 @@ export function sessionPersistenceState(session: SessionInfo | undefined, status
 
 /** A Durable Chat cannot be archived until it reports the capability. */
 export function isArchivableSessionInfo(session: SessionInfo | undefined, status?: SessionStatus): boolean {
-  return session !== undefined && session.archived !== true && sessionPersistenceState(session, status) === "persisted"
-    && chatSupports(status?.sessionId === session.id ? status : session, "archive");
+  return (
+    session !== undefined
+    && session.archived !== true
+    && sessionPersistenceState(session, status) === "persisted"
+    && chatSupports(status?.sessionId === session.id ? status : session, "archive")
+  );
 }
 
 export function isTransientNewSessionInfo(session: SessionInfo | undefined, status?: SessionStatus): boolean {

@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { WorkstreamSnapshot } from "./components/WorkstreamChooser";
 import { applyCheckpointSessionTitle } from "./workstreamCheckpointTitle";
 
-const checkpoint = (sessionTitle: string | null | undefined) => ({ id: "cp", whatChanged: "", remains: "", next: "", recordedAt: "2026-01-01T00:00:00Z", ...(sessionTitle === undefined ? {} : { sessionTitle }) });
+const checkpoint = (sessionTitle: string | null | undefined) => ({
+  id: "cp",
+  whatChanged: "",
+  remains: "",
+  next: "",
+  recordedAt: "2026-01-01T00:00:00Z",
+  ...(sessionTitle === undefined ? {} : { sessionTitle }),
+});
 const snapshotWith = (sessionTitle: string | null | undefined): Pick<WorkstreamSnapshot, "sessions"> => ({
   sessions: [{ id: "chat", status: "active", latestCheckpoint: checkpoint(sessionTitle) }],
 });

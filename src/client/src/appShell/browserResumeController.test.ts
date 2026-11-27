@@ -3,7 +3,9 @@ import { BrowserResumeController } from "./browserResumeController";
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolveDeferred: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolveDeferred = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
   if (resolveDeferred === undefined) throw new Error("Deferred promise was not initialized");
   return { promise, resolve: resolveDeferred };
 }
@@ -14,7 +16,11 @@ function frameHarness() {
     scheduleFrame: (callback: () => void) => {
       const frame = { callback, canceled: false };
       frames.push(frame);
-      return { cancel: () => { frame.canceled = true; } };
+      return {
+        cancel: () => {
+          frame.canceled = true;
+        },
+      };
     },
     pendingCount: () => frames.filter((frame) => !frame.canceled).length,
     runNext: () => {
@@ -35,21 +41,26 @@ describe("BrowserResumeController", () => {
     const refreshCompleted = deferred<undefined>();
     const onResumeSignal = vi.fn();
     let refreshCalls = 0;
-    const controller = new BrowserResumeController({
-      onResumeSignal,
-      refreshAfterResume: async () => {
-        refreshCalls += 1;
-        refreshStarted.resolve(undefined);
-        await refreshGate.promise;
-        refreshCompleted.resolve(undefined);
+    const controller = new BrowserResumeController(
+      {
+        onResumeSignal,
+        refreshAfterResume: async () => {
+          refreshCalls += 1;
+          refreshStarted.resolve(undefined);
+          await refreshGate.promise;
+          refreshCompleted.resolve(undefined);
+        },
+        onRefreshError: (error) => {
+          throw error;
+        },
       },
-      onRefreshError: (error) => { throw error; },
-    }, {
-      windowTarget,
-      documentTarget,
-      isDocumentVisible: () => true,
-      scheduleFrame: frames.scheduleFrame,
-    });
+      {
+        windowTarget,
+        documentTarget,
+        isDocumentVisible: () => true,
+        scheduleFrame: frames.scheduleFrame,
+      },
+    );
     controller.connect();
 
     windowTarget.dispatchEvent(new Event("focus"));
@@ -79,16 +90,21 @@ describe("BrowserResumeController", () => {
     const onResumeSignal = vi.fn();
     const refreshAfterResume = vi.fn();
     let visible = false;
-    const controller = new BrowserResumeController({
-      onResumeSignal,
-      refreshAfterResume,
-      onRefreshError: (error) => { throw error; },
-    }, {
-      windowTarget,
-      documentTarget,
-      isDocumentVisible: () => visible,
-      scheduleFrame: frames.scheduleFrame,
-    });
+    const controller = new BrowserResumeController(
+      {
+        onResumeSignal,
+        refreshAfterResume,
+        onRefreshError: (error) => {
+          throw error;
+        },
+      },
+      {
+        windowTarget,
+        documentTarget,
+        isDocumentVisible: () => visible,
+        scheduleFrame: frames.scheduleFrame,
+      },
+    );
     controller.connect();
     const target = type === "visibilitychange" ? documentTarget : windowTarget;
 
@@ -111,16 +127,21 @@ describe("BrowserResumeController", () => {
     const frames = frameHarness();
     const onResumeSignal = vi.fn();
     const refreshAfterResume = vi.fn();
-    const controller = new BrowserResumeController({
-      onResumeSignal,
-      refreshAfterResume,
-      onRefreshError: (error) => { throw error; },
-    }, {
-      windowTarget,
-      documentTarget,
-      isDocumentVisible: () => true,
-      scheduleFrame: frames.scheduleFrame,
-    });
+    const controller = new BrowserResumeController(
+      {
+        onResumeSignal,
+        refreshAfterResume,
+        onRefreshError: (error) => {
+          throw error;
+        },
+      },
+      {
+        windowTarget,
+        documentTarget,
+        isDocumentVisible: () => true,
+        scheduleFrame: frames.scheduleFrame,
+      },
+    );
     const dispatchResumeSignals = () => {
       for (const type of ["focus", "pageshow", "online"]) windowTarget.dispatchEvent(new Event(type));
       documentTarget.dispatchEvent(new Event("visibilitychange"));
@@ -157,26 +178,31 @@ describe("BrowserResumeController", () => {
     const secondStarted = deferred<undefined>();
     const secondCompleted = deferred<undefined>();
     let refreshCalls = 0;
-    const controller = new BrowserResumeController({
-      onResumeSignal: () => undefined,
-      refreshAfterResume: async () => {
-        refreshCalls += 1;
-        if (refreshCalls === 1) {
-          firstStarted.resolve(undefined);
-          await firstGate.promise;
-          return;
-        }
-        secondStarted.resolve(undefined);
-        await secondGate.promise;
-        secondCompleted.resolve(undefined);
+    const controller = new BrowserResumeController(
+      {
+        onResumeSignal: () => undefined,
+        refreshAfterResume: async () => {
+          refreshCalls += 1;
+          if (refreshCalls === 1) {
+            firstStarted.resolve(undefined);
+            await firstGate.promise;
+            return;
+          }
+          secondStarted.resolve(undefined);
+          await secondGate.promise;
+          secondCompleted.resolve(undefined);
+        },
+        onRefreshError: (error) => {
+          throw error;
+        },
       },
-      onRefreshError: (error) => { throw error; },
-    }, {
-      windowTarget,
-      documentTarget,
-      isDocumentVisible: () => true,
-      scheduleFrame: frames.scheduleFrame,
-    });
+      {
+        windowTarget,
+        documentTarget,
+        isDocumentVisible: () => true,
+        scheduleFrame: frames.scheduleFrame,
+      },
+    );
     controller.connect();
 
     windowTarget.dispatchEvent(new Event("pageshow"));

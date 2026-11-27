@@ -34,10 +34,15 @@ function fixture(installation: PiWebInstallationInfo = { kind: "docker", dockerM
   return deps;
 }
 const globalInstall: PiWebInstallationInfo = {
-  kind: "npm-global", path: "/opt/node/lib/node_modules/@jmfederico/pi-web", npmRoot: "/opt/node/lib/node_modules",
+  kind: "npm-global",
+  path: "/opt/node/lib/node_modules/@jmfederico/pi-web",
+  npmRoot: "/opt/node/lib/node_modules",
 };
 const piInstall: PiWebInstallationInfo = {
-  kind: "pi-package", path: "/profiles/active agent/npm/node_modules/@jmfederico/pi-web", scope: "user", source: "npm:@jmfederico/pi-web",
+  kind: "pi-package",
+  path: "/profiles/active agent/npm/node_modules/@jmfederico/pi-web",
+  scope: "user",
+  source: "npm:@jmfederico/pi-web",
 };
 const localInstall: PiWebInstallationInfo = { kind: "local", path: "/workspace/pi-web" };
 
@@ -54,12 +59,15 @@ function configureLocalCheckout(deps: ReturnType<typeof fixture>, status = "", b
 }
 
 describe("runPiWebUpdate", () => {
-  it.each([["--force", "--force"], ["--yes", "--yes"], ["latest"], ["--help", "--yes"], ["--dev"], ["--all"]])("rejects invalid arguments %j before inspecting or changing anything", async (...args) => {
-    const deps = fixture();
-    await expect(runPiWebUpdate(args, deps)).rejects.toThrow("Invalid update arguments");
-    expect(deps.agentDir).not.toHaveBeenCalled();
-    expect(deps.run).not.toHaveBeenCalled();
-  });
+  it.each([["--force", "--force"], ["--yes", "--yes"], ["latest"], ["--help", "--yes"], ["--dev"], ["--all"]])(
+    "rejects invalid arguments %j before inspecting or changing anything",
+    async (...args) => {
+      const deps = fixture();
+      await expect(runPiWebUpdate(args, deps)).rejects.toThrow("Invalid update arguments");
+      expect(deps.agentDir).not.toHaveBeenCalled();
+      expect(deps.run).not.toHaveBeenCalled();
+    },
+  );
 
   it("help does not inspect the installation", async () => {
     const deps = fixture();
@@ -72,9 +80,15 @@ describe("runPiWebUpdate", () => {
     const deps = fixture({ kind: "docker", dockerMode });
     deps.env = { ...deps.env, ...{ PI_WEB_SESSION: "1" } };
     await runPiWebUpdate([], deps);
-    expect(deps.run.mock.calls).toEqual([[{
-      executable: "pi-web-docker", args: dockerMode === "dev" ? ["--dev", "update"] : ["update"], env: deps.env,
-    }]]);
+    expect(deps.run.mock.calls).toEqual([
+      [
+        {
+          executable: "pi-web-docker",
+          args: dockerMode === "dev" ? ["--dev", "update"] : ["update"],
+          env: deps.env,
+        },
+      ],
+    ]);
     expect(deps.confirm).toHaveBeenCalledOnce();
     expect(deps.log).toHaveBeenCalledWith(expect.stringContaining("interrupt active sessions and terminals"));
     expect(deps.log.mock.invocationCallOrder[0]).toBeLessThan(deps.confirm.mock.invocationCallOrder[0] ?? 0);
@@ -248,14 +262,40 @@ describe("runPiWebUpdate", () => {
 
   it.each([globalInstall, piInstall])("dispatches nested Linux restart only after successful installation ($kind)", async (installation) => {
     const deps = fixture(installation);
-    deps.env = { ...deps.env, ...{ PI_WEB_SESSION: "1", PI_WEB_CONFIG: "relative/config.json", PI_WEB_DATA_DIR: "/data/custom", PI_WEB_SESSIOND_SOCKET: "/custom.sock", HOME: "/home/test", XDG_RUNTIME_DIR: "/run/user/500", SECRET_TOKEN: "do not forward" } };
+    deps.env = {
+      ...deps.env,
+      ...{
+        PI_WEB_SESSION: "1",
+        PI_WEB_CONFIG: "relative/config.json",
+        PI_WEB_DATA_DIR: "/data/custom",
+        PI_WEB_SESSIOND_SOCKET: "/custom.sock",
+        HOME: "/home/test",
+        XDG_RUNTIME_DIR: "/run/user/500",
+        SECRET_TOKEN: "do not forward",
+      },
+    };
     await runPiWebUpdate([], deps);
     const probe = deps.capture.mock.calls.find(([command]) => command.executable === "systemd-run")?.[0];
-    expect(probe?.args).toEqual(expect.arrayContaining(["--user", "--collect", "--wait", "--unit=pi-web-update-restart-unique-id-preflight", "--eval", "process.exit(0)"]));
+    expect(probe?.args).toEqual(
+      expect.arrayContaining(["--user", "--collect", "--wait", "--unit=pi-web-update-restart-unique-id-preflight", "--eval", "process.exit(0)"]),
+    );
     expect(deps.capture.mock.invocationCallOrder.at(-1)).toBeLessThan(deps.run.mock.invocationCallOrder[0] ?? 0);
     const restart = deps.run.mock.calls[1]?.[0];
     expect(restart?.executable).toBe("systemd-run");
-    expect(restart?.args).toEqual(expect.arrayContaining(["--user", "--collect", "--expand-environment=no", "--working-directory=/project with spaces", "--setenv=PI_WEB_CONFIG", "--setenv=PI_WEB_DATA_DIR", "--setenv=PI_WEB_SESSIOND_SOCKET", "--setenv=HOME", "--setenv=XDG_RUNTIME_DIR", "--unit=pi-web-update-restart-unique-id"]));
+    expect(restart?.args).toEqual(
+      expect.arrayContaining([
+        "--user",
+        "--collect",
+        "--expand-environment=no",
+        "--working-directory=/project with spaces",
+        "--setenv=PI_WEB_CONFIG",
+        "--setenv=PI_WEB_DATA_DIR",
+        "--setenv=PI_WEB_SESSIOND_SOCKET",
+        "--setenv=HOME",
+        "--setenv=XDG_RUNTIME_DIR",
+        "--unit=pi-web-update-restart-unique-id",
+      ]),
+    );
     expect(restart?.env).toEqual(deps.env);
     expect(restart?.args.slice(-4)).toEqual(["--", "/tools/node", join(installation.path ?? "", "dist", "cli.js"), "restart"]);
     expect(restart?.args).not.toContain("--wait");
@@ -270,7 +310,7 @@ describe("runPiWebUpdate", () => {
   it("refuses before installation when detached dispatch preflight fails", async () => {
     const deps = fixture(piInstall);
     deps.env = { ...deps.env, ...{ PI_WEB_SESSION: "1" } };
-    deps.capture.mockImplementation((command) => command.executable === "systemd-run" ? Promise.reject(new Error("no user bus")) : Promise.resolve("loaded"));
+    deps.capture.mockImplementation((command) => (command.executable === "systemd-run" ? Promise.reject(new Error("no user bus")) : Promise.resolve("loaded")));
     await expect(runPiWebUpdate(["--yes"], deps)).rejects.toThrow("nothing changed");
     expect(deps.run).not.toHaveBeenCalled();
     expect(deps.confirm).not.toHaveBeenCalled();
@@ -313,9 +353,14 @@ describe("runPiWebUpdate", () => {
   it("pins global npm to the detected installation and restarts that CLI only afterwards", async () => {
     const deps = fixture(globalInstall);
     await runPiWebUpdate(["--yes"], deps);
-    const npmPrefix = basename(dirname(globalInstall.npmRoot ?? "")) === "lib" ? dirname(dirname(globalInstall.npmRoot ?? "")) : dirname(globalInstall.npmRoot ?? "");
+    const npmPrefix =
+      basename(dirname(globalInstall.npmRoot ?? "")) === "lib" ? dirname(dirname(globalInstall.npmRoot ?? "")) : dirname(globalInstall.npmRoot ?? "");
     expect(deps.capture).toHaveBeenCalledWith({ executable: "npm", args: ["root", "--global", "--prefix", npmPrefix], env: deps.env });
-    expect(deps.capture).toHaveBeenCalledWith({ executable: "npm", args: ["view", "--global", "--prefix", resolve(npmPrefix), "@jmfederico/pi-web@latest", "version", "--json"], env: deps.env });
+    expect(deps.capture).toHaveBeenCalledWith({
+      executable: "npm",
+      args: ["view", "--global", "--prefix", resolve(npmPrefix), "@jmfederico/pi-web@latest", "version", "--json"],
+      env: deps.env,
+    });
     expect(deps.run.mock.calls.map(([command]) => [command.executable, command.args])).toEqual([
       ["npm", ["install", "--global", "--prefix", resolve(npmPrefix), "@jmfederico/pi-web@1.202610.3", "--allow-scripts=node-pty"]],
       ["/tools/node", [join("/opt/node/lib/node_modules/@jmfederico/pi-web", "dist", "cli.js"), "restart"]],
@@ -338,7 +383,10 @@ describe("runPiWebUpdate", () => {
     expect(deps.capture.mock.calls.every(([command]) => command.executable === "npm")).toBe(true);
   });
 
-  it.each([["--force", "--yes"], ["--yes", "--force"]])("reinstalls the current npm version with force (%j)", async (...args) => {
+  it.each([
+    ["--force", "--yes"],
+    ["--yes", "--force"],
+  ])("reinstalls the current npm version with force (%j)", async (...args) => {
     const deps = fixture(globalInstall, false);
     deps.readFile.mockResolvedValue(JSON.stringify({ version: "1.202610.3" }));
 
@@ -377,7 +425,9 @@ describe("runPiWebUpdate", () => {
 
   it("does not install or restart when the registry lookup fails", async () => {
     const deps = fixture(globalInstall);
-    deps.capture.mockImplementation((command) => command.args.includes("view") ? Promise.reject(new Error("registry offline")) : Promise.resolve("/opt/node/lib/node_modules"));
+    deps.capture.mockImplementation((command) =>
+      command.args.includes("view") ? Promise.reject(new Error("registry offline")) : Promise.resolve("/opt/node/lib/node_modules"),
+    );
 
     await expect(runPiWebUpdate(["--yes"], deps)).rejects.toThrow("Cannot determine the latest");
     expect(deps.run).not.toHaveBeenCalled();
@@ -416,10 +466,13 @@ describe("runPiWebUpdate", () => {
     const deps = fixture(piInstall);
     await runPiWebUpdate(["--yes"], deps);
     expect(deps.detectInstallation).toHaveBeenCalledWith("/profiles/active agent");
-    expect(deps.run.mock.calls[0]).toEqual([{
-      executable: "/tools/node", args: ["/owned/pi/dist/cli.js", "update", "--no-approve", "--extension", "npm:@jmfederico/pi-web"],
-      env: { PATH: "/tools/bin", PI_CODING_AGENT_DIR: "/profiles/active agent" },
-    }]);
+    expect(deps.run.mock.calls[0]).toEqual([
+      {
+        executable: "/tools/node",
+        args: ["/owned/pi/dist/cli.js", "update", "--no-approve", "--extension", "npm:@jmfederico/pi-web"],
+        env: { PATH: "/tools/bin", PI_CODING_AGENT_DIR: "/profiles/active agent" },
+      },
+    ]);
     expect(deps.run.mock.calls[1]?.[0].args).toEqual([join(piInstall.path ?? "", "dist", "cli.js"), "restart"]);
   });
 

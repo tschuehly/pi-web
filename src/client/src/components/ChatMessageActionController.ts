@@ -1,4 +1,9 @@
-import type { DisplayedMessageActionAvailabilityContext, MessageActionAvailabilityContext, MessageActionFeedback, MessageActionResult } from "../../../plugin-api";
+import type {
+  DisplayedMessageActionAvailabilityContext,
+  MessageActionAvailabilityContext,
+  MessageActionFeedback,
+  MessageActionResult,
+} from "../../../plugin-api";
 import { displayedMessageActionMessage, messageActionMessage, MessageActionAvailabilityCache, type RegisteredMessageAction } from "../plugins/messageActions";
 import type { ChatLine } from "../chatTypes";
 
@@ -12,7 +17,12 @@ export interface ChatMessageActionContext {
   onDisplay?: ((input: DisplayedMessageActionAvailabilityContext, actionId: string) => Promise<MessageActionResult>) | undefined;
 }
 
-interface ActionLocation { machineId: string; sessionId: string; generation: number; key: string }
+interface ActionLocation {
+  machineId: string;
+  sessionId: string;
+  generation: number;
+  key: string;
+}
 
 /** Owns invocation concurrency and transient presentation, independently of Lit templates. */
 export class ChatMessageActionController {
@@ -24,12 +34,18 @@ export class ChatMessageActionController {
   private feedback: (ActionLocation & { actionId: string; presentation: MessageActionFeedback }) | undefined;
   private feedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(private readonly context: () => ChatMessageActionContext, private readonly changed: () => void) {}
+  constructor(
+    private readonly context: () => ChatMessageActionContext,
+    private readonly changed: () => void,
+  ) {}
 
   available(source: ChatLine, displayed: ChatLine, includeEntryActions: boolean) {
     const context = this.context();
-    return context.availability === undefined ? [] : this.availability.get(source, context.actions, context.availability, displayed, includeEntryActions)
-      .filter(({ action }) => action.target === "display" ? context.onDisplay !== undefined : context.onEntry !== undefined);
+    return context.availability === undefined
+      ? []
+      : this.availability
+          .get(source, context.actions, context.availability, displayed, includeEntryActions)
+          .filter(({ action }) => (action.target === "display" ? context.onDisplay !== undefined : context.onEntry !== undefined));
   }
 
   pending(key: string, action: RegisteredMessageAction): boolean {
@@ -37,7 +53,9 @@ export class ChatMessageActionController {
   }
 
   presentation(key: string, actionId: string): MessageActionFeedback | undefined {
-    return this.feedback !== undefined && this.current(this.feedback) && this.feedback.key === key && this.feedback.actionId === actionId ? this.feedback.presentation : undefined;
+    return this.feedback !== undefined && this.current(this.feedback) && this.feedback.key === key && this.feedback.actionId === actionId
+      ? this.feedback.presentation
+      : undefined;
   }
 
   errorMessage(key: string): string | undefined {
@@ -72,9 +90,14 @@ export class ChatMessageActionController {
     if (context.availability === undefined || this.pending(key, action)) return;
     const entry = messageActionMessage(source, displayed.role);
     const { onEntry, onDisplay, availability } = context;
-    const run = action.target === "display"
-      ? onDisplay === undefined ? undefined : () => onDisplay({ ...availability, message: displayedMessageActionMessage(displayed) }, action.id)
-      : entry === undefined || onEntry === undefined ? undefined : () => onEntry({ ...availability, message: entry }, action.id);
+    const run =
+      action.target === "display"
+        ? onDisplay === undefined
+          ? undefined
+          : () => onDisplay({ ...availability, message: displayedMessageActionMessage(displayed) }, action.id)
+        : entry === undefined || onEntry === undefined
+          ? undefined
+          : () => onEntry({ ...availability, message: entry }, action.id);
     if (run === undefined) return;
     const location = this.location(key);
     const pendingKey = this.pendingKey(key, action.id);
@@ -87,7 +110,10 @@ export class ChatMessageActionController {
       if (presentation !== undefined && this.current(location)) {
         this.clearFeedback();
         this.feedback = { ...location, actionId: action.id, presentation };
-        this.feedbackTimer = setTimeout(() => { this.clearFeedback(); this.changed(); }, 1200);
+        this.feedbackTimer = setTimeout(() => {
+          this.clearFeedback();
+          this.changed();
+        }, 1200);
       }
     } catch (error) {
       if (this.current(location)) this.error = { ...location, message: error instanceof Error ? error.message : String(error) };

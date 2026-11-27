@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ChatScrollController, captureScrollPosition, chatScrollStorageKey, findScrollAnchor, type ChatScrollElement, type ChatScrollScheduler, type ChatScrollStorage, type ChatScrollViewport } from "./chatScrollPosition";
+import {
+  ChatScrollController,
+  captureScrollPosition,
+  chatScrollStorageKey,
+  findScrollAnchor,
+  type ChatScrollElement,
+  type ChatScrollScheduler,
+  type ChatScrollStorage,
+  type ChatScrollViewport,
+} from "./chatScrollPosition";
 
 class MemoryScrollStorage implements ChatScrollStorage {
   readonly values = new Map<string, string>();
@@ -94,21 +103,13 @@ describe("ChatScrollController", () => {
     const storage = new MemoryScrollStorage();
     const controller = new ChatScrollController(storage, new ManualScheduler());
     const scroller = new FakeScroller(200, 1000, 300, 100, 400);
-    const anchors = [
-      new FakeArticle(-600, 350, "g:1"),
-      new FakeArticle(80, 170, "e:6"),
-      new FakeArticle(220, 280, "m:7"),
-    ];
+    const anchors = [new FakeArticle(-600, 350, "g:1"), new FakeArticle(80, 170, "e:6"), new FakeArticle(220, 280, "m:7")];
 
     expect(controller.savePosition("s1", scroller, anchors)).toBe("saved");
     expect(JSON.parse(storage.getItem(chatScrollStorageKey("s1")) ?? "{}")).toEqual({ mode: "anchor", anchorId: "e:6", offset: -20 });
 
     scroller.scrollTop = 500;
-    const rerenderedAnchors = [
-      new FakeArticle(-500, 360, "g:1"),
-      new FakeArticle(130, 210, "e:6"),
-      new FakeArticle(250, 310, "m:7"),
-    ];
+    const rerenderedAnchors = [new FakeArticle(-500, 360, "g:1"), new FakeArticle(130, 210, "e:6"), new FakeArticle(250, 310, "m:7")];
 
     expect(controller.restorePosition("s1", scroller, rerenderedAnchors)).toEqual({ status: "restored" });
     expect(scroller.scrollTop).toBe(550);
@@ -160,8 +161,12 @@ describe("ChatScrollController", () => {
     const controller = new ChatScrollController(new MemoryScrollStorage(), scheduler);
     const saved: string[] = [];
 
-    controller.scheduleSave("s1", (sessionId) => { saved.push(sessionId); });
-    controller.scheduleSave("s2", (sessionId) => { saved.push(sessionId); });
+    controller.scheduleSave("s1", (sessionId) => {
+      saved.push(sessionId);
+    });
+    controller.scheduleSave("s2", (sessionId) => {
+      saved.push(sessionId);
+    });
     scheduler.runAll();
 
     expect(saved).toEqual(["s2"]);
@@ -210,6 +215,10 @@ describe("chat scroll helpers", () => {
   });
 
   it("captures an anchor-relative scroll position", () => {
-    expect(captureScrollPosition(new FakeScroller(0, 1000, 100, 100, 200), new FakeArticle(140, 180, "m:3"))).toEqual({ mode: "anchor", anchorId: "m:3", offset: 40 });
+    expect(captureScrollPosition(new FakeScroller(0, 1000, 100, 100, 200), new FakeArticle(140, 180, "m:3"))).toEqual({
+      mode: "anchor",
+      anchorId: "m:3",
+      offset: 40,
+    });
   });
 });

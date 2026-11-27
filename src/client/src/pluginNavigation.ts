@@ -15,19 +15,25 @@ export function resolvePluginNavigation(
   current: ParsedAppRoute,
   currentQuery: Readonly<ContributionQueryRecord>,
   defaultMachineId: string,
-  resolveQueryScope?: (tool: string, machineId: string) => {
-    contributionId: QualifiedContributionId;
-    sourceContributionId?: QualifiedContributionId | undefined;
-  } | undefined,
+  resolveQueryScope?: (
+    tool: string,
+    machineId: string,
+  ) =>
+    | {
+        contributionId: QualifiedContributionId;
+        sourceContributionId?: QualifiedContributionId | undefined;
+      }
+    | undefined,
   capturedMachineId?: string,
 ): PluginNavigationPlan {
   validateOptions(options);
   const patch = options?.mode === "patch";
   validateDestination(destination, patch);
 
-  const machineId = destination.machineId === undefined
-    ? capturedMachineId ?? (patch ? current.machineId ?? "local" : defaultMachineId)
-    : routeField(destination.machineId) ?? "local";
+  const machineId =
+    destination.machineId === undefined
+      ? (capturedMachineId ?? (patch ? (current.machineId ?? "local") : defaultMachineId))
+      : (routeField(destination.machineId) ?? "local");
   const machineChanged = !patch || machineId !== (current.machineId ?? "local");
   const projectId = inheritField(destination.projectId, machineChanged ? undefined : current.projectId);
   const projectChanged = machineChanged || projectId !== current.projectId;
@@ -51,11 +57,15 @@ export function resolvePluginNavigation(
       // Only host-owned source/runtime identities share query state. Unavailable
       // qualified IDs remain valid namespaces while their plugin loads.
       const scope = patch ? resolveQueryScope?.(route.tool, machineId) : undefined;
-      const sourceQueryIds = scope?.sourceContributionId === undefined || scope.sourceContributionId === scope.contributionId
-        ? [] : [scope.sourceContributionId];
-      contributionQuery = patchContributionQueryRecord(contributionQuery,
+      const sourceQueryIds =
+        scope?.sourceContributionId === undefined || scope.sourceContributionId === scope.contributionId ? [] : [scope.sourceContributionId];
+      contributionQuery = patchContributionQueryRecord(
+        contributionQuery,
         // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-        scope?.contributionId ?? route.tool as QualifiedContributionId, sourceQueryIds, destination.query);
+        scope?.contributionId ?? (route.tool as QualifiedContributionId),
+        sourceQueryIds,
+        destination.query,
+      );
     } catch (error) {
       throw new TypeError(error instanceof Error ? error.message : String(error), { cause: error });
     }
@@ -91,8 +101,7 @@ function validateDestination(destination: unknown, patch: boolean): asserts dest
     }
   }
   const view = destination["view"];
-  if (view !== undefined && !(patch && view === null)
-    && view !== "navigation" && view !== "chat" && view !== "workspace") {
+  if (view !== undefined && !(patch && view === null) && view !== "navigation" && view !== "chat" && view !== "workspace") {
     throw new TypeError("Navigation view must be navigation, chat, or workspace");
   }
 }

@@ -24,7 +24,9 @@ describe("SessionDaemonClient transport configuration", () => {
 
     await expect(client.request("POST", "/notify", { pluginId: "provider" })).resolves.toMatchObject({ statusCode: 202, body: "ok" });
     expect(fetch).toHaveBeenCalledWith(new URL("https://daemon.example:8510/notify"), {
-      method: "POST", headers: { "content-type": "application/json" }, body: '{"pluginId":"provider"}',
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"pluginId":"provider"}',
     });
   });
 
@@ -44,9 +46,7 @@ describe("SessionDaemonClient transport configuration", () => {
   });
 
   it("uses an explicit socket instead of an inherited gateway URL on the native platform", async () => {
-    const socketPath = process.platform === "win32"
-      ? `\\\\.\\pipe\\pi-client-${randomUUID()}`
-      : join(tmpdir(), `${randomUUID()}.sock`);
+    const socketPath = process.platform === "win32" ? `\\\\.\\pipe\\pi-client-${randomUUID()}` : join(tmpdir(), `${randomUUID()}.sock`);
     vi.stubEnv("PI_WEB_SESSIOND_URL", "http://gateway.invalid:8999/");
     vi.stubEnv("PI_WEB_SESSIOND_SOCKET", join(tmpdir(), "wrong.sock"));
     const fetch = vi.spyOn(globalThis, "fetch");
@@ -71,7 +71,12 @@ describe("SessionDaemonClient transport configuration", () => {
     } finally {
       if (server.listening) {
         server.closeAllConnections();
-        await new Promise<void>((resolve, reject) => { server.close((error) => { if (error === undefined) resolve(); else reject(error); }); });
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error === undefined) resolve();
+            else reject(error);
+          });
+        });
       }
     }
   });
@@ -80,7 +85,10 @@ describe("SessionDaemonClient transport configuration", () => {
 describe("SessionDaemonClient daemon restart", () => {
   it.skipIf(process.platform === "win32")("waits for a daemon whose socket appears shortly after the request, as during a restart", async () => {
     const socketPath = join(tmpdir(), `${randomUUID()}.sock`);
-    const server = createServer((_request, reply) => { reply.writeHead(200); reply.end("{}"); });
+    const server = createServer((_request, reply) => {
+      reply.writeHead(200);
+      reply.end("{}");
+    });
     const client = new SessionDaemonClient({ socketPath });
     try {
       const pending = client.request("POST", "/sessions/x/prompt", { text: "hi" }, { waitForStartup: true });
@@ -98,7 +106,9 @@ describe("SessionDaemonClient daemon restart", () => {
     expect(Date.now() - started).toBeLessThan(150);
     const controller = new AbortController();
     const pending = client.request("GET", "/runtime", undefined, { signal: controller.signal, waitForStartup: true });
-    setTimeout(() => { controller.abort(); }, 300);
+    setTimeout(() => {
+      controller.abort();
+    }, 300);
     const aborted = Date.now();
     await expect(pending).rejects.toThrow();
     expect(Date.now() - aborted).toBeLessThan(450);
@@ -121,10 +131,12 @@ describe("SessionDaemonClient active agent profile protocol", () => {
 
   it("distinguishes invalid protocol responses from daemon unavailability", async () => {
     const invalidClient = new SessionDaemonClient();
-    vi.spyOn(invalidClient, "request").mockResolvedValue(runtimeResponse({
-      ...activeAgentProfile,
-      token: "must-not-cross-the-protocol",
-    }));
+    vi.spyOn(invalidClient, "request").mockResolvedValue(
+      runtimeResponse({
+        ...activeAgentProfile,
+        token: "must-not-cross-the-protocol",
+      }),
+    );
     const unavailableClient = new SessionDaemonClient();
     vi.spyOn(unavailableClient, "request").mockRejectedValue(new Error("connect ECONNREFUSED"));
 
@@ -140,10 +152,12 @@ describe("SessionDaemonClient active agent profile protocol", () => {
 
   it.skipIf(process.platform === "win32")("rejects foreign-platform active state paths before local consumers use them", async () => {
     const client = new SessionDaemonClient();
-    vi.spyOn(client, "request").mockResolvedValue(runtimeResponse({
-      ...activeAgentProfile,
-      dir: "C:\\pi-profiles\\work",
-    }));
+    vi.spyOn(client, "request").mockResolvedValue(
+      runtimeResponse({
+        ...activeAgentProfile,
+        dir: "C:\\pi-profiles\\work",
+      }),
+    );
 
     await expect(client.getActiveAgentProfile()).resolves.toEqual({
       status: "invalid",

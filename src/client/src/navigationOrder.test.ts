@@ -9,17 +9,13 @@ describe("navigation order helpers", () => {
   });
 
   it("moves around visible neighbors while retaining hidden IDs and appending newcomers", () => {
-    expect(moveOrderedId(["a", "hidden", "b"], ["a", "b", "c"], "b", "a", "before"))
-      .toEqual(["b", "a", "hidden", "c"]);
-    expect(moveOrderedId(["a", "hidden", "b"], ["a", "b", "c"], "a", "b", "after"))
-      .toEqual(["hidden", "b", "a", "c"]);
+    expect(moveOrderedId(["a", "hidden", "b"], ["a", "b", "c"], "b", "a", "before")).toEqual(["b", "a", "hidden", "c"]);
+    expect(moveOrderedId(["a", "hidden", "b"], ["a", "b", "c"], "a", "b", "after")).toEqual(["hidden", "b", "a", "c"]);
   });
 
   it("does not delete temporarily missing IDs on a no-op or refresh", () => {
-    expect(moveOrderedId(["missing", "a"], ["a", "new"], "a", "absent", "before"))
-      .toEqual(["missing", "a", "new"]);
+    expect(moveOrderedId(["missing", "a"], ["a", "new"], "a", "absent", "before")).toEqual(["missing", "a", "new"]);
     expect(orderItems([{ id: "a" }], ["missing", "a"])).toEqual([{ id: "a" }]);
-    expect(orderItems([{ id: "a" }, { id: "missing" }], ["missing", "a"]).map((item) => item.id))
-      .toEqual(["missing", "a"]);
+    expect(orderItems([{ id: "a" }, { id: "missing" }], ["missing", "a"]).map((item) => item.id)).toEqual(["missing", "a"]);
   });
 });

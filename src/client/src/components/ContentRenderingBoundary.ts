@@ -11,8 +11,13 @@ export class ContentRenderingBoundary extends LitElement {
   private displayedSource = "";
   private dirty = true;
   private scheduled = false;
-  private readonly enhancement = new VisibleContentController(this, () => { this.requestUpdate(); },
-    () => this.querySelector(".content-rendering-body") ?? undefined);
+  private readonly enhancement = new VisibleContentController(
+    this,
+    () => {
+      this.requestUpdate();
+    },
+    () => this.querySelector(".content-rendering-body") ?? undefined,
+  );
 
   protected override createRenderRoot(): HTMLElement {
     // Keep Markdown in the consumer's styling scope instead of adding a shadow root.

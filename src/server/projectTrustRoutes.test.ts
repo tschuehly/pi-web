@@ -47,9 +47,7 @@ class FakeWorkspaceCatalog implements WorkspaceCatalog {
 
   resolve(projectId: string, workspaceId: string): Promise<WorkspaceListing> {
     const workspace = this.workspaces.find((entry) => entry.projectId === projectId && entry.id === workspaceId);
-    return workspace === undefined
-      ? Promise.reject(new Error("Workspace not found"))
-      : Promise.resolve(workspace);
+    return workspace === undefined ? Promise.reject(new Error("Workspace not found")) : Promise.resolve(workspace);
   }
 }
 

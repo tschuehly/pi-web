@@ -108,7 +108,9 @@ export class AppNavigationPanel extends LitElement {
   override connectedCallback(): void {
     super.connectedCallback();
     if (typeof ResizeObserver !== "undefined") {
-      this.layoutObserver = new ResizeObserver(() => { this.refreshSectionMeasurements(); });
+      this.layoutObserver = new ResizeObserver(() => {
+        this.refreshSectionMeasurements();
+      });
       this.requestUpdate();
     }
   }
@@ -132,8 +134,13 @@ export class AppNavigationPanel extends LitElement {
   private refreshSectionMeasurements(): void {
     const projects = this.measureSection("projects");
     const workspaces = this.measureSection("workspaces");
-    if (projects.height === this.sectionMeasurements.projects.height && projects.maxHeight === this.sectionMeasurements.projects.maxHeight
-      && workspaces.height === this.sectionMeasurements.workspaces.height && workspaces.maxHeight === this.sectionMeasurements.workspaces.maxHeight) return;
+    if (
+      projects.height === this.sectionMeasurements.projects.height
+      && projects.maxHeight === this.sectionMeasurements.projects.maxHeight
+      && workspaces.height === this.sectionMeasurements.workspaces.height
+      && workspaces.maxHeight === this.sectionMeasurements.workspaces.maxHeight
+    )
+      return;
     this.sectionMeasurements = { projects, workspaces };
   }
 
@@ -151,16 +158,22 @@ export class AppNavigationPanel extends LitElement {
   async focusSection(section: NavigationSection): Promise<boolean> {
     await this.updateComplete;
     switch (section) {
-      case "machines": return await this.focusNavigableSection(this.compact ? this.machineList : this.machineSwitcher);
-      case "projects": return await this.focusNavigableSection(this.projectList);
-      case "workspaces": return this.workspaceSelectionVisible && await this.focusNavigableSection(this.workspaceList);
-      case "sessions": return await this.focusNavigableSection(this.sessionList);
+      case "machines":
+        return await this.focusNavigableSection(this.compact ? this.machineList : this.machineSwitcher);
+      case "projects":
+        return await this.focusNavigableSection(this.projectList);
+      case "workspaces":
+        return this.workspaceSelectionVisible && (await this.focusNavigableSection(this.workspaceList));
+      case "sessions":
+        return await this.focusNavigableSection(this.sessionList);
     }
   }
 
   // Stable child inputs delegate at invocation time, never capturing old props.
   private readonly childCallbacks = {
-    toggleProjects: () => { this.onToggleProjects?.(); },
+    toggleProjects: () => {
+      this.onToggleProjects?.();
+    },
     selectProject: (project: Project) => this.onSelectProject?.(project),
     closeProject: (project: Project) => this.onCloseProject?.(project),
     moveProject: (project: Project, direction: -1 | 1) => this.onMoveProject?.(project, direction),
@@ -168,10 +181,14 @@ export class AppNavigationPanel extends LitElement {
     pinSession: (session: SessionInfo) => this.onPinSession?.(session),
     unpinSession: (session: SessionInfo) => this.onUnpinSession?.(session),
     moveSessionPin: (session: SessionInfo, direction: -1 | 1) => this.onMoveSessionPin?.(session, direction),
-    toggleWorkspaces: () => { this.onToggleWorkspaces?.(); },
+    toggleWorkspaces: () => {
+      this.onToggleWorkspaces?.();
+    },
     selectWorkspace: (workspace: Workspace) => this.onSelectWorkspace?.(workspace),
     deleteWorkspace: (workspace: Workspace) => this.onDeleteWorkspace?.(workspace),
-    toggleSessions: () => { this.onToggleSessions?.(); },
+    toggleSessions: () => {
+      this.onToggleSessions?.();
+    },
     archivedCollapsed: () => this.onArchivedCollapsed?.(),
     startSession: () => this.onStartSession?.(),
     selectSession: (session: SessionInfo) => this.onSelectSession?.(session),
@@ -187,13 +204,27 @@ export class AppNavigationPanel extends LitElement {
     markSessionsRead: (sessions: SessionInfo[]) => this.onMarkSessionsRead?.(sessions),
     reloadSession: (session: SessionInfo) => this.onReloadSession?.(session),
     cleanupSessions: () => this.onCleanupSessions?.(),
-    previousFromProjects: () => { this.focusPreviousFrom("projects"); },
-    nextFromProjects: () => { this.focusNextFrom("projects"); },
-    previousFromWorkspaces: () => { this.focusPreviousFrom("workspaces"); },
-    nextFromWorkspaces: () => { this.focusNextFrom("workspaces"); },
-    previousFromSessions: () => { this.focusPreviousFrom("sessions"); },
-    nextFromSessions: () => { this.focusNextFrom("sessions"); },
-    cancelKeyboardNavigation: () => { this.cancelKeyboardNavigation(); },
+    previousFromProjects: () => {
+      this.focusPreviousFrom("projects");
+    },
+    nextFromProjects: () => {
+      this.focusNextFrom("projects");
+    },
+    previousFromWorkspaces: () => {
+      this.focusPreviousFrom("workspaces");
+    },
+    nextFromWorkspaces: () => {
+      this.focusNextFrom("workspaces");
+    },
+    previousFromSessions: () => {
+      this.focusPreviousFrom("sessions");
+    },
+    nextFromSessions: () => {
+      this.focusNextFrom("sessions");
+    },
+    cancelKeyboardNavigation: () => {
+      this.cancelKeyboardNavigation();
+    },
   };
 
   override render() {
@@ -208,12 +239,18 @@ export class AppNavigationPanel extends LitElement {
           .statusSnapshots=${this.machineStatusSnapshots}
           .onSelect=${(machine: Machine) => this.onSelectMachine?.(machine)}
           .onRemove=${(machine: Machine) => this.onRemoveMachine?.(machine)}
-          .onFocusNextSection=${() => { this.focusNextFrom("machines"); }}
-          .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+          .onFocusNextSection=${() => {
+            this.focusNextFrom("machines");
+          }}
+          .onCancelKeyboardNavigation=${() => {
+            this.cancelKeyboardNavigation();
+          }}
         ></machine-switcher>
         <div class="header-actions">
           ${this.refreshControl}
-          <button type="button" class="ui-button actions-button" title="Show Actions" aria-label="Show Actions" @click=${() => { this.onShowActions?.(); }}>
+          <button type="button" class="ui-button actions-button" title="Show Actions" aria-label="Show Actions" @click=${() => {
+            this.onShowActions?.();
+          }}>
             <svg class="actions-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M13 2 4 14h7l-1 8 10-13h-7V2Z"></path>
             </svg>
@@ -222,7 +259,9 @@ export class AppNavigationPanel extends LitElement {
         </div>
       </header>
       <div class="navigation-sections">
-      ${this.compact && shouldShowMachinesSection(this.machines) ? html`
+      ${
+        this.compact && shouldShowMachinesSection(this.machines)
+          ? html`
         <machine-list
           .machines=${this.machines}
           .selected=${this.selectedMachine}
@@ -230,13 +269,21 @@ export class AppNavigationPanel extends LitElement {
           .statusSnapshots=${this.machineStatusSnapshots}
           .collapsible=${this.collapsible}
           .collapsed=${this.machinesCollapsed}
-          .onToggleCollapsed=${() => { this.onToggleMachines?.(); }}
+          .onToggleCollapsed=${() => {
+            this.onToggleMachines?.();
+          }}
           .onSelect=${(machine: Machine) => this.onSelectMachine?.(machine)}
           .onRemove=${(machine: Machine) => this.onRemoveMachine?.(machine)}
-          .onFocusNextSection=${() => { this.focusNextFrom("machines"); }}
-          .onCancelKeyboardNavigation=${() => { this.cancelKeyboardNavigation(); }}
+          .onFocusNextSection=${() => {
+            this.focusNextFrom("machines");
+          }}
+          .onCancelKeyboardNavigation=${() => {
+            this.cancelKeyboardNavigation();
+          }}
         ></machine-list>
-      ` : null}
+      `
+          : null
+      }
       <project-list
         id="navigation-projects"
         style=${styleMap(this.sectionSizeStyle("projects"))}
@@ -255,7 +302,9 @@ export class AppNavigationPanel extends LitElement {
         .onCancelKeyboardNavigation=${this.childCallbacks.cancelKeyboardNavigation}
       ></project-list>
       ${this.projectsCollapsed ? null : this.renderSectionResizeHandle("projects")}
-      ${this.workspaceSelectionVisible ? html`<workspace-list
+      ${
+        this.workspaceSelectionVisible
+          ? html`<workspace-list
         id="navigation-workspaces"
         style=${styleMap(this.sectionSizeStyle("workspaces"))}
         ?data-manual-size=${!this.compact && this.sectionSizes.height("workspaces") !== undefined}
@@ -275,7 +324,9 @@ export class AppNavigationPanel extends LitElement {
         .onFocusNextSection=${this.childCallbacks.nextFromWorkspaces}
         .onCancelKeyboardNavigation=${this.childCallbacks.cancelKeyboardNavigation}
       ></workspace-list>
-      ${this.workspacesCollapsed ? null : this.renderSectionResizeHandle("workspaces")}` : null}
+      ${this.workspacesCollapsed ? null : this.renderSectionResizeHandle("workspaces")}`
+          : null
+      }
       <session-list
         .sessions=${this.sessions}
         .pinnedRootIds=${this.pinnedRootIds}
@@ -328,8 +379,12 @@ export class AppNavigationPanel extends LitElement {
       .sectionLabel=${section === "projects" ? "Projects" : "Workspaces"}
       .controls=${`navigation-${section}`}
       .measurement=${this.sectionMeasurements[section]}
-      .onResize=${(height: number) => { this.sectionSizes.resize(section, height); }}
-      .onReset=${() => { this.sectionSizes.reset(section); }}
+      .onResize=${(height: number) => {
+        this.sectionSizes.resize(section, height);
+      }}
+      .onReset=${() => {
+        this.sectionSizes.reset(section);
+      }}
     ></navigation-section-resize-handle>`;
   }
 
@@ -370,7 +425,9 @@ export class AppNavigationPanel extends LitElement {
     void this.onCancelKeyboardNavigation?.();
   }
 
-  static override styles = [uiButtonStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    css`
     :host { display: flex; flex-direction: column; min-height: 0; overflow: hidden; container: navigation-panel / inline-size; }
     :host([compact]) { flex: 1 1 auto; }
     header { flex: 0 0 auto; display: flex; align-items: stretch; min-height: 44px; gap: 0; padding: 0; border-bottom: 1px solid var(--pi-border); }
@@ -400,14 +457,19 @@ export class AppNavigationPanel extends LitElement {
     project-list[collapsed],
     workspace-list[collapsed],
     session-list[collapsed] { flex: 0 0 auto; min-height: auto; overflow: hidden; border-bottom: 0; }
-  `];
+  `,
+  ];
 }
 
 export function shouldShowMachinesSection(machines: readonly Machine[]): boolean {
   return machines.length > 1;
 }
 
-function previousVisibleNavigationTarget(section: NavigationSection, machines: readonly Machine[], workspaceSelectionVisible: boolean): NavigationSection | undefined {
+function previousVisibleNavigationTarget(
+  section: NavigationSection,
+  machines: readonly Machine[],
+  workspaceSelectionVisible: boolean,
+): NavigationSection | undefined {
   const sections = visibleNavigationSections(machines, workspaceSelectionVisible);
   return sections[sections.indexOf(section) - 1];
 }
@@ -420,6 +482,7 @@ function nextVisibleNavigationTarget(section: NavigationSection, machines: reado
 // Only a machine choice makes the machines section navigable: with a single
 // machine the switcher is a static identity, and compact mode has no list.
 function visibleNavigationSections(machines: readonly Machine[], workspaceSelectionVisible: boolean): NavigationSection[] {
-  return NAVIGATION_SECTION_ORDER.filter((section) => (section !== "machines" || shouldShowMachinesSection(machines))
-    && (section !== "workspaces" || workspaceSelectionVisible));
+  return NAVIGATION_SECTION_ORDER.filter(
+    (section) => (section !== "machines" || shouldShowMachinesSection(machines)) && (section !== "workspaces" || workspaceSelectionVisible),
+  );
 }

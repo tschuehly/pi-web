@@ -26,14 +26,22 @@ export function registerProjectMutationRoutes(app: FastifyInstance, projects: Pi
 }
 
 function isProjectInput(input: unknown): input is Parameters<ProjectService["add"]>[0] {
-  return input !== null && typeof input === "object"
-    && "path" in input && typeof input.path === "string" && input.path.trim() !== ""
+  return (
+    input !== null
+    && typeof input === "object"
+    && "path" in input
+    && typeof input.path === "string"
+    && input.path.trim() !== ""
     && (!("name" in input) || input.name === undefined || typeof input.name === "string")
-    && (!("create" in input) || input.create === undefined || typeof input.create === "boolean");
+    && (!("create" in input) || input.create === undefined || typeof input.create === "boolean")
+  );
 }
 
 function isInvalidProjectPath(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.message === "Project path must be a directory") return true;
-  return "code" in error && ["ENOENT", "ENOTDIR", "EEXIST", "EACCES", "EPERM", "EINVAL", "ENAMETOOLONG", "ELOOP", "ERR_INVALID_ARG_VALUE"].includes(String(error.code));
+  return (
+    "code" in error
+    && ["ENOENT", "ENOTDIR", "EEXIST", "EACCES", "EPERM", "EINVAL", "ENAMETOOLONG", "ELOOP", "ERR_INVALID_ARG_VALUE"].includes(String(error.code))
+  );
 }

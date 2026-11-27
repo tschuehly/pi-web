@@ -189,9 +189,7 @@ export type NativeServicePlanFailure =
       bundledEntrypointPath: string;
     };
 
-export type NativeServicePlanResolution =
-  | { ok: true; plan: NativeServicePlan }
-  | { ok: false; failures: readonly NativeServicePlanFailure[] };
+export type NativeServicePlanResolution = { ok: true; plan: NativeServicePlan } | { ok: false; failures: readonly NativeServicePlanFailure[] };
 
 export type NativeServicePlanValidationFailure =
   | {
@@ -205,9 +203,7 @@ export type NativeServicePlanValidationFailure =
       message: string;
     };
 
-export type NativeServicePlanValidation =
-  | { ok: true }
-  | { ok: false; failures: readonly NativeServicePlanValidationFailure[] };
+export type NativeServicePlanValidation = { ok: true } | { ok: false; failures: readonly NativeServicePlanValidationFailure[] };
 
 export function nativeServicePrerequisiteNeedsPathAdvice(prerequisite: NativeServicePrerequisite): boolean {
   return prerequisite.kind === "command-available" || prerequisite.kind === "node-version";
@@ -393,9 +389,9 @@ export function createDevelopmentNativeServicePlan(input: DevelopmentNativeServi
 export function planValidationProbeRequests(plan: NativeServicePlan): readonly NativeServiceProbeRequest[] {
   const requests: (Omit<NativeServiceProbeRequest, "prerequisites"> & { prerequisites: NativeServicePrerequisite[] })[] = [];
   for (const service of plan.services) {
-    const existing = requests.find((request) =>
-      request.workingDirectory === service.workingDirectory
-      && environmentsEqual(request.environment, service.environment));
+    const existing = requests.find(
+      (request) => request.workingDirectory === service.workingDirectory && environmentsEqual(request.environment, service.environment),
+    );
     if (existing === undefined) {
       requests.push({
         purpose: "plan-validation",
@@ -412,10 +408,7 @@ export function planValidationProbeRequests(plan: NativeServicePlan): readonly N
   return requests;
 }
 
-export async function validateNativeServicePlan(
-  plan: NativeServicePlan,
-  probe: NativeServiceAuthoritativeProbe,
-): Promise<NativeServicePlanValidation> {
+export async function validateNativeServicePlan(plan: NativeServicePlan, probe: NativeServiceAuthoritativeProbe): Promise<NativeServicePlanValidation> {
   const failures: NativeServicePlanValidationFailure[] = [];
   for (const request of planValidationProbeRequests(plan)) {
     let result: NativeServiceProbeResult;
@@ -521,16 +514,26 @@ async function runSelectionProbe(
 function probeOutcomes(
   prerequisites: readonly NativeServicePrerequisite[],
   outcomes: readonly NativeServicePrerequisiteOutcome[],
-): { kind: "completed"; outcomes: Map<string, NativeServicePrerequisiteOutcome> } | { kind: "infrastructure-failure"; reason: "malformed-output"; message: string } {
+):
+  | { kind: "completed"; outcomes: Map<string, NativeServicePrerequisiteOutcome> }
+  | { kind: "infrastructure-failure"; reason: "malformed-output"; message: string } {
   const expectedIds = new Set(prerequisites.map((prerequisite) => prerequisite.id));
   const byId = new Map<string, NativeServicePrerequisiteOutcome>();
 
   for (const outcome of outcomes) {
     if (!expectedIds.has(outcome.prerequisiteId)) {
-      return { kind: "infrastructure-failure", reason: "malformed-output", message: `Authoritative probe returned unexpected outcome ${outcome.prerequisiteId}.` };
+      return {
+        kind: "infrastructure-failure",
+        reason: "malformed-output",
+        message: `Authoritative probe returned unexpected outcome ${outcome.prerequisiteId}.`,
+      };
     }
     if (byId.has(outcome.prerequisiteId)) {
-      return { kind: "infrastructure-failure", reason: "malformed-output", message: `Authoritative probe returned duplicate outcome ${outcome.prerequisiteId}.` };
+      return {
+        kind: "infrastructure-failure",
+        reason: "malformed-output",
+        message: `Authoritative probe returned duplicate outcome ${outcome.prerequisiteId}.`,
+      };
     }
     byId.set(outcome.prerequisiteId, outcome);
   }
@@ -587,11 +590,7 @@ function readableFileRequirement(serviceId: NativeServiceId, path: string): Nati
   };
 }
 
-function packageScriptsRequirement(
-  serviceId: NativeServiceId,
-  packageJsonPath: string,
-  scripts: readonly string[],
-): NativeServicePrerequisite {
+function packageScriptsRequirement(serviceId: NativeServiceId, packageJsonPath: string, scripts: readonly string[]): NativeServicePrerequisite {
   return {
     id: `${serviceId}.package-scripts`,
     kind: "package-scripts",
@@ -610,14 +609,10 @@ function copyEnvironment(environment: Readonly<Record<string, string>>): Readonl
   return { ...environment };
 }
 
-function environmentsEqual(
-  left: Readonly<Record<string, string>>,
-  right: Readonly<Record<string, string>>,
-): boolean {
+function environmentsEqual(left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean {
   const leftEntries = Object.entries(left);
   const rightEntries = Object.entries(right);
-  return leftEntries.length === rightEntries.length
-    && leftEntries.every(([key, value]) => right[key] === value);
+  return leftEntries.length === rightEntries.length && leftEntries.every(([key, value]) => right[key] === value);
 }
 
 function errorMessage(error: unknown): string {

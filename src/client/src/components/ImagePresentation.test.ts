@@ -6,7 +6,11 @@ import { imageButton, loadIntrinsicDimensions, nativeImage } from "./imagePresen
 
 const source = "https://example.test/first.png";
 
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.restoreAllMocks(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
 
 async function mount(initialSource?: string, dimensions?: ImageDimensions) {
   const presentation = new ImagePresentation();
@@ -19,7 +23,7 @@ async function mount(initialSource?: string, dimensions?: ImageDimensions) {
   return presentation;
 }
 
-it.each([undefined, ""])('keeps a native image without a src while pending (%s)', async (initialSource) => {
+it.each([undefined, ""])("keeps a native image without a src while pending (%s)", async (initialSource) => {
   const presentation = await mount(initialSource);
   const native = nativeImage(presentation);
   expect(native.hasAttribute("src")).toBe(false);
@@ -176,7 +180,9 @@ it("opens zoom with click, Enter and Space without waiting for a native load eve
     expect(open).toHaveBeenCalledTimes(3);
     for (const [event] of open.mock.calls) {
       expect(event).toMatchObject({
-        detail: { src: source, alt: "Example screenshot" }, bubbles: true, composed: true,
+        detail: { src: source, alt: "Example screenshot" },
+        bubbles: true,
+        composed: true,
       });
     }
 

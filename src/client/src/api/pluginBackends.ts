@@ -64,11 +64,7 @@ export function pairedPluginBackendRequestPath(target: PluginBackendPathTarget, 
   return scopedPluginBackendRequestPath(target, operation);
 }
 
-export function pairedPluginBackendRequestUrl(
-  target: PluginBackendPathTarget,
-  operation: string,
-  context?: AppUrlContext,
-): string {
+export function pairedPluginBackendRequestUrl(target: PluginBackendPathTarget, operation: string, context?: AppUrlContext): string {
   const path = pairedPluginBackendRequestPath(target, operation);
   return context === undefined ? resolveAppUrl(path) : resolveAppUrl(path, context);
 }
@@ -79,11 +75,7 @@ export function pairedPluginBackendChannelPath(target: PluginBackendPathTarget, 
   return `${requestPath.slice(0, separator)}/channels${requestPath.slice(separator)}`;
 }
 
-export function pairedPluginBackendChannelUrl(
-  target: PluginBackendPathTarget,
-  operation: string,
-  context?: AppUrlContext,
-): string {
+export function pairedPluginBackendChannelUrl(target: PluginBackendPathTarget, operation: string, context?: AppUrlContext): string {
   const path = pairedPluginBackendChannelPath(target, operation);
   return context === undefined ? resolveAppWebSocketUrl(path) : resolveAppWebSocketUrl(path, context);
 }
@@ -119,7 +111,9 @@ export function openPairedPluginBackendChannel(
   let bufferedFrames = 0;
   let channelError: Readonly<{ code: string; message: string }> | undefined;
   let resolveClosed: (value: PluginBackendChannelClose) => void = () => undefined;
-  const closedPromise = new Promise<PluginBackendChannelClose>((resolve) => { resolveClosed = resolve; });
+  const closedPromise = new Promise<PluginBackendChannelClose>((resolve) => {
+    resolveClosed = resolve;
+  });
 
   const channel: PluginBackendChannel = Object.freeze({
     closed: closedPromise,
@@ -210,24 +204,27 @@ export function openPairedPluginBackendChannel(
       clearTimeout(handshakeTimer);
       options.signal?.removeEventListener("abort", onAbort);
       if (!ready) reject(new Error(channelError?.message ?? `Plugin backend channel closed before ready (${String(event.code)})`));
-      const closeError = channelError ?? (event.code === 1000 ? undefined : Object.freeze({
-        code: "channel-closed",
-        message: event.reason || `Plugin backend channel closed with code ${String(event.code)}`,
-      }));
-      resolveClosed(Object.freeze({
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean,
-        ...(closeError === undefined ? {} : { error: closeError }),
-      }));
+      const closeError =
+        channelError
+        ?? (event.code === 1000
+          ? undefined
+          : Object.freeze({
+              code: "channel-closed",
+              message: event.reason || `Plugin backend channel closed with code ${String(event.code)}`,
+            }));
+      resolveClosed(
+        Object.freeze({
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean,
+          ...(closeError === undefined ? {} : { error: closeError }),
+        }),
+      );
     });
   });
 }
 
-function scopedPluginBackendRequestPath(
-  target: PluginBackendPathTarget,
-  operation: string,
-): string {
+function scopedPluginBackendRequestPath(target: PluginBackendPathTarget, operation: string): string {
   if (!isPiWebPluginId(target.pluginId)) throw new Error(`Invalid PI WEB plugin id: ${target.pluginId}`);
   if (target.machineId === "") throw new Error("Machine id is required");
   if (target.projectId === "") throw new Error("Project id is required");
@@ -235,19 +232,19 @@ function scopedPluginBackendRequestPath(
   if (target.workspaceId !== undefined && target.projectId === undefined) throw new Error("Workspace scope requires a project id");
   pluginBackendScopeFromRoute(target, wireScope(target));
   const validatedOperation = requirePluginBackendOperation(operation);
-  const prefix = target.machineId === "local"
-    ? "api"
-    : `api/machines/${encodeURIComponent(target.machineId)}`;
+  const prefix = target.machineId === "local" ? "api" : `api/machines/${encodeURIComponent(target.machineId)}`;
   return `${prefix}${pairedPluginBackendPath({ ...target, operation: validatedOperation })}`;
 }
 
 function wireScope(target: PluginBackendPathTarget) {
   // Omit the new envelope fields for legacy workspace callers.
-  return target.scope === undefined ? {} : {
-    scope: target.scope,
-    ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
-    ...(target.workspaceId === undefined ? {} : { workspaceId: target.workspaceId }),
-  };
+  return target.scope === undefined
+    ? {}
+    : {
+        scope: target.scope,
+        ...(target.projectId === undefined ? {} : { projectId: target.projectId }),
+        ...(target.workspaceId === undefined ? {} : { workspaceId: target.workspaceId }),
+      };
 }
 
 async function requestPluginBackendAt(

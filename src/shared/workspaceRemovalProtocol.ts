@@ -14,14 +14,8 @@ export function parseWorkspaceRemovalRequest(value: unknown): WorkspaceRemovalRe
 }
 
 export function requireWorkspaceRemovalPrecondition(value: unknown): string {
-  if (
-    typeof value !== "string"
-    || value === ""
-    || value.length > WORKSPACE_REMOVAL_PRECONDITION_MAX_LENGTH
-  ) {
-    throw new Error(
-      `Workspace removal precondition must be a non-empty string of at most ${String(WORKSPACE_REMOVAL_PRECONDITION_MAX_LENGTH)} characters`,
-    );
+  if (typeof value !== "string" || value === "" || value.length > WORKSPACE_REMOVAL_PRECONDITION_MAX_LENGTH) {
+    throw new Error(`Workspace removal precondition must be a non-empty string of at most ${String(WORKSPACE_REMOVAL_PRECONDITION_MAX_LENGTH)} characters`);
   }
   return value;
 }

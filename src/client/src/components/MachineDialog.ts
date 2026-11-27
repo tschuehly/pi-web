@@ -53,7 +53,12 @@ export class MachineDialog extends LitElement {
   // Escape and backdrop presses are owned by the modal surface (routed to
   // `onCancel`); this handler keeps the form's Enter-to-advance behavior.
   private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key === "Enter" && event.target instanceof HTMLInputElement && event.target.name === "baseUrl" && machineBaseUrlValidationMessage(this.url) === undefined) {
+    if (
+      event.key === "Enter"
+      && event.target instanceof HTMLInputElement
+      && event.target.name === "baseUrl"
+      && machineBaseUrlValidationMessage(this.url) === undefined
+    ) {
       event.preventDefault();
       void this.updateComplete.then(() => {
         this.nameInput?.focus();
@@ -95,35 +100,59 @@ export class MachineDialog extends LitElement {
         .onClose=${() => this.onCancel?.()}
         .initialFocus=${"input[name='baseUrl']"}
         .label=${"Add machine"}
-        @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.handleKeyDown(event);
+        }}
       >
-        <form class="ui-form" aria-describedby=${this.error === "" ? "" : "machine-error"} @submit=${(event: SubmitEvent) => { this.handleSubmit(event); }}>
+        <form class="ui-form" aria-describedby=${this.error === "" ? "" : "machine-error"} @submit=${(event: SubmitEvent) => {
+          this.handleSubmit(event);
+        }}>
           <header class="ui-dialog-header">
             <strong class="ui-dialog-title">Add machine</strong>
-            <button class="ui-button ui-button--icon" type="button" @click=${() => { this.onCancel?.(); }} aria-label="Close add machine">×</button>
+            <button class="ui-button ui-button--icon" type="button" @click=${() => {
+              this.onCancel?.();
+            }} aria-label="Close add machine">×</button>
           </header>
           <div class="body ui-dialog-body ui-form-body">
             ${this.error === "" ? null : html`<div id="machine-error" class="dialog-error ui-form-error" role="alert">${this.error}</div>`}
             <label class="ui-form-field">
               Remote PI WEB URL
-              <input class="ui-input" name="baseUrl" type="url" aria-describedby="machine-url-help" aria-invalid=${urlError !== undefined ? "true" : "false"} .value=${this.url} @input=${(event: InputEvent) => { this.handleUrlInput(event); }} placeholder="http://dev-box.local:8504" autocomplete="url" inputmode="url" />
+              <input class="ui-input" name="baseUrl" type="url" aria-describedby="machine-url-help" aria-invalid=${urlError !== undefined ? "true" : "false"} .value=${this.url} @input=${(
+                event: InputEvent,
+              ) => {
+                this.handleUrlInput(event);
+              }} placeholder="http://dev-box.local:8504" autocomplete="url" inputmode="url" />
             </label>
             <small id="machine-url-help" aria-live="polite" class=${urlError === undefined ? "hint" : "field-error"}>${urlError ?? "Enter the reachable base URL first, including http:// or https://."}</small>
-            ${hasUrl ? html`
+            ${
+              hasUrl
+                ? html`
               <label class="ui-form-field">
                 Machine name
-                <input class="ui-input" name="name" type="text" aria-describedby="machine-name-help" aria-invalid=${this.name.trim() === "" ? "true" : "false"} .value=${this.name} @input=${(event: InputEvent) => { this.handleNameInput(event); }} placeholder=${this.previousSuggestedName || "Dev Box"} autocomplete="off" />
+                <input class="ui-input" name="name" type="text" aria-describedby="machine-name-help" aria-invalid=${this.name.trim() === "" ? "true" : "false"} .value=${this.name} @input=${(
+                  event: InputEvent,
+                ) => {
+                  this.handleNameInput(event);
+                }} placeholder=${this.previousSuggestedName || "Dev Box"} autocomplete="off" />
               </label>
               <small id="machine-name-help" class=${this.name.trim() === "" ? "field-error" : "hint"}>${this.name.trim() === "" ? "Enter a machine name." : "Suggested from the URL. Edit it to use a friendlier sidebar label."}</small>
               <label class="ui-form-field">
                 Bearer token <span class="optional">optional</span>
-                <input class="ui-input" name="token" type="password" aria-describedby="machine-token-help" .value=${this.token} @input=${(event: InputEvent) => { this.handleTokenInput(event); }} placeholder="Leave blank if the remote machine does not require one" autocomplete="off" />
+                <input class="ui-input" name="token" type="password" aria-describedby="machine-token-help" .value=${this.token} @input=${(
+                  event: InputEvent,
+                ) => {
+                  this.handleTokenInput(event);
+                }} placeholder="Leave blank if the remote machine does not require one" autocomplete="off" />
               </label>
               <small id="machine-token-help" class="hint">If the remote machine requires a token, paste it without the “Bearer” prefix.</small>
-            ` : html`<p class="hint intro">After you enter a URL, PI WEB will suggest a machine name and let you add an optional bearer token.</p>`}
+            `
+                : html`<p class="hint intro">After you enter a URL, PI WEB will suggest a machine name and let you add an optional bearer token.</p>`
+            }
           </div>
           <footer class="ui-dialog-footer">
-            <button class="ui-button" type="button" @click=${() => { this.onCancel?.(); }}>Cancel</button>
+            <button class="ui-button" type="button" @click=${() => {
+              this.onCancel?.();
+            }}>Cancel</button>
             <button class="ui-button ui-button--primary" type="submit" ?disabled=${!canSubmit}>${this.submitting ? "Adding…" : "Add machine"}</button>
           </footer>
         </form>
@@ -131,13 +160,17 @@ export class MachineDialog extends LitElement {
     `;
   }
 
-  static override styles = [uiDialogStyles, uiFormStyles, css`
+  static override styles = [
+    uiDialogStyles,
+    uiFormStyles,
+    css`
     :host { --ui-dialog-width: 560px; --ui-input-font-family: var(--pi-control-monospace-font-family, var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)); }
     .hint { color: var(--pi-muted); }
     .intro { margin: 4px 0 0; line-height: 1.4; }
     .optional { color: var(--pi-muted); font-weight: 400; }
     .field-error { color: var(--pi-danger); }
-  `];
+  `,
+  ];
 }
 
 export function suggestedMachineNameFromUrl(value: string): string {

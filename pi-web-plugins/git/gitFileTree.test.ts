@@ -22,12 +22,7 @@ describe("buildGitFileTree", () => {
   });
 
   it("nests files under merged directories, directories before files, alphabetical", () => {
-    const tree = buildGitFileTree([
-      changed("src/a.ts"),
-      changed("src/b/c.ts"),
-      changed("README.md"),
-      changed("src/b/a.ts"),
-    ]);
+    const tree = buildGitFileTree([changed("src/a.ts"), changed("src/b/c.ts"), changed("README.md"), changed("src/b/a.ts")]);
 
     expect(tree).toHaveLength(2);
     const src = expectDirectory(tree[0]);

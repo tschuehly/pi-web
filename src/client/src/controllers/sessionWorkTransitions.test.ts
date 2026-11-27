@@ -5,13 +5,24 @@ import { SessionWorkTransitions } from "./sessionWorkTransitions";
 function status(sessionId: string, active: boolean): Extract<GlobalSessionEvent, { type: "status.update" }> {
   return {
     type: "status.update",
-    status: { sessionId, isStreaming: active, isCompacting: false, isBashRunning: false, pendingMessageCount: 0,
-      queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 },
+    status: {
+      sessionId,
+      isStreaming: active,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    },
   };
 }
 
 function activity(sessionId: string, active: boolean, startup = false): Extract<GlobalSessionEvent, { type: "activity.update" }> {
-  return { type: "activity.update", activity: { sessionId, phase: active ? "active" : "idle", label: "Work", at: "now", ...(startup ? { startup: true } : {}) } };
+  return {
+    type: "activity.update",
+    activity: { sessionId, phase: active ? "active" : "idle", label: "Work", at: "now", ...(startup ? { startup: true } : {}) },
+  };
 }
 
 describe("SessionWorkTransitions", () => {

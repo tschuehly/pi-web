@@ -4,9 +4,11 @@ import { CachedWorkspaceAttribution } from "./workspaceAttribution.js";
 
 describe("CachedWorkspaceAttribution", () => {
   it("attributes a cwd to its workspace and project without the project being visited", async () => {
-    const attribution = new CachedWorkspaceAttribution(dependencies({
-      "project-1": ["/srv/dev/pi-web", "/srv/dev/pi-web-feature"],
-    }));
+    const attribution = new CachedWorkspaceAttribution(
+      dependencies({
+        "project-1": ["/srv/dev/pi-web", "/srv/dev/pi-web-feature"],
+      }),
+    );
 
     const resolved = await attribution.attribute(["/srv/dev/pi-web-feature"]);
 
@@ -17,9 +19,11 @@ describe("CachedWorkspaceAttribution", () => {
   });
 
   it("attributes a workspace outside its project directory to that project", async () => {
-    const attribution = new CachedWorkspaceAttribution(dependencies({
-      "project-1": ["/srv/dev/project-1", "/srv/worktrees/detached"],
-    }));
+    const attribution = new CachedWorkspaceAttribution(
+      dependencies({
+        "project-1": ["/srv/dev/project-1", "/srv/worktrees/detached"],
+      }),
+    );
 
     const resolved = await attribution.attribute(["/srv/worktrees/detached"]);
 
@@ -39,9 +43,11 @@ describe("CachedWorkspaceAttribution", () => {
   });
 
   it("attributes a cwd inside a workspace to the deepest workspace containing it", async () => {
-    const attribution = new CachedWorkspaceAttribution(dependencies({
-      "project-1": ["/srv/dev/project-1", "/srv/dev/project-1/nested"],
-    }));
+    const attribution = new CachedWorkspaceAttribution(
+      dependencies({
+        "project-1": ["/srv/dev/project-1", "/srv/dev/project-1/nested"],
+      }),
+    );
 
     const resolved = await attribution.attribute(["/srv/dev/project-1/nested/src", "/srv/dev/project-1/src"]);
 
@@ -79,10 +85,7 @@ describe("CachedWorkspaceAttribution", () => {
     const deps = dependencies({ "project-1": ["/srv/dev/project-1"] });
     const attribution = new CachedWorkspaceAttribution(deps);
 
-    await Promise.all([
-      attribution.attribute(["/srv/dev/project-1"]),
-      attribution.attribute(["/srv/dev/project-1"]),
-    ]);
+    await Promise.all([attribution.attribute(["/srv/dev/project-1"]), attribution.attribute(["/srv/dev/project-1"])]);
 
     expect(deps.workspaces.list).toHaveBeenCalledTimes(1);
   });
@@ -115,9 +118,9 @@ describe("CachedWorkspaceAttribution", () => {
 
   it("logs a provider listing failure and keeps attributing other projects", async () => {
     const deps = dependencies({ "project-1": ["/srv/dev/project-1"], "project-2": ["/srv/dev/project-2"] });
-    deps.workspaces.list.mockImplementation((project: Project) => (project.id === "project-1"
-      ? Promise.reject(new Error("provider offline"))
-      : Promise.resolve(workspacesFor(project, ["/srv/dev/project-2"]))));
+    deps.workspaces.list.mockImplementation((project: Project) =>
+      project.id === "project-1" ? Promise.reject(new Error("provider offline")) : Promise.resolve(workspacesFor(project, ["/srv/dev/project-2"])),
+    );
     const attribution = new CachedWorkspaceAttribution(deps);
 
     const resolved = await attribution.attribute(["/srv/dev/project-1", "/srv/dev/project-2"]);

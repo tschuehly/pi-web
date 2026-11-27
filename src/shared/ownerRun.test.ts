@@ -3,7 +3,8 @@ import { ownerRunProposal, ownerRunProposals } from "./ownerRun";
 
 describe("ownerRunProposals", () => {
   it("finds closed top-level pi-run blocks with their mode, folder and literal command", () => {
-    const text = 'Run this:\n\n```pi-run cwd="/Users/me/repo"\npwd; exit 7\n```\n\nAnd this one needs your password:\n\n```pi-run terminal cwd="/tmp/a b"\nsudo darwin-rebuild switch\n```\n';
+    const text =
+      'Run this:\n\n```pi-run cwd="/Users/me/repo"\npwd; exit 7\n```\n\nAnd this one needs your password:\n\n```pi-run terminal cwd="/tmp/a b"\nsudo darwin-rebuild switch\n```\n';
     expect(ownerRunProposals(text)).toEqual([
       { mode: "run", cwd: "/Users/me/repo", command: "pwd; exit 7" },
       { mode: "terminal", cwd: "/tmp/a b", command: "sudo darwin-rebuild switch" },
@@ -14,8 +15,8 @@ describe("ownerRunProposals", () => {
     const text = [
       '> ```pi-run cwd="/q"\n> echo quoted\n> ```',
       '- item\n\n  ```pi-run cwd="/l"\n  echo listed\n  ```',
-      '```sh\necho plain\n```',
-      '```pi-run cwd=/no-quotes\necho bad\n```',
+      "```sh\necho plain\n```",
+      "```pi-run cwd=/no-quotes\necho bad\n```",
       '```pi-run cwd="relative"\necho bad\n```',
       '```pi-run sudo cwd="/x"\necho unknown option\n```',
       '```pi-run cwd="/x"\n\n```',

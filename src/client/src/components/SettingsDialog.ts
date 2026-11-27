@@ -4,7 +4,21 @@ import { customElement, property, state } from "lit/decorators.js";
 import { cache } from "lit/directives/cache.js";
 import { live } from "lit/directives/live.js";
 import type { AppAction } from "../actions";
-import { configApi, piPackagesApi, pluginsApi, type Machine, type MachineHealth, type MachineRuntime, type SessionModel, type PiPackageMutationResponse, type PiPackageScope, type PiPackagesResponse, type PiWebConfigResponse, type PiWebConfigValues, type PiWebPluginsResponse } from "../api";
+import {
+  configApi,
+  piPackagesApi,
+  pluginsApi,
+  type Machine,
+  type MachineHealth,
+  type MachineRuntime,
+  type SessionModel,
+  type PiPackageMutationResponse,
+  type PiPackageScope,
+  type PiPackagesResponse,
+  type PiWebConfigResponse,
+  type PiWebConfigValues,
+  type PiWebPluginsResponse,
+} from "../api";
 import type { McpAuthContext, McpAuthHandler } from "./settings/SettingsMcpPanel";
 import "./settings/SettingsMcpPanel";
 import type { SettingsSection } from "../settingsRoute";
@@ -20,10 +34,27 @@ import "./settings/SettingsSessiondPanel";
 import "./settings/SettingsPackagesPanel";
 import "./settings/SettingsPluginsPanel";
 import "./settings/SettingsShortcutsPanel";
-import { friendlyPiPackageErrorMessage, piPackageMutationFollowUpMessage, piPackagesResponseAfterMutation, piPackageTargetLabel, shouldRefreshGatewayPluginsAfterPiPackageMutation, type PiPackageOperationState, type PiPackageTargetContext } from "./settings/piPackageSettings";
+import {
+  friendlyPiPackageErrorMessage,
+  piPackageMutationFollowUpMessage,
+  piPackagesResponseAfterMutation,
+  piPackageTargetLabel,
+  shouldRefreshGatewayPluginsAfterPiPackageMutation,
+  type PiPackageOperationState,
+  type PiPackageTargetContext,
+} from "./settings/piPackageSettings";
 import { loadGatewaySettingsData, loadPiPackagesData } from "./settings/settingsDataLoading";
 import { mergeSelectedMachineAccessConfig } from "./settings/settingsMachineAccessConfig";
-import { friendlySelectedMachineSettingsErrorMessage, isSelectedMachineSettingsUnsupported, pluginLifecycleSupport, selectedMachineSettingsSupportKey, settingsMachineTarget, settingsMachineTargetLabel, type PluginLifecycleSupport, type SettingsMachineTarget } from "./settings/settingsMachineTarget";
+import {
+  friendlySelectedMachineSettingsErrorMessage,
+  isSelectedMachineSettingsUnsupported,
+  pluginLifecycleSupport,
+  selectedMachineSettingsSupportKey,
+  settingsMachineTarget,
+  settingsMachineTargetLabel,
+  type PluginLifecycleSupport,
+  type SettingsMachineTarget,
+} from "./settings/settingsMachineTarget";
 import { mergeSelectedMachinePluginConfig, pluginEnabledConfigPatch } from "./settings/settingsPluginConfig";
 import { mergeSelectedMachineSessiondConfig } from "./settings/settingsSessiondConfig";
 
@@ -119,11 +150,13 @@ export class SettingsDialog extends LitElement {
     }
     const currentTarget = this.settingsTarget();
     if (changed.has("machine") || changed.has("machines")) {
-      const previousTarget = settingsMachineTarget(this.selectedSettingsMachine(
-        changed.has("machines") ? changed.get("machines") ?? [] : this.machines,
-        changed.has("machine") ? changed.get("machine") : this.machine,
-        this.settingsMachineId,
-      ));
+      const previousTarget = settingsMachineTarget(
+        this.selectedSettingsMachine(
+          changed.has("machines") ? (changed.get("machines") ?? []) : this.machines,
+          changed.has("machine") ? changed.get("machine") : this.machine,
+          this.settingsMachineId,
+        ),
+      );
       if (previousTarget.id !== currentTarget.id) {
         this.reloadForTargetChange(currentTarget);
         return;
@@ -132,7 +165,7 @@ export class SettingsDialog extends LitElement {
 
     if (!changed.has("machineRuntime") && !changed.has("machineRuntimes")) return;
     const previousRuntime = this.settingsRuntime(
-      changed.has("machineRuntimes") ? changed.get("machineRuntimes") ?? {} : this.machineRuntimes,
+      changed.has("machineRuntimes") ? (changed.get("machineRuntimes") ?? {}) : this.machineRuntimes,
       changed.has("machineRuntime") ? changed.get("machineRuntime") : this.machineRuntime,
       currentTarget,
     );
@@ -173,14 +206,22 @@ export class SettingsDialog extends LitElement {
     const health = this.machineStatuses[target.id];
     const machine = this.machines.find((candidate) => candidate.id === target.id);
     const runtime = this.settingsRuntime(this.machineRuntimes, this.machineRuntime, target);
-    const status = health?.status ?? (health === undefined ? machine?.status ?? (runtime === undefined ? "unknown" : runtime.ok ? "online" : "offline") : health.ok ? "online" : "offline");
+    const status =
+      health?.status
+      ?? (health === undefined
+        ? (machine?.status ?? (runtime === undefined ? "unknown" : runtime.ok ? "online" : "offline"))
+        : health.ok
+          ? "online"
+          : "offline");
     const statusLabel = status === "online" ? "Connected" : status === "unknown" ? "Connection not checked" : "Unavailable";
     const unavailable = status === "offline" || status === "error";
-    const statusMessage = unavailable ? health?.error ?? machine?.statusMessage ?? runtime?.error : undefined;
+    const statusMessage = unavailable ? (health?.error ?? machine?.statusMessage ?? runtime?.error) : undefined;
     return html`
       <div class="settings-machine">
         <label for="settings-machine">Configure machine</label>
-        <select class="ui-select" id="settings-machine" aria-describedby=${unavailable ? "settings-machine-help settings-machine-status settings-machine-error" : "settings-machine-help settings-machine-status"} .value=${live(target.id)} ?disabled=${this.saving} @change=${(event: Event) => {
+        <select class="ui-select" id="settings-machine" aria-describedby=${unavailable ? "settings-machine-help settings-machine-status settings-machine-error" : "settings-machine-help settings-machine-status"} .value=${live(target.id)} ?disabled=${this.saving} @change=${(
+          event: Event,
+        ) => {
           if (event.target instanceof HTMLSelectElement) this.requestMachineSwitch(event.target.value);
         }}>
           ${this.machines.map((candidate) => html`<option value=${candidate.id}>${candidate.name}${candidate.kind === "local" ? " (this gateway)" : ""}</option>`)}
@@ -232,8 +273,13 @@ export class SettingsDialog extends LitElement {
     return html`
       <section class="machine-switch-confirmation" role="alert" aria-label="Unsaved machine settings">
         <p>You have unsaved file access or upload settings for ${this.settingsTarget().name}. Discard them and configure ${pending.name}?</p>
-        <button class="ui-button ui-button--action danger" ?disabled=${this.saving} @click=${() => { this.generalPanel?.discardMachineChanges(); this.switchSettingsMachine(pending.id); }}>Discard edits and switch</button>
-        <button class="ui-button ui-button--action" @click=${() => { this.pendingMachineId = undefined; }}>Keep editing</button>
+        <button class="ui-button ui-button--action danger" ?disabled=${this.saving} @click=${() => {
+          this.generalPanel?.discardMachineChanges();
+          this.switchSettingsMachine(pending.id);
+        }}>Discard edits and switch</button>
+        <button class="ui-button ui-button--action" @click=${() => {
+          this.pendingMachineId = undefined;
+        }}>Keep editing</button>
       </section>
     `;
   }
@@ -352,7 +398,9 @@ export class SettingsDialog extends LitElement {
   private renderNavButton(section: SettingsSection, label: string, detail: string): TemplateResult {
     const selected = this.section === section;
     return html`
-      <button class=${`ui-button ui-selection-option${selected ? " selected" : ""}`} aria-current=${selected ? "page" : "false"} @click=${() => { this.navigate(section); }}>
+      <button class=${`ui-button ui-selection-option${selected ? " selected" : ""}`} aria-current=${selected ? "page" : "false"} @click=${() => {
+        this.navigate(section);
+      }}>
         <strong>${label}</strong>
         <small>${detail}</small>
       </button>
@@ -403,11 +451,7 @@ export class SettingsDialog extends LitElement {
   }
 
   private async reloadSessiondState(target = this.settingsTarget()): Promise<void> {
-    await Promise.all([
-      this.loadSessiondConfigForTarget(target),
-      this.loadNamingModelsForTarget(target),
-      this.onRefreshMachineRuntime?.(target.id),
-    ]);
+    await Promise.all([this.loadSessiondConfigForTarget(target), this.loadNamingModelsForTarget(target), this.onRefreshMachineRuntime?.(target.id)]);
   }
 
   private async loadNamingModelsForTarget(target = this.settingsTarget()): Promise<void> {
@@ -545,7 +589,10 @@ export class SettingsDialog extends LitElement {
       const response = await configApi.saveConfig(config);
       this.configResponse = response;
       this.onConfigSaved?.(response.effectiveConfig);
-      this.showSavedMessage(section === "shortcuts" ? "Keyboard settings saved." : "Gateway settings saved. Restart the web service to apply address changes.", section);
+      this.showSavedMessage(
+        section === "shortcuts" ? "Keyboard settings saved." : "Gateway settings saved. Restart the web service to apply address changes.",
+        section,
+      );
     } catch (error) {
       this.error = `Couldn't save settings: ${errorMessage(error)}`;
     } finally {
@@ -636,10 +683,17 @@ export class SettingsDialog extends LitElement {
 
   private async updatePiPackage(source?: string): Promise<void> {
     const target = this.packageTarget();
-    await this.runPiPackageMutation(source === undefined ? { kind: "update-all" } : { kind: "update", source }, "update Pi packages", target, () => piPackagesApi.update(source, target.id));
+    await this.runPiPackageMutation(source === undefined ? { kind: "update-all" } : { kind: "update", source }, "update Pi packages", target, () =>
+      piPackagesApi.update(source, target.id),
+    );
   }
 
-  private async runPiPackageMutation(operation: PiPackageOperationState, label: string, target: PiPackageTargetContext, mutate: () => Promise<PiPackageMutationResponse>): Promise<void> {
+  private async runPiPackageMutation(
+    operation: PiPackageOperationState,
+    label: string,
+    target: PiPackageTargetContext,
+    mutate: () => Promise<PiPackageMutationResponse>,
+  ): Promise<void> {
     if (this.saving) throw new Error("A settings operation is already running.");
     const requestSeq = ++this.packageMutationSeq;
     this.packageLoadRequestSeq += 1;
@@ -657,7 +711,8 @@ export class SettingsDialog extends LitElement {
       if (pluginRefreshError !== undefined) this.packageError = pluginRefreshError;
       this.packageMessage = piPackageMutationFollowUpMessage(response.action, target);
     } catch (error) {
-      if (this.isCurrentPackageMutation(requestSeq, target)) this.packageError = `Failed to ${label} on ${piPackageTargetLabel(target)}: ${friendlyPiPackageErrorMessage(errorMessage(error), target)}`;
+      if (this.isCurrentPackageMutation(requestSeq, target))
+        this.packageError = `Failed to ${label} on ${piPackageTargetLabel(target)}: ${friendlyPiPackageErrorMessage(errorMessage(error), target)}`;
       throw error;
     } finally {
       if (this.packageMutationSeq === requestSeq) {
@@ -689,16 +744,20 @@ export class SettingsDialog extends LitElement {
 
   private selectedSettingsMachine(machines: Machine[], machine: Machine | undefined, selectedId: string | undefined): Machine | undefined {
     if (machines.length === 0) return machine;
-    return machines.find((candidate) => candidate.id === (selectedId ?? machine?.id))
-      ?? machines.find((candidate) => candidate.kind === "local")
-      ?? machines[0];
+    return (
+      machines.find((candidate) => candidate.id === (selectedId ?? machine?.id)) ?? machines.find((candidate) => candidate.kind === "local") ?? machines[0]
+    );
   }
 
   private settingsTarget(): SettingsMachineTarget {
     return settingsMachineTarget(this.selectedSettingsMachine(this.machines, this.machine, this.settingsMachineId));
   }
 
-  private settingsRuntime(runtimes: Record<string, MachineRuntime>, runtime: MachineRuntime | undefined, target: SettingsMachineTarget): MachineRuntime | undefined {
+  private settingsRuntime(
+    runtimes: Record<string, MachineRuntime>,
+    runtime: MachineRuntime | undefined,
+    target: SettingsMachineTarget,
+  ): MachineRuntime | undefined {
     return runtimes[target.id] ?? (runtime?.machineId === target.id ? runtime : undefined);
   }
 
@@ -803,7 +862,10 @@ export class SettingsDialog extends LitElement {
     }, 3000);
   }
 
-  static override styles = [uiDialogStyles, uiSelectionStyles, css`
+  static override styles = [
+    uiDialogStyles,
+    uiSelectionStyles,
+    css`
     @layer pi-web-base {
     :host { position: fixed; inset: 0; color: var(--pi-text); font: 14px var(--pi-font, system-ui, sans-serif); }
     modal-surface { --modal-surface-backdrop-padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); --modal-surface-width: min(980px, 100%); --modal-surface-max-height: min(760px, 100%); --modal-surface-min-height: min(620px, 100%); --modal-surface-radius: 14px; }
@@ -842,7 +904,8 @@ export class SettingsDialog extends LitElement {
       .settings-content { padding-bottom: env(safe-area-inset-bottom); }
     }
     }
-  `];
+  `,
+  ];
 }
 
 function errorMessage(error: unknown): string {

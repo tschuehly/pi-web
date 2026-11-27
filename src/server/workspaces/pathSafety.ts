@@ -1,7 +1,10 @@
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
-export async function resolveInsideWorkspace(rootPath: string, relativePath: string | undefined): Promise<{ root: string; target: string; relativePath: string }> {
+export async function resolveInsideWorkspace(
+  rootPath: string,
+  relativePath: string | undefined,
+): Promise<{ root: string; target: string; relativePath: string }> {
   const requested = normalizeRelativePath(relativePath);
   const root = await realpath(rootPath);
   const joined = join(root, requested);

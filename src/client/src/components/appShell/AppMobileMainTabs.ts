@@ -67,7 +67,9 @@ export class AppMobileMainTabs extends LitElement {
           ${this.tabs.map((tab) => {
             const selected = this.selectedTab === tab.id;
             return html`
-              <button class=${this.tabClass(tab)} title=${tab.label} aria-label=${this.tabAriaLabel(tab)} aria-pressed=${String(selected)} @click=${() => { this.onSelect?.(tab.id); }}>
+              <button class=${this.tabClass(tab)} title=${tab.label} aria-label=${this.tabAriaLabel(tab)} aria-pressed=${String(selected)} @click=${() => {
+                this.onSelect?.(tab.id);
+              }}>
                 ${this.renderTabMark(tab, fallbackLabels)}
                 <span class="tab-label">${tab.label}</span>
                 ${this.renderBadge(tab.badge, tab.badgeTone)}
@@ -86,11 +88,7 @@ export class AppMobileMainTabs extends LitElement {
   }
 
   private tabClass(tab: AppMobileMainTab): string {
-    return [
-      "ui-button", "ui-tab",
-      ...(tab.className === undefined ? [] : [tab.className]),
-      ...(this.selectedTab === tab.id ? ["selected"] : []),
-    ].join(" ");
+    return ["ui-button", "ui-tab", ...(tab.className === undefined ? [] : [tab.className]), ...(this.selectedTab === tab.id ? ["selected"] : [])].join(" ");
   }
 
   private tabAriaLabel(tab: AppMobileMainTab): string {
@@ -127,7 +125,10 @@ export class AppMobileMainTabs extends LitElement {
 
   private initialsLabel(label: string): string {
     const words = label.match(/[\p{L}\p{N}]+/gu) ?? [];
-    const initials = words.map((word) => Array.from(word)[0] ?? "").join("").toLocaleUpperCase();
+    const initials = words
+      .map((word) => Array.from(word)[0] ?? "")
+      .join("")
+      .toLocaleUpperCase();
     return initials === "" ? "?" : initials;
   }
 
@@ -167,7 +168,11 @@ export class AppMobileMainTabs extends LitElement {
     this.updateScrollState();
   };
 
-  static override styles = [uiButtonStyles, uiToolbarStyles, uiTabStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiToolbarStyles,
+    uiTabStyles,
+    css`
     :host { flex: 0 0 auto; min-width: 0; }
     .mobile-tabs-frame { position: relative; display: flex; align-items: stretch; flex: 0 0 auto; min-width: 0; min-height: 44px; border-bottom: 1px solid var(--pi-border); background: var(--pi-bg); }
     .mobile-tabs-frame::before, .mobile-tabs-frame::after { content: ""; position: absolute; top: 0; bottom: 0; z-index: 2; width: 20px; opacity: 0; pointer-events: none; transition: opacity .15s ease; }
@@ -191,5 +196,6 @@ export class AppMobileMainTabs extends LitElement {
       .tab-fallback { display: inline-block; }
       .tab-badge { min-width: 13px; padding: 0 4px; font-size: 10px; line-height: 13px; }
     }
-  `];
+  `,
+  ];
 }

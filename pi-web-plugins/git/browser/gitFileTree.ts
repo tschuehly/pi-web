@@ -115,7 +115,13 @@ function ensureDirectory(root: DirectoryAccumulator, path: string): DirectoryAcc
 
 function finalizeChildren(directory: DirectoryAccumulator): GitFileTreeNode[] {
   const directories: GitFileTreeDirectoryNode[] = [...directory.directories.values()]
-    .map((child): GitFileTreeDirectoryNode => ({ kind: "directory", name: segmentName(child.path), path: child.path, ...(child.isSubmodule ? { isSubmodule: true } : {}), children: finalizeChildren(child) }))
+    .map((child): GitFileTreeDirectoryNode => ({
+      kind: "directory",
+      name: segmentName(child.path),
+      path: child.path,
+      ...(child.isSubmodule ? { isSubmodule: true } : {}),
+      children: finalizeChildren(child),
+    }))
     .sort((left, right) => left.name.localeCompare(right.name));
   const files = [...directory.files].sort((left, right) => left.name.localeCompare(right.name));
   return [...(directory.pointer === undefined ? [] : [directory.pointer]), ...directories, ...files];

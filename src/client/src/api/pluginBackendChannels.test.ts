@@ -27,7 +27,9 @@ let serverSockets: NodeWebSocket[];
 beforeEach(async () => {
   server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
   serverSockets = [];
-  server.on("connection", (socket) => { serverSockets.push(socket); });
+  server.on("connection", (socket) => {
+    serverSockets.push(socket);
+  });
   await waitForListening(server);
   vi.stubGlobal("WebSocket", NodeWebSocket);
   vi.stubGlobal("document", { baseURI: `${httpServerUrl(server)}/nested/` });
@@ -36,7 +38,11 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.unstubAllGlobals();
   for (const socket of serverSockets) socket.terminate();
-  await new Promise<void>((resolve) => { server.close(() => { resolve(); }); });
+  await new Promise<void>((resolve) => {
+    server.close(() => {
+      resolve();
+    });
+  });
 });
 
 describe("browser paired plugin backend channel helper", () => {
@@ -47,10 +53,12 @@ describe("browser paired plugin backend channel helper", () => {
     expect(pairedPluginBackendChannelPath(target, "terminal.attach")).toBe(
       "api/machines/remote%20%2F%20one/paired-plugin-backends/terminal.tools/projects/project%20%2F%20one/workspaces/workspace%20%231/channels/terminal.attach",
     );
-    expect(pairedPluginBackendChannelUrl(target, "terminal.attach", {
-      viteBaseUrl: "./",
-      documentBaseUrl: "https://pi.example.test/test/ai/",
-    })).toBe(
+    expect(
+      pairedPluginBackendChannelUrl(target, "terminal.attach", {
+        viteBaseUrl: "./",
+        documentBaseUrl: "https://pi.example.test/test/ai/",
+      }),
+    ).toBe(
       "wss://pi.example.test/test/ai/api/machines/remote%20%2F%20one/paired-plugin-backends/terminal.tools/projects/project%20%2F%20one/workspaces/workspace%20%231/channels/terminal.attach",
     );
   });
@@ -62,7 +70,11 @@ describe("browser paired plugin backend channel helper", () => {
       { ...target, machineId: "local" },
       "terminal.attach",
       { terminalId: "t1" },
-      { onData: (data) => { observedData.push(data); } },
+      {
+        onData: (data) => {
+          observedData.push(data);
+        },
+      },
     );
     const serverSocket = await connected;
     const messages = socketMessages(serverSocket);
@@ -76,7 +88,9 @@ describe("browser paired plugin backend channel helper", () => {
     serverSocket.send(serializePluginBackendChannelReadyEnvelope());
     const channel = await opened;
     serverSocket.send(serializePluginBackendChannelDataEnvelope({ type: "output", data: "hello" }));
-    await vi.waitFor(() => { expect(observedData).toEqual([{ type: "output", data: "hello" }]); });
+    await vi.waitFor(() => {
+      expect(observedData).toEqual([{ type: "output", data: "hello" }]);
+    });
 
     channel.send({ type: "input", data: "pwd\n" });
     expect(parsePluginBackendChannelClientEnvelope(await messages.next())).toEqual({
@@ -90,17 +104,15 @@ describe("browser paired plugin backend channel helper", () => {
       code: 1000,
       error: { code: "receive-failed", message: "PTY input failed" },
     });
-    expect(() => { channel.send(null); }).toThrow("not open");
+    expect(() => {
+      channel.send(null);
+    }).toThrow("not open");
   });
 
   it("attributes a browser transport error even when socket teardown reports code 1000", async () => {
     const socket = new FakeBrowserSocket();
-    const opened = openPairedPluginBackendChannel(
-      { ...target, machineId: "local" },
-      "terminal.attach",
-      null,
-      { onData: () => undefined },
-      () => socket.asWebSocket(),
+    const opened = openPairedPluginBackendChannel({ ...target, machineId: "local" }, "terminal.attach", null, { onData: () => undefined }, () =>
+      socket.asWebSocket(),
     );
     socket.open();
     socket.message(serializePluginBackendChannelReadyEnvelope());
@@ -118,12 +130,10 @@ describe("browser paired plugin backend channel helper", () => {
   it("cancels an opening channel and rejects invalid outbound data before sending", async () => {
     const connected = nextConnection(server);
     const controller = new AbortController();
-    const opened = openPairedPluginBackendChannel(
-      { ...target, machineId: "local" },
-      "terminal.attach",
-      null,
-      { signal: controller.signal, onData: () => undefined },
-    );
+    const opened = openPairedPluginBackendChannel({ ...target, machineId: "local" }, "terminal.attach", null, {
+      signal: controller.signal,
+      onData: () => undefined,
+    });
     const serverSocket = await connected;
     const messages = socketMessages(serverSocket);
     await messages.next();
@@ -157,7 +167,9 @@ class FakeBrowserSocket extends EventTarget {
     this.dispatchEvent(new Event("error"));
   }
 
-  send(data: string): void { void data; }
+  send(data: string): void {
+    void data;
+  }
 
   close(code = 1000, reason = ""): void {
     this.readyState = 3;
@@ -167,12 +179,16 @@ class FakeBrowserSocket extends EventTarget {
       reason: { value: reason },
       wasClean: { value: true },
     });
-    queueMicrotask(() => { this.dispatchEvent(event); });
+    queueMicrotask(() => {
+      this.dispatchEvent(event);
+    });
   }
 }
 
 function nextConnection(webSocketServer: WebSocketServer): Promise<NodeWebSocket> {
-  return new Promise((resolve) => { webSocketServer.once("connection", resolve); });
+  return new Promise((resolve) => {
+    webSocketServer.once("connection", resolve);
+  });
 }
 
 function socketMessages(socket: NodeWebSocket): { next(): Promise<string> } {
@@ -189,7 +205,9 @@ function socketMessages(socket: NodeWebSocket): { next(): Promise<string> } {
     next: () => {
       const value = queued.shift();
       return value === undefined
-        ? new Promise<string>((resolve) => { waiters.push(resolve); })
+        ? new Promise<string>((resolve) => {
+            waiters.push(resolve);
+          })
         : Promise.resolve(value);
     },
   };
@@ -197,7 +215,11 @@ function socketMessages(socket: NodeWebSocket): { next(): Promise<string> } {
 
 function waitForListening(webSocketServer: WebSocketServer): Promise<void> {
   if (webSocketServer.address() !== null) return Promise.resolve();
-  return new Promise((resolve) => { webSocketServer.once("listening", () => { resolve(); }); });
+  return new Promise((resolve) => {
+    webSocketServer.once("listening", () => {
+      resolve();
+    });
+  });
 }
 
 function httpServerUrl(webSocketServer: WebSocketServer): string {

@@ -3,12 +3,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionStatus } from "../api";
 import { FULL_ACCESS_STATUS_KEY, FullAccessToggle } from "./FullAccessToggle";
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 function status(state?: string): SessionStatus {
   return {
-    sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    sessionId: "session-1",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
     extensionStatuses: state === undefined ? {} : { [FULL_ACCESS_STATUS_KEY]: state },
   };
 }
@@ -41,7 +49,12 @@ describe("FullAccessToggle", () => {
 
   it("full access: a labelled chip that fences again; disabled while the owner's dialog is open", async () => {
     let answer: () => void = () => undefined;
-    const run = vi.fn(() => new Promise<void>((resolve) => { answer = resolve; }));
+    const run = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          answer = resolve;
+        }),
+    );
     const { element, button } = await toggle("on", run);
     expect(button()?.getAttribute("aria-pressed")).toBe("true");
     expect(button()?.textContent).toContain("Full access");

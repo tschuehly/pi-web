@@ -29,7 +29,9 @@ export interface PluginWorkspaceSelection {
 export interface PluginSessionSelection extends PluginWorkspaceSelection {
   readonly sessionId: string;
 }
-export interface PluginCatalogReadOptions { readonly signal?: AbortSignal }
+export interface PluginCatalogReadOptions {
+  readonly signal?: AbortSignal;
+}
 export interface PluginCatalogV1 {
   readonly version: 1;
   readonly projects: {
@@ -125,7 +127,11 @@ function workspaceFor(value: unknown, projectId: string): PluginCatalogWorkspace
   }
   const removal = row["removal"] === undefined ? undefined : record(row["removal"]);
   return Object.freeze({
-    id: text(row["id"]), projectId, path: text(row["path"]), label: text(row["label"]), isMain: row["isMain"],
+    id: text(row["id"]),
+    projectId,
+    path: text(row["path"]),
+    label: text(row["label"]),
+    isMain: row["isMain"],
     ...(provider === undefined ? {} : { provider }),
     ...(removal === undefined ? {} : { removal: Object.freeze({ actionLabel: text(removal["actionLabel"]), confirmation: text(removal["confirmation"]) }) }),
   });
@@ -140,7 +146,10 @@ function snapshotSession(value: unknown): PluginSessionSnapshot {
   }
   if (row["name"] !== undefined && typeof row["name"] !== "string") throw invalid();
   return Object.freeze({
-    id: text(row["id"]), cwd: text(row["cwd"]), archived: row["archived"], runtime,
+    id: text(row["id"]),
+    cwd: text(row["cwd"]),
+    archived: row["archived"],
+    runtime,
     ...(row["name"] === undefined ? {} : { name: row["name"] }),
     ...(metadata === undefined ? {} : { metadata }),
   });
@@ -189,4 +198,6 @@ function json(value: unknown, ancestors: Set<object>): JsonValue {
   }
   return jsonObject(value, ancestors);
 }
-function invalid(): Error { return new Error("Invalid PI WEB host catalog capability v1 data"); }
+function invalid(): Error {
+  return new Error("Invalid PI WEB host catalog capability v1 data");
+}

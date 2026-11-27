@@ -7,7 +7,11 @@ import { SessionController } from "../controllers/sessionController";
 import { PiWebApp } from "./PiWebApp";
 
 beforeEach(() => {
-  vi.spyOn(SessionController.prototype, "getSessionDefaults").mockResolvedValue({ defaultProvider: "anthropic", defaultModel: "claude-sonnet-4-5", defaultThinkingLevel: "high" });
+  vi.spyOn(SessionController.prototype, "getSessionDefaults").mockResolvedValue({
+    defaultProvider: "anthropic",
+    defaultModel: "claude-sonnet-4-5",
+    defaultThinkingLevel: "high",
+  });
 });
 
 afterEach(() => {
@@ -28,8 +32,10 @@ describe("PiWebApp model dialog", () => {
       sessions: [selectedSession],
       status: sessionStatus(selectedSession.id, { provider: "openai", id: "gpt-5" }),
     });
-    const listModels = vi.spyOn(SessionController.prototype, "listModels")
-      .mockResolvedValue([{ provider: "openai", id: "gpt-5" }, { provider: "anthropic", id: "claude-sonnet-4-5" }]);
+    const listModels = vi.spyOn(SessionController.prototype, "listModels").mockResolvedValue([
+      { provider: "openai", id: "gpt-5" },
+      { provider: "anthropic", id: "claude-sonnet-4-5" },
+    ]);
     const catalog = [
       { provider: "openai", id: "gpt-5", enabled: true },
       { provider: "anthropic", id: "claude-sonnet-4-5", enabled: true },
@@ -68,20 +74,23 @@ describe("PiWebApp model dialog", () => {
         catalog: [{ provider: "openai", id: "gpt-5", enabled: true }],
       },
     });
-    const listModels = vi.spyOn(SessionController.prototype, "listModels")
-      .mockResolvedValue([{ provider: "openai", id: "gpt-5" }, { provider: "openai", id: "gpt-4o" }]);
-    const listModelCatalog = vi.spyOn(SessionController.prototype, "listModelCatalog")
-      .mockResolvedValue([
-        { provider: "openai", id: "gpt-5", enabled: true },
-        { provider: "openai", id: "gpt-4o", enabled: true },
-      ]);
+    const listModels = vi.spyOn(SessionController.prototype, "listModels").mockResolvedValue([
+      { provider: "openai", id: "gpt-5" },
+      { provider: "openai", id: "gpt-4o" },
+    ]);
+    const listModelCatalog = vi.spyOn(SessionController.prototype, "listModelCatalog").mockResolvedValue([
+      { provider: "openai", id: "gpt-5", enabled: true },
+      { provider: "openai", id: "gpt-4o", enabled: true },
+    ]);
     const sessions: unknown = Reflect.get(app, "sessions");
     if (typeof sessions !== "object" || sessions === null) throw new Error("PiWebApp session controller was unavailable");
     const applyGlobalEvent: unknown = Reflect.get(sessions, "applyGlobalEvent");
     if (typeof applyGlobalEvent !== "function") throw new Error("SessionController global event handler was unavailable");
 
     Reflect.apply(applyGlobalEvent, sessions, [{ type: "models.changed", revision: 2 }]);
-    await vi.waitFor(() => { expect(appModelDialog(app)?.options).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(appModelDialog(app)?.options).toHaveLength(2);
+    });
 
     expect(listModels).toHaveBeenCalledOnce();
     expect(listModelCatalog).toHaveBeenCalledOnce();
@@ -106,8 +115,14 @@ describe("PiWebApp model dialog", () => {
     let resolveInitialModels: ((models: SessionModel[]) => void) | undefined;
     let resolveInitialCatalog: ((catalog: SessionModelCatalogEntry[]) => void) | undefined;
     const listModels = vi.spyOn(SessionController.prototype, "listModels").mockImplementation(() => {
-      if (listModels.mock.calls.length > 1) return Promise.resolve([{ provider: "openai", id: "gpt-5" }, { provider: "openai", id: "gpt-4o" }]);
-      return new Promise((resolve) => { resolveInitialModels = resolve; });
+      if (listModels.mock.calls.length > 1)
+        return Promise.resolve([
+          { provider: "openai", id: "gpt-5" },
+          { provider: "openai", id: "gpt-4o" },
+        ]);
+      return new Promise((resolve) => {
+        resolveInitialModels = resolve;
+      });
     });
     const listModelCatalog = vi.spyOn(SessionController.prototype, "listModelCatalog").mockImplementation(() => {
       if (listModelCatalog.mock.calls.length > 1) {
@@ -116,11 +131,15 @@ describe("PiWebApp model dialog", () => {
           { provider: "openai", id: "gpt-4o", enabled: true },
         ]);
       }
-      return new Promise((resolve) => { resolveInitialCatalog = resolve; });
+      return new Promise((resolve) => {
+        resolveInitialCatalog = resolve;
+      });
     });
 
     const pending = callAppMethod(app, "openModelDialog");
-    await vi.waitFor(() => { expect(listModels).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(listModels).toHaveBeenCalledOnce();
+    });
     const sessions: unknown = Reflect.get(app, "sessions");
     if (typeof sessions !== "object" || sessions === null) throw new Error("PiWebApp session controller was unavailable");
     const applyGlobalEvent: unknown = Reflect.get(sessions, "applyGlobalEvent");
@@ -144,8 +163,18 @@ describe("PiWebApp model dialog", () => {
     setAppState(app, { selectedSession, sessions: [selectedSession] });
     let resolveModels: ((models: SessionModel[]) => void) | undefined;
     let resolveCatalog: ((catalog: { provider: string; id: string; enabled: boolean }[]) => void) | undefined;
-    vi.spyOn(SessionController.prototype, "listModels").mockImplementation(() => new Promise((resolve) => { resolveModels = resolve; }));
-    vi.spyOn(SessionController.prototype, "listModelCatalog").mockImplementation(() => new Promise((resolve) => { resolveCatalog = resolve; }));
+    vi.spyOn(SessionController.prototype, "listModels").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveModels = resolve;
+        }),
+    );
+    vi.spyOn(SessionController.prototype, "listModelCatalog").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCatalog = resolve;
+        }),
+    );
 
     const pending = callAppMethod(app, "openModelDialog");
     const replacement = session("session-2");
@@ -223,9 +252,7 @@ describe("PiWebApp model dialog", () => {
 
     expect(setModelScope).toHaveBeenCalledWith("current");
     expect(appModelDialog(app)?.catalog).toEqual(freshCatalog);
-    expect(appModelDialog(app)?.options).toEqual([
-      { value: "openai/gpt-5", label: "gpt-5 ✓ current", description: "openai" },
-    ]);
+    expect(appModelDialog(app)?.options).toEqual([{ value: "openai/gpt-5", label: "gpt-5 ✓ current", description: "openai" }]);
   });
 
   it("leaves the dialog untouched when the toggle fails", async () => {
@@ -247,9 +274,18 @@ describe("PiWebApp model dialog", () => {
   it("does not restore the dialog when a toggle settles after it was closed", async () => {
     const app = new PiWebApp();
     const selectedSession = session("session-1");
-    setAppState(app, { selectedSession, sessions: [selectedSession], modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Select Model", options: [], catalog: [] } });
+    setAppState(app, {
+      selectedSession,
+      sessions: [selectedSession],
+      modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Select Model", options: [], catalog: [] },
+    });
     let resolveToggle: ((catalog: { provider: string; id: string; enabled: boolean }[]) => void) | undefined;
-    vi.spyOn(SessionController.prototype, "setModelEnabled").mockImplementation(() => new Promise((resolve) => { resolveToggle = resolve; }));
+    vi.spyOn(SessionController.prototype, "setModelEnabled").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveToggle = resolve;
+        }),
+    );
 
     const pending = callToggleHandler(app, "openai", "gpt-5", true);
     setAppState(app, { selectedSession, sessions: [selectedSession], modelDialog: undefined });
@@ -297,7 +333,12 @@ describe("PiWebApp model dialog", () => {
     const replacement = { instanceId: 2, origin: modelDialogOrigin, title: "Replacement", options: [], catalog: [] };
     setAppState(app, { selectedSession, sessions: [selectedSession], modelDialog: original });
     let resolveScope: ((catalog: { provider: string; id: string; enabled: boolean }[]) => void) | undefined;
-    vi.spyOn(SessionController.prototype, "setModelScope").mockImplementation(() => new Promise((resolve) => { resolveScope = resolve; }));
+    vi.spyOn(SessionController.prototype, "setModelScope").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveScope = resolve;
+        }),
+    );
 
     const pending = callScopeHandler(app, "all");
     setAppState(app, { selectedSession, sessions: [selectedSession], modelDialog: replacement });
@@ -312,7 +353,11 @@ describe("PiWebApp dialogs in a Durable Chat", () => {
   it("offers no default pins or enabled-model edits the Chat does not support", async () => {
     const app = new PiWebApp();
     const selectedSession = { ...session("session-1"), path: "durable:session-1", capabilities: [] };
-    setAppState(app, { selectedSession, sessions: [selectedSession], status: { ...sessionStatus(selectedSession.id, { provider: "faux", id: "faux-1" }), capabilities: [] } });
+    setAppState(app, {
+      selectedSession,
+      sessions: [selectedSession],
+      status: { ...sessionStatus(selectedSession.id, { provider: "faux", id: "faux-1" }), capabilities: [] },
+    });
     vi.spyOn(SessionController.prototype, "listModels").mockResolvedValue([{ provider: "faux", id: "faux-1" }]);
     vi.spyOn(SessionController.prototype, "listModelCatalog").mockResolvedValue([{ provider: "faux", id: "faux-1", enabled: true }]);
     vi.spyOn(SessionController.prototype, "listThinkingLevels").mockResolvedValue([]);
@@ -329,8 +374,13 @@ describe("startup default orchestration", () => {
   it("saves a model default without selecting it or closing the dialog", async () => {
     const app = new PiWebApp();
     const selectedSession = session("session-1");
-    setAppState(app, { selectedSession, modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Model", selectedValue: "openai/gpt-5", options: [], catalog: [] } });
-    const save = vi.spyOn(SessionController.prototype, "setSessionDefaults").mockResolvedValue({ defaultProvider: "anthropic", defaultModel: "claude-sonnet-4-5" });
+    setAppState(app, {
+      selectedSession,
+      modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Model", selectedValue: "openai/gpt-5", options: [], catalog: [] },
+    });
+    const save = vi
+      .spyOn(SessionController.prototype, "setSessionDefaults")
+      .mockResolvedValue({ defaultProvider: "anthropic", defaultModel: "claude-sonnet-4-5" });
     const select = vi.spyOn(SessionController.prototype, "setModel");
     await callDefaultHandler(app, "handleSetDefaultModel", "anthropic/claude-sonnet-4-5");
     expect(save).toHaveBeenCalledWith({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
@@ -340,7 +390,10 @@ describe("startup default orchestration", () => {
 
   it("leaves the saved marker unchanged when saving fails", async () => {
     const app = new PiWebApp();
-    setAppState(app, { selectedSession: session("session-1"), modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Model", defaultValue: "openai/gpt-5", options: [], catalog: [] } });
+    setAppState(app, {
+      selectedSession: session("session-1"),
+      modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Model", defaultValue: "openai/gpt-5", options: [], catalog: [] },
+    });
     vi.spyOn(SessionController.prototype, "setSessionDefaults").mockResolvedValue(undefined);
     await callDefaultHandler(app, "handleSetDefaultModel", "anthropic/claude-sonnet-4-5");
     expect(appModelDialog(app)?.defaultValue).toBe("openai/gpt-5");
@@ -366,7 +419,12 @@ describe("startup default orchestration", () => {
     const selectedSession = session("session-1");
     setAppState(app, { selectedSession, modelDialog: { instanceId: 1, origin: modelDialogOrigin, title: "Model", options: [], catalog: [] } });
     let resolveSave: ((value: { defaultProvider: string; defaultModel: string }) => void) | undefined;
-    vi.spyOn(SessionController.prototype, "setSessionDefaults").mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    vi.spyOn(SessionController.prototype, "setSessionDefaults").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
     const pending = callDefaultHandler(app, "handleSetDefaultModel", "openai/gpt-5");
     const replacement = { instanceId: 2, origin: modelDialogOrigin, title: "Replacement", options: [], catalog: [] };
     setAppState(app, { selectedSession, modelDialog: replacement });

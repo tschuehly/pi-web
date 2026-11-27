@@ -40,19 +40,28 @@ export interface SpawnSessionToolDeps {
 type SpawnSessionToolDetails = SpawnSessionResult;
 
 const SpawnSessionParams = Type.Object({
-  thinkingLevel: Type.Optional(Type.Enum(KNOWN_THINKING_LEVELS, {
-    type: "string",
-    description: "Thinking level override for the new session. Set this field only when instructed to use a specific thinking level or to choose an appropriate one. Otherwise omit it to inherit this session's thinking level. An unknown value is rejected; valid levels are clamped to the selected model's capabilities.",
-  })),
+  thinkingLevel: Type.Optional(
+    Type.Enum(KNOWN_THINKING_LEVELS, {
+      type: "string",
+      description:
+        "Thinking level override for the new session. Set this field only when instructed to use a specific thinking level or to choose an appropriate one. Otherwise omit it to inherit this session's thinking level. An unknown value is rejected; valid levels are clamped to the selected model's capabilities.",
+    }),
+  ),
   prompt: Type.String({
     description: "The first instruction to send to the newly created session. The new session runs independently; you do not receive its output.",
   }),
-  cwd: Type.Optional(Type.String({
-    description: "Working directory for the new session. Must be a workspace (worktree, or root) of the same project as this session. Defaults to this session's working directory.",
-  })),
-  model: Type.Optional(Type.String({
-    description: 'Model override for the new session, as an exact "provider/model-id". Set this field only when instructed to use a specific model or to choose an appropriate one. Otherwise omit it to inherit this session\'s model. An unknown value is rejected.',
-  })),
+  cwd: Type.Optional(
+    Type.String({
+      description:
+        "Working directory for the new session. Must be a workspace (worktree, or root) of the same project as this session. Defaults to this session's working directory.",
+    }),
+  ),
+  model: Type.Optional(
+    Type.String({
+      description:
+        'Model override for the new session, as an exact "provider/model-id". Set this field only when instructed to use a specific model or to choose an appropriate one. Otherwise omit it to inherit this session\'s model. An unknown value is rejected.',
+    }),
+  ),
 });
 
 /**
@@ -65,7 +74,8 @@ export function createSpawnSessionToolDefinition(spawningCwd: string, deps: Spaw
   return defineTool<typeof SpawnSessionParams, SpawnSessionToolDetails>({
     name: "spawn_session",
     label: "Spawn session",
-    description: "Start a fully independent session; its transcript and results are unavailable here. Use only when the user or active workflow explicitly requests a separate session.",
+    description:
+      "Start a fully independent session; its transcript and results are unavailable here. Use only when the user or active workflow explicitly requests a separate session.",
     promptSnippet: "spawn_session: independent session; results unavailable here; explicit requests only",
     parameters: SpawnSessionParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {

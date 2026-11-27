@@ -1,5 +1,10 @@
 import type { PluginCatalog } from "../../../plugin-api";
-import { PI_WEB_HOST_CATALOG_CAPABILITY, type PluginCatalogReadOptions, type PluginSessionSelection, type PluginWorkspaceSelection } from "../../../shared/pluginCatalogTypes";
+import {
+  PI_WEB_HOST_CATALOG_CAPABILITY,
+  type PluginCatalogReadOptions,
+  type PluginSessionSelection,
+  type PluginWorkspaceSelection,
+} from "../../../shared/pluginCatalogTypes";
 import { request } from "../api/http";
 
 export type PluginCatalogRequester = (path: string, options?: RequestInit) => Promise<unknown>;
@@ -15,8 +20,8 @@ export function createPluginCatalog(
   const projectPath = (projectId: string) => `${prefix}/${encodeURIComponent(projectId)}`;
   const workspacePath = ({ projectId, workspaceId }: PluginWorkspaceSelection) => `${projectPath(projectId)}/workspaces/${encodeURIComponent(workspaceId)}`;
   const read = async (path: string, options?: PluginCatalogReadOptions): Promise<unknown> => {
-    const signal = lifetimeSignal === undefined ? options?.signal
-      : options?.signal === undefined ? lifetimeSignal : AbortSignal.any([lifetimeSignal, options.signal]);
+    const signal =
+      lifetimeSignal === undefined ? options?.signal : options?.signal === undefined ? lifetimeSignal : AbortSignal.any([lifetimeSignal, options.signal]);
     signal?.throwIfAborted();
     const result = await requester(path, { cache: "no-store", ...(signal === undefined ? {} : { signal }) });
     signal?.throwIfAborted();
@@ -34,7 +39,8 @@ export function createPluginCatalog(
     },
     sessions: {
       list: (selection: PluginWorkspaceSelection, options?: PluginCatalogReadOptions) => read(`${workspacePath(selection)}/sessions`, options),
-      get: (selection: PluginSessionSelection, options?: PluginCatalogReadOptions) => read(`${workspacePath(selection)}/sessions/${encodeURIComponent(selection.sessionId)}`, options),
+      get: (selection: PluginSessionSelection, options?: PluginCatalogReadOptions) =>
+        read(`${workspacePath(selection)}/sessions/${encodeURIComponent(selection.sessionId)}`, options),
     },
   });
   return Object.freeze({ ...catalog, machineId });

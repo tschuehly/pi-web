@@ -14,8 +14,7 @@ interface Entry {
 }
 
 const markerPath = (sessionFile: string): string => `${sessionFile}.pi-web-activity.json`;
-const isMissing = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+const isMissing = (error: unknown): boolean => typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 
 /** Best-effort advisory presence, not a lock or an atomic ownership claim. */
 export class SessionActivityMarker {
@@ -59,7 +58,7 @@ export class SessionActivityMarker {
   }
 
   isActiveElsewhere(sessionFile: string | undefined): boolean {
-    return sessionFile === undefined ? false : this.entries.get(sessionFile)?.activeElsewhere ?? false;
+    return sessionFile === undefined ? false : (this.entries.get(sessionFile)?.activeElsewhere ?? false);
   }
 
   async release(sessionFile: string | undefined): Promise<void> {
@@ -88,7 +87,11 @@ export class SessionActivityMarker {
       entry.activeElsewhere = false;
       if (!isMissing(error)) {
         // An error reporter must not turn advisory IO into a session failure.
-        try { this.onError?.(error); } catch { /* Best effort only. */ }
+        try {
+          this.onError?.(error);
+        } catch {
+          /* Best effort only. */
+        }
       }
     });
     return entry.pending;
@@ -103,7 +106,11 @@ export class SessionActivityMarker {
       throw error;
     }
     let value: unknown;
-    try { value = JSON.parse(text); } catch { return undefined; }
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return undefined;
+    }
     if (typeof value !== "object" || value === null || !("owner" in value) || !("updatedAt" in value)) return undefined;
     if (typeof value.owner !== "string" || typeof value.updatedAt !== "number" || !Number.isFinite(value.updatedAt)) return undefined;
     return { owner: value.owner, updatedAt: value.updatedAt };

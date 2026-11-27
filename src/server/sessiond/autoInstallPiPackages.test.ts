@@ -14,9 +14,14 @@ import {
 
 const KNOWN_PACKAGE_ID = "@jmfederico/pi-relay";
 const PACKAGE_ROOT = "/pi-web";
-const KNOWN_PACKAGES = [{ id: KNOWN_PACKAGE_ID, label: "Relays", description: "Relay method prompts and skill.", shippedPathSegments: ["dist", "pi-packages", "relays"] }];
+const KNOWN_PACKAGES = [
+  { id: KNOWN_PACKAGE_ID, label: "Relays", description: "Relay method prompts and skill.", shippedPathSegments: ["dist", "pi-packages", "relays"] },
+];
 
-function fakePackageProvider(packages: ConfiguredPiPackage[] = [], getInstalledPath: PiPackageProvider["getInstalledPath"] = () => undefined): PiPackageProvider {
+function fakePackageProvider(
+  packages: ConfiguredPiPackage[] = [],
+  getInstalledPath: PiPackageProvider["getInstalledPath"] = () => undefined,
+): PiPackageProvider {
   return { listPackages: () => packages, getInstalledPath };
 }
 
@@ -26,7 +31,9 @@ function fakeInstaller(implementation: PiPackageAutoInstaller["install"] = () =>
   return { installer: { install, replaceSources }, install, replaceSources };
 }
 
-function fakeDismissalChecker(isDismissed: PiPackageAutoInstallDismissalChecker["isDismissed"] = () => Promise.resolve(false)): PiPackageAutoInstallDismissalChecker {
+function fakeDismissalChecker(
+  isDismissed: PiPackageAutoInstallDismissalChecker["isDismissed"] = () => Promise.resolve(false),
+): PiPackageAutoInstallDismissalChecker {
   return { isDismissed };
 }
 
@@ -57,10 +64,7 @@ describe("reconcileAutoInstallablePiPackages", () => {
     });
 
     expect(install).toHaveBeenCalledWith(join(PACKAGE_ROOT, "dist", "pi-packages", "relays"));
-    expect(info).toHaveBeenCalledWith(
-      expect.objectContaining({ packageId: KNOWN_PACKAGE_ID, profileDir: "/agent" }),
-      expect.any(String),
-    );
+    expect(info).toHaveBeenCalledWith(expect.objectContaining({ packageId: KNOWN_PACKAGE_ID, profileDir: "/agent" }), expect.any(String));
   });
 
   it("does not change a configured copy at the current shipped path", async () => {
@@ -119,38 +123,39 @@ describe("reconcileAutoInstallablePiPackages", () => {
     const { installer, install } = fakeInstaller(() => Promise.reject(new Error("offline")));
     const { logger, warn } = fakeLogger();
 
-    await expect(reconcileAutoInstallablePiPackages({
-      profileDir: "/agent",
-      packageProvider: fakePackageProvider([]),
-      installer,
-      dismissalChecker: fakeDismissalChecker(),
-      identityResolver: fakeIdentityResolver(() => Promise.resolve(undefined)),
-      packageRoot: PACKAGE_ROOT,
-      knownPackages: KNOWN_PACKAGES,
-      logger,
-    })).resolves.toBeUndefined();
+    await expect(
+      reconcileAutoInstallablePiPackages({
+        profileDir: "/agent",
+        packageProvider: fakePackageProvider([]),
+        installer,
+        dismissalChecker: fakeDismissalChecker(),
+        identityResolver: fakeIdentityResolver(() => Promise.resolve(undefined)),
+        packageRoot: PACKAGE_ROOT,
+        knownPackages: KNOWN_PACKAGES,
+        logger,
+      }),
+    ).resolves.toBeUndefined();
 
     expect(install).toHaveBeenCalledOnce();
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ packageId: KNOWN_PACKAGE_ID, profileDir: "/agent" }),
-      expect.any(String),
-    );
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ packageId: KNOWN_PACKAGE_ID, profileDir: "/agent" }), expect.any(String));
   });
 
   it("is best-effort: a dismissal-check failure is logged and never thrown, and never installs", async () => {
     const { installer, install } = fakeInstaller();
     const { logger, warn } = fakeLogger();
 
-    await expect(reconcileAutoInstallablePiPackages({
-      profileDir: "/agent",
-      packageProvider: fakePackageProvider([]),
-      installer,
-      dismissalChecker: fakeDismissalChecker(() => Promise.reject(new Error("corrupt dismissal file"))),
-      identityResolver: fakeIdentityResolver(() => Promise.resolve(undefined)),
-      packageRoot: PACKAGE_ROOT,
-      knownPackages: KNOWN_PACKAGES,
-      logger,
-    })).resolves.toBeUndefined();
+    await expect(
+      reconcileAutoInstallablePiPackages({
+        profileDir: "/agent",
+        packageProvider: fakePackageProvider([]),
+        installer,
+        dismissalChecker: fakeDismissalChecker(() => Promise.reject(new Error("corrupt dismissal file"))),
+        identityResolver: fakeIdentityResolver(() => Promise.resolve(undefined)),
+        packageRoot: PACKAGE_ROOT,
+        knownPackages: KNOWN_PACKAGES,
+        logger,
+      }),
+    ).resolves.toBeUndefined();
 
     expect(install).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledOnce();
@@ -158,7 +163,7 @@ describe("reconcileAutoInstallablePiPackages", () => {
 
   it("reconciles each known package independently: one failure does not block the others", async () => {
     const otherPackageId = "@acme/other-known-package";
-    const { installer, install } = fakeInstaller((source) => source.includes("relays") ? Promise.reject(new Error("boom")) : Promise.resolve());
+    const { installer, install } = fakeInstaller((source) => (source.includes("relays") ? Promise.reject(new Error("boom")) : Promise.resolve()));
     const { logger, warn, info } = fakeLogger();
 
     await reconcileAutoInstallablePiPackages({

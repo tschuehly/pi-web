@@ -3,15 +3,17 @@ import { parsePiWebComponentStatus, parsePiWebInstallationInfo, parsePiWebRuntim
 
 describe("PI WEB status parsing", () => {
   it("drops every advertised capability string while the registry is empty", () => {
-    expect(parsePiWebRuntimeResponse({
-      packageName: "@jmfederico/pi-web",
-      generatedAt: "now",
-      components: {
-        web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", available: true, capabilities: ["piPackages.manage", "future.capability"] },
-        sessiond: { component: "sessiond", label: "Session daemon", runtimeVersion: "1.0.0", available: true, capabilities: ["future.sessiondCapability"] },
-      },
-      capabilities: ["piPackages.manage", "future.capability"],
-    })).toMatchObject({
+    expect(
+      parsePiWebRuntimeResponse({
+        packageName: "@jmfederico/pi-web",
+        generatedAt: "now",
+        components: {
+          web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", available: true, capabilities: ["piPackages.manage", "future.capability"] },
+          sessiond: { component: "sessiond", label: "Session daemon", runtimeVersion: "1.0.0", available: true, capabilities: ["future.sessiondCapability"] },
+        },
+        capabilities: ["piPackages.manage", "future.capability"],
+      }),
+    ).toMatchObject({
       components: {
         web: { capabilities: [] },
         sessiond: { capabilities: [] },
@@ -21,15 +23,17 @@ describe("PI WEB status parsing", () => {
   });
 
   it("rejects runtime responses with malformed component capability arrays", () => {
-    expect(parsePiWebRuntimeResponse({
-      packageName: "@jmfederico/pi-web",
-      generatedAt: "now",
-      components: {
-        web: { component: "web", label: "Web/UI", available: true, capabilities: ["piPackages.manage", 1] },
-        sessiond: { component: "sessiond", label: "Session daemon", available: true, capabilities: [] },
-      },
-      capabilities: ["piPackages.manage"],
-    })).toBeUndefined();
+    expect(
+      parsePiWebRuntimeResponse({
+        packageName: "@jmfederico/pi-web",
+        generatedAt: "now",
+        components: {
+          web: { component: "web", label: "Web/UI", available: true, capabilities: ["piPackages.manage", 1] },
+          sessiond: { component: "sessiond", label: "Session daemon", available: true, capabilities: [] },
+        },
+        capabilities: ["piPackages.manage"],
+      }),
+    ).toBeUndefined();
   });
 
   it("parses and freezes a session daemon active agent profile", () => {
@@ -66,7 +70,13 @@ describe("PI WEB status parsing", () => {
       generatedAt: "now",
       components: {
         web: { component: "web", label: "Web/UI", available: true, capabilities: [], ...(webProfile === undefined ? {} : { activeAgentProfile: webProfile }) },
-        sessiond: { component: "sessiond", label: "Session daemon", available: true, capabilities: [], ...(sessiondProfile === undefined ? {} : { activeAgentProfile: sessiondProfile }) },
+        sessiond: {
+          component: "sessiond",
+          label: "Session daemon",
+          available: true,
+          capabilities: [],
+          ...(sessiondProfile === undefined ? {} : { activeAgentProfile: sessiondProfile }),
+        },
       },
       capabilities: [],
     });
@@ -135,28 +145,30 @@ describe("PI WEB status parsing", () => {
       capabilities: [],
     });
 
-    expect(parsed?.components.web.deprecatedAgentInputs).toEqual([
-      { source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" },
-    ]);
+    expect(parsed?.components.web.deprecatedAgentInputs).toEqual([{ source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" }]);
     expect(parsed?.components.sessiond).not.toHaveProperty("deprecatedAgentInputs");
   });
 
   it("carries reported Pi versions through component and runtime parsing", () => {
-    expect(parsePiWebComponentStatus({
-      component: "web",
-      label: "Web/UI",
-      runtimeVersion: "1.0.0",
-      piVersion: "0.84.1",
-      stale: false,
-      available: true,
-    })).toMatchObject({ runtimeVersion: "1.0.0", piVersion: "0.84.1" });
+    expect(
+      parsePiWebComponentStatus({
+        component: "web",
+        label: "Web/UI",
+        runtimeVersion: "1.0.0",
+        piVersion: "0.84.1",
+        stale: false,
+        available: true,
+      }),
+    ).toMatchObject({ runtimeVersion: "1.0.0", piVersion: "0.84.1" });
 
-    expect(parsePiWebComponentStatus({
-      component: "web",
-      label: "Web/UI",
-      stale: false,
-      available: true,
-    })).not.toHaveProperty("piVersion");
+    expect(
+      parsePiWebComponentStatus({
+        component: "web",
+        label: "Web/UI",
+        stale: false,
+        available: true,
+      }),
+    ).not.toHaveProperty("piVersion");
 
     const runtime = parsePiWebRuntimeResponse({
       packageName: "@jmfederico/pi-web",
@@ -186,14 +198,16 @@ describe("PI WEB status parsing", () => {
   });
 
   it("ignores invalid optional Docker modes without rejecting component status", () => {
-    expect(parsePiWebComponentStatus({
-      component: "web",
-      label: "Web/UI",
-      runtimeVersion: "1.0.0",
-      stale: false,
-      available: true,
-      installation: { kind: "docker", path: "/workspace/pi-web", dockerMode: "hidden" },
-    })?.installation).toEqual({ kind: "docker", path: "/workspace/pi-web" });
+    expect(
+      parsePiWebComponentStatus({
+        component: "web",
+        label: "Web/UI",
+        runtimeVersion: "1.0.0",
+        stale: false,
+        available: true,
+        installation: { kind: "docker", path: "/workspace/pi-web", dockerMode: "hidden" },
+      })?.installation,
+    ).toEqual({ kind: "docker", path: "/workspace/pi-web" });
   });
 
   it("parses version responses that include Docker runtime and development components", () => {
@@ -201,8 +215,22 @@ describe("PI WEB status parsing", () => {
       packageName: "@jmfederico/pi-web",
       generatedAt: "now",
       components: {
-        web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", stale: false, available: true, installation: { kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" } },
-        sessiond: { component: "sessiond", label: "Session daemon", runtimeVersion: "1.0.0", stale: false, available: true, installation: { kind: "docker", path: "/workspace/pi-web", dockerMode: "dev" } },
+        web: {
+          component: "web",
+          label: "Web/UI",
+          runtimeVersion: "1.0.0",
+          stale: false,
+          available: true,
+          installation: { kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" },
+        },
+        sessiond: {
+          component: "sessiond",
+          label: "Session daemon",
+          runtimeVersion: "1.0.0",
+          stale: false,
+          available: true,
+          installation: { kind: "docker", path: "/workspace/pi-web", dockerMode: "dev" },
+        },
       },
     });
 

@@ -10,7 +10,6 @@ afterEach(() => {
 });
 
 describe("ChatView open ask_user form", () => {
-
   it("renders every open question set of the classic Chat, oldest first", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
@@ -31,7 +30,16 @@ describe("ChatView open ask_user form", () => {
     const card = (): AskUserCard | null | undefined => view.shadowRoot?.querySelector<AskUserCard>("ask-user-card");
 
     expect(card()?.imagesEnabled).toBe(false);
-    const status: SessionStatus = { sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    const status: SessionStatus = {
+      sessionId: "session-1",
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    };
     view.status = status;
     await view.updateComplete;
     expect(card()?.imagesEnabled).toBe(false);
@@ -98,9 +106,6 @@ describe("ChatView ask_user transcript records", () => {
     expect(view.shadowRoot?.querySelector("article.ask-user-record-shell .msg-header")).toBeNull();
   });
 });
-
-
-
 
 function requiredElement<T>(value: T | null | undefined, label: string): T {
   if (value === null || value === undefined) throw new Error(`Expected ${label}`);

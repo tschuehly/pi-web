@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { isLiveReviewPairing, type LiveReviewPairing } from "./liveReview.js";
 
-type RecordChange = Partial<Pick<DurableChatRecord, "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortNameSource" | "key" | "sampledWorkingMode" | "workingModeVersion">> & { shortName?: string | undefined; liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
+type RecordChange = Partial<
+  Pick<
+    DurableChatRecord,
+    "modified" | "firstMessage" | "messageCount" | "name" | "nameSource" | "shortNameSource" | "key" | "sampledWorkingMode" | "workingModeVersion"
+  >
+> & { shortName?: string | undefined; liveReview?: LiveReviewPairing | undefined; reviewing?: string | undefined };
 
 /**
  * Which runtime owns a Chat. Legacy Chats have no record: the legacy runtime stays the default. A Durable Chat's
@@ -176,7 +181,11 @@ export class SessionRuntimeLocator {
   setHostEntry(sessionId: string, entry: string | undefined): void {
     const record = this.#chats.get(sessionId);
     // An unchanged pin only gains the store code it lacks (recorded before it was).
-    if (record === undefined || (record.hostEntry === entry && (entry === undefined || record.hostStore !== undefined || storeCode(entry).durable === undefined))) return;
+    if (
+      record === undefined
+      || (record.hostEntry === entry && (entry === undefined || record.hostStore !== undefined || storeCode(entry).durable === undefined))
+    )
+      return;
     const next: DurableChatRecord = { ...record };
     delete next.hostStore;
     if (entry === undefined) delete next.hostEntry;
@@ -238,7 +247,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isDurableChatRecord(value: unknown): value is DurableChatRecord {
-  return isRecord(value) && value["runtime"] === "durable"
+  return (
+    isRecord(value)
+    && value["runtime"] === "durable"
     && ["id", "cwd", "storeId", "created", "modified", "firstMessage"].every((key) => typeof value[key] === "string")
     && typeof value["messageCount"] === "number"
     && (value["name"] === undefined || typeof value["name"] === "string")
@@ -252,12 +263,18 @@ function isDurableChatRecord(value: unknown): value is DurableChatRecord {
     && (value["hostEntry"] === undefined || typeof value["hostEntry"] === "string")
     && (value["hostStore"] === undefined || isStoreCode(value["hostStore"]))
     && (value["upgrade"] === undefined || isUpgrade(value["upgrade"]))
-    && (value["upgradeDeclined"] === undefined || typeof value["upgradeDeclined"] === "string");
+    && (value["upgradeDeclined"] === undefined || typeof value["upgradeDeclined"] === "string")
+  );
 }
 
 function isStoreCode(value: unknown): boolean {
-  return isRecord(value) && (value["durable"] === undefined || typeof value["durable"] === "string")
-    && (value["schema"] === undefined || value["schema"] === null || (isRecord(value["schema"]) && isVersions(value["schema"]["documents"]) && isVersions(value["schema"]["tasks"])));
+  return (
+    isRecord(value)
+    && (value["durable"] === undefined || typeof value["durable"] === "string")
+    && (value["schema"] === undefined
+      || value["schema"] === null
+      || (isRecord(value["schema"]) && isVersions(value["schema"]["documents"]) && isVersions(value["schema"]["tasks"])))
+  );
 }
 
 function isUpgrade(value: unknown): boolean {
@@ -265,8 +282,12 @@ function isUpgrade(value: unknown): boolean {
 }
 
 function isHostAttachment(value: unknown): value is DurableHostAttachment {
-  return isRecord(value) && ["label", "socket", "revision"].every((key) => typeof value[key] === "string")
-    && typeof value["ownerEpoch"] === "number" && typeof value["pid"] === "number";
+  return (
+    isRecord(value)
+    && ["label", "socket", "revision"].every((key) => typeof value[key] === "string")
+    && typeof value["ownerEpoch"] === "number"
+    && typeof value["pid"] === "number"
+  );
 }
 
 /** The folder whose `node_modules` Node resolves `@earendil-works/pi-durable` from for a host entry. */
@@ -353,7 +374,9 @@ export function storeCodeRefusal(pinned: StoreCode, current: StoreCode): string 
   const [from, to] = [pinned.schema, current.schema];
   if (from === null && to !== undefined) return undefined;
   const older = (section: "documents" | "tasks") => Object.entries(from?.[section] ?? {}).some(([kind, version]) => (to?.[section][kind] ?? -1) < version);
-  return from === undefined || !to || older("documents") || older("tasks") ? "This Chat was opened by host code with a newer Workbench store schema than the current host" : undefined;
+  return from === undefined || !to || older("documents") || older("tasks")
+    ? "This Chat was opened by host code with a newer Workbench store schema than the current host"
+    : undefined;
 }
 
 /** Orders two versions by major.minor.patch. shortcut: pre-release tags are ignored; Pi Durable ships none today. */

@@ -6,14 +6,14 @@ import { registerWorkspaceNotificationRoutes } from "./workspaceNotificationRout
 
 const project: Project = { id: "p 1", name: "Repo", path: "/repo", createdAt: "2026-10-10T00:00:00.000Z" };
 const apps: FastifyInstance[] = [];
-afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())); });
+afterEach(async () => {
+  await Promise.all(apps.splice(0).map((app) => app.close()));
+});
 
 function fixture(accepted = true) {
   const app = Fastify();
   apps.push(app);
-  const requireProject = vi.fn((id: string) => id === project.id
-    ? Promise.resolve(project)
-    : Promise.reject(new Error("Project not found")));
+  const requireProject = vi.fn((id: string) => (id === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))));
   const acceptNotification = vi.fn(() => Promise.resolve(accepted));
   const notify = vi.fn();
   registerWorkspaceNotificationRoutes(app, { projects: { requireProject }, workspaces: { acceptNotification }, changes: { notify } });
@@ -57,26 +57,39 @@ describe("workspace notification ingress", () => {
     const app = Fastify();
     apps.push(app);
     let start: ((signal: AbortSignal) => void) | undefined;
-    const started = new Promise<AbortSignal>((resolve) => { start = resolve; });
+    const started = new Promise<AbortSignal>((resolve) => {
+      start = resolve;
+    });
     let finishAbort: (() => void) | undefined;
-    const aborted = new Promise<void>((resolve) => { finishAbort = resolve; });
+    const aborted = new Promise<void>((resolve) => {
+      finishAbort = resolve;
+    });
     const notify = vi.fn();
     registerWorkspaceNotificationRoutes(app, {
       projects: { requireProject: () => Promise.resolve(project) },
-      workspaces: { acceptNotification: (_project, _pluginId, signal) => new Promise<boolean>((resolve) => {
-        signal.addEventListener("abort", () => {
-          finishAbort?.();
-          resolve(true); // A provider may complete after cancellation; ingress still rejects publication.
-        }, { once: true });
-        start?.(signal);
-      }) },
+      workspaces: {
+        acceptNotification: (_project, _pluginId, signal) =>
+          new Promise<boolean>((resolve) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                finishAbort?.();
+                resolve(true); // A provider may complete after cancellation; ingress still rejects publication.
+              },
+              { once: true },
+            );
+            start?.(signal);
+          }),
+      },
       changes: { notify },
     });
     await app.listen({ port: 0, host: "127.0.0.1" });
     const address = app.server.address();
     if (address === null || typeof address === "string") throw new Error("Expected TCP test listener");
     const client = request({ host: "127.0.0.1", port: address.port, path: url, method: "POST", headers: { "content-type": "application/json" } });
-    client.on("error", () => { /* Expected ECONNRESET from deliberately closing an unfinished request. */ });
+    client.on("error", () => {
+      /* Expected ECONNRESET from deliberately closing an unfinished request. */
+    });
     try {
       client.end(JSON.stringify({ pluginId: "git" }));
       const signal = await started;

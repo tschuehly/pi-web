@@ -1,6 +1,17 @@
 // CodeMirror pieces of the Files pane: Markdown live preview, inline agent hunks, highlighted line ranges.
 import { history } from "@codemirror/commands";
-import { ChangeSet, Compartment, StateEffect, StateField, Text, Transaction, type EditorState, type Extension, type Range, type TransactionSpec } from "@codemirror/state";
+import {
+  ChangeSet,
+  Compartment,
+  StateEffect,
+  StateField,
+  Text,
+  Transaction,
+  type EditorState,
+  type Extension,
+  type Range,
+  type TransactionSpec,
+} from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { diff } from "@codemirror/merge";
 import { HighlightStyle, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
@@ -19,12 +30,44 @@ import { css as styles } from "lit";
 
 const sh = new LanguageSupport(StreamLanguage.define(shell));
 const yml = new LanguageSupport(StreamLanguage.define(yaml));
-const js = javascript(), jsx = javascript({ jsx: true }), ts = javascript({ typescript: true }), tsx = javascript({ typescript: true, jsx: true });
-const py = python(), jsonLang = json(), cssLang = css(), htmlLang = html(), rs = rust(), golang = go();
+const js = javascript(),
+  jsx = javascript({ jsx: true }),
+  ts = javascript({ typescript: true }),
+  tsx = javascript({ typescript: true, jsx: true });
+const py = python(),
+  jsonLang = json(),
+  cssLang = css(),
+  htmlLang = html(),
+  rs = rust(),
+  golang = go();
 const languages: Record<string, LanguageSupport> = {
-  js, mjs: js, cjs: js, jsx, javascript: js, ts, mts: ts, cts: ts, typescript: ts, tsx,
-  py: py, python: py, json: jsonLang, jsonl: jsonLang, jsonc: jsonLang, css: cssLang, html: htmlLang, htm: htmlLang,
-  rs, rust: rs, go: golang, sh, bash: sh, zsh: sh, shell: sh, yml, yaml: yml,
+  js,
+  mjs: js,
+  cjs: js,
+  jsx,
+  javascript: js,
+  ts,
+  mts: ts,
+  cts: ts,
+  typescript: ts,
+  tsx,
+  py: py,
+  python: py,
+  json: jsonLang,
+  jsonl: jsonLang,
+  jsonc: jsonLang,
+  css: cssLang,
+  html: htmlLang,
+  htm: htmlLang,
+  rs,
+  rust: rs,
+  go: golang,
+  sh,
+  bash: sh,
+  zsh: sh,
+  shell: sh,
+  yml,
+  yaml: yml,
 };
 
 /** Syntax support for a file extension or a fenced-code info string. */
@@ -33,14 +76,26 @@ export function languageFor(name: string | undefined): LanguageSupport | undefin
 }
 
 /** GitHub-flavored Markdown with fenced code highlighted by its info string; shared by the Files editor and the composer. */
-export const markdownWithCodeLanguages = (): LanguageSupport => markdown({ base: markdownLanguage, codeLanguages: (info) => languageFor(info)?.language ?? null });
+export const markdownWithCodeLanguages = (): LanguageSupport =>
+  markdown({ base: markdownLanguage, codeLanguages: (info) => languageFor(info)?.language ?? null });
 
 // ---------------- live preview ----------------
 class Widget extends WidgetType {
-  constructor(readonly key: string, readonly build: (view: EditorView) => HTMLElement) { super(); }
-  override eq(other: Widget): boolean { return other.key === this.key; }
-  toDOM(view: EditorView): HTMLElement { return this.build(view); }
-  override ignoreEvent(): boolean { return false; }
+  constructor(
+    readonly key: string,
+    readonly build: (view: EditorView) => HTMLElement,
+  ) {
+    super();
+  }
+  override eq(other: Widget): boolean {
+    return other.key === this.key;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    return this.build(view);
+  }
+  override ignoreEvent(): boolean {
+    return false;
+  }
 }
 
 function el(tag: string, className: string, text?: string): HTMLElement {
@@ -52,42 +107,55 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 
 const bullet = (depth: number) => new Widget(`b${String(depth)}`, () => el("span", "lp-marker lp-bullet", depth % 2 === 1 ? "◦" : "•"));
 const rule = new Widget("hr", () => el("span", "lp-hr"));
-const checkbox = (checked: boolean) => new Widget(`cb${String(checked)}`, (view) => {
-  const wrap = el("span", "lp-marker");
-  const box = document.createElement("input");
-  box.className = "lp-check";
-  box.type = "checkbox";
-  box.checked = checked;
-  box.setAttribute("aria-label", checked ? "Done" : "Not done");
-  wrap.append(box);
-  // mousedown keeps the editor's focus and cursor; click also covers keyboard activation.
-  box.addEventListener("mousedown", (event) => { event.preventDefault(); });
-  box.addEventListener("click", (event) => {
-    event.preventDefault(); // the doc change re-renders the box; never let it toggle on its own
-    const pos = view.posAtDOM(wrap);
-    const match = /\[( |x|X)\]/.exec(view.state.doc.sliceString(pos, pos + 8));
-    if (match) view.dispatch({ changes: { from: pos + match.index + 1, to: pos + match.index + 2, insert: checked ? " " : "x" } });
+const checkbox = (checked: boolean) =>
+  new Widget(`cb${String(checked)}`, (view) => {
+    const wrap = el("span", "lp-marker");
+    const box = document.createElement("input");
+    box.className = "lp-check";
+    box.type = "checkbox";
+    box.checked = checked;
+    box.setAttribute("aria-label", checked ? "Done" : "Not done");
+    wrap.append(box);
+    // mousedown keeps the editor's focus and cursor; click also covers keyboard activation.
+    box.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    box.addEventListener("click", (event) => {
+      event.preventDefault(); // the doc change re-renders the box; never let it toggle on its own
+      const pos = view.posAtDOM(wrap);
+      const match = /\[( |x|X)\]/.exec(view.state.doc.sliceString(pos, pos + 8));
+      if (match) view.dispatch({ changes: { from: pos + match.index + 1, to: pos + match.index + 2, insert: checked ? " " : "x" } });
+    });
+    return wrap;
   });
-  return wrap;
-});
 /** `render` turns Markdown into sanitized HTML (tables and images only). */
-const rendered = (kind: "tbl" | "img", source: string, render: (markdown: string) => string) => new Widget(kind + source, (view) => {
-  const box = el(kind === "tbl" ? "div" : "span", kind === "tbl" ? "lp-table" : "lp-img");
-  box.innerHTML = render(source);
-  box.addEventListener("mousedown", (event) => {
-    if (event.target instanceof Element && event.target.closest("a") !== null) return;
-    event.preventDefault();
-    view.dispatch({ selection: { anchor: view.posAtDOM(box) } });
-    view.focus();
+const rendered = (kind: "tbl" | "img", source: string, render: (markdown: string) => string) =>
+  new Widget(kind + source, (view) => {
+    const box = el(kind === "tbl" ? "div" : "span", kind === "tbl" ? "lp-table" : "lp-img");
+    box.innerHTML = render(source);
+    box.addEventListener("mousedown", (event) => {
+      if (event.target instanceof Element && event.target.closest("a") !== null) return;
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: view.posAtDOM(box) } });
+      view.focus();
+    });
+    return box;
   });
-  return box;
-});
 
 /** A fenced block `renderFence` draws (a diagram, a diff); the editor leaves its events to it, and a click outside its controls opens the source. */
 class FenceWidget extends WidgetType {
-  constructor(readonly source: string, readonly renderFence: (source: string) => HTMLElement) { super(); }
-  override eq(other: FenceWidget): boolean { return other.source === this.source; }
-  override ignoreEvent(): boolean { return true; }
+  constructor(
+    readonly source: string,
+    readonly renderFence: (source: string) => HTMLElement,
+  ) {
+    super();
+  }
+  override eq(other: FenceWidget): boolean {
+    return other.source === this.source;
+  }
+  override ignoreEvent(): boolean {
+    return true;
+  }
   toDOM(view: EditorView): HTMLElement {
     const box = el("div", "lp-fence-block");
     box.append(this.renderFence(this.source));
@@ -112,8 +180,10 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
   const sel = state.selection.ranges;
   const touched = (from: number, to: number) => sel.some((r) => r.from <= to && r.to >= from);
   const lineTouched = (from: number, to: number) => touched(doc.lineAt(from).from, doc.lineAt(to).to);
-  const hide = (from: number, to: number) => { if (from < to) deco.push(Decoration.replace({}).range(from, to)); };
-  const afterSpace = (pos: number) => doc.sliceString(pos, pos + 1) === " " ? pos + 1 : pos;
+  const hide = (from: number, to: number) => {
+    if (from < to) deco.push(Decoration.replace({}).range(from, to));
+  };
+  const afterSpace = (pos: number) => (doc.sliceString(pos, pos + 1) === " " ? pos + 1 : pos);
   const lines = (from: number, to: number, cls: string) => {
     for (let line = doc.lineAt(from); ; line = doc.line(line.number + 1)) {
       deco.push(Decoration.line({ class: cls }).range(line.from));
@@ -131,13 +201,20 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
       const { name, from, to } = n;
       const parent = n.node.parent;
       const heading = /^ATXHeading(\d)$/.exec(name);
-      if (heading) { lines(from, to, `lp-h lp-h${heading[1] ?? "1"}`); return; }
+      if (heading) {
+        lines(from, to, `lp-h lp-h${heading[1] ?? "1"}`);
+        return;
+      }
       switch (name) {
         case "HeaderMark":
         case "QuoteMark":
           if (!lineTouched(from, to)) hide(from, afterSpace(to));
           return;
-        case "Emphasis": case "StrongEmphasis": case "Strikethrough": case "InlineCode": case "Link": {
+        case "Emphasis":
+        case "StrongEmphasis":
+        case "Strikethrough":
+        case "InlineCode":
+        case "Link": {
           if (name === "InlineCode") deco.push(Decoration.mark({ class: "lp-inline-code" }).range(from, to));
           if (name === "Link") deco.push(Decoration.mark({ class: "lp-link" }).range(from, to));
           if (touched(from, to)) return;
@@ -147,7 +224,9 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
         case "Image":
           if (!touched(from, to)) deco.push(Decoration.replace({ widget: rendered("img", doc.sliceString(from, to), render) }).range(from, to));
           return false;
-        case "Blockquote": lines(from, to, "lp-quote"); return;
+        case "Blockquote":
+          lines(from, to, "lp-quote");
+          return;
         case "FencedCode": {
           // The cursor just after the closing fence (where a field starts) leaves it drawn; at its start, as Up arrow reaches it, it opens.
           if (renderFence !== undefined && !sel.some((r) => r.from < to && r.to >= from) && renderFence.languages.test(doc.lineAt(from).text)) {
@@ -155,7 +234,8 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
             return false;
           }
           lines(from, to, "lp-code");
-          const first = doc.lineAt(from), last = doc.lineAt(to);
+          const first = doc.lineAt(from),
+            last = doc.lineAt(to);
           deco.push(Decoration.line({ class: "lp-code-first" }).range(first.from));
           deco.push(Decoration.line({ class: "lp-code-last" }).range(last.from));
           if (!touched(from, to)) {
@@ -203,7 +283,10 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
           if (!lineTouched(from, to)) deco.push(Decoration.replace({ widget: rule }).range(from, to));
           return;
         case "Table":
-          if (touched(from, to)) { lines(from, to, "lp-table-src"); return false; }
+          if (touched(from, to)) {
+            lines(from, to, "lp-table-src");
+            return false;
+          }
           deco.push(Decoration.replace({ widget: rendered("tbl", doc.sliceString(from, to), render), block: true }).range(from, to));
           return false;
         default:
@@ -215,23 +298,28 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
 }
 
 /** Prose (Markdown) and code token styles in PI WEB theme colors, so they follow light and dark themes. */
-export const filesHighlighting = syntaxHighlighting(HighlightStyle.define([
-  { tag: tags.emphasis, fontStyle: "italic" },
-  { tag: tags.strong, fontWeight: "650" },
-  { tag: tags.strikethrough, textDecoration: "line-through" },
-  { tag: tags.heading, fontWeight: "650" },
-  { tag: [tags.processingInstruction, tags.meta, tags.url, tags.operator, tags.punctuation], color: "var(--pi-muted)" },
-  { tag: tags.comment, color: "var(--pi-muted)", fontStyle: "italic" },
-  { tag: tags.keyword, color: "var(--pi-purple)" },
-  { tag: [tags.string, tags.special(tags.string), tags.regexp], color: "var(--pi-success)" },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.attributeName], color: "var(--pi-warning)" },
-  { tag: [tags.typeName, tags.className, tags.namespace, tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--pi-accent)" },
-  { tag: tags.tagName, color: "var(--pi-danger)" },
-  { tag: tags.propertyName, color: "var(--pi-text-secondary)" },
-]));
+export const filesHighlighting = syntaxHighlighting(
+  HighlightStyle.define([
+    { tag: tags.emphasis, fontStyle: "italic" },
+    { tag: tags.strong, fontWeight: "650" },
+    { tag: tags.strikethrough, textDecoration: "line-through" },
+    { tag: tags.heading, fontWeight: "650" },
+    { tag: [tags.processingInstruction, tags.meta, tags.url, tags.operator, tags.punctuation], color: "var(--pi-muted)" },
+    { tag: tags.comment, color: "var(--pi-muted)", fontStyle: "italic" },
+    { tag: tags.keyword, color: "var(--pi-purple)" },
+    { tag: [tags.string, tags.special(tags.string), tags.regexp], color: "var(--pi-success)" },
+    { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.attributeName], color: "var(--pi-warning)" },
+    { tag: [tags.typeName, tags.className, tags.namespace, tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--pi-accent)" },
+    { tag: tags.tagName, color: "var(--pi-danger)" },
+    { tag: tags.propertyName, color: "var(--pi-text-secondary)" },
+  ]),
+);
 
 /** Fenced blocks whose opening line matches `languages` show as `render` draws them while the cursor is outside. */
-export interface RenderFence { languages: RegExp; render: (source: string) => HTMLElement }
+export interface RenderFence {
+  languages: RegExp;
+  render: (source: string) => HTMLElement;
+}
 
 /**
  * Obsidian-style live preview: markup hides unless the cursor is inside its element.
@@ -240,7 +328,8 @@ export interface RenderFence { languages: RegExp; render: (source: string) => HT
 export function livePreview(render: (markdown: string) => string, open: (anchor: HTMLAnchorElement) => void, renderFence?: RenderFence): Extension {
   const field = StateField.define<DecorationSet>({
     create: (state) => buildPreview(state, render, renderFence),
-    update: (value, tr) => tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildPreview(tr.state, render, renderFence) : value,
+    update: (value, tr) =>
+      tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildPreview(tr.state, render, renderFence) : value,
     provide: (f) => EditorView.decorations.from(f),
   });
   const links = EditorView.domEventHandlers({
@@ -306,8 +395,19 @@ export const livePreviewStyles = styles`
 
 // ---------------- agent hunks: inline diff of what the agent changed on disk ----------------
 /** A range in the doc holding the agent's text, plus the text it replaced. */
-export interface Hunk { id: number; from: number; to: number; old: string; overlaps: boolean; inline: boolean }
-interface IncomingHunk { sFrom: number; sTo: number; overlaps: boolean }
+export interface Hunk {
+  id: number;
+  from: number;
+  to: number;
+  old: string;
+  overlaps: boolean;
+  inline: boolean;
+}
+interface IncomingHunk {
+  sFrom: number;
+  sTo: number;
+  overlaps: boolean;
+}
 export type HunkAction = "approve" | "reject" | "merge";
 
 const addHunks = StateEffect.define<IncomingHunk[]>();
@@ -319,27 +419,40 @@ let hunkSeq = 0;
 const HUNK_ICONS: Record<HunkAction, string> = {
   approve: '<path d="M20 6 9 17l-5-5"/>',
   reject: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-  merge: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  merge:
+    '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
 };
 
 function hunkButtons(view: EditorView, id: number, compact: boolean): HTMLElement {
   const bar = el("span", compact ? "hunk-inline-btns" : "hunk-btns");
-  for (const [act, label] of [["approve", "Approve"], ["reject", "Reject"], ["merge", "Merge & edit"]] as const) {
+  for (const [act, label] of [
+    ["approve", "Approve"],
+    ["reject", "Reject"],
+    ["merge", "Merge & edit"],
+  ] as const) {
     const button = el("button", `hunk-btn ${act}`);
     button.title = act === "merge" ? "Keep both versions and edit" : label;
     button.setAttribute("aria-label", label);
     if (compact || act !== "merge") button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${HUNK_ICONS[act]}</svg>`;
     else button.textContent = label;
-    button.addEventListener("mousedown", (event) => { event.preventDefault(); });
-    button.addEventListener("click", () => { runHunkAction(view, id, act); });
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+    });
+    button.addEventListener("click", () => {
+      runHunkAction(view, id, act);
+    });
     bar.append(button);
   }
   return bar;
 }
 
 class HunkBlock extends WidgetType {
-  constructor(readonly hunk: Hunk) { super(); }
-  override eq(other: HunkBlock): boolean { return other.hunk.id === this.hunk.id && other.hunk.old === this.hunk.old; }
+  constructor(readonly hunk: Hunk) {
+    super();
+  }
+  override eq(other: HunkBlock): boolean {
+    return other.hunk.id === this.hunk.id && other.hunk.old === this.hunk.old;
+  }
   toDOM(view: EditorView): HTMLElement {
     const box = el("div", "hunk-box");
     if (this.hunk.old !== "") box.append(el("div", "hunk-old", this.hunk.old.replace(/\n$/, "")));
@@ -348,18 +461,34 @@ class HunkBlock extends WidgetType {
     box.append(bar);
     return box;
   }
-  override ignoreEvent(): boolean { return true; }
+  override ignoreEvent(): boolean {
+    return true;
+  }
 }
 class InlineOld extends WidgetType {
-  constructor(readonly text: string) { super(); }
-  override eq(other: InlineOld): boolean { return other.text === this.text; }
-  toDOM(): HTMLElement { return el("del", "hunk-del", this.text); }
+  constructor(readonly text: string) {
+    super();
+  }
+  override eq(other: InlineOld): boolean {
+    return other.text === this.text;
+  }
+  toDOM(): HTMLElement {
+    return el("del", "hunk-del", this.text);
+  }
 }
 class InlineButtons extends WidgetType {
-  constructor(readonly id: number) { super(); }
-  override eq(other: InlineButtons): boolean { return other.id === this.id; }
-  toDOM(view: EditorView): HTMLElement { return hunkButtons(view, this.id, true); }
-  override ignoreEvent(): boolean { return true; }
+  constructor(readonly id: number) {
+    super();
+  }
+  override eq(other: InlineButtons): boolean {
+    return other.id === this.id;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    return hunkButtons(view, this.id, true);
+  }
+  override ignoreEvent(): boolean {
+    return true;
+  }
 }
 
 function hunkDecorations(state: EditorState, hunks: readonly Hunk[]): DecorationSet {
@@ -376,10 +505,11 @@ function hunkDecorations(state: EditorState, hunks: readonly Hunk[]): Decoration
     deco.push(Decoration.widget({ widget: new HunkBlock(h), block: true, side: -1 }).range(first.from));
     // green = the agent's text now in the file (a range ending at a line start doesn't own that line)
     const lastPos = h.to > h.from && doc.lineAt(h.to).from === h.to ? h.to - 1 : h.to;
-    if (h.to > h.from) for (let line = first; ; line = doc.line(line.number + 1)) {
-      deco.push(Decoration.line({ class: "hunk-new" }).range(line.from));
-      if (line.to >= lastPos || line.number === doc.lines) break;
-    }
+    if (h.to > h.from)
+      for (let line = first; ; line = doc.line(line.number + 1)) {
+        deco.push(Decoration.line({ class: "hunk-new" }).range(line.from));
+        if (line.to >= lastPos || line.number === doc.lines) break;
+      }
   }
   return Decoration.set(deco, true);
 }
@@ -390,42 +520,60 @@ export const hunkField = StateField.define<readonly Hunk[]>({
     let hunks = current;
     // New agent changes arrive in start-doc coords; merge them with any unresolved hunk on the same lines
     // so "old" always means "before the agent touched it", then re-split into word or line hunks.
-    const incoming = tr.effects.flatMap((e) => e.is(addHunks) ? e.value : []);
+    const incoming = tr.effects.flatMap((e) => (e.is(addHunks) ? e.value : []));
     const startDoc = tr.startState.doc;
     const lineSpan = (from: number, to: number) => [startDoc.lineAt(from).number, startDoc.lineAt(to).number] as const;
     const regions: (IncomingHunk & { absorbed: Hunk[] })[] = incoming.map((n) => ({ ...n, absorbed: [] }));
     // Merge transitively: a region that grows by absorbing a hunk may now meet another region or hunk.
-    if (regions.length > 0) for (let merged = true; merged;) {
-      merged = false;
-      for (const r of regions) {
-        const [rf, rt] = lineSpan(r.sFrom, r.sTo);
-        const meets = (from: number, to: number) => { const [f, t] = lineSpan(from, to); return f <= rt && rf <= t; };
-        const hunk = hunks.find((e) => meets(e.from, e.to));
-        const other = hunk === undefined ? regions.find((q) => q !== r && meets(q.sFrom, q.sTo)) : undefined;
-        const part = hunk ?? other;
-        if (part === undefined) continue;
-        if (hunk !== undefined) { hunks = hunks.filter((e) => e !== hunk); r.absorbed.push(hunk); r.sFrom = Math.min(r.sFrom, hunk.from); r.sTo = Math.max(r.sTo, hunk.to); }
-        if (other !== undefined) { regions.splice(regions.indexOf(other), 1); r.absorbed.push(...other.absorbed); r.sFrom = Math.min(r.sFrom, other.sFrom); r.sTo = Math.max(r.sTo, other.sTo); }
-        r.overlaps ||= part.overlaps;
-        merged = true;
-        break;
+    if (regions.length > 0)
+      for (let merged = true; merged;) {
+        merged = false;
+        for (const r of regions) {
+          const [rf, rt] = lineSpan(r.sFrom, r.sTo);
+          const meets = (from: number, to: number) => {
+            const [f, t] = lineSpan(from, to);
+            return f <= rt && rf <= t;
+          };
+          const hunk = hunks.find((e) => meets(e.from, e.to));
+          const other = hunk === undefined ? regions.find((q) => q !== r && meets(q.sFrom, q.sTo)) : undefined;
+          const part = hunk ?? other;
+          if (part === undefined) continue;
+          if (hunk !== undefined) {
+            hunks = hunks.filter((e) => e !== hunk);
+            r.absorbed.push(hunk);
+            r.sFrom = Math.min(r.sFrom, hunk.from);
+            r.sTo = Math.max(r.sTo, hunk.to);
+          }
+          if (other !== undefined) {
+            regions.splice(regions.indexOf(other), 1);
+            r.absorbed.push(...other.absorbed);
+            r.sFrom = Math.min(r.sFrom, other.sFrom);
+            r.sTo = Math.max(r.sTo, other.sTo);
+          }
+          r.overlaps ||= part.overlaps;
+          merged = true;
+          break;
+        }
       }
-    }
-    if (tr.docChanged) hunks = hunks.map((h) => {
-      const from = tr.changes.mapPos(h.from, 1);
-      return { ...h, from, to: Math.max(from, tr.changes.mapPos(h.to, -1)) };
-    });
+    if (tr.docChanged)
+      hunks = hunks.map((h) => {
+        const from = tr.changes.mapPos(h.from, 1);
+        return { ...h, from, to: Math.max(from, tr.changes.mapPos(h.to, -1)) };
+      });
     const added: Hunk[] = [];
     for (const r of regions) {
       // original text of the region: start doc with absorbed hunks rolled back to their old text
       let old = startDoc.sliceString(r.sFrom, r.sTo);
       for (const e of [...r.absorbed].sort((a, b) => b.from - a.from)) old = old.slice(0, e.from - r.sFrom) + e.old + old.slice(e.to - r.sFrom);
-      const from = tr.changes.mapPos(r.sFrom, -1), to = Math.max(from, tr.changes.mapPos(r.sTo, 1));
+      const from = tr.changes.mapPos(r.sFrom, -1),
+        to = Math.max(from, tr.changes.mapPos(r.sTo, 1));
       const next = tr.state.doc.sliceString(from, to);
       if (old === next) continue; // agent changed it back
       const words = wordChanges(old, next);
       if (words === null) added.push({ id: ++hunkSeq, from, to, old, overlaps: r.overlaps, inline: false });
-      else for (const w of words) added.push({ id: ++hunkSeq, from: from + w.nF, to: from + w.nT, old: old.slice(w.oF, w.oT), overlaps: r.overlaps, inline: true });
+      else
+        for (const w of words)
+          added.push({ id: ++hunkSeq, from: from + w.nF, to: from + w.nT, old: old.slice(w.oF, w.oT), overlaps: r.overlaps, inline: true });
     }
     hunks = [...hunks, ...added];
     for (const e of tr.effects) {
@@ -445,7 +593,12 @@ export function hunkActionSpec(state: EditorState, id: number, act: HunkAction):
   if (act === "reject") return { changes: { from: h.from, to: h.to, insert: h.old }, effects: dropHunk.of(id) };
   // put the old text right after the agent's, select it, and let the user combine them by hand
   const sep = h.inline ? " " : h.to > h.from && state.doc.sliceString(h.to - 1, h.to) !== "\n" && h.old !== "" ? "\n" : "";
-  return { changes: { from: h.to, insert: sep + h.old }, selection: { anchor: h.to + sep.length, head: h.to + sep.length + h.old.length }, effects: dropHunk.of(id), scrollIntoView: true };
+  return {
+    changes: { from: h.to, insert: sep + h.old },
+    selection: { anchor: h.to + sep.length, head: h.to + sep.length + h.old.length },
+    effects: dropHunk.of(id),
+    scrollIntoView: true,
+  };
 }
 
 function runHunkAction(view: EditorView, id: number, act: HunkAction): void {
@@ -472,18 +625,36 @@ export const clearHunks = (): TransactionSpec => ({ effects: dropAllHunks.of(nul
 
 /** diff(a, b) as line-aligned chunks, so hunks show whole old/new lines. */
 export function lineChunks(a: string, b: string): { fA: number; tA: number; fB: number; tB: number }[] {
-  const A = Text.of(a.split("\n")), B = Text.of(b.split("\n"));
+  const A = Text.of(a.split("\n")),
+    B = Text.of(b.split("\n"));
   const out: { fA: number; tA: number; fB: number; tB: number }[] = [];
   for (const c of diff(a, b)) {
-    const aligned = ([[A, c.fromA], [A, c.toA], [B, c.fromB], [B, c.toB]] as const).every(([T, p]) => T.lineAt(p).from === p);
-    let fA = c.fromA, tA = c.toA, fB = c.fromB, tB = c.toB;
+    const aligned = (
+      [
+        [A, c.fromA],
+        [A, c.toA],
+        [B, c.fromB],
+        [B, c.toB],
+      ] as const
+    ).every(([T, p]) => T.lineAt(p).from === p);
+    let fA = c.fromA,
+      tA = c.toA,
+      fB = c.fromB,
+      tB = c.toB;
     if (!aligned) {
-      const pre = fA - A.lineAt(fA).from, post = A.lineAt(tA).to - tA;
-      fA -= pre; fB -= pre; tA += post; tB += post;
+      const pre = fA - A.lineAt(fA).from,
+        post = A.lineAt(tA).to - tA;
+      fA -= pre;
+      fB -= pre;
+      tA += post;
+      tB += post;
     }
     const last = out.at(-1);
     // merging chunks on the same line: the later chunk's end is the correct one
-    if (last !== undefined && fA <= last.tA) { last.tA = tA; last.tB = tB; } else out.push({ fA, tA, fB, tB });
+    if (last !== undefined && fA <= last.tA) {
+      last.tA = tA;
+      last.tB = tB;
+    } else out.push({ fA, tA, fB, tB });
   }
   return out;
 }
@@ -493,7 +664,8 @@ export function lineChunks(a: string, b: string): { fA: number; tA: number; fB: 
 export function wordChanges(a: string, b: string): { oF: number; oT: number; nF: number; nT: number }[] | null {
   if (a === "" || b === "") return null;
   const tokens = (t: string) => t.match(/[\p{L}\p{N}_]+|\s+|[^\p{L}\p{N}_\s]/gu) ?? [];
-  const A = tokens(a), B = tokens(b);
+  const A = tokens(a),
+    B = tokens(b);
   if (A.length * B.length > 250000) return null;
   const L = Array.from({ length: A.length + 1 }, () => new Uint16Array(B.length + 1));
   const lcs = (i: number, j: number) => L[i]?.[j] ?? 0;
@@ -503,20 +675,39 @@ export function wordChanges(a: string, b: string): { oF: number; oT: number; nF:
     for (let j = B.length - 1; j >= 0; j--) row[j] = A[i] === B[j] ? lcs(i + 1, j + 1) + 1 : Math.max(lcs(i + 1, j), lcs(i, j + 1));
   }
   const out: { oF: number; oT: number; nF: number; nT: number }[] = [];
-  let i = 0, j = 0, oPos = 0, nPos = 0;
+  let i = 0,
+    j = 0,
+    oPos = 0,
+    nPos = 0;
   let cur: { oF: number; oT: number; nF: number; nT: number } | null = null;
-  const flush = () => { if (cur) out.push(cur); cur = null; };
+  const flush = () => {
+    if (cur) out.push(cur);
+    cur = null;
+  };
   while (i < A.length || j < B.length) {
-    const ai = A[i] ?? "", bj = B[j] ?? "";
+    const ai = A[i] ?? "",
+      bj = B[j] ?? "";
     if (i < A.length && j < B.length && ai === bj) {
       // a lone space between two changes stays inside the change ("word word")
-      if (cur && /^\s+$/.test(ai) && i + 1 < A.length && j + 1 < B.length && A[i + 1] !== B[j + 1]) { cur.oT += ai.length; cur.nT += bj.length; }
-      else flush();
-      oPos += ai.length; nPos += bj.length; i++; j++;
+      if (cur && /^\s+$/.test(ai) && i + 1 < A.length && j + 1 < B.length && A[i + 1] !== B[j + 1]) {
+        cur.oT += ai.length;
+        cur.nT += bj.length;
+      } else flush();
+      oPos += ai.length;
+      nPos += bj.length;
+      i++;
+      j++;
     } else {
       cur ??= { oF: oPos, oT: oPos, nF: nPos, nT: nPos };
-      if (j < B.length && (i >= A.length || lcs(i, j + 1) >= lcs(i + 1, j))) { nPos += bj.length; j++; cur.nT = nPos; }
-      else { oPos += ai.length; i++; cur.oT = oPos; }
+      if (j < B.length && (i >= A.length || lcs(i, j + 1) >= lcs(i + 1, j))) {
+        nPos += bj.length;
+        j++;
+        cur.nT = nPos;
+      } else {
+        oPos += ai.length;
+        i++;
+        cur.oT = oPos;
+      }
     }
   }
   flush();
@@ -526,7 +717,11 @@ export function wordChanges(a: string, b: string): { oF: number; oT: number; nF:
   return multiLine || out.length > 4 || changed > 0.4 * a.length ? null : out;
 }
 
-const csDiff = (a: string, b: string) => ChangeSet.of(diff(a, b).map((c) => ({ from: c.fromA, to: c.toA, insert: b.slice(c.fromB, c.toB) })), a.length);
+const csDiff = (a: string, b: string) =>
+  ChangeSet.of(
+    diff(a, b).map((c) => ({ from: c.fromA, to: c.toA, insert: b.slice(c.fromB, c.toB) })),
+    a.length,
+  );
 
 /**
  * Applies the agent's disk text over the editor (also over unsaved edits) and records the changes as hunks.
@@ -537,22 +732,33 @@ export function diskChangeSpec(state: EditorState, base: string, disk: string): 
   const mine = csDiff(base, doc); // unsaved edits relative to base
   const baseDoc = Text.of(base.split("\n"));
   const myLines: [number, number][] = [];
-  mine.iterChangedRanges((fA, tA) => { myLines.push([baseDoc.lineAt(fA).number, baseDoc.lineAt(tA).number]); });
+  mine.iterChangedRanges((fA, tA) => {
+    myLines.push([baseDoc.lineAt(fA).number, baseDoc.lineAt(tA).number]);
+  });
   const regions: { from: number; to: number; fB: number; tB: number; overlaps: boolean }[] = [];
   for (const c of lineChunks(base, disk)) {
-    const lf = baseDoc.lineAt(c.fA).number, lt = baseDoc.lineAt(Math.max(c.fA, c.tA - (c.tA > c.fA ? 1 : 0))).number;
+    const lf = baseDoc.lineAt(c.fA).number,
+      lt = baseDoc.lineAt(Math.max(c.fA, c.tA - (c.tA > c.fA ? 1 : 0))).number;
     const overlaps = myLines.some(([f, t]) => lf <= t && f <= lt);
     // where this base range lives in the doc; when the user edited it, their version is what gets replaced (and kept as "old")
-    const from = mine.mapPos(c.fA, -1), to = Math.max(from, mine.mapPos(c.tA, 1));
+    const from = mine.mapPos(c.fA, -1),
+      to = Math.max(from, mine.mapPos(c.tA, 1));
     const last = regions.at(-1);
     // Chunks only meet in the doc when the user edited the text between them: replace that span once, with the disk text in between.
-    if (last !== undefined && from <= last.to) { last.to = Math.max(last.to, to); last.tB = c.tB; last.overlaps = true; }
-    else regions.push({ from, to, fB: c.fB, tB: c.tB, overlaps });
+    if (last !== undefined && from <= last.to) {
+      last.to = Math.max(last.to, to);
+      last.tB = c.tB;
+      last.overlaps = true;
+    } else regions.push({ from, to, fB: c.fB, tB: c.tB, overlaps });
   }
   const changes = regions.map((r) => ({ from: r.from, to: r.to, insert: disk.slice(r.fB, r.tB) }));
   const hunks = regions.map((r): IncomingHunk => ({ sFrom: r.from, sTo: r.to, overlaps: r.overlaps }));
   return {
-    spec: { changes: ChangeSet.of(changes, doc.length), effects: addHunks.of(hunks), annotations: [Transaction.addToHistory.of(false), Transaction.remote.of(true)] },
+    spec: {
+      changes: ChangeSet.of(changes, doc.length),
+      effects: addHunks.of(hunks),
+      annotations: [Transaction.addToHistory.of(false), Transaction.remote.of(true)],
+    },
     overlaps: hunks.some((h) => h.overlaps),
   };
 }
@@ -583,11 +789,12 @@ const setLineRange = StateEffect.define<{ from: number; to: number }>();
 export const lineRangeHighlight = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(value, tr) {
-    for (const e of tr.effects) if (e.is(setLineRange)) {
-      const deco: Range<Decoration>[] = [];
-      for (let n = e.value.from; n <= e.value.to; n++) deco.push(Decoration.line({ class: "cm-range" }).range(tr.state.doc.line(n).from));
-      return Decoration.set(deco);
-    }
+    for (const e of tr.effects)
+      if (e.is(setLineRange)) {
+        const deco: Range<Decoration>[] = [];
+        for (let n = e.value.from; n <= e.value.to; n++) deco.push(Decoration.line({ class: "cm-range" }).range(tr.state.doc.line(n).from));
+        return Decoration.set(deco);
+      }
     return tr.docChanged || tr.selection !== undefined ? Decoration.none : value;
   },
   provide: (f) => EditorView.decorations.from(f),
@@ -595,6 +802,7 @@ export const lineRangeHighlight = StateField.define<DecorationSet>({
 
 /** Highlights lines start..end (1-based, clamped) and scrolls them to the center. */
 export function lineRangeSpec(state: EditorState, start: number, end: number): TransactionSpec {
-  const from = Math.min(Math.max(1, start), state.doc.lines), to = Math.min(Math.max(from, end), state.doc.lines);
+  const from = Math.min(Math.max(1, start), state.doc.lines),
+    to = Math.min(Math.max(from, end), state.doc.lines);
   return { effects: [setLineRange.of({ from, to }), EditorView.scrollIntoView(state.doc.line(from).from, { y: "center" })] };
 }

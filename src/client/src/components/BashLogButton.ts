@@ -24,7 +24,9 @@ export class BashLogButton extends LitElement {
   constructor() {
     super();
     // The button usually sits inside a <summary>; a click here must not toggle its <details>.
-    this.addEventListener("click", (event) => { event.preventDefault(); });
+    this.addEventListener("click", (event) => {
+      event.preventDefault();
+    });
   }
 
   override disconnectedCallback(): void {
@@ -44,7 +46,12 @@ export class BashLogButton extends LitElement {
       return;
     }
     if (this.registration === undefined) {
-      this.registration = registerRenderedModal({ element: dialog, focus: () => { this.renderRoot.querySelector<HTMLElement>(".close")?.focus(); } });
+      this.registration = registerRenderedModal({
+        element: dialog,
+        focus: () => {
+          this.renderRoot.querySelector<HTMLElement>(".close")?.focus();
+        },
+      });
       if (!dialog.open) dialog.showModal();
     }
     this.registration.focus();
@@ -55,40 +62,67 @@ export class BashLogButton extends LitElement {
     this.view = { state: "loading" };
     const slash = this.logPath.lastIndexOf("/");
     try {
-      const file = await api.workspaceFile(AD_HOC_FOLDER_PROJECT_ID, adHocFolderWorkspaceId(this.logPath.slice(0, slash) || "/"), this.logPath.slice(slash + 1), this.machineId);
+      const file = await api.workspaceFile(
+        AD_HOC_FOLDER_PROJECT_ID,
+        adHocFolderWorkspaceId(this.logPath.slice(0, slash) || "/"),
+        this.logPath.slice(slash + 1),
+        this.machineId,
+      );
       if (load !== this.load) return;
       // ponytail: the file API returns the first 10 MB; show the tail once it can read from an offset.
-      const note = file.truncated ? `Showing the first ${String(MAX_WORKSPACE_FILE_CONTENT_BYTES / 1024 / 1024)} MB of ${String(Math.ceil(file.size / 1024 / 1024))} MB. Full log: ${this.logPath}` : undefined;
+      const note = file.truncated
+        ? `Showing the first ${String(MAX_WORKSPACE_FILE_CONTENT_BYTES / 1024 / 1024)} MB of ${String(Math.ceil(file.size / 1024 / 1024))} MB. Full log: ${this.logPath}`
+        : undefined;
       this.view = { state: "loaded", text: file.binary ? "(binary output)" : file.content, ...(note === undefined ? {} : { note }) };
     } catch (error) {
       if (load === this.load) this.view = { state: "error", message: error instanceof Error ? error.message : String(error) };
     }
   }
 
-  private readonly close = (): void => { this.load++; this.view = undefined; };
+  private readonly close = (): void => {
+    this.load++;
+    this.view = undefined;
+  };
 
   private async copy(text: string): Promise<void> {
     this.copied = await writeClipboardText(text);
-    if (this.copied) window.setTimeout(() => { this.copied = false; }, 1200);
+    if (this.copied)
+      window.setTimeout(() => {
+        this.copied = false;
+      }, 1200);
   }
 
   override render() {
     const view = this.view;
     return html`
-      <button type="button" class="inspect" aria-label="Show full log" title="Show full log" @click=${() => { void this.open(); }}>
+      <button type="button" class="inspect" aria-label="Show full log" title="Show full log" @click=${() => {
+        void this.open();
+      }}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${fileTextIcon}</svg>
       </button>
-      <dialog aria-label="Full log" @close=${this.close} @cancel=${this.close} @click=${(event: MouseEvent) => { if (event.target === this.dialog) this.close(); }}>
-        ${view === undefined ? null : html`
+      <dialog aria-label="Full log" @close=${this.close} @cancel=${this.close} @click=${(event: MouseEvent) => {
+        if (event.target === this.dialog) this.close();
+      }}>
+        ${
+          view === undefined
+            ? null
+            : html`
           <header>
             <code title=${this.logPath}>${this.logPath}</code>
-            <button type="button" ?disabled=${view.state !== "loaded"} @click=${() => { if (view.state === "loaded") void this.copy(view.text); }}>${this.copied ? "Copied" : "Copy"}</button>
+            <button type="button" ?disabled=${view.state !== "loaded"} @click=${() => {
+              if (view.state === "loaded") void this.copy(view.text);
+            }}>${this.copied ? "Copied" : "Copy"}</button>
             <button type="button" class="close" aria-label="Close log" @click=${this.close}>×</button>
           </header>
-          ${view.state === "loading" ? html`<p role="status">Loading log…</p>`
-            : view.state === "error" ? html`<p role="alert">Could not read ${this.logPath}: ${view.message}</p>`
-            : html`${view.note === undefined ? null : html`<p class="note">${view.note}</p>`}<pre tabindex="0" aria-label="Log output">${view.text === "" ? "(no output)" : view.text}</pre>`}
-        `}
+          ${
+            view.state === "loading"
+              ? html`<p role="status">Loading log…</p>`
+              : view.state === "error"
+                ? html`<p role="alert">Could not read ${this.logPath}: ${view.message}</p>`
+                : html`${view.note === undefined ? null : html`<p class="note">${view.note}</p>`}<pre tabindex="0" aria-label="Log output">${view.text === "" ? "(no output)" : view.text}</pre>`
+          }
+        `
+        }
       </dialog>
     `;
   }

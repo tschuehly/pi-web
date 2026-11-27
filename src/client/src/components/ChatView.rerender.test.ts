@@ -5,12 +5,21 @@ import { FormattedText } from "./FormattedText";
 import type { SessionActivity, SessionStatus } from "../api";
 
 const status: SessionStatus = {
-  sessionId: "session", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
-  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+  sessionId: "session",
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: 0,
 };
 const activity = (): SessionActivity => ({ sessionId: "session", phase: "active", label: "agent running", at: new Date().toISOString() });
 
-afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+});
 
 const context = () => ({ machineId: "local", projectId: "p", workspaceId: "w", root: "/work" });
 

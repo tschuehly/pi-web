@@ -86,7 +86,7 @@ export class SessionDaemonClient {
       const onResponse = (response: http.IncomingMessage): void => {
         resolve({
           statusCode: response.statusCode ?? 500,
-          headers: Object.fromEntries(Object.entries(response.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : value ?? ""])),
+          headers: Object.fromEntries(Object.entries(response.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : (value ?? "")])),
           body: response,
         });
       };
@@ -96,9 +96,10 @@ export class SessionDaemonClient {
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       };
       const url = this.baseUrl === undefined || this.baseUrl === "" ? undefined : new URL(path, this.baseUrl);
-      const request = url === undefined
-        ? http.request({ ...requestOptions, socketPath: this.socketPath, path }, onResponse)
-        : (url.protocol === "https:" ? https : http).request(url, requestOptions, onResponse);
+      const request =
+        url === undefined
+          ? http.request({ ...requestOptions, socketPath: this.socketPath, path }, onResponse)
+          : (url.protocol === "https:" ? https : http).request(url, requestOptions, onResponse);
       request.on("error", reject);
       request.end();
     });
@@ -131,7 +132,12 @@ export class SessionDaemonClient {
     };
   }
 
-  private requestSocket(method: string, path: string, payload?: string, signal?: AbortSignal): Promise<{ statusCode: number; headers: Record<string, string>; body: string }> {
+  private requestSocket(
+    method: string,
+    path: string,
+    payload?: string,
+    signal?: AbortSignal,
+  ): Promise<{ statusCode: number; headers: Record<string, string>; body: string }> {
     return new Promise((resolve, reject) => {
       const request = http.request(
         {
@@ -139,9 +145,7 @@ export class SessionDaemonClient {
           path,
           method,
           ...(signal === undefined ? {} : { signal }),
-          headers: payload !== undefined && payload !== ""
-            ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) }
-            : undefined,
+          headers: payload !== undefined && payload !== "" ? { "content-type": "application/json", "content-length": Buffer.byteLength(payload) } : undefined,
         },
         (response) => {
           const chunks: Uint8Array[] = [];
@@ -151,7 +155,9 @@ export class SessionDaemonClient {
           response.on("end", () => {
             resolve({
               statusCode: response.statusCode ?? 500,
-              headers: Object.fromEntries(Object.entries(response.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : value ?? ""])),
+              headers: Object.fromEntries(
+                Object.entries(response.headers).map(([key, value]) => [key, Array.isArray(value) ? value.join(", ") : (value ?? "")]),
+              ),
               body: Buffer.concat(chunks).toString("utf8"),
             });
           });

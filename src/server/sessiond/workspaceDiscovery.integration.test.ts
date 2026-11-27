@@ -18,7 +18,10 @@ import { registerWorkspaceNotificationRoutes } from "./workspaceNotificationRout
 
 const run = promisify(execFile);
 const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")));
-const namedHooks = spawnSync("git", ["-c", "hook.pi-web-test.command=:", "-c", "hook.pi-web-test.event=post-checkout", "hook", "list", "post-checkout"], { env: gitEnv, encoding: "utf8" });
+const namedHooks = spawnSync("git", ["-c", "hook.pi-web-test.command=:", "-c", "hook.pi-web-test.event=post-checkout", "hook", "list", "post-checkout"], {
+  env: gitEnv,
+  encoding: "utf8",
+});
 
 // Real Git hook -> packaged helper -> separate CLI process -> isolated IPC
 // ingress -> provider policy/authority -> core notification. No model or hosting
@@ -35,27 +38,52 @@ it.skipIf(process.platform === "win32" || namedHooks.status !== 0 || !namedHooks
     let runtime: Awaited<ReturnType<typeof createServerPluginRuntime>> | undefined;
     try {
       await run("git", ["init", "-q", "-b", "main", repository], { env });
-      await run("git", ["-C", repository, "-c", "user.name=Discovery", "-c", "user.email=discovery@example.invalid", "commit", "-q", "--allow-empty", "-m", "Initial"], { env });
-      await copyFile(new URL("../../../pi-web-plugins/git/workspace-discovery-notify.cjs", import.meta.url), join(repository, "workspace-discovery-notify.cjs"));
+      await run(
+        "git",
+        ["-C", repository, "-c", "user.name=Discovery", "-c", "user.email=discovery@example.invalid", "commit", "-q", "--allow-empty", "-m", "Initial"],
+        { env },
+      );
+      await copyFile(
+        new URL("../../../pi-web-plugins/git/workspace-discovery-notify.cjs", import.meta.url),
+        join(repository, "workspace-discovery-notify.cjs"),
+      );
       await mkdir(join(repository, ".pi-web"));
       // Proves actual project settings override the immutable global base.
       await writeFile(join(repository, ".pi-web", "config.json"), JSON.stringify({ plugins: { git: { settings: { workspaceDiscoveryHooks: true } } } }));
       const project: Project = { id: "project with spaces", name: "Repo", path: repository, createdAt: "2026-10-10T00:00:00.000Z" };
-      const projects = { requireProject: (id: string) => id === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found")) };
+      const projects = { requireProject: (id: string) => (id === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))) };
       const settings = new ProjectPluginSettingsSnapshots(projects);
       await settings.initialize([project]);
       const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
       runtime = await createServerPluginRuntime({
-        dataDir: join(root, "data"), enforceRequiredTerminal: false, logger,
-        catalog: { snapshot: () => Promise.resolve({ diagnostics: [], plugins: [{
-          id: "git", packageRoot: repository, source: "fixture", scope: "bundled", machineSpecific: true,
-          enabled: true, settings: { workspaceDiscoveryHooks: false }, settingsRevision: "fixture",
-          serverModule: { path: "server-plugin.js", filePath: join(repository, "server-plugin.js"), revision: "fixture" },
-        }] }) },
+        dataDir: join(root, "data"),
+        enforceRequiredTerminal: false,
+        logger,
+        catalog: {
+          snapshot: () =>
+            Promise.resolve({
+              diagnostics: [],
+              plugins: [
+                {
+                  id: "git",
+                  packageRoot: repository,
+                  source: "fixture",
+                  scope: "bundled",
+                  machineSpecific: true,
+                  enabled: true,
+                  settings: { workspaceDiscoveryHooks: false },
+                  settingsRevision: "fixture",
+                  serverModule: { path: "server-plugin.js", filePath: join(repository, "server-plugin.js"), revision: "fixture" },
+                },
+              ],
+            }),
+        },
         importer: () => Promise.resolve({ default: gitPlugin }),
         execFile: createServerPluginExecFile({ env }),
         projectSettingsResolver: (pluginId, base, scope, signal) => settings.resolve(pluginId, base, scope, signal),
-        workspaceNotificationsFactory: createWorkspaceNotificationCommandFactory({ env: { ...env, PI_WEB_DATA_DIR: join(root, "data"), PI_WEB_SESSIOND_SOCKET: socket, PI_WEB_SESSIOND_PORT: "" } }),
+        workspaceNotificationsFactory: createWorkspaceNotificationCommandFactory({
+          env: { ...env, PI_WEB_DATA_DIR: join(root, "data"), PI_WEB_SESSIOND_SOCKET: socket, PI_WEB_SESSIOND_PORT: "" },
+        }),
       });
       registry = new WorkspaceProviderRegistry({ contributions: runtime.providerContributions(), logger });
       const publish = vi.fn<(event: WorkspaceChangedEvent) => void>();
@@ -65,10 +93,7 @@ it.skipIf(process.platform === "win32" || namedHooks.status !== 0 || !namedHooks
       registerWorkspaceNotificationRoutes(app, { projects, workspaces: registry, changes });
       await app.listen({ path: socket });
       await registry.reconcileProject(project);
-      expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
-        { pluginId: "git", apiVersion: 3 },
-        "Server plugin API v3 is deprecated; migrate to API v5",
-      );
+      expect(logger.warn).toHaveBeenCalledExactlyOnceWith({ pluginId: "git", apiVersion: 3 }, "Server plugin API v3 is deprecated; migrate to API v5");
 
       const feature = join(root, "feature with spaces");
       await run("git", ["-C", repository, "worktree", "add", "-q", "-b", "feature", feature], { env });

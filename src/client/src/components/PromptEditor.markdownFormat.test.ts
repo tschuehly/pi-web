@@ -40,7 +40,9 @@ describe("composer Markdown formatting", () => {
     expect(text(filesClass(tags.keyword))).toContain("const");
     expect(text(filesClass(tags.bool))).toContain("true");
 
-    await vi.waitFor(() => { expect(menuText()).toContain("/skill:review"); });
+    await vi.waitFor(() => {
+      expect(menuText()).toContain("/skill:review");
+    });
     enter(view);
     expect(view.state.doc.toString()).toBe(`${DRAFT}iew `);
 
@@ -58,7 +60,9 @@ describe("composer Markdown formatting", () => {
     expect(view.state.doc.toString()).toBe("- item\n- ");
 
     view.dispatch({ changes: { from: view.state.doc.length, insert: "/skill:revi" }, selection: { anchor: view.state.doc.length + 11 } });
-    await vi.waitFor(() => { expect(menuText()).toContain("/skill:review"); });
+    await vi.waitFor(() => {
+      expect(menuText()).toContain("/skill:review");
+    });
     enter(view);
     expect(view.state.doc.toString()).toBe("- item\n- /skill:review ");
 
@@ -71,7 +75,8 @@ describe("composer Markdown formatting", () => {
     const onSend = vi.fn(() => Promise.resolve(true));
     const view = await mount(onSend);
 
-    for (const text of ["#", " Title\n\nsee @src and #claude"]) view.dispatch({ changes: { from: view.state.doc.length, insert: text }, selection: { anchor: view.state.doc.length + text.length } });
+    for (const text of ["#", " Title\n\nsee @src and #claude"])
+      view.dispatch({ changes: { from: view.state.doc.length, insert: text }, selection: { anchor: view.state.doc.length + text.length } });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(models).not.toHaveBeenCalled();

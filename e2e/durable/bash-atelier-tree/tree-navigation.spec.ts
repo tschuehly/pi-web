@@ -3,7 +3,27 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { api, chat, completions, deliveries, editor, fixture, idle, killHost, mock, navigate, newChat, reopen, send, sessionId, setup, status, text, tool, tree } from "./fleet";
+import {
+  api,
+  chat,
+  completions,
+  deliveries,
+  editor,
+  fixture,
+  idle,
+  killHost,
+  mock,
+  navigate,
+  newChat,
+  reopen,
+  send,
+  sessionId,
+  setup,
+  status,
+  text,
+  tool,
+  tree,
+} from "./fleet";
 import { comment, openAtelier } from "./atelier-fixture";
 setup();
 
@@ -39,8 +59,11 @@ for (const legacy of [false, true]) {
     expect(sessionId(page)).toBe(id);
     await expect(chat(page).getByText("beta answer", { exact: true })).toHaveCount(0);
     const earlier = chat(page).locator("details").filter({ hasText: "Earlier conversation" });
-    if (await earlier.count() > 0 && !await earlier.first().evaluate((element) => (element as HTMLDetailsElement).open)) await earlier.first().locator("summary").first().click();
-    const first = chat(page).locator("article").filter({ has: page.getByText(`${marker} alpha`, { exact: true }) });
+    if ((await earlier.count()) > 0 && !(await earlier.first().evaluate((element) => (element as HTMLDetailsElement).open)))
+      await earlier.first().locator("summary").first().click();
+    const first = chat(page)
+      .locator("article")
+      .filter({ has: page.getByText(`${marker} alpha`, { exact: true }) });
     await first.getByRole("button", { name: "Message actions" }).click();
     await first.getByRole("button", { name: "Edit and resend" }).click();
     await expect(editor(page)).toHaveText(`${marker} alpha`);
@@ -74,7 +97,20 @@ test("AC-P044 stale expectedLeafId refuses navigation without changing the activ
 test("AC-P044 questions and Working Mode restore as-of branch and survive SIGKILL", async ({ page }) => {
   await newChat(page);
   await send(page, "/mode attention focused");
-  await tool(page, "ask_user", { context: "Branch-specific target", questions: [{ id: "target", question: "Which target?", detail: "The branch this question belongs to.", options: [{ value: "a", label: "Target A" }, { value: "b", label: "Target B" }] }] });
+  await tool(page, "ask_user", {
+    context: "Branch-specific target",
+    questions: [
+      {
+        id: "target",
+        question: "Which target?",
+        detail: "The branch this question belongs to.",
+        options: [
+          { value: "a", label: "Target A" },
+          { value: "b", label: "Target B" },
+        ],
+      },
+    ],
+  });
   const before = await status(page);
   expect(before.pendingAsks).toHaveLength(1);
   const atQuestion = await tree(page);
@@ -140,7 +176,9 @@ test("AC-P044 AC-P046 active generation disables Edit & resend and refuses queue
   await mock.script({ match: "busy-tree-turn", turns: [[{ text: "Still working" }, { barrier: "busy-tree" }, { text: " finished" }]] });
   await send(page, "busy-tree-turn");
   await mock.waitForBarrier("busy-tree");
-  const article = chat(page).locator("article").filter({ has: page.getByText("busy-anchor", { exact: true }) });
+  const article = chat(page)
+    .locator("article")
+    .filter({ has: page.getByText("busy-anchor", { exact: true }) });
   await article.getByRole("button", { name: "Message actions" }).click();
   await expect(article.getByRole("button", { name: "Edit and resend" })).toBeDisabled();
   await page.keyboard.press("Escape");
@@ -170,7 +208,11 @@ test("AC-P044 navigation refuses an active child and its pending delivery", asyn
   const active = await navigate(page, old, old.nodes[0]!.id);
   expect(active.ok()).toBe(false);
   expect(await active.text()).toMatch(/activity|children|pending/i);
-  await mock.script({ provider: "anthropic", match: "Background children finished", turns: [[{ text: "Child delivery" }, { barrier: "child-delivery" }, { text: " processed" }]] });
+  await mock.script({
+    provider: "anthropic",
+    match: "Background children finished",
+    turns: [[{ text: "Child delivery" }, { barrier: "child-delivery" }, { text: " processed" }]],
+  });
   await mock.release(marker);
   await mock.waitForBarrier("child-delivery");
   const delivery = await navigate(page, old, old.nodes[0]!.id);

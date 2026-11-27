@@ -6,8 +6,19 @@ import { useDeferredContent, settleDeferredContent } from "../../src/client/src/
 import { createContentRenderingCapability } from "../../src/client/src/formatting/contentRendering";
 import { ContentRendererHost } from "../../src/client/src/components/ContentRendererHost";
 import type { ContentRenderingCapability, FileContentResponse } from "@jmfederico/pi-web/plugin-api";
-import { adoptWorkspaceFileViewMode, WORKSPACE_FILE_VIEW_MODE_STORAGE_KEY, type WorkspaceFileViewMode, type WorkspaceFileViewModeStore } from "./workspaceFileViewMode";
-import { DEFAULT_MAX_INLINE_PREVIEW_BYTES as MAX_INLINE_PREVIEW_BYTES, WorkspaceFileViewer, workspaceFilePreviewKind, workspaceFileViewerIdentityKey, type WorkspaceFileViewerIdentity } from "./FilesViewer";
+import {
+  adoptWorkspaceFileViewMode,
+  WORKSPACE_FILE_VIEW_MODE_STORAGE_KEY,
+  type WorkspaceFileViewMode,
+  type WorkspaceFileViewModeStore,
+} from "./workspaceFileViewMode";
+import {
+  DEFAULT_MAX_INLINE_PREVIEW_BYTES as MAX_INLINE_PREVIEW_BYTES,
+  WorkspaceFileViewer,
+  workspaceFilePreviewKind,
+  workspaceFileViewerIdentityKey,
+  type WorkspaceFileViewerIdentity,
+} from "./FilesViewer";
 
 if (customElements.get("pi-web-files-viewer") === undefined) customElements.define("pi-web-files-viewer", WorkspaceFileViewer);
 
@@ -24,9 +35,18 @@ afterEach(() => {
 describe("workspace-file-viewer", () => {
   it.each(["automatic", "manual"] as const)("uses a plugin's title for its %s view button", async (renderMode) => {
     const draw = vi.fn(() => html`<b>Named view</b>`);
-    const contentRendering = createContentRenderingCapability(() => [{ id: "highlighted", label: "Highlighted", renderer: {
-      id: "highlighted", title: "Highlighted", renderMode, render: draw,
-    } }]);
+    const contentRendering = createContentRenderingCapability(() => [
+      {
+        id: "highlighted",
+        label: "Highlighted",
+        renderer: {
+          id: "highlighted",
+          title: "Highlighted",
+          renderMode,
+          render: draw,
+        },
+      },
+    ]);
     const viewer = await mountViewer(textFile("source.txt", "source"), { contentRendering });
     const namedButton = buttonWithText(viewer, "Highlighted");
     expect(namedButton.getAttribute("aria-pressed")).toBe("false");
@@ -52,8 +72,12 @@ describe("workspace-file-viewer", () => {
     const contentRendering = createContentRenderingCapability(() => [...choices, manual]);
     const viewer = await mountViewer(textFile("graph.mmd", "A --> B"), { contentRendering, modeStore: { adopt: () => undefined, publish: vi.fn() } });
     expect(viewer.renderRoot.querySelector("select")).toBeNull();
-    expect([...viewer.renderRoot.querySelectorAll(".viewer-mode button")].map((item) => item.textContent.trim()))
-      .toEqual(["Highlighted", "Diagram", "Manual", "Raw"]);
+    expect([...viewer.renderRoot.querySelectorAll(".viewer-mode button")].map((item) => item.textContent.trim())).toEqual([
+      "Highlighted",
+      "Diagram",
+      "Manual",
+      "Raw",
+    ]);
     expect(buttonWithText(viewer, "Diagram").getAttribute("aria-pressed")).toBe("true");
     buttonWithText(viewer, "Highlighted").click();
     await settleDeferredContent(viewer);
@@ -76,7 +100,7 @@ describe("workspace-file-viewer", () => {
     ]);
     if (preference !== "fresh") localStorage.setItem(WORKSPACE_FILE_VIEW_MODE_STORAGE_KEY, preference === "saved" ? "preview" : "raw");
     const modeStore = {
-      adopt: () => adoptWorkspaceFileViewMode({ read: () => preference === "url" ? "preview" : undefined, write: () => undefined }, localStorage),
+      adopt: () => adoptWorkspaceFileViewMode({ read: () => (preference === "url" ? "preview" : undefined), write: () => undefined }, localStorage),
       publish: vi.fn(),
     };
     const viewer = await mountViewer(textFile("notes.md", "```diagram\nsource\n```", { mediaType: "markdown" }), { contentRendering, modeStore });
@@ -114,7 +138,9 @@ describe("workspace-file-viewer", () => {
 
   it.each(["manual", "automatic"] as const)("uses %s only as a fresh-browser default without saving it", async (renderMode) => {
     const draw = vi.fn(() => html`<b>Preview</b>`);
-    const contentRendering = createContentRenderingCapability(() => [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", renderMode, render: draw } }]);
+    const contentRendering = createContentRenderingCapability(() => [
+      { id: "diagram", label: "Diagram", renderer: { id: "diagram", renderMode, render: draw } },
+    ]);
     const publish = vi.fn();
     const viewer = await mountViewer(textFile("graph.mmd", "source"), { contentRendering, modeStore: { adopt: () => undefined, publish } });
     await settleDeferredContent(viewer);
@@ -128,7 +154,9 @@ describe("workspace-file-viewer", () => {
 
   it.each(["manual", "automatic"] as const)("lets saved Preview and Raw override %s defaults", async (renderMode) => {
     const draw = vi.fn(() => html`<b>Preview</b>`);
-    const contentRendering = createContentRenderingCapability(() => [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", renderMode, render: draw } }]);
+    const contentRendering = createContentRenderingCapability(() => [
+      { id: "diagram", label: "Diagram", renderer: { id: "diagram", renderMode, render: draw } },
+    ]);
     const viewer = await mountViewer(textFile("graph.mmd", "source"), { contentRendering, modeStore: fakeModeStore("preview") });
     await settleDeferredContent(viewer);
     expect(draw).toHaveBeenCalledOnce();
@@ -140,12 +168,20 @@ describe("workspace-file-viewer", () => {
 
   it("owns standalone preview controls in the header and cancels the embedded renderer on Raw", async () => {
     let signal: AbortSignal | undefined;
-    const contentRendering = createContentRenderingCapability(() => [{ id: "diagram", label: "Diagram", renderer: {
-      id: "diagram", languages: ["diagram"], render: (input) => {
-        signal = input.signal;
-        return html`<b>Diagram preview</b>`;
+    const contentRendering = createContentRenderingCapability(() => [
+      {
+        id: "diagram",
+        label: "Diagram",
+        renderer: {
+          id: "diagram",
+          languages: ["diagram"],
+          render: (input) => {
+            signal = input.signal;
+            return html`<b>Diagram preview</b>`;
+          },
+        },
       },
-    } }]);
+    ]);
     const viewer = await mountViewer(textFile("graph.mmd", "A --> B"), { contentRendering });
     expect(signal).toBeUndefined();
     buttonWithText(viewer, "Diagram").click();
@@ -181,12 +217,17 @@ describe("workspace-file-viewer", () => {
 
   it("chooses alternatives in the header, preserves choice across modes, and resets for a different file", async () => {
     const inputs: import("../../src/plugin-api").ContentRendererInput[] = [];
-    const choices = ["Alpha", "Beta"].map((label) => ({ id: label, label, renderer: {
-      id: label, render: (input: import("../../src/plugin-api").ContentRendererInput) => {
-        inputs.push(input);
-        return html`<b>${label}</b>`;
+    const choices = ["Alpha", "Beta"].map((label) => ({
+      id: label,
+      label,
+      renderer: {
+        id: label,
+        render: (input: import("../../src/plugin-api").ContentRendererInput) => {
+          inputs.push(input);
+          return html`<b>${label}</b>`;
+        },
       },
-    } }));
+    }));
     const contentRendering = createContentRenderingCapability(() => choices);
     const viewer = await mountViewer(textFile("first.mmd", "source"), { contentRendering });
     expect(viewer.renderRoot.querySelector("select")).toBeNull();
@@ -233,7 +274,13 @@ describe("workspace-file-viewer", () => {
     const file = textFile("graph.mmd", "graph TD; A-->B");
     const viewer = await mountViewer(file, { machineId: "remote", contentRendering });
     expect(viewer.shadowRoot?.querySelector(".plugin-preview")).toBeNull();
-    expect(renderText).toHaveBeenCalledWith({ machineId: "remote", filePath: "graph.mmd", text: file.content, controls: "external", allowManualPreview: false });
+    expect(renderText).toHaveBeenCalledWith({
+      machineId: "remote",
+      filePath: "graph.mmd",
+      text: file.content,
+      controls: "external",
+      allowManualPreview: false,
+    });
     expect(viewer.shadowRoot?.querySelector(".viewer-header .viewer-mode")).not.toBeNull();
     modeButton(viewer, "Preview").click();
     await settleDeferredContent(viewer);
@@ -300,7 +347,9 @@ describe("workspace-file-viewer", () => {
     expect(modeButton(viewer, "Raw").getAttribute("aria-pressed")).toBe("true");
     expect(modeButton(viewer, "Preview").getAttribute("aria-pressed")).toBe("false");
     expect(viewer.shadowRoot?.querySelector("iframe")).toBeNull();
-    expect(requiredElement(viewer.shadowRoot?.querySelector<HTMLElement & { content: string }>("pi-web-files-code-viewer"), "raw code viewer").content).toBe(source);
+    expect(requiredElement(viewer.shadowRoot?.querySelector<HTMLElement & { content: string }>("pi-web-files-code-viewer"), "raw code viewer").content).toBe(
+      source,
+    );
     expect(viewer.shadowRoot?.querySelector("h1, script")).toBeNull();
 
     const open = anchorWithText(viewer, "Open ↗");
@@ -453,8 +502,7 @@ describe("workspace-file-viewer", () => {
     expect(currentFrame.hasAttribute("sandbox")).toBe(false);
     expect(currentFrame.getAttribute("allow")).toBe("");
     expect(currentFrame.getAttribute("referrerpolicy")).toBe("no-referrer");
-    expect(requiredElement(viewer.shadowRoot?.querySelector(".preview-note"), "PDF fallback note").textContent)
-      .toContain("Use Open ↗ or Download above");
+    expect(requiredElement(viewer.shadowRoot?.querySelector(".preview-note"), "PDF fallback note").textContent).toContain("Use Open ↗ or Download above");
     expect(anchorWithText(viewer, "Open ↗")).toBeDefined();
 
     detachedImage.dispatchEvent(new Event("error"));
@@ -548,7 +596,9 @@ describe("workspace-file-viewer", () => {
     viewer.file = oversizedHtml;
     await settleDeferredContent(viewer);
     expect(viewer.shadowRoot?.querySelector("[role='status']")?.textContent).toContain("Raw source is truncated");
-    expect(requiredElement(viewer.shadowRoot?.querySelector<HTMLElement & { content: string }>("pi-web-files-code-viewer"), "oversized raw source").content).toBe("<p>first capped bytes</p>");
+    expect(
+      requiredElement(viewer.shadowRoot?.querySelector<HTMLElement & { content: string }>("pi-web-files-code-viewer"), "oversized raw source").content,
+    ).toBe("<p>first capped bytes</p>");
     expect(viewer.shadowRoot?.textContent).not.toContain("Open ↗");
     expect(viewer.shadowRoot?.querySelector("a[download]")).not.toBeNull();
 
@@ -628,22 +678,28 @@ function fakeModeStore(adopted: WorkspaceFileViewMode = "raw"): FakeModeStore {
   return {
     published,
     adopt: () => adopted,
-    publish: (mode) => { published.push(mode); },
+    publish: (mode) => {
+      published.push(mode);
+    },
   };
 }
 
 async function mountViewer(file: FileContentResponse | undefined, patch: ViewerPatch = {}): Promise<WorkspaceFileViewer> {
   const viewer = new WorkspaceFileViewer();
-  Object.assign(viewer, {
-    machineId: "local",
-    projectId: "project-1",
-    workspaceId: "workspace-1",
-    selectedPath: file?.path,
-    file,
-    loadError: undefined,
-    previewUrlBuilder: inertPreviewUrl,
-    modeStore: fakeModeStore(),
-  }, patch);
+  Object.assign(
+    viewer,
+    {
+      machineId: "local",
+      projectId: "project-1",
+      workspaceId: "workspace-1",
+      selectedPath: file?.path,
+      file,
+      loadError: undefined,
+      previewUrlBuilder: inertPreviewUrl,
+      modeStore: fakeModeStore(),
+    },
+    patch,
+  );
   document.body.append(viewer);
   await settleDeferredContent(viewer);
   return viewer;

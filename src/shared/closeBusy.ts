@@ -1,7 +1,10 @@
 import type { SessionStatus } from "./apiTypes.js";
 
 /** The parts of a Chat's status that say whether closing it would end running work. */
-export type CloseBusyStatus = Pick<SessionStatus, "isStreaming" | "isCompacting" | "isBashRunning" | "pendingMessageCount" | "pendingAsks" | "activeToolExecutions" | "extensionStatuses">;
+export type CloseBusyStatus = Pick<
+  SessionStatus,
+  "isStreaming" | "isCompacting" | "isBashRunning" | "pendingMessageCount" | "pendingAsks" | "activeToolExecutions" | "extensionStatuses"
+>;
 
 /**
  * Why a family is not quiet, from its host's status; undefined when nothing runs or waits. The legacy idle-unload rule
@@ -32,7 +35,7 @@ export function runningWork(status: CloseBusyStatus): string | undefined {
   const jobs = statusList(status, "pi-workbench:background-bash", "jobs")?.length ?? 0;
   const children = (statusList(status, "pi-workbench:activity", "items") ?? []).filter((item) => isRecord(item) && item["endedAt"] === undefined);
   const subagents = children.filter((item) => isRecord(item) && item["kind"] === "subagent").length;
-  const counted = (count: number, noun: string) => count === 0 ? [] : [`${String(count)} ${noun}${count === 1 ? "" : "s"}`];
+  const counted = (count: number, noun: string) => (count === 0 ? [] : [`${String(count)} ${noun}${count === 1 ? "" : "s"}`]);
   const parts = [...counted(jobs, "background bash job"), ...counted(subagents, "subagent"), ...counted(children.length - subagents, "worker")];
   if (parts.length === 0) return `${reason[0]?.toUpperCase() ?? ""}${reason.slice(1)}; closing ends it.`;
   const one = jobs + children.length === 1;

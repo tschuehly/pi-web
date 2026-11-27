@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_INLINE_PREVIEW_BYTES } from "../../../shared/workspaceFiles";
-import {
-  uploadWorkspaceFile,
-  WorkspaceUploadCancelledError,
-  type FileContentResponse,
-  type FileTreeResponse,
-  type WriteWorkspaceFileResponse,
-} from "../api";
+import { uploadWorkspaceFile, WorkspaceUploadCancelledError, type FileContentResponse, type FileTreeResponse, type WriteWorkspaceFileResponse } from "../api";
 import { createWorkspaceFiles, type CreateWorkspaceFilesOptions, type WorkspaceFilesApi } from "./workspaceFiles";
 import type { WorkspaceInvalidation } from "./types";
 
@@ -69,7 +63,9 @@ describe("createWorkspaceFiles", () => {
   it("publishes workspace.files only after successful write, delete, and move mutations", async () => {
     const writeWorkspaceFile = vi.fn<WorkspaceFilesApi["writeWorkspaceFile"]>(() => Promise.resolve(testWriteFileResponse("out.txt")));
     const deleteWorkspaceFile = vi.fn<WorkspaceFilesApi["deleteWorkspaceFile"]>(() => Promise.resolve({ path: "old.txt", existed: true }));
-    const moveWorkspaceFile = vi.fn<WorkspaceFilesApi["moveWorkspaceFile"]>(() => Promise.resolve({ fromPath: "old.txt", toPath: "new.txt", size: 0, modifiedAt: "2026-06-14T10:00:00.000Z" }));
+    const moveWorkspaceFile = vi.fn<WorkspaceFilesApi["moveWorkspaceFile"]>(() =>
+      Promise.resolve({ fromPath: "old.txt", toPath: "new.txt", size: 0, modifiedAt: "2026-06-14T10:00:00.000Z" }),
+    );
     const onInvalidate = vi.fn();
     const files = createWorkspaceFiles(
       fakeApi({ writeWorkspaceFile, deleteWorkspaceFile, moveWorkspaceFile }),
@@ -106,21 +102,31 @@ describe("createWorkspaceFiles", () => {
     const upload = vi.fn<typeof uploadWorkspaceFile>(() => ({ promise: Promise.resolve(response), cancel: sourceCancel }));
     const onProgress = vi.fn();
     const onInvalidate = vi.fn();
-    const files = createWorkspaceFiles(fakeApi(), workspace, "remote-1", hostOptions({
-      defaultUploadFolder: "workspace/uploads",
-      uploadWorkspaceFile: upload,
-      onInvalidate,
-    }));
+    const files = createWorkspaceFiles(
+      fakeApi(),
+      workspace,
+      "remote-1",
+      hostOptions({
+        defaultUploadFolder: "workspace/uploads",
+        uploadWorkspaceFile: upload,
+        onInvalidate,
+      }),
+    );
     const file = new File(["report"], "report.txt", { type: "text/plain" });
 
     const task = files.uploadFile(file, { onProgress });
     expect(task.path).toBe("workspace/uploads/report.txt");
-    expect(upload).toHaveBeenCalledWith("p-1", "w-1", { path: "workspace/uploads/report.txt", file }, {
-      machineId: "remote-1",
-      createDirs: true,
-      overwrite: false,
-      onProgress,
-    });
+    expect(upload).toHaveBeenCalledWith(
+      "p-1",
+      "w-1",
+      { path: "workspace/uploads/report.txt", file },
+      {
+        machineId: "remote-1",
+        createDirs: true,
+        overwrite: false,
+        onProgress,
+      },
+    );
     upload.mock.calls[0]?.[3]?.onProgress?.({ loaded: 3, total: 6, percent: 0.5, lengthComputable: true });
     expect(onProgress).toHaveBeenCalledWith({ loaded: 3, total: 6, percent: 0.5, lengthComputable: true });
 
@@ -132,8 +138,12 @@ describe("createWorkspaceFiles", () => {
 
   it("maps upload cancellation to AbortError and publishes no failed-upload invalidation", async () => {
     let rejectUpload: (error: unknown) => void = () => undefined;
-    const promise = new Promise<WriteWorkspaceFileResponse>((_resolve, reject) => { rejectUpload = reject; });
-    const sourceCancel = vi.fn(() => { rejectUpload(new WorkspaceUploadCancelledError()); });
+    const promise = new Promise<WriteWorkspaceFileResponse>((_resolve, reject) => {
+      rejectUpload = reject;
+    });
+    const sourceCancel = vi.fn(() => {
+      rejectUpload(new WorkspaceUploadCancelledError());
+    });
     const upload = vi.fn<typeof uploadWorkspaceFile>(() => ({ promise, cancel: sourceCancel }));
     const onInvalidate = vi.fn();
     const files = createWorkspaceFiles(fakeApi(), workspace, "local", hostOptions({ uploadWorkspaceFile: upload, onInvalidate }));

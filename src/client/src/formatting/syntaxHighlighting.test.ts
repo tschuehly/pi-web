@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SyntaxHighlighterContribution } from "../../../plugin-api";
-import { createSyntaxHighlightingCapability, MAX_SYNTAX_HIGHLIGHT_LENGTH, runSyntaxHighlighter, snapshotSyntaxHighlighter, validateSyntaxHighlightTokens } from "./syntaxHighlighting";
+import {
+  createSyntaxHighlightingCapability,
+  MAX_SYNTAX_HIGHLIGHT_LENGTH,
+  runSyntaxHighlighter,
+  snapshotSyntaxHighlighter,
+  validateSyntaxHighlightTokens,
+} from "./syntaxHighlighting";
 
 const contribution = (highlight: SyntaxHighlighterContribution["highlight"]): SyntaxHighlighterContribution => ({ id: "test", languages: ["TEST"], highlight });
 
@@ -30,33 +36,61 @@ describe("syntax highlighting service", () => {
     expect(validateSyntaxHighlightTokens([], "")).toEqual([]);
   });
 
-  it.each([
-    null, {}, [undefined], Array(1),
-    [{ from: -1, to: 1, kind: "keyword" }],
-    [{ from: 0, to: 4, kind: "keyword" }],
-    [{ from: 0.5, to: 1, kind: "keyword" }],
-    [{ from: 0, to: NaN, kind: "keyword" }],
-    [{ from: 1, to: 1, kind: "keyword" }],
-    [{ from: 0, to: 1, kind: "arbitrary-css" }],
-    [{ from: 1, to: 3, kind: "keyword" }, { from: 0, to: 1, kind: "string" }],
-    [{ from: 0, to: 2, kind: "keyword" }, { from: 1, to: 3, kind: "string" }],
-  ].map((tokens) => [tokens]))("rejects malformed output %#", (tokens) => {
+  it.each(
+    [
+      null,
+      {},
+      [undefined],
+      Array(1),
+      [{ from: -1, to: 1, kind: "keyword" }],
+      [{ from: 0, to: 4, kind: "keyword" }],
+      [{ from: 0.5, to: 1, kind: "keyword" }],
+      [{ from: 0, to: NaN, kind: "keyword" }],
+      [{ from: 1, to: 1, kind: "keyword" }],
+      [{ from: 0, to: 1, kind: "arbitrary-css" }],
+      [
+        { from: 1, to: 3, kind: "keyword" },
+        { from: 0, to: 1, kind: "string" },
+      ],
+      [
+        { from: 0, to: 2, kind: "keyword" },
+        { from: 1, to: 3, kind: "string" },
+      ],
+    ].map((tokens) => [tokens]),
+  )("rejects malformed output %#", (tokens) => {
     expect(() => validateSyntaxHighlightTokens(tokens, "abc")).toThrow();
   });
 
   it("propagates synchronous, asynchronous and validation errors with identity and cause", async () => {
     const failure = new Error("broken parser");
-    for (const highlight of [() => { throw failure; }, () => Promise.reject(failure)]) {
-      await expect(runSyntaxHighlighter(contribution(highlight), "text", new AbortController().signal))
-        .rejects.toMatchObject({ message: "Syntax highlighter test failed", cause: failure });
+    for (const highlight of [
+      () => {
+        throw failure;
+      },
+      () => Promise.reject(failure),
+    ]) {
+      await expect(runSyntaxHighlighter(contribution(highlight), "text", new AbortController().signal)).rejects.toMatchObject({
+        message: "Syntax highlighter test failed",
+        cause: failure,
+      });
     }
-    await expect(runSyntaxHighlighter(contribution(() => [{ from: 0, to: 99, kind: "number" }]), "x", new AbortController().signal))
-      .rejects.toThrow("Syntax highlighter test failed");
+    await expect(
+      runSyntaxHighlighter(
+        contribution(() => [{ from: 0, to: 99, kind: "number" }]),
+        "x",
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Syntax highlighter test failed");
   });
 
   it("never starts aborted work and settles cancellation even for uncooperative plugins", async () => {
     const controller = new AbortController();
-    const highlight = vi.fn(() => new Promise<readonly never[]>(() => { /* Deliberately uncooperative plugin. */ }));
+    const highlight = vi.fn(
+      () =>
+        new Promise<readonly never[]>(() => {
+          /* Deliberately uncooperative plugin. */
+        }),
+    );
     const result = runSyntaxHighlighter(contribution(highlight), "text", controller.signal);
     const rejection = expect(result).rejects.toMatchObject({ name: "AbortError" });
     await Promise.resolve();

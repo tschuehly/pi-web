@@ -157,7 +157,9 @@ describe("PromptEditor resize handle", () => {
 
     editor.remove();
     document.body.append(editor);
-    await vi.waitFor(() => { expect(Reflect.get(editor, "editor")).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(editor, "editor")).toBeDefined();
+    });
     expect(resizeHandle(editor).getAttribute("aria-valuenow")).toBe("44");
 
     editor.remove();
@@ -197,7 +199,8 @@ describe("PromptEditor resize handle", () => {
       expect(editor.shadowRoot?.querySelector(".attachments")).not.toBeNull();
       const footer = editor.shadowRoot?.querySelector<HTMLElement>("footer");
       const codeMirror = editor.shadowRoot?.querySelector<HTMLElement>(".cm-editor");
-      if (footer === null || footer === undefined || codeMirror === null || codeMirror === undefined) throw new Error("Prompt editor geometry was not rendered");
+      if (footer === null || footer === undefined || codeMirror === null || codeMirror === undefined)
+        throw new Error("Prompt editor geometry was not rendered");
       vi.spyOn(footer, "offsetHeight", "get").mockReturnValue(220);
       vi.spyOn(codeMirror, "offsetHeight", "get").mockReturnValue(44);
 
@@ -301,8 +304,12 @@ function installResizeObserverStub(): { notify: (editor: PromptEditor) => void; 
   const previousResizeObserver: unknown = Reflect.get(globalThis, "ResizeObserver");
   let callback: ResizeObserverCallback | undefined;
   class ResizeObserverStub implements ResizeObserver {
-    constructor(next: ResizeObserverCallback) { callback = next; }
-    observe = vi.fn((target: Element) => { if (!(target instanceof Element)) throw new TypeError("ResizeObserver target must be an Element"); });
+    constructor(next: ResizeObserverCallback) {
+      callback = next;
+    }
+    observe = vi.fn((target: Element) => {
+      if (!(target instanceof Element)) throw new TypeError("ResizeObserver target must be an Element");
+    });
     unobserve = vi.fn();
     disconnect = vi.fn();
     takeRecords = (): ResizeObserverEntry[] => [];

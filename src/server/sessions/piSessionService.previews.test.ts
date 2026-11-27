@@ -10,11 +10,13 @@ const expectedPreview = `${"x".repeat(509)}...`;
 describe("PiSessionService first-message previews", () => {
   it("bounds active list previews but passes the complete message to archive storage", async () => {
     const record = { ...sessionRecord("active"), messageCount: 1, firstMessage, allMessagesText: firstMessage };
-    const archive = vi.fn((input: ArchiveSessionInput) => Promise.resolve({
-      sessionId: input.sessionId,
-      cwd: input.cwd,
-      archivedAt: "2026-01-03T00:00:00.000Z",
-    }));
+    const archive = vi.fn((input: ArchiveSessionInput) =>
+      Promise.resolve({
+        sessionId: input.sessionId,
+        cwd: input.cwd,
+        archivedAt: "2026-01-03T00:00:00.000Z",
+      }),
+    );
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: "/tmp/pi-web-test-agent",
       modelRuntime: testModelRuntime,
@@ -45,14 +47,16 @@ describe("PiSessionService first-message previews", () => {
       sessionId: listed.id,
       cwd: listed.cwd,
       archivedAt: "2026-01-03T00:00:00.000Z",
-      ...(source === "stored record" ? {
-        originalPath: listed.path,
-        archivePath: "/archive/archived.jsonl",
-        created: listed.created.toISOString(),
-        modified: listed.modified.toISOString(),
-        messageCount: listed.messageCount,
-        firstMessage,
-      } : {}),
+      ...(source === "stored record"
+        ? {
+            originalPath: listed.path,
+            archivePath: "/archive/archived.jsonl",
+            created: listed.created.toISOString(),
+            modified: listed.modified.toISOString(),
+            messageCount: listed.messageCount,
+            firstMessage,
+          }
+        : {}),
     };
     const originalArchived = { ...archived };
     const service = new PiSessionService(new CapturingSessionEventHub(), {
@@ -64,11 +68,13 @@ describe("PiSessionService first-message previews", () => {
     });
 
     try {
-      expect(await service.list(listed.cwd)).toMatchObject([{
-        id: listed.id,
-        archived: true,
-        firstMessage: expectedPreview,
-      }]);
+      expect(await service.list(listed.cwd)).toMatchObject([
+        {
+          id: listed.id,
+          archived: true,
+          firstMessage: expectedPreview,
+        },
+      ]);
       expect(archived).toEqual(originalArchived);
       expect(listed.firstMessage).toBe(firstMessage);
       expect(listed.allMessagesText).toBe(firstMessage);

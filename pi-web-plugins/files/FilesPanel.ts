@@ -22,7 +22,9 @@ export class WorkspaceFilesPanel extends LitElement {
   private releaseStyles: (() => void) | undefined;
 
   @property({ attribute: false })
-  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined { return this.integration; }
+  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined {
+    return this.integration;
+  }
   set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
     if (value === this.integration) return;
     this.releaseStyles?.();
@@ -129,7 +131,9 @@ export class WorkspaceFilesPanel extends LitElement {
           ${scope.treeStale ? html`<span class="stale">stale</span>` : null}
           <div class="toolbar-actions ui-toolbar-group">
             <button class="ui-button" @click=${this.openFilePicker}>Upload</button>
-            <button class="ui-button" @click=${() => { void runtime.refreshFiles(context); }}>Refresh</button>
+            <button class="ui-button" @click=${() => {
+              void runtime.refreshFiles(context);
+            }}>Refresh</button>
           </div>
           <input id="workspace-upload-input" class="visually-hidden" type="file" multiple @change=${this.handleFileInputChange} />
         </section>
@@ -191,13 +195,7 @@ export class WorkspaceFilesPanel extends LitElement {
     this.scope = runtime.prepare(context);
   }
 
-  private renderTreeEntry(
-    context: WorkspacePanelContext,
-    runtime: FilesRuntime,
-    scope: FilesScopeState,
-    entry: FileTreeEntry,
-    depth: number,
-  ): TemplateResult {
+  private renderTreeEntry(context: WorkspacePanelContext, runtime: FilesRuntime, scope: FilesScopeState, entry: FileTreeEntry, depth: number): TemplateResult {
     const children = scope.expandedDirs[entry.path];
     const hasChildren = children !== undefined;
     const selected = entry.type !== "directory" && scope.selectedFilePath === entry.path;
@@ -222,7 +220,8 @@ export class WorkspaceFilesPanel extends LitElement {
           <strong>Uploads</strong>
           <small>${uploadSummaryLabel(batches)}</small>
         </div>
-        ${batches.map((batch) => html`
+        ${batches.map(
+          (batch) => html`
           <article class=${`upload-batch ${batch.status}`}>
             <div class="upload-batch-heading">
               <div>
@@ -234,12 +233,19 @@ export class WorkspaceFilesPanel extends LitElement {
             <progress max="1" .value=${uploadBatchProgressValue(batch)}></progress>
             <div class="upload-file-list">${batch.files.map((file) => this.renderUploadFile(file))}</div>
             <div class="upload-actions">
-              ${batch.status === "uploading"
-                ? html`<button @click=${() => { runtime.cancelWorkspaceUpload(context, batch.id); }}>Cancel</button>`
-                : html`<button @click=${() => { runtime.clearWorkspaceUpload(context, batch.id); }}>Dismiss</button>`}
+              ${
+                batch.status === "uploading"
+                  ? html`<button @click=${() => {
+                      runtime.cancelWorkspaceUpload(context, batch.id);
+                    }}>Cancel</button>`
+                  : html`<button @click=${() => {
+                      runtime.clearWorkspaceUpload(context, batch.id);
+                    }}>Dismiss</button>`
+              }
             </div>
           </article>
-        `)}
+        `,
+        )}
       </section>
     `;
   }
@@ -270,9 +276,13 @@ export class WorkspaceFilesPanel extends LitElement {
             <span class="eyebrow">Upload</span>
             <h2>Review ${fileCount === 1 ? "file" : `${String(fileCount)} files`}</h2>
           </div>
-          <button class="close-button" type="button" title="Cancel upload" aria-label="Cancel upload" @click=${() => { this.closeUploadDialog(); }}>×</button>
+          <button class="close-button" type="button" title="Cancel upload" aria-label="Cancel upload" @click=${() => {
+            this.closeUploadDialog();
+          }}>×</button>
         </header>
-        <form @submit=${(event: SubmitEvent) => { this.submitUploadReview(event, context, runtime, review); }}>
+        <form @submit=${(event: SubmitEvent) => {
+          this.submitUploadReview(event, context, runtime, review);
+        }}>
           <label>
             <span>Destination folder</span>
             <input id="workspace-upload-destination" autofocus .value=${this.destinationFolder} placeholder=${defaultFolder} @input=${this.handleDestinationInput} />
@@ -288,7 +298,9 @@ export class WorkspaceFilesPanel extends LitElement {
           </section>
           ${this.formError === "" ? null : html`<div class="dialog-error" role="alert">${this.formError}</div>`}
           <footer>
-            <button type="button" @click=${() => { this.closeUploadDialog(); }}>Cancel</button>
+            <button type="button" @click=${() => {
+              this.closeUploadDialog();
+            }}>Cancel</button>
             <button type="submit">Upload</button>
           </footer>
         </form>
@@ -378,7 +390,7 @@ export class WorkspaceFilesPanel extends LitElement {
   };
 
   private openUploadReview(files: File[]): void {
-    const defaultFolder = this.context === undefined ? "" : workspaceFilesCapabilityV1(this.context.files)?.defaultUploadFolder ?? "";
+    const defaultFolder = this.context === undefined ? "" : (workspaceFilesCapabilityV1(this.context.files)?.defaultUploadFolder ?? "");
     const defaults = workspaceUploadReviewDefaults(defaultFolder);
     this.pendingUpload = { files };
     this.destinationFolder = defaults.destinationFolder;
@@ -442,7 +454,9 @@ export class WorkspaceFilesPanel extends LitElement {
   private restoreUploadFocus(): void {
     const target = this.uploadReturnFocus;
     this.uploadReturnFocus = undefined;
-    void this.updateComplete.then(() => { if (target?.isConnected === true) target.focus(); });
+    void this.updateComplete.then(() => {
+      if (target?.isConnected === true) target.focus();
+    });
   }
 
   private resetPendingUpload(): void {
@@ -536,11 +550,7 @@ export function workspaceUploadReviewDefaults(destinationFolder: string): { dest
   return { destinationFolder, createDirs: true, overwrite: false };
 }
 
-export function startDirectWorkspaceUpload(
-  runtime: FilesRuntime,
-  context: WorkspacePanelContext,
-  files: readonly File[],
-): WorkspaceUploadRun | undefined {
+export function startDirectWorkspaceUpload(runtime: FilesRuntime, context: WorkspacePanelContext, files: readonly File[]): WorkspaceUploadRun | undefined {
   if (files.length === 0) return undefined;
   const capability = workspaceFilesCapabilityV1(context.files);
   if (capability === undefined) return undefined;
@@ -554,10 +564,14 @@ export function startDirectWorkspaceUpload(
 
 export function uploadBatchStatusLabel(batch: WorkspaceUploadBatchState): string {
   switch (batch.status) {
-    case "completed": return "Done";
-    case "error": return "Failed";
-    case "cancelled": return "Cancelled";
-    case "uploading": return formatPercent(batch.percent);
+    case "completed":
+      return "Done";
+    case "error":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "uploading":
+      return formatPercent(batch.percent);
   }
 }
 
@@ -574,20 +588,29 @@ function uploadBatchTitle(batch: WorkspaceUploadBatchState): string {
   const count = batch.files.length;
   const files = count === 1 ? "file" : "files";
   switch (batch.status) {
-    case "completed": return `Uploaded ${String(count)} ${files}`;
-    case "error": return `Upload failed for ${String(count)} ${files}`;
-    case "cancelled": return `Upload cancelled for ${String(count)} ${files}`;
-    case "uploading": return `Uploading ${String(count)} ${files}`;
+    case "completed":
+      return `Uploaded ${String(count)} ${files}`;
+    case "error":
+      return `Upload failed for ${String(count)} ${files}`;
+    case "cancelled":
+      return `Upload cancelled for ${String(count)} ${files}`;
+    case "uploading":
+      return `Uploading ${String(count)} ${files}`;
   }
 }
 
 function uploadFileStatusLabel(file: WorkspaceUploadFileState): string {
   switch (file.status) {
-    case "pending": return "Pending";
-    case "uploading": return formatPercent(file.percent);
-    case "completed": return "Done";
-    case "error": return "Error";
-    case "cancelled": return "Cancelled";
+    case "pending":
+      return "Pending";
+    case "uploading":
+      return formatPercent(file.percent);
+    case "completed":
+      return "Done";
+    case "error":
+      return "Error";
+    case "cancelled":
+      return "Cancelled";
   }
 }
 

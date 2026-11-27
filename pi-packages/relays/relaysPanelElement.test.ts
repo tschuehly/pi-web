@@ -1,13 +1,16 @@
 // @vitest-environment happy-dom
 
 import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { FileContentResponse, FileTreeEntry, FileTreeResponse, StylesheetIntegrationCapabilityV1, WorkspaceFiles, WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
+import type {
+  FileContentResponse,
+  FileTreeEntry,
+  FileTreeResponse,
+  StylesheetIntegrationCapabilityV1,
+  WorkspaceFiles,
+  WorkspacePanelContext,
+} from "@jmfederico/pi-web/plugin-api";
 import { RELAYS_ROOT, type RelayDiscoveryFiles, type RelayTreeNode } from "./relayDiscovery";
-import {
-  collapsedAncestorOfSelectedFile,
-  defineRelaysPanelElement,
-  relaysPanelTagName,
-} from "./relaysPanelElement";
+import { collapsedAncestorOfSelectedFile, defineRelaysPanelElement, relaysPanelTagName } from "./relaysPanelElement";
 
 interface RelaysPanelTestElement extends HTMLElement {
   context: WorkspacePanelContext | undefined;
@@ -139,10 +142,7 @@ describe("single relay", () => {
   it("auto-opens the relay without a picker and renders its default document", async () => {
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("only-relay", "2026-02-01T00:00:00.000Z")]);
-    fake.addDirectory(`${RELAYS_ROOT}/only-relay`, [
-      relayDocument("only-relay", "charter.md"),
-      relayDocument("only-relay", "status.md"),
-    ]);
+    fake.addDirectory(`${RELAYS_ROOT}/only-relay`, [relayDocument("only-relay", "charter.md"), relayDocument("only-relay", "status.md")]);
     fake.addDocument(`${RELAYS_ROOT}/only-relay/status.md`, "# Status\nAll good.");
     fake.addDocument(`${RELAYS_ROOT}/only-relay/charter.md`, "# Charter");
 
@@ -172,10 +172,7 @@ describe("single relay", () => {
 describe("multiple relays", () => {
   it("pre-selects the most recently modified relay and opens another on picker change", async () => {
     const fake = workspaceFilesFake();
-    fake.addDirectory(RELAYS_ROOT, [
-      relayDirectory("older", "2026-01-01T00:00:00.000Z"),
-      relayDirectory("newer", "2026-03-01T00:00:00.000Z"),
-    ]);
+    fake.addDirectory(RELAYS_ROOT, [relayDirectory("older", "2026-01-01T00:00:00.000Z"), relayDirectory("newer", "2026-03-01T00:00:00.000Z")]);
     fake.addDirectory(`${RELAYS_ROOT}/newer`, [relayDocument("newer", "status.md")]);
     fake.addDirectory(`${RELAYS_ROOT}/older`, [relayDocument("older", "status.md")]);
     fake.addDocument(`${RELAYS_ROOT}/newer/status.md`, "newer status");
@@ -246,17 +243,20 @@ describe("exact packet navigation", () => {
     expect(fake.readFile).not.toHaveBeenCalled();
   });
 
-  it.each(["../outside", "/absolute/packet", "custom/../packet", "custom\\packet", "custom/packet\n", ""])("rejects unsafe packet selection without filesystem access: %j", async (path) => {
-    const fake = twoRelays();
-    const panel = await mountPanel(linkedPanelContext(fake, path));
+  it.each(["../outside", "/absolute/packet", "custom/../packet", "custom\\packet", "custom/packet\n", ""])(
+    "rejects unsafe packet selection without filesystem access: %j",
+    async (path) => {
+      const fake = twoRelays();
+      const panel = await mountPanel(linkedPanelContext(fake, path));
 
-    expect(viewerText(panel)).toContain("normalized workspace-relative packet directory");
-    refreshButton(panel).click();
-    await flushAsync();
-    expect(viewerText(panel)).toContain("normalized workspace-relative packet directory");
-    expect(fake.listFiles).not.toHaveBeenCalled();
-    expect(fake.readFile).not.toHaveBeenCalled();
-  });
+      expect(viewerText(panel)).toContain("normalized workspace-relative packet directory");
+      refreshButton(panel).click();
+      await flushAsync();
+      expect(viewerText(panel)).toContain("normalized workspace-relative packet directory");
+      expect(fake.listFiles).not.toHaveBeenCalled();
+      expect(fake.readFile).not.toHaveBeenCalled();
+    },
+  );
 
   it("adopts changed route selection in the same workspace and restores the default when cleared", async () => {
     const fake = twoRelays();
@@ -293,8 +293,12 @@ describe("exact packet navigation", () => {
   it("does not overwrite a newer linked packet with a stale document response", async () => {
     const fake = twoRelays();
     const oldContent = await fake.readFile(`${RELAYS_ROOT}/older/status.md`);
-    let resolveOld: (value: FileContentResponse) => void = () => { throw new Error("pending read not initialized"); };
-    const pendingRead = new Promise<FileContentResponse>((resolve) => { resolveOld = resolve; });
+    let resolveOld: (value: FileContentResponse) => void = () => {
+      throw new Error("pending read not initialized");
+    };
+    const pendingRead = new Promise<FileContentResponse>((resolve) => {
+      resolveOld = resolve;
+    });
     fake.readFile.mockImplementationOnce(() => pendingRead);
     const panel = await mountPanel(linkedPanelContext(fake, `${RELAYS_ROOT}/older`));
     panel.context = linkedPanelContext(fake, `${RELAYS_ROOT}/newer`);
@@ -340,11 +344,7 @@ describe("document tabs", () => {
     // a direct child of the single nav.document-tabs row.
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("relay")]);
-    fake.addDirectory(`${RELAYS_ROOT}/relay`, [
-      relayDocument("relay", "notes.md"),
-      relayDocument("relay", "log.md"),
-      relayDocument("relay", "status.md"),
-    ]);
+    fake.addDirectory(`${RELAYS_ROOT}/relay`, [relayDocument("relay", "notes.md"), relayDocument("relay", "log.md"), relayDocument("relay", "status.md")]);
     fake.addDocument(`${RELAYS_ROOT}/relay/status.md`, "status body");
 
     const panel = await mountPanel(panelContext(fake));
@@ -361,11 +361,7 @@ describe("document tabs", () => {
   it("keeps the tab strip mounted with its scroll and focus when switching documents", async () => {
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("relay")]);
-    fake.addDirectory(`${RELAYS_ROOT}/relay`, [
-      relayDocument("relay", "notes.md"),
-      relayDocument("relay", "log.md"),
-      relayDocument("relay", "status.md"),
-    ]);
+    fake.addDirectory(`${RELAYS_ROOT}/relay`, [relayDocument("relay", "notes.md"), relayDocument("relay", "log.md"), relayDocument("relay", "status.md")]);
     fake.addDocument(`${RELAYS_ROOT}/relay/status.md`, "status body");
     fake.addDocument(`${RELAYS_ROOT}/relay/log.md`, "log body");
 
@@ -407,10 +403,7 @@ describe("document tabs", () => {
 
   it("starts a different relay's tab strip at the left edge", async () => {
     const fake = workspaceFilesFake();
-    fake.addDirectory(RELAYS_ROOT, [
-      relayDirectory("alpha", "2026-01-01T00:00:00.000Z"),
-      relayDirectory("beta", "2026-02-01T00:00:00.000Z"),
-    ]);
+    fake.addDirectory(RELAYS_ROOT, [relayDirectory("alpha", "2026-01-01T00:00:00.000Z"), relayDirectory("beta", "2026-02-01T00:00:00.000Z")]);
     fake.addDirectory(`${RELAYS_ROOT}/alpha`, [relayDocument("alpha", "status.md")]);
     fake.addDirectory(`${RELAYS_ROOT}/beta`, [relayDocument("beta", "status.md"), relayDocument("beta", "log.md")]);
     fake.addDocument(`${RELAYS_ROOT}/beta/status.md`, "beta status");
@@ -485,15 +478,10 @@ describe("markdown rendering", () => {
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("relay")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay`, [relayDocument("relay", "status.md")]);
-    fake.addDocument(`${RELAYS_ROOT}/relay/status.md`, [
-      "# Status",
-      "",
-      "See [the docs](https://example.com/docs).",
-      "",
-      "<script>alert('xss')</script>",
-      "",
-      "[click](javascript:alert('xss'))",
-    ].join("\n"));
+    fake.addDocument(
+      `${RELAYS_ROOT}/relay/status.md`,
+      ["# Status", "", "See [the docs](https://example.com/docs).", "", "<script>alert('xss')</script>", "", "[click](javascript:alert('xss'))"].join("\n"),
+    );
 
     const panel = await mountPanel(panelContext(fake));
 
@@ -505,7 +493,7 @@ describe("markdown rendering", () => {
     const docsLink = rendered?.querySelector('a[href="https://example.com/docs"]');
     expect(docsLink?.getAttribute("target")).toBe("_blank");
     expect(docsLink?.getAttribute("rel")).toBe("noreferrer noopener");
-    const unsafeLink = [...rendered?.querySelectorAll("a") ?? []].find((link) => link.textContent === "click");
+    const unsafeLink = [...(rendered?.querySelectorAll("a") ?? [])].find((link) => link.textContent === "click");
     expect(unsafeLink?.hasAttribute("href")).toBe(false);
   });
 
@@ -590,11 +578,7 @@ describe("nested documents", () => {
   it("expanding a folder collapses its siblings and their expansions (accordion)", async () => {
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("relay")]);
-    fake.addDirectory(`${RELAYS_ROOT}/relay`, [
-      relayDocument("relay", "status.md"),
-      relayFolder("relay", "alpha"),
-      relayFolder("relay", "beta"),
-    ]);
+    fake.addDirectory(`${RELAYS_ROOT}/relay`, [relayDocument("relay", "status.md"), relayFolder("relay", "alpha"), relayFolder("relay", "beta")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay/alpha`, [nestedDocument("relay", "alpha/a.md"), relayFolder("relay", "alpha/deep")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay/alpha/deep`, [nestedDocument("relay", "alpha/deep/x.md")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay/beta`, [nestedDocument("relay", "beta/b.md")]);
@@ -653,11 +637,7 @@ describe("nested documents", () => {
   it("accordion-collapsing a sibling highlights it when it holds the open document", async () => {
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("relay")]);
-    fake.addDirectory(`${RELAYS_ROOT}/relay`, [
-      relayDocument("relay", "status.md"),
-      relayFolder("relay", "notes"),
-      relayFolder("relay", "assets"),
-    ]);
+    fake.addDirectory(`${RELAYS_ROOT}/relay`, [relayDocument("relay", "status.md"), relayFolder("relay", "notes"), relayFolder("relay", "assets")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay/notes`, [nestedDocument("relay", "notes/topic.md")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay/assets`, [nestedDocument("relay", "assets/pic.md")]);
     fake.addDocument(`${RELAYS_ROOT}/relay/status.md`, "status body");
@@ -703,10 +683,7 @@ describe("nested documents", () => {
 
   it("switching relays clears expansion state", async () => {
     const fake = workspaceFilesFake();
-    fake.addDirectory(RELAYS_ROOT, [
-      relayDirectory("first", "2026-02-01T00:00:00.000Z"),
-      relayDirectory("second", "2026-01-01T00:00:00.000Z"),
-    ]);
+    fake.addDirectory(RELAYS_ROOT, [relayDirectory("first", "2026-02-01T00:00:00.000Z"), relayDirectory("second", "2026-01-01T00:00:00.000Z")]);
     for (const relay of ["first", "second"]) {
       fake.addDirectory(`${RELAYS_ROOT}/${relay}`, [relayDocument(relay, "status.md"), relayFolder(relay, "notes")]);
       fake.addDirectory(`${RELAYS_ROOT}/${relay}/notes`, [nestedDocument(relay, "notes/topic.md")]);
@@ -736,10 +713,7 @@ describe("nested documents", () => {
     const fake = workspaceFilesFake();
     fake.addDirectory(RELAYS_ROOT, [relayDirectory("relay")]);
     fake.addDirectory(`${RELAYS_ROOT}/relay`, [relayFolder("relay", "notes")]);
-    fake.addDirectory(`${RELAYS_ROOT}/relay/notes`, [
-      nestedDocument("relay", "notes/zebra.md"),
-      nestedDocument("relay", "notes/charter.md"),
-    ]);
+    fake.addDirectory(`${RELAYS_ROOT}/relay/notes`, [nestedDocument("relay", "notes/zebra.md"), nestedDocument("relay", "notes/charter.md")]);
     fake.addDocument(`${RELAYS_ROOT}/relay/notes/charter.md`, "charter body");
     fake.addDocument(`${RELAYS_ROOT}/relay/notes/zebra.md`, "zebra body");
 
@@ -797,14 +771,20 @@ describe("collapsed-ancestor highlight", () => {
   const tree: RelayTreeNode[] = [
     { kind: "file", name: "status.md", path: "relay/status.md", relativePath: "status.md", depth: 0 },
     {
-      kind: "directory", name: "notes", path: "relay/notes", relativePath: "notes", depth: 0,
+      kind: "directory",
+      name: "notes",
+      path: "relay/notes",
+      relativePath: "notes",
+      depth: 0,
       children: [
         { kind: "file", name: "topic.md", path: "relay/notes/topic.md", relativePath: "notes/topic.md", depth: 1 },
         {
-          kind: "directory", name: "inner", path: "relay/notes/inner", relativePath: "notes/inner", depth: 1,
-          children: [
-            { kind: "file", name: "deep.md", path: "relay/notes/inner/deep.md", relativePath: "notes/inner/deep.md", depth: 2 },
-          ],
+          kind: "directory",
+          name: "inner",
+          path: "relay/notes/inner",
+          relativePath: "notes/inner",
+          depth: 1,
+          children: [{ kind: "file", name: "deep.md", path: "relay/notes/inner/deep.md", relativePath: "notes/inner/deep.md", depth: 2 }],
         },
       ],
     },
@@ -842,10 +822,7 @@ describe("refresh and context changes", () => {
 
   it("re-scans on Refresh while keeping the open relay and document", async () => {
     const fake = workspaceFilesFake();
-    fake.addDirectory(RELAYS_ROOT, [
-      relayDirectory("alpha", "2026-01-01T00:00:00.000Z"),
-      relayDirectory("beta", "2026-02-01T00:00:00.000Z"),
-    ]);
+    fake.addDirectory(RELAYS_ROOT, [relayDirectory("alpha", "2026-01-01T00:00:00.000Z"), relayDirectory("beta", "2026-02-01T00:00:00.000Z")]);
     fake.addDirectory(`${RELAYS_ROOT}/alpha`, [relayDocument("alpha", "status.md"), relayDocument("alpha", "log.md")]);
     fake.addDirectory(`${RELAYS_ROOT}/beta`, [relayDocument("beta", "status.md")]);
     fake.addDocument(`${RELAYS_ROOT}/alpha/status.md`, "alpha status");
@@ -933,7 +910,9 @@ function workspaceFilesFake(): WorkspaceFilesFake {
     },
     listFiles,
     readFile,
-    addDirectory: (path, entries, overrides = {}) => { directories.set(path, { entries, truncated: overrides.truncated ?? false }); },
+    addDirectory: (path, entries, overrides = {}) => {
+      directories.set(path, { entries, truncated: overrides.truncated ?? false });
+    },
     addDocument: (path, content, overrides = {}) => {
       documents.set(path, {
         path,
@@ -946,7 +925,9 @@ function workspaceFilesFake(): WorkspaceFilesFake {
         ...overrides,
       });
     },
-    failWith: (path, error) => { failures.set(path, error); },
+    failWith: (path, error) => {
+      failures.set(path, error);
+    },
   };
 }
 
@@ -966,7 +947,8 @@ function linkedPanelContext(fake: WorkspaceFilesFake, relayPath?: string) {
   return {
     ...panelContext(fake),
     navigation: {
-      version: 1, contributionId: "relay:workspace.relays",
+      version: 1,
+      contributionId: "relay:workspace.relays",
       query: relayPath === undefined ? {} : { relay: relayPath },
       set: vi.fn(),
     },
@@ -975,10 +957,7 @@ function linkedPanelContext(fake: WorkspaceFilesFake, relayPath?: string) {
 
 function twoRelays(): WorkspaceFilesFake {
   const fake = workspaceFilesFake();
-  fake.addDirectory(RELAYS_ROOT, [
-    relayDirectory("older", "2026-01-01T00:00:00.000Z"),
-    relayDirectory("newer", "2026-03-01T00:00:00.000Z"),
-  ]);
+  fake.addDirectory(RELAYS_ROOT, [relayDirectory("older", "2026-01-01T00:00:00.000Z"), relayDirectory("newer", "2026-03-01T00:00:00.000Z")]);
   for (const name of ["older", "newer"]) {
     fake.addDirectory(`${RELAYS_ROOT}/${name}`, [relayDocument(name, "status.md")]);
     fake.addDocument(`${RELAYS_ROOT}/${name}/status.md`, `${name} status`);

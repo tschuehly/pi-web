@@ -239,8 +239,7 @@ describe("SubsessionCompletionInbox", () => {
 
 describe("completionReceiptIds", () => {
   it("extracts only string completion ids from an untyped receipt", () => {
-    expect(completionReceiptIds({ completionIds: ["child-1:run-1", 1, null, {}, "child-2:run-1"] }))
-      .toEqual(["child-1:run-1", "child-2:run-1"]);
+    expect(completionReceiptIds({ completionIds: ["child-1:run-1", 1, null, {}, "child-2:run-1"] })).toEqual(["child-1:run-1", "child-2:run-1"]);
     for (const value of [undefined, null, [], "receipt", {}, { completionIds: "child-1:run-1" }]) {
       expect(completionReceiptIds(value)).toEqual([]);
     }
@@ -264,18 +263,20 @@ describe("persistedSubsessionCompletions", () => {
   it("ignores malformed records and entries that are not persisted completions", () => {
     const valid = completion();
     const entry = completionEntry(valid);
-    expect(persistedSubsessionCompletions([
-      undefined,
-      null,
-      [],
-      1,
-      {},
-      { ...entry, type: "custom_message" },
-      { ...entry, customType: SUBSESSION_RECEIPT_ENTRY_TYPE },
-      completionEntry(null),
-      completionEntry([]),
-      entry,
-    ])).toEqual([valid]);
+    expect(
+      persistedSubsessionCompletions([
+        undefined,
+        null,
+        [],
+        1,
+        {},
+        { ...entry, type: "custom_message" },
+        { ...entry, customType: SUBSESSION_RECEIPT_ENTRY_TYPE },
+        completionEntry(null),
+        completionEntry([]),
+        entry,
+      ]),
+    ).toEqual([valid]);
   });
 
   it.each([
@@ -301,41 +302,49 @@ describe("persistedSubsessionCompletions", () => {
 
   it("keeps only completion fields and ignores a non-string optional error detail", () => {
     const valid = completion();
-    expect(persistedSubsessionCompletions([
-      completionEntry({ ...valid, errorDetail: { message: "not a string" }, unrelated: true }),
-    ])).toEqual([valid]);
+    expect(persistedSubsessionCompletions([completionEntry({ ...valid, errorDetail: { message: "not a string" }, unrelated: true })])).toEqual([valid]);
   });
 });
 
 describe("renderSubsessionCompletions", () => {
   it("returns completed output with a no-other-children status", () => {
-    expect(renderSubsessionCompletions([completion()], [])).toBe([
-      "Subsession child-1 stopped working (idle).",
-      "",
-      "--- SUBSESSION OUTPUT: child-1 ---",
-      "all done",
-      "",
-      "No other tracked subsessions are working.",
-    ].join("\n"));
+    expect(renderSubsessionCompletions([completion()], [])).toBe(
+      [
+        "Subsession child-1 stopped working (idle).",
+        "",
+        "--- SUBSESSION OUTPUT: child-1 ---",
+        "all done",
+        "",
+        "No other tracked subsessions are working.",
+      ].join("\n"),
+    );
   });
 
   it("identifies errors separately from output and names children still working without polling", () => {
-    const failed = completion({ completionId: "child-2:run-1", sessionId: "child-2", status: "error", finalText: "partial answer", errorDetail: "provider failed" });
-    expect(renderSubsessionCompletions([completion({ finalText: "" }), failed], ["child-3", "child-4"])).toBe([
-      "Subsession child-1 stopped working (idle).",
-      "",
-      "--- SUBSESSION OUTPUT: child-1 ---",
-      "(no output)",
-      "",
-      "Subsession child-2 stopped working (error).",
-      "",
-      "Error: provider failed",
-      "",
-      "--- SUBSESSION OUTPUT: child-2 ---",
-      "partial answer",
-      "",
-      "Still working: child-3, child-4. Continue working, or call yield_to_subsessions alone and last at the next join point. Further unread results arrive automatically; do not poll.",
-    ].join("\n"));
+    const failed = completion({
+      completionId: "child-2:run-1",
+      sessionId: "child-2",
+      status: "error",
+      finalText: "partial answer",
+      errorDetail: "provider failed",
+    });
+    expect(renderSubsessionCompletions([completion({ finalText: "" }), failed], ["child-3", "child-4"])).toBe(
+      [
+        "Subsession child-1 stopped working (idle).",
+        "",
+        "--- SUBSESSION OUTPUT: child-1 ---",
+        "(no output)",
+        "",
+        "Subsession child-2 stopped working (error).",
+        "",
+        "Error: provider failed",
+        "",
+        "--- SUBSESSION OUTPUT: child-2 ---",
+        "partial answer",
+        "",
+        "Still working: child-3, child-4. Continue working, or call yield_to_subsessions alone and last at the next join point. Further unread results arrive automatically; do not poll.",
+      ].join("\n"),
+    );
   });
 
   it("applies the 2000-character notice limit to each result, not the whole batch", () => {
@@ -356,7 +365,9 @@ describe("renderSubsessionCompletions", () => {
 
     expect(rendered).toContain("Subsession child-1 stopped working (error).");
     expect(rendered).toContain("Error: provider failed");
-    expect(rendered).toContain('Output from subsession child-1 was too long for this completion notice and was omitted. Call check_subsession with sessionId "child-1" to retrieve the final output.');
+    expect(rendered).toContain(
+      'Output from subsession child-1 was too long for this completion notice and was omitted. Call check_subsession with sessionId "child-1" to retrieve the final output.',
+    );
     expect(rendered).not.toContain("--- SUBSESSION OUTPUT:");
     expect(rendered).not.toContain("ANSWER");
     inbox.receive(delivery.map(({ completionId }) => completionId));

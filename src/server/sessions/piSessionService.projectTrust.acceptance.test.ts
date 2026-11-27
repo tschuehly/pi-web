@@ -35,7 +35,9 @@ async function tempDir(prefix: string): Promise<string> {
 }
 
 /** An agent dir, optionally pinning `defaultProjectTrust` in its settings.json and a saved `trust.json` decision. */
-async function agentDir(options: { defaultProjectTrust?: "always" | "never" | "ask"; savedDecision?: { path: string; trusted: boolean } } = {}): Promise<string> {
+async function agentDir(
+  options: { defaultProjectTrust?: "always" | "never" | "ask"; savedDecision?: { path: string; trusted: boolean } } = {},
+): Promise<string> {
   const dir = await tempDir("pi-web-trust-agent-");
   if (options.defaultProjectTrust !== undefined) {
     await writeFile(join(dir, "settings.json"), `${JSON.stringify({ defaultProjectTrust: options.defaultProjectTrust })}\n`);
@@ -50,14 +52,17 @@ async function agentDir(options: { defaultProjectTrust?: "always" | "never" | "a
 async function projectWithCommandExtension(): Promise<string> {
   const cwd = await tempDir("pi-web-trust-project-");
   await mkdir(join(cwd, ".pi", "extensions"), { recursive: true });
-  await writeFile(join(cwd, ".pi", "extensions", "probe.js"), `
+  await writeFile(
+    join(cwd, ".pi", "extensions", "probe.js"),
+    `
     export default function (pi) {
       pi.registerCommand("project-probe", {
         description: "project trust acceptance probe",
         async handler() {}
       });
     }
-  `);
+  `,
+  );
   return cwd;
 }
 

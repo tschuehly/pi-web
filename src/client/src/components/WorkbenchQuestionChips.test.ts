@@ -23,19 +23,36 @@ function ask(askId: string, patch: Partial<PendingAskUser> = {}): PendingAskUser
     revision: "r1",
     turnsSinceUpdate: 0,
     context: "**Finding:** the cache is stale.",
-    questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }] }],
+    questions: [
+      {
+        id: "db",
+        question: "Which database?",
+        options: [
+          { value: "pg", label: "Postgres" },
+          { value: "sqlite", label: "SQLite" },
+        ],
+      },
+    ],
     ...patch,
   };
 }
 
-const twoQuestions = ask("def-2", { questions: [
-  { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] },
-  { id: "why", question: "Why now?", options: [] },
-] });
+const twoQuestions = ask("def-2", {
+  questions: [
+    { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] },
+    { id: "why", question: "Why now?", options: [] },
+  ],
+});
 
 const running: SessionStatus = {
-  sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
-  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+  sessionId: "s",
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: 0,
   extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "w", kind: "worker", name: "Rows", activity: "running" }] }) },
 };
 
@@ -57,7 +74,12 @@ const roster = (chips: WorkbenchQuestionChips) => chips.shadowRoot?.querySelecto
 function row(chips: WorkbenchQuestionChips) {
   const shadow = roster(chips)?.shadowRoot;
   const slot = shadow?.querySelector<HTMLSlotElement>('slot[name="aside"]');
-  return { toggle: shadow?.querySelector(".head > .section-toggle") ?? null, aside: slot?.assignedElements() ?? [], slotParent: slot?.parentElement ?? null, rows: shadow?.querySelector<HTMLElement>("section > .rows") ?? null };
+  return {
+    toggle: shadow?.querySelector(".head > .section-toggle") ?? null,
+    aside: slot?.assignedElements() ?? [],
+    slotParent: slot?.parentElement ?? null,
+    rows: shadow?.querySelector<HTMLElement>("section > .rows") ?? null,
+  };
 }
 
 const bar = (chips: WorkbenchQuestionChips) => chips.shadowRoot?.querySelector<HTMLButtonElement>(".bar") ?? undefined;
@@ -86,7 +108,10 @@ describe("WorkbenchQuestionChips", () => {
   });
 
   it("counts answered questions from the drafts and as the user answers in the drawer", async () => {
-    localStorage.setItem("pi-web:ask-draft:local:session-1:def-2", JSON.stringify({ why: { values: [], otherText: "Soon", asked: JSON.stringify(twoQuestions.questions[1]) } }));
+    localStorage.setItem(
+      "pi-web:ask-draft:local:session-1:def-2",
+      JSON.stringify({ why: { values: [], otherText: "Soon", asked: JSON.stringify(twoQuestions.questions[1]) } }),
+    );
     const { chips } = await mount([ask("abc-1"), twoQuestions]);
     expect(bar(chips)?.textContent.replace(/\s+/g, " ").trim()).toBe("3 open questions · 1 answered");
 
@@ -104,7 +129,18 @@ describe("WorkbenchQuestionChips", () => {
   it("opens a drawer of every set with its context above the questions, recommended option, Custom and Send", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-19T10:05:00.000Z"));
-    const recommended = { questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] }] };
+    const recommended = {
+      questions: [
+        {
+          id: "db",
+          question: "Which database?",
+          options: [
+            { value: "pg", label: "Postgres", recommended: true },
+            { value: "sqlite", label: "SQLite" },
+          ],
+        },
+      ],
+    };
     const { chips } = await mount([ask("abc-1", recommended), ask("def-2", { turnsSinceUpdate: 6, updatedAt: "2026-10-19T08:00:00.000Z" })]);
 
     await openWith(chips);
@@ -132,7 +168,9 @@ describe("WorkbenchQuestionChips", () => {
 
     await openWith(chips);
 
-    await vi.waitFor(() => { expect(focus).toHaveBeenCalledWith(0, true); });
+    await vi.waitFor(() => {
+      expect(focus).toHaveBeenCalledWith(0, true);
+    });
     expect(focus.mock.contexts[0]).toBe(cards(chips)[0]);
   });
 
@@ -152,8 +190,11 @@ describe("WorkbenchQuestionChips", () => {
 
     await openWith(chips);
 
-    await vi.waitFor(() => { expect(focused).toEqual([{ preventScroll: true }]); });
-    expect(chips.shadowRoot?.querySelector<HTMLElement>(".sets")?.scrollTop).toBe(0);    vi.restoreAllMocks();
+    await vi.waitFor(() => {
+      expect(focused).toEqual([{ preventScroll: true }]);
+    });
+    expect(chips.shadowRoot?.querySelector<HTMLElement>(".sets")?.scrollTop).toBe(0);
+    vi.restoreAllMocks();
   });
 
   it("opens an approval-only set from the bar with Approve focused", async () => {
@@ -161,7 +202,9 @@ describe("WorkbenchQuestionChips", () => {
     await openWith(chips);
     expect(drawer(chips)).not.toBeNull();
     const card = cards(chips)[0];
-    await vi.waitFor(() => { expect(card?.shadowRoot?.activeElement?.classList.contains("approve")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(card?.shadowRoot?.activeElement?.classList.contains("approve")).toBe(true);
+    });
     expect(await chips.openQuestion("ctx-1", 1)).toBe(false);
   });
 
@@ -179,7 +222,10 @@ describe("WorkbenchQuestionChips", () => {
   });
 
   it("shares one row: Activity and the bar split the roster's header line, the entries span below, the drawer opens above", async () => {
-    const { chips } = await mount([ask("abc-1")], (each) => { each.status = running; each.rosterCollapsed = false; });
+    const { chips } = await mount([ask("abc-1")], (each) => {
+      each.status = running;
+      each.rosterCollapsed = false;
+    });
     const both = row(chips);
     expect(both.toggle?.textContent).toContain("Activity");
     expect(both.aside).toEqual([bar(chips)]);
@@ -205,7 +251,9 @@ describe("WorkbenchQuestionChips", () => {
   });
 
   it("gives Activity the whole row without open questions, and the bar the whole row without activity", async () => {
-    const { chips } = await mount([], (each) => { each.status = running; });
+    const { chips } = await mount([], (each) => {
+      each.status = running;
+    });
     expect(row(chips).toggle).not.toBeNull();
     expect(row(chips).aside).toEqual([]);
 
@@ -215,7 +263,12 @@ describe("WorkbenchQuestionChips", () => {
     expect(row(lone).slotParent?.matches("section.lone")).toBe(true);
 
     // A Grid tile's folded roster (its toggle lives in the composer) leaves the bar the row too.
-    const compact = (await mount([ask("abc-1")], (each) => { each.status = running; each.rosterCompact = true; })).chips;
+    const compact = (
+      await mount([ask("abc-1")], (each) => {
+        each.status = running;
+        each.rosterCompact = true;
+      })
+    ).chips;
     expect(row(compact).toggle).toBeNull();
     expect(row(compact).slotParent?.matches("section.lone")).toBe(true);
 
@@ -226,7 +279,9 @@ describe("WorkbenchQuestionChips", () => {
     // Questions arriving later move into the row beside Activity.
     chips.asks = [ask("abc-1")];
     await chips.updateComplete;
-    await vi.waitFor(() => { expect(row(chips).aside).toEqual([bar(chips)]); });
+    await vi.waitFor(() => {
+      expect(row(chips).aside).toEqual([bar(chips)]);
+    });
     expect(row(chips).toggle).not.toBeNull();
   });
 
@@ -254,7 +309,9 @@ describe("WorkbenchQuestionChips", () => {
 
     second?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
 
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1" }); });
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1" });
+    });
 
     chips.asks = [twoQuestions];
     await chips.updateComplete;
@@ -263,7 +320,9 @@ describe("WorkbenchQuestionChips", () => {
     card?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
     await card?.updateComplete;
     card?.shadowRoot?.querySelector<HTMLButtonElement>(".send-one")?.click();
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true }); });
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith("def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true });
+    });
   });
 
   it("offers Send all once two sets hold answers and sends each: a full set whole with its note, a partial one keeping the rest open", async () => {
@@ -284,19 +343,32 @@ describe("WorkbenchQuestionChips", () => {
     expect(sendAll()?.textContent.trim()).toBe("Send all 2 answers");
 
     sendAll()?.click();
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(2);
+    });
     expect(onSubmit).toHaveBeenNthCalledWith(1, "abc-1", { answers: [{ id: "db", values: ["pg"] }], note: "Note for one", revision: "r1" });
     expect(onSubmit).toHaveBeenNthCalledWith(2, "def-2", { answers: [{ id: "db", values: ["pg"] }], revision: "r1", partial: true });
     // The daemon, not this stub, retires sent answers; the drawer is idle again with no error.
-    await vi.waitFor(() => { expect(sendAll()?.disabled).toBe(false); });
+    await vi.waitFor(() => {
+      expect(sendAll()?.disabled).toBe(false);
+    });
     expect(chips.shadowRoot?.querySelector('[role="alert"]')).toBeNull();
   });
 
   it("counts and sends only shown questions: a hidden dependent is not open, and Send all sends a set whose rest is hidden whole", async () => {
-    const dependent = ask("def-2", { questions: [
-      { id: "location", question: "Where should the browser run?", options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] },
-      { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } },
-    ] });
+    const dependent = ask("def-2", {
+      questions: [
+        {
+          id: "location",
+          question: "Where should the browser run?",
+          options: [
+            { value: "home", label: "Home" },
+            { value: "vps", label: "VPS" },
+          ],
+        },
+        { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } },
+      ],
+    });
     const { chips, onSubmit } = await mount([ask("abc-1"), dependent]);
     expect(bar(chips)?.textContent.trim()).toBe("2 open questions");
     expect(openQuestionCount([ask("abc-1"), dependent], "local:session-1")).toBe(2);
@@ -314,14 +386,16 @@ describe("WorkbenchQuestionChips", () => {
     expect(bar(chips)?.textContent.replace(/\s+/g, " ").trim()).toBe("2 open questions · 2 answered");
 
     chips.shadowRoot?.querySelector<HTMLButtonElement>(".send-all")?.click();
-    await vi.waitFor(() => { expect(onSubmit).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(2);
+    });
     // The hidden machine answer stays out, and with nothing visible left the set goes whole rather than partial.
     expect(onSubmit).toHaveBeenNthCalledWith(2, "def-2", { answers: [{ id: "location", values: ["vps"] }], revision: "r1" });
   });
 
   it("keeps a set whose send fails with its draft and says so, while the other sets still go", async () => {
     const { chips, onSubmit } = await mount([ask("abc-1"), ask("def-2"), ask("ghi-3")]);
-    onSubmit.mockImplementation((askId: string) => askId === "def-2" ? Promise.reject(new Error("offline")) : Promise.resolve());
+    onSubmit.mockImplementation((askId: string) => (askId === "def-2" ? Promise.reject(new Error("offline")) : Promise.resolve()));
     await openWith(chips);
     for (const card of cards(chips)) {
       card.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
@@ -330,7 +404,9 @@ describe("WorkbenchQuestionChips", () => {
     await chips.updateComplete;
     chips.shadowRoot?.querySelector<HTMLButtonElement>(".send-all")?.click();
 
-    await vi.waitFor(() => { expect(chips.shadowRoot?.querySelector('[role="alert"]')?.textContent).toBe("1 of 3 sets were not sent; their answers are kept."); });
+    await vi.waitFor(() => {
+      expect(chips.shadowRoot?.querySelector('[role="alert"]')?.textContent).toBe("1 of 3 sets were not sent; their answers are kept.");
+    });
     expect(onSubmit.mock.calls.map(([askId]) => askId)).toEqual(["abc-1", "def-2", "ghi-3"]);
     expect(loadAskDraft("local:session-1", "def-2")).toMatchObject({ db: { values: ["pg"] } });
   });
@@ -346,7 +422,9 @@ describe("WorkbenchQuestionChips", () => {
 
     expect(escape.defaultPrevented).toBe(true);
     expect(drawer(chips)).toBeNull();
-    await vi.waitFor(() => { expect(chips.shadowRoot?.activeElement).toBe(chip); });
+    await vi.waitFor(() => {
+      expect(chips.shadowRoot?.activeElement).toBe(chip);
+    });
 
     await openWith(chips, chip);
     chips.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Close questions"]')?.click();
@@ -381,14 +459,26 @@ describe("WorkbenchQuestionChips", () => {
     onSubmit.mockImplementation(async (askId) => {
       chips.asks = [];
       await chips.updateComplete;
-      return { askId, reason: "submitted", askedAt: detailed.askedAt, closedAt: detailed.askedAt, context: detailed.context, questions: [{ question, answered: true, values: ["pg"] }], answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1" };
+      return {
+        askId,
+        reason: "submitted",
+        askedAt: detailed.askedAt,
+        closedAt: detailed.askedAt,
+        context: detailed.context,
+        questions: [{ question, answered: true, values: ["pg"] }],
+        answeredCount: 1,
+        unansweredIds: [],
+        summary: "Answered 1 of 1",
+      };
     });
     await openWith(chips);
     cards(chips)[0]?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.click();
     await cards(chips)[0]?.updateComplete;
     cards(chips)[0]?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
 
-    await vi.waitFor(() => { expect(text(cards(chips)[0])).toContain("Answers sent"); });
+    await vi.waitFor(() => {
+      expect(text(cards(chips)[0])).toContain("Answers sent");
+    });
     expect(drawer(chips)).not.toBeNull();
     const shown = [...(cards(chips)[0]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
     expect(shown).toEqual([detailed.context, "Postgres scales further."]);
@@ -417,8 +507,21 @@ describe("WorkbenchQuestionChips", () => {
       revision += 1;
       chips.asks = open.length === 0 ? [] : [{ ...three, questions: open, revision: `r${String(revision)}` }];
       await chips.updateComplete;
-      const records = questions.filter((question) => open.length === 0 || sent.has(question.id)).map((question) => ({ question, answered: true, values: [`${question.id}-a`] }));
-      return { askId, reason: "submitted", askedAt: three.askedAt, closedAt: three.askedAt, context: three.context, questions: records, answeredCount: records.length, unansweredIds: [], summary: open.length === 0 ? "Answered 3 of 3; none left unanswered" : `Answered ${String(records.length)}`, ...(submission.partial === true ? { partial: true, revision: `r${String(revision)}` } : {}) };
+      const records = questions
+        .filter((question) => open.length === 0 || sent.has(question.id))
+        .map((question) => ({ question, answered: true, values: [`${question.id}-a`] }));
+      return {
+        askId,
+        reason: "submitted",
+        askedAt: three.askedAt,
+        closedAt: three.askedAt,
+        context: three.context,
+        questions: records,
+        answeredCount: records.length,
+        unansweredIds: [],
+        summary: open.length === 0 ? "Answered 3 of 3; none left unanswered" : `Answered ${String(records.length)}`,
+        ...(submission.partial === true ? { partial: true, revision: `r${String(revision)}` } : {}),
+      };
     });
     await openWith(chips);
     // "cache" went from another device: this drawer only sees the set without it.
@@ -430,16 +533,27 @@ describe("WorkbenchQuestionChips", () => {
       card?.shadowRoot?.querySelector<HTMLInputElement>(`input[value="${id}-a"]`)?.click();
       await card?.updateComplete;
       // The last open question goes with the set's Send; the others with their own.
-      const send = id === "queue" ? card?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]') : card?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".send-one")[chips.asks[0]?.questions.findIndex((question) => question.id === id) ?? -1];
+      const send =
+        id === "queue"
+          ? card?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')
+          : card?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".send-one")[chips.asks[0]?.questions.findIndex((question) => question.id === id) ?? -1];
       send?.click();
-      await vi.waitFor(() => { expect(onSubmit).toHaveBeenLastCalledWith("abc-1", expect.objectContaining({ answers: [{ id, values: [`${id}-a`] }] })); });
+      await vi.waitFor(() => {
+        expect(onSubmit).toHaveBeenLastCalledWith("abc-1", expect.objectContaining({ answers: [{ id, values: [`${id}-a`] }] }));
+      });
       await chips.updateComplete;
       await cards(chips)[0]?.updateComplete;
     }
 
-    await vi.waitFor(() => { expect(text(cards(chips)[0])).toContain("Answers sent"); });
+    await vi.waitFor(() => {
+      expect(text(cards(chips)[0])).toContain("Answers sent");
+    });
     const record = cards(chips)[0]?.outcome;
-    expect(record?.questions.map((each) => [each.question.id, each.values])).toEqual([["db", ["db-a"]], ["cache", ["cache-a"]], ["queue", ["queue-a"]]]);
+    expect(record?.questions.map((each) => [each.question.id, each.values])).toEqual([
+      ["db", ["db-a"]],
+      ["cache", ["cache-a"]],
+      ["queue", ["queue-a"]],
+    ]);
     expect(record?.summary).toBe("Answered 3 of 3; none left unanswered");
     expect(text(cards(chips)[0])).toContain("cache A");
     const shown = [...(cards(chips)[0]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
@@ -454,7 +568,9 @@ describe("WorkbenchQuestionChips", () => {
   });
 
   it("lets its cards attach images only when the Chat's host reports ask-images; a legacy Chat reports no capabilities and takes none", async () => {
-    const { chips } = await mount([ask("abc-1", { questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] })], (each) => { each.status = { ...running, capabilities: ["attachments"] }; });
+    const { chips } = await mount([ask("abc-1", { questions: [{ id: "why", question: "Why?", kind: "text", options: [] }] })], (each) => {
+      each.status = { ...running, capabilities: ["attachments"] };
+    });
     await openWith(chips);
     expect(cards(chips)[0]?.imagesEnabled).toBe(false);
     chips.status = running;

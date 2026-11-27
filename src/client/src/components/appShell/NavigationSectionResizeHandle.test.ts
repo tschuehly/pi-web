@@ -34,8 +34,11 @@ describe("navigation section resizing", () => {
     expect(separator.getAttribute("aria-valuemax")).toBe("400");
 
     for (const [key, shiftKey, expected] of [
-      ["ArrowDown", false, 174], ["ArrowUp", false, 126],
-      ["ArrowDown", true, 222], ["Home", false, 44], ["End", false, 400],
+      ["ArrowDown", false, 174],
+      ["ArrowUp", false, 126],
+      ["ArrowDown", true, 222],
+      ["Home", false, 44],
+      ["End", false, 400],
     ] as const) {
       separator.dispatchEvent(new KeyboardEvent("keydown", { key, shiftKey, bubbles: true }));
       expect(handle.onResize).toHaveBeenLastCalledWith(expected);

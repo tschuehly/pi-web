@@ -61,7 +61,14 @@ export class ContentRendererHost extends LitElement {
     const identityChanged = this.restoreIntent || changes.has("intentKey") || changes.has("text");
     if (identityChanged) {
       this.activateSelected = false;
-      const intent = this.intentKey === undefined ? undefined : renderIntentMemory.read(this.intentKey, this.text, this.choices.map(({ id }) => id));
+      const intent =
+        this.intentKey === undefined
+          ? undefined
+          : renderIntentMemory.read(
+              this.intentKey,
+              this.text,
+              this.choices.map(({ id }) => id),
+            );
       this.selectedId = intent?.rendererId;
       this.explicitChoice = intent !== undefined;
       this.raw = intent?.raw ?? false;
@@ -151,7 +158,10 @@ export class ContentRendererHost extends LitElement {
       this.cancelPreview();
     };
     try {
-      const preview: unknown = this.renderer.render({ text: this.text, signal: controller.signal, fail,
+      const preview: unknown = this.renderer.render({
+        text: this.text,
+        signal: controller.signal,
+        fail,
         ...(this.machineId === undefined ? {} : { machineId: this.machineId }),
         ...(this.language === undefined ? {} : { language: this.language }),
         ...(this.filePath === undefined ? {} : { filePath: this.filePath }),
@@ -174,8 +184,7 @@ export class ContentRendererHost extends LitElement {
   }
 
   private get previewActive(): boolean {
-    return this.enhancement.visible && !this.raw
-      && (this.renderer?.renderMode === "automatic" || this.allowManualPreview || this.manuallyActivated);
+    return this.enhancement.visible && !this.raw && (this.renderer?.renderMode === "automatic" || this.allowManualPreview || this.manuallyActivated);
   }
 
   protected override updated(): void {
@@ -204,32 +213,58 @@ export class ContentRendererHost extends LitElement {
     const showingRaw = preview === undefined || diagnostic !== undefined;
     const sourceClass = this.codeBlocks?.overflow === "wrap" ? "source-wrap" : "source-scroll";
     return html`<div class=${this.externalControls ? "" : "code-block-frame"}>
-      ${this.externalControls ? null : html`<div class="controls code-block-header" role="group" aria-label="Code block controls">
+      ${
+        this.externalControls
+          ? null
+          : html`<div class="controls code-block-header" role="group" aria-label="Code block controls">
         <div class="views">
-          ${repeat(this.choices, ({ id }) => id, ({ id, label, renderer }) => html`
-            <button type="button" class="ui-button ui-button--compact" aria-controls="content" aria-pressed=${id === this.selectedId && !showingRaw} @click=${() => { this.selectRenderer(id); }}>${renderer.title ?? label}</button>
-          `)}
-          ${this.renderer === undefined ? null : html`
-            <button type="button" class="ui-button ui-button--compact" aria-controls="content" aria-pressed=${showingRaw} @click=${() => { this.setRaw(true); }}>Raw</button>
-          `}
+          ${repeat(
+            this.choices,
+            ({ id }) => id,
+            ({ id, label, renderer }) => html`
+            <button type="button" class="ui-button ui-button--compact" aria-controls="content" aria-pressed=${id === this.selectedId && !showingRaw} @click=${() => {
+              this.selectRenderer(id);
+            }}>${renderer.title ?? label}</button>
+          `,
+          )}
+          ${
+            this.renderer === undefined
+              ? null
+              : html`
+            <button type="button" class="ui-button ui-button--compact" aria-controls="content" aria-pressed=${showingRaw} @click=${() => {
+              this.setRaw(true);
+            }}>Raw</button>
+          `
+          }
         </div>
-        ${this.codeBlocks?.copy === false ? null : html`
-          <button class="copy code-block-copy ui-button ui-button--icon ui-button--compact" type="button" title=${this.copyStatus} aria-label=${this.copyStatus} @click=${() => { void this.copy(); }}><span aria-hidden="true">${this.copyStatus === "Copied source" ? "✓" : "⧉"}</span></button>
+        ${
+          this.codeBlocks?.copy === false
+            ? null
+            : html`
+          <button class="copy code-block-copy ui-button ui-button--icon ui-button--compact" type="button" title=${this.copyStatus} aria-label=${this.copyStatus} @click=${() => {
+            void this.copy();
+          }}><span aria-hidden="true">${this.copyStatus === "Copied source" ? "✓" : "⧉"}</span></button>
           <span class="sr-only" role="status">${this.copyStatus === "Copy source" ? "" : this.copyStatus}</span>
-        `}
-      </div>`}
+        `
+        }
+      </div>`
+      }
       <div id="content">
         ${diagnostic === undefined ? null : html`<p role="status">${diagnostic}</p>`}
-        ${showingRaw
-          ? this.codeBlocks?.presentation === "plain"
-            ? html`<div class=${`plain-code-block ${sourceClass}`} tabindex="0" aria-label="Raw source">${this.text}</div>`
-            : html`<pre class=${sourceClass} tabindex="0" aria-label="Raw source"><code>${this.text}</code></pre>`
-          : html`<div class="preview" tabindex="0" aria-label="Rendered content">${preview}</div>`}
+        ${
+          showingRaw
+            ? this.codeBlocks?.presentation === "plain"
+              ? html`<div class=${`plain-code-block ${sourceClass}`} tabindex="0" aria-label="Raw source">${this.text}</div>`
+              : html`<pre class=${sourceClass} tabindex="0" aria-label="Raw source"><code>${this.text}</code></pre>`
+            : html`<div class="preview" tabindex="0" aria-label="Rendered content">${preview}</div>`
+        }
       </div>
     </div>`;
   }
 
-  static override styles = [codeBlockFrameStyles, css`
+  static override styles = [
+    codeBlockFrameStyles,
+    css`
     /* Keep natural height so the surrounding flex viewer owns the scroll range. */
     :host { display: block; flex-shrink: 0; margin: 0 0 10px; min-width: 0; color: var(--pi-text); }
     :host([external-controls]) { margin: 0; background: var(--pi-bg); }
@@ -248,5 +283,6 @@ export class ContentRendererHost extends LitElement {
     .preview { overflow: auto; padding: 12px; }
     p { color: var(--pi-muted); margin: 0; padding: 10px 12px; font: 12px/1.5 var(--pi-font, system-ui, sans-serif); }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  `];
+  `,
+  ];
 }

@@ -1,9 +1,5 @@
 import type { ActiveAgentProfileDescriptor } from "../shared/apiTypes.js";
-import {
-  getSessionDaemonActiveAgentProfile,
-  type SessionDaemonAgentProfileResult,
-  type SessionDaemonRequestClient,
-} from "../sessiond/sessionDaemonClient.js";
+import { getSessionDaemonActiveAgentProfile, type SessionDaemonAgentProfileResult, type SessionDaemonRequestClient } from "../sessiond/sessionDaemonClient.js";
 
 export interface ActiveAgentProfileProvider {
   getActiveAgentProfile(): Promise<SessionDaemonAgentProfileResult>;

@@ -151,7 +151,10 @@ describe("searchWorkspaceFiles", () => {
     await writeFile(join(root, "kept.txt"), "");
     await writeFile(join(outside, "secret.txt"), "");
     // Inject the fault precisely at fd-relative child open, independent of user privileges.
-    for (const fault of ["raise PermissionError('locked')", `os.rename('locked', 'moved', src_dir_fd=dir_fd, dst_dir_fd=dir_fd)\n        original_symlink('${outside}', 'locked', dir_fd=dir_fd)`]) {
+    for (const fault of [
+      "raise PermissionError('locked')",
+      `os.rename('locked', 'moved', src_dir_fd=dir_fd, dst_dir_fd=dir_fd)\n        original_symlink('${outside}', 'locked', dir_fd=dir_fd)`,
+    ]) {
       const patch = `import os\noriginal_open = os.open\noriginal_symlink = os.symlink\ndef fault_open(path, flags, *args, **kwargs):\n    dir_fd = kwargs.get('dir_fd')\n    if path == 'locked' and dir_fd is not None:\n        ${fault}\n    return original_open(path, flags, *args, **kwargs)\nos.open = fault_open\n`;
       const { stdout } = await promisify(execFile)("python3", ["-c", patch + searchFromDescriptor, await realpath(root), "", "txt", ""]);
       expect(JSON.parse(stdout)).toEqual({ paths: ["kept.txt"], cursor: null });
@@ -164,7 +167,9 @@ describe("searchWorkspaceFiles", () => {
   it("does not expose the root or Python command when the pinned root disappears", async () => {
     const root = await tempWorkspace();
     const displaced = `${root}-displaced`;
-    race.afterResolve = async () => { await rename(root, displaced); };
+    race.afterResolve = async () => {
+      await rename(root, displaced);
+    };
     try {
       const error = await searchWorkspaceFiles(root, "x").catch((failure: unknown) => failure);
       if (!(error instanceof Error)) throw new Error("Expected a search failure");
@@ -250,9 +255,15 @@ describe("listWorkspaceTree", () => {
     const displaced = `${root}-displaced`;
     await writeFile(join(root, "inside.txt"), "inside");
     await writeFile(join(outside, "outside.txt"), "outside");
-    race.afterResolve = async () => { await rename(root, displaced); await symlink(outside, root); };
-    try { await expect(listWorkspaceTree(root, "")).rejects.toThrow(); }
-    finally { await rm(displaced, { recursive: true, force: true }); }
+    race.afterResolve = async () => {
+      await rename(root, displaced);
+      await symlink(outside, root);
+    };
+    try {
+      await expect(listWorkspaceTree(root, "")).rejects.toThrow();
+    } finally {
+      await rm(displaced, { recursive: true, force: true });
+    }
   });
 
   it("skips an entry deleted between enumeration and stat", async () => {

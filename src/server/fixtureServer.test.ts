@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildControlledFixtureServer } from "./fixtureServer.js";
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 describe("controlled fixture server", () => {
   it("publishes five opaque sessions on distinct complete production anchors", async () => {
@@ -31,7 +33,9 @@ describe("controlled fixture server", () => {
       for (const anchor of fixture.anchors) {
         const workspaces = await app.inject({ method: "GET", url: `/api/projects/${encodeURIComponent(anchor.projectId)}/workspaces` });
         expect(workspaces.statusCode).toBe(200);
-        expect(workspaces.json()).toEqual(expect.objectContaining({ workspaces: [expect.objectContaining({ id: anchor.workspaceId, path: anchor.cwd, isMain: true })] }));
+        expect(workspaces.json()).toEqual(
+          expect.objectContaining({ workspaces: [expect.objectContaining({ id: anchor.workspaceId, path: anchor.cwd, isMain: true })] }),
+        );
       }
     } finally {
       await app.close();
@@ -50,12 +54,16 @@ describe("controlled fixture server", () => {
       appDependencies: { logger: false },
     });
     try {
-      const sessionFiles = await Promise.all(fixture.anchors.map(async (anchor) => {
-        const file = (await import("node:fs/promises")).readdir(join(root, "agent/sessions")).then((names) => names.find((name) => name.includes(anchor.sessionId)));
-        const name = await file;
-        if (name === undefined) throw new Error("fixture session file missing");
-        return readFile(join(root, "agent/sessions", name), "utf8");
-      }));
+      const sessionFiles = await Promise.all(
+        fixture.anchors.map(async (anchor) => {
+          const file = (await import("node:fs/promises"))
+            .readdir(join(root, "agent/sessions"))
+            .then((names) => names.find((name) => name.includes(anchor.sessionId)));
+          const name = await file;
+          if (name === undefined) throw new Error("fixture session file missing");
+          return readFile(join(root, "agent/sessions", name), "utf8");
+        }),
+      );
       for (let index = 0; index < fixture.anchors.length; index += 1) {
         const text = sessionFiles[index];
         const anchor = fixture.anchors[index];
@@ -73,15 +81,17 @@ describe("controlled fixture server", () => {
 
   it("refuses fixture paths outside its owned root", async () => {
     const root = await tempRoot();
-    await expect(buildControlledFixtureServer({
-      root,
-      projectsFile: join(tmpdir(), "foreign-projects.json"),
-      machinesFile: join(root, "machines.json"),
-      sessionDir: join(root, "sessions"),
-      manifestFile: join(root, "manifest.json"),
-      clientDist: false,
-      appDependencies: { logger: false },
-    })).rejects.toThrow("must stay under the controlled fixture root");
+    await expect(
+      buildControlledFixtureServer({
+        root,
+        projectsFile: join(tmpdir(), "foreign-projects.json"),
+        machinesFile: join(root, "machines.json"),
+        sessionDir: join(root, "sessions"),
+        manifestFile: join(root, "manifest.json"),
+        clientDist: false,
+        appDependencies: { logger: false },
+      }),
+    ).rejects.toThrow("must stay under the controlled fixture root");
   });
 });
 

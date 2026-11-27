@@ -1,5 +1,17 @@
 import { realtimeEvents, sessionEvents } from "./api";
-import { parseSessionAttentionEvent, parseRealtimeStreamEvent, parseServerNoticeEvent, parseSessionAskClosedEvent, parseSessionAskOpenedEvent, parseSessionDialogClosedEvent, parseSessionDialogOpenedEvent, parseSessionNotificationInboxEvent, parseSessionStartupProgressEvent, parseSessionStreamEvent, parseSessionUnreadEvent } from "./api/parsers";
+import {
+  parseSessionAttentionEvent,
+  parseRealtimeStreamEvent,
+  parseServerNoticeEvent,
+  parseSessionAskClosedEvent,
+  parseSessionAskOpenedEvent,
+  parseSessionDialogClosedEvent,
+  parseSessionDialogOpenedEvent,
+  parseSessionNotificationInboxEvent,
+  parseSessionStartupProgressEvent,
+  parseSessionStreamEvent,
+  parseSessionUnreadEvent,
+} from "./api/parsers";
 import type { RealtimeEvent, ServerNoticeEvent, SessionRef, SessionUiEvent } from "../../shared/apiTypes";
 
 export type { GlobalSessionEvent, RealtimeEvent, SessionUiEvent } from "../../shared/apiTypes";
@@ -18,13 +30,7 @@ export class SessionSocket {
   private onInitialOpen: (() => void) | undefined;
   private machineId = "local";
 
-  connect(
-    session: SessionRef,
-    onEvent: (event: SessionUiEvent) => void,
-    onReconnect?: () => void,
-    machineId = "local",
-    onInitialOpen?: () => void,
-  ): void {
+  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void, machineId = "local", onInitialOpen?: () => void): void {
     this.close();
     this.machineId = machineId;
     this.session = session;
@@ -66,7 +72,9 @@ export class SessionSocket {
       else this.onInitialOpen?.();
     };
     socket.onmessage = (message) => void this.handleMessage(message.data, socket, session);
-    socket.onerror = () => { socket.close(); };
+    socket.onerror = () => {
+      socket.close();
+    };
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = undefined;
@@ -79,7 +87,9 @@ export class SessionSocket {
     window.clearTimeout(this.reconnectTimer);
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(this.reconnectDelay * 1.6, 5000);
-    this.reconnectTimer = window.setTimeout(() => { this.open(); }, delay);
+    this.reconnectTimer = window.setTimeout(() => {
+      this.open();
+    }, delay);
   }
 
   private async handleMessage(data: MessageEvent["data"], socket: WebSocket, session: SessionRef): Promise<void> {
@@ -132,7 +142,9 @@ export class RealtimeSocket {
       this.onOpen?.();
     };
     socket.onmessage = (message) => void this.handleMessage(message.data, socket);
-    socket.onerror = () => { socket.close(); };
+    socket.onerror = () => {
+      socket.close();
+    };
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = undefined;
@@ -145,7 +157,9 @@ export class RealtimeSocket {
     window.clearTimeout(this.reconnectTimer);
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(this.reconnectDelay * 1.6, 5000);
-    this.reconnectTimer = window.setTimeout(() => { this.open(); }, delay);
+    this.reconnectTimer = window.setTimeout(() => {
+      this.open();
+    }, delay);
   }
 
   private async handleMessage(data: MessageEvent["data"], socket: WebSocket): Promise<void> {
@@ -157,12 +171,18 @@ export class RealtimeSocket {
 export function parseSessionSocketEvent(event: unknown): SessionUiEvent | undefined {
   const parsed = safelyParseValidatedEvent((): SessionUiEvent => {
     switch (eventType(event)) {
-      case "notifications.inbox": return parseSessionNotificationInboxEvent(event);
-      case "ask.opened": return parseSessionAskOpenedEvent(event);
-      case "ask.closed": return parseSessionAskClosedEvent(event);
-      case "dialog.opened": return parseSessionDialogOpenedEvent(event);
-      case "dialog.closed": return parseSessionDialogClosedEvent(event);
-      default: return parseSessionStreamEvent(event);
+      case "notifications.inbox":
+        return parseSessionNotificationInboxEvent(event);
+      case "ask.opened":
+        return parseSessionAskOpenedEvent(event);
+      case "ask.closed":
+        return parseSessionAskClosedEvent(event);
+      case "dialog.opened":
+        return parseSessionDialogOpenedEvent(event);
+      case "dialog.closed":
+        return parseSessionDialogClosedEvent(event);
+      default:
+        return parseSessionStreamEvent(event);
     }
   });
   if (parsed === undefined || typeof event !== "object" || event === null) return undefined;
@@ -211,7 +231,9 @@ function closeSocketQuietly(socket: WebSocket | undefined): void {
   socket.onerror = null;
   socket.onclose = null;
   if (socket.readyState === WebSocket.CONNECTING) {
-    socket.onopen = () => { socket.close(); };
+    socket.onopen = () => {
+      socket.close();
+    };
     return;
   }
   socket.close();

@@ -6,10 +6,13 @@ export function installNativeDialogFake(): void {
   beforeEach(() => {
     // happy-dom exposes assignedElements(), but not the inverse slot ancestry
     // needed to determine whether light-DOM content belongs to a native dialog.
-    Object.defineProperty(Element.prototype, "assignedSlot", { configurable: true, get(this: Element) {
-      const name = this.getAttribute("slot") ?? "";
-      return [...(this.parentElement?.shadowRoot?.querySelectorAll("slot") ?? [])].find((slot) => slot.name === name) ?? null;
-    } });
+    Object.defineProperty(Element.prototype, "assignedSlot", {
+      configurable: true,
+      get(this: Element) {
+        const name = this.getAttribute("slot") ?? "";
+        return [...(this.parentElement?.shadowRoot?.querySelectorAll("slot") ?? [])].find((slot) => slot.name === name) ?? null;
+      },
+    });
     const modal = new WeakSet<HTMLDialogElement>();
     vi.spyOn(HTMLDialogElement.prototype, "showModal").mockImplementation(function (this: HTMLDialogElement) {
       this.dispatchEvent(Object.assign(new Event("beforetoggle"), { oldState: "closed", newState: "open" }));

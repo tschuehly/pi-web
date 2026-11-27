@@ -64,7 +64,11 @@ export function createServerPluginCatalogCapabilityFactory(
         return resolution.workspaces.map((workspace) => {
           if (workspace.projectId !== projectId) throw new Error("Catalog workspace is outside selected project");
           return {
-            id: workspace.id, projectId, path: absolutePath(workspace.path), label: workspace.label, isMain: workspace.isMain,
+            id: workspace.id,
+            projectId,
+            path: absolutePath(workspace.path),
+            label: workspace.label,
+            isMain: workspace.isMain,
             ...(workspace.provider === undefined ? {} : { provider: workspace.provider }),
             ...(workspace.removal === undefined ? {} : { removal: workspace.removal }),
           };
@@ -86,11 +90,12 @@ export function createServerPluginCatalogCapabilityFactory(
       const value = PI_WEB_HOST_CATALOG_CAPABILITY.parse({
         version: 1,
         projects: {
-          list: (requested?: PluginCatalogReadOptions) => read(requested, async (signal) => {
-            const rows = await options.projects.list();
-            assertActive(signal);
-            return rows.map(projectSnapshot);
-          }),
+          list: (requested?: PluginCatalogReadOptions) =>
+            read(requested, async (signal) => {
+              const rows = await options.projects.list();
+              assertActive(signal);
+              return rows.map(projectSnapshot);
+            }),
           get: (id: string, requested?: PluginCatalogReadOptions) => read(requested, async (signal) => projectSnapshot(await project(id, signal))),
         },
         workspaces: {
@@ -99,14 +104,22 @@ export function createServerPluginCatalogCapabilityFactory(
         },
         sessions: {
           list: (selection: PluginWorkspaceSelection, requested?: PluginCatalogReadOptions) => read(requested, (signal) => sessions(selection, signal)),
-          get: (selection: PluginSessionSelection, requested?: PluginCatalogReadOptions) => read(requested, async (signal) => {
-            const result = (await sessions({ projectId: selection.projectId, workspaceId: selection.workspaceId }, signal)).find(({ id }) => id === selection.sessionId);
-            if (result === undefined) throw new Error("Catalog selected session is stale or unavailable");
-            return result;
-          }),
+          get: (selection: PluginSessionSelection, requested?: PluginCatalogReadOptions) =>
+            read(requested, async (signal) => {
+              const result = (await sessions({ projectId: selection.projectId, workspaceId: selection.workspaceId }, signal)).find(
+                ({ id }) => id === selection.sessionId,
+              );
+              if (result === undefined) throw new Error("Catalog selected session is stale or unavailable");
+              return result;
+            }),
         },
       });
-      return Object.freeze({ value, dispose: () => { disposal.abort(); } });
+      return Object.freeze({
+        value,
+        dispose: () => {
+          disposal.abort();
+        },
+      });
     },
   });
 }

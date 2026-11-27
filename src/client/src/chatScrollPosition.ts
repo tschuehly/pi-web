@@ -34,9 +34,7 @@ export interface ChatScrollScheduler {
 }
 
 export type ChatScrollSaveResult = "saved" | "skipped";
-export type ChatScrollRestoreResult =
-  | { status: "bottom" | "restored" | "skipped" }
-  | { status: "missing"; position: ChatAnchorScrollPosition };
+export type ChatScrollRestoreResult = { status: "bottom" | "restored" | "skipped" } | { status: "missing"; position: ChatAnchorScrollPosition };
 
 const SCROLL_STORAGE_PREFIX = "pi-web:chat-scroll:";
 const DEFAULT_SAVE_DELAY_MS = 180;
@@ -97,7 +95,12 @@ export class ChatScrollController {
     }, delayMs);
   }
 
-  savePosition(sessionId: string, scroller: ChatScrollViewport | undefined, anchors: ChatScrollElement[], bottomThreshold = DEFAULT_BOTTOM_SAVE_THRESHOLD): ChatScrollSaveResult {
+  savePosition(
+    sessionId: string,
+    scroller: ChatScrollViewport | undefined,
+    anchors: ChatScrollElement[],
+    bottomThreshold = DEFAULT_BOTTOM_SAVE_THRESHOLD,
+  ): ChatScrollSaveResult {
     if (sessionId === "" || scroller === undefined || !hasUsableScrollViewport(scroller)) return "skipped";
     try {
       if (isNearScrollBottom(scroller, bottomThreshold)) {
@@ -160,12 +163,14 @@ export function chatScrollStorageKey(sessionId: string): string {
 export function isScrollPosition(value: unknown): value is ChatScrollPosition {
   if (typeof value !== "object" || value === null || !("mode" in value)) return false;
   if (value.mode === "bottom") return true;
-  return value.mode === "anchor"
+  return (
+    value.mode === "anchor"
     && "anchorId" in value
     && typeof value.anchorId === "string"
     && value.anchorId !== ""
     && "offset" in value
-    && typeof value.offset === "number";
+    && typeof value.offset === "number"
+  );
 }
 
 export function hasUsableScrollViewport(scroller: Pick<ChatScrollViewport, "clientHeight" | "scrollHeight">): boolean {
@@ -176,7 +181,10 @@ export function distanceFromScrollBottom(scroller: Pick<ChatScrollViewport, "scr
   return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 }
 
-export function isNearScrollBottom(scroller: Pick<ChatScrollViewport, "scrollHeight" | "scrollTop" | "clientHeight">, threshold = DEFAULT_NEAR_BOTTOM_THRESHOLD): boolean {
+export function isNearScrollBottom(
+  scroller: Pick<ChatScrollViewport, "scrollHeight" | "scrollTop" | "clientHeight">,
+  threshold = DEFAULT_NEAR_BOTTOM_THRESHOLD,
+): boolean {
   return distanceFromScrollBottom(scroller) < threshold;
 }
 

@@ -21,7 +21,9 @@ async function longScratchFolder(): Promise<string> {
 
 describe("long workspace ids", () => {
   it("routes registered workspace ids longer than 100 characters", async () => {
-    const project = (await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Long", path: appTestContext.projectDir, create: true } })).json<Project>();
+    const project = (
+      await appTestContext.app.inject({ method: "POST", url: "/api/projects", payload: { name: "Long", path: appTestContext.projectDir, create: true } })
+    ).json<Project>();
     const workspaceId = `worktree-${"x".repeat(150)}`;
     appTestContext.workspaceCatalog.set(project.id, [{ id: workspaceId, projectId: project.id, path: appTestContext.projectDir, label: "long", isMain: true }]);
     await writeFile(join(appTestContext.projectDir, "note.md"), "long id");
@@ -49,14 +51,24 @@ describe("ad-hoc folder workspace file routes", () => {
     }
     const tree = await appTestContext.app.inject({ method: "GET", url: folderUrl(folder, "tree") });
     expect(tree.statusCode).toBe(200);
-    expect(tree.json<FileTreeResponse>().entries.map((entry) => entry.name).sort()).toEqual(["diagram.svg", "report.md"]);
+    expect(
+      tree
+        .json<FileTreeResponse>()
+        .entries.map((entry) => entry.name)
+        .sort(),
+    ).toEqual(["diagram.svg", "report.md"]);
     const search = await appTestContext.app.inject({ method: "GET", url: `${folderUrl(folder, "search")}?q=report` });
     expect(search.statusCode).toBe(200);
     expect(search.json<{ paths: string[] }>().paths).toEqual(["report.md"]);
     const preview = await appTestContext.app.inject({ method: "GET", url: `${folderUrl(folder, "file/preview")}?path=diagram.svg` });
     expect(preview.statusCode).toBe(200);
 
-    const write = await appTestContext.app.inject({ method: "PUT", url: `${folderUrl(folder, "file")}?path=notes/new.md`, payload: "saved", headers: { "content-type": "text/plain" } });
+    const write = await appTestContext.app.inject({
+      method: "PUT",
+      url: `${folderUrl(folder, "file")}?path=notes/new.md`,
+      payload: "saved",
+      headers: { "content-type": "text/plain" },
+    });
     expect(write.statusCode).toBe(200);
     expect(await readFile(join(folder, "notes", "new.md"), "utf8")).toBe("saved");
     const move = await appTestContext.app.inject({ method: "POST", url: `${folderUrl(folder, "file/move")}?fromPath=notes/new.md&toPath=moved.md` });
@@ -77,7 +89,12 @@ describe("ad-hoc folder workspace file routes", () => {
 
     const whole = await appTestContext.app.inject({ method: "GET", url });
     expect(whole.statusCode).toBe(200);
-    expect(whole.headers).toMatchObject({ "accept-ranges": "bytes", "content-type": "video/quicktime", "content-length": "10", "x-content-type-options": "nosniff" });
+    expect(whole.headers).toMatchObject({
+      "accept-ranges": "bytes",
+      "content-type": "video/quicktime",
+      "content-length": "10",
+      "x-content-type-options": "nosniff",
+    });
     expect(whole.headers["content-security-policy"]).toMatch(/^sandbox;.*media-src 'self'/u);
 
     const first = await appTestContext.app.inject({ method: "GET", url, headers: { range: "bytes=0-1" } });
@@ -92,7 +109,11 @@ describe("ad-hoc folder workspace file routes", () => {
 
     const beyond = await appTestContext.app.inject({ method: "GET", url, headers: { range: "bytes=10-" } });
     expect(beyond.statusCode).toBe(416);
-    expect(beyond.headers).toMatchObject({ "content-range": "bytes */10", "content-type": "application/json; charset=utf-8", "x-content-type-options": "nosniff" });
+    expect(beyond.headers).toMatchObject({
+      "content-range": "bytes */10",
+      "content-type": "application/json; charset=utf-8",
+      "x-content-type-options": "nosniff",
+    });
   });
 
   it("opens any existing directory, including parents and the filesystem root, without consulting sessions", async () => {
@@ -113,7 +134,10 @@ describe("ad-hoc folder workspace file routes", () => {
       expect(response.json<{ error: string }>().error).toContain("is not an existing directory");
     }
     for (const malformed of ["relative-path", "folder:relative/path", "folder:~user/x", "folder:~x"]) {
-      const response = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${AD_HOC_FOLDER_PROJECT_ID}/workspaces/${encodeURIComponent(malformed)}/tree` });
+      const response = await appTestContext.app.inject({
+        method: "GET",
+        url: `/api/projects/${AD_HOC_FOLDER_PROJECT_ID}/workspaces/${encodeURIComponent(malformed)}/tree`,
+      });
       expect(response.statusCode, malformed).toBe(404);
     }
   });
@@ -125,7 +149,10 @@ describe("ad-hoc folder workspace file routes", () => {
     await writeFile(join(home, "top.md"), "top");
     vi.stubEnv("HOME", home);
     try {
-      for (const [folder, path, content] of [["~/.pi-workbench/scratch", "draft.md", "draft"], ["~", "top.md", "top"]]) {
+      for (const [folder, path, content] of [
+        ["~/.pi-workbench/scratch", "draft.md", "draft"],
+        ["~", "top.md", "top"],
+      ]) {
         const response = await appTestContext.app.inject({ method: "GET", url: `${folderUrl(folder ?? "", "file")}?path=${path ?? ""}` });
         expect(response.statusCode, folder).toBe(200);
         expect(response.json<FileContentResponse>().content).toBe(content);
@@ -154,7 +181,7 @@ describe("ad-hoc folder workspace file routes", () => {
     for (const path of ["../../../../secret.txt", "escape.txt", join(appTestContext.tempDir, "secret.txt")]) {
       const response = await appTestContext.app.inject({ method: "GET", url: `${folderUrl(folder, "file")}?path=${encodeURIComponent(path)}` });
       expect(response.statusCode, path).toBe(400);
-      expect(response.body).not.toContain("secret\"");
+      expect(response.body).not.toContain('secret"');
     }
   });
 
@@ -162,8 +189,13 @@ describe("ad-hoc folder workspace file routes", () => {
     const registered = join(appTestContext.tempDir, "registered");
     await mkdir(registered);
     await writeFile(join(registered, "own.md"), "registered");
-    await writeFile(join(appTestContext.tempDir, "projects.json"), JSON.stringify({ projects: [{ id: AD_HOC_FOLDER_PROJECT_ID, name: "folder", path: registered, createdAt: "2026-01-01T00:00:00.000Z" }] }));
-    appTestContext.workspaceCatalog.set(AD_HOC_FOLDER_PROJECT_ID, [{ id: "main", projectId: AD_HOC_FOLDER_PROJECT_ID, path: registered, label: "folder", isMain: true }]);
+    await writeFile(
+      join(appTestContext.tempDir, "projects.json"),
+      JSON.stringify({ projects: [{ id: AD_HOC_FOLDER_PROJECT_ID, name: "folder", path: registered, createdAt: "2026-01-01T00:00:00.000Z" }] }),
+    );
+    appTestContext.workspaceCatalog.set(AD_HOC_FOLDER_PROJECT_ID, [
+      { id: "main", projectId: AD_HOC_FOLDER_PROJECT_ID, path: registered, label: "folder", isMain: true },
+    ]);
     const folder = await longScratchFolder();
     await writeFile(join(folder, "report.md"), "ad hoc");
 

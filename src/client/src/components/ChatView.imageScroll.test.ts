@@ -34,7 +34,9 @@ async function readingHistory() {
   // Geometry collaborators are stubbed; this test does not assert DOM layout.
   Object.defineProperties(scroller, { clientHeight: { value: 300 }, scrollHeight: { value: 6000 } });
   let top = 2445;
-  const write = vi.fn((value: number) => { top = value; });
+  const write = vi.fn((value: number) => {
+    top = value;
+  });
   Object.defineProperty(scroller, "scrollTop", { get: () => top, set: write });
   scroller.dispatchEvent(new Event("scroll"));
   await view.updateComplete;

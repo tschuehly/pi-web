@@ -6,7 +6,9 @@ import { isReview, type Review } from "./browser/protocol.js";
 
 /** Only host-resolved ids enter the scope hash; peer input is never a filesystem path. */
 export function reviewScope(projectId: string, workspaceId: string): string {
-  return createHash("sha256").update(JSON.stringify([projectId, workspaceId])).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify([projectId, workspaceId]))
+    .digest("hex");
 }
 
 export class ReviewStore {
@@ -26,9 +28,16 @@ export class ReviewStore {
     const temporary = join(directory, `.${randomUUID()}.tmp`);
     try {
       const file = await open(temporary, "wx", 0o600);
-      try { await file.writeFile(JSON.stringify(review)); await file.sync(); } finally { await file.close(); }
+      try {
+        await file.writeFile(JSON.stringify(review));
+        await file.sync();
+      } finally {
+        await file.close();
+      }
       await rename(temporary, join(directory, `${review.id}.json`));
-    } finally { await rm(temporary, { force: true }); }
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   async read(scope: string, id: unknown): Promise<Review> {
@@ -43,7 +52,9 @@ export class ReviewStore {
       const value: unknown = JSON.parse(await file.readFile("utf8"));
       if (!isReview(value) || value.id !== id) throw new Error("Invalid saved review");
       return value;
-    } finally { await file.close(); }
+    } finally {
+      await file.close();
+    }
   }
 
   async list(scope: string): Promise<Review[]> {

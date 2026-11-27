@@ -63,15 +63,15 @@ export class SessiondStateOwnershipConflictError extends Error {
   constructor(options: { dataDir: string; markerPath: string; owner: SessiondStateOwnershipRecord }) {
     const { dataDir, markerPath, owner } = options;
     super(
-      `another pi-web session daemon already owns this state\n\n` +
-        `The data directory "${dataDir}" is owned by a live session daemon ` +
-        `(pid ${String(owner.pid)}, started ${owner.startedAt}, listening on ${owner.endpoint}; ` +
-        `ownership marker ${markerPath}). Two daemons sharing one data directory corrupt each other's state.\n\n` +
-        `To run a second pi-web instance, give it its own state and endpoints:\n` +
-        `- PI_WEB_DATA_DIR: a different data directory\n` +
-        `- PI_WEB_SESSIOND_SOCKET (or PI_WEB_SESSIOND_PORT / PI_WEB_SESSIOND_HOST): a different session daemon endpoint\n` +
-        `- PI_WEB_PORT: a different web/API port\n\n` +
-        `If pid ${String(owner.pid)} is not a running pi-web session daemon, remove the stale marker file and start again.`,
+      `another pi-web session daemon already owns this state\n\n`
+        + `The data directory "${dataDir}" is owned by a live session daemon `
+        + `(pid ${String(owner.pid)}, started ${owner.startedAt}, listening on ${owner.endpoint}; `
+        + `ownership marker ${markerPath}). Two daemons sharing one data directory corrupt each other's state.\n\n`
+        + `To run a second pi-web instance, give it its own state and endpoints:\n`
+        + `- PI_WEB_DATA_DIR: a different data directory\n`
+        + `- PI_WEB_SESSIOND_SOCKET (or PI_WEB_SESSIOND_PORT / PI_WEB_SESSIOND_HOST): a different session daemon endpoint\n`
+        + `- PI_WEB_PORT: a different web/API port\n\n`
+        + `If pid ${String(owner.pid)} is not a running pi-web session daemon, remove the stale marker file and start again.`,
     );
     this.name = "SessiondStateOwnershipConflictError";
     this.dataDir = dataDir;
@@ -151,20 +151,14 @@ export async function claimSessiondStateOwnership(options: ClaimSessiondStateOwn
           throw new SessiondStateOwnershipConflictError({ dataDir, markerPath, owner: existing });
         }
         if (!waitedForOwner) {
-          logger?.warn(
-            { markerPath, owner: existing },
-            "another live session daemon owns this state; waiting briefly for it to release ownership",
-          );
+          logger?.warn({ markerPath, owner: existing }, "another live session daemon owns this state; waiting briefly for it to release ownership");
           waitedForOwner = true;
         }
         await sleep(pollIntervalMs);
         continue;
       }
       if (existing.pid !== ownPid) {
-        logger?.info(
-          { markerPath, previousOwner: existing },
-          "taking over session daemon state ownership from a stale marker",
-        );
+        logger?.info({ markerPath, previousOwner: existing }, "taking over session daemon state ownership from a stale marker");
       }
       await rm(markerPath, { force: true });
     } else if (existing === "invalid") {

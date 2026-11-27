@@ -17,7 +17,9 @@ export function composerShortcutActions(preference = readPromptEnterPreference()
     group: "Chat composer",
     shortcut: defaultSendShortcut({ matches: mobile }, preference),
     // Settings-only descriptors; submission stays owned by the focused editor.
-    run: () => { /* Not registered with the app dispatcher or action palette. */ },
+    run: () => {
+      /* Not registered with the app dispatcher or action palette. */
+    },
   }));
 }
 
@@ -26,7 +28,11 @@ export function composerSendShortcut(shortcuts: ShortcutPreferenceConfig, media?
   return shortcuts[id] === undefined ? defaultSendShortcut(media, preference) : shortcuts[id];
 }
 
-export function composerKeyboardSubmissionEnabled(shortcuts: ShortcutPreferenceConfig, media?: PromptEnterMedia, preference = readPromptEnterPreference()): boolean {
+export function composerKeyboardSubmissionEnabled(
+  shortcuts: ShortcutPreferenceConfig,
+  media?: PromptEnterMedia,
+  preference = readPromptEnterPreference(),
+): boolean {
   return composerSendShortcut(shortcuts, media, preference) !== null;
 }
 

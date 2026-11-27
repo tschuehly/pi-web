@@ -112,10 +112,12 @@ export class FilesRuntime {
   private useSequence = 0;
 
   constructor(dependencies: FilesRuntimeDependencies = {}) {
-    this.createUploadBatchId = dependencies.createUploadBatchId ?? (() => {
-      this.uploadBatchSequence += 1;
-      return `files-upload-${String(this.uploadBatchSequence)}`;
-    });
+    this.createUploadBatchId =
+      dependencies.createUploadBatchId
+      ?? (() => {
+        this.uploadBatchSequence += 1;
+        return `files-upload-${String(this.uploadBatchSequence)}`;
+      });
     this.now = dependencies.now ?? (() => new Date().toISOString());
   }
 
@@ -167,10 +169,12 @@ export class FilesRuntime {
     this.notify(scope);
     try {
       const root = await files.listFiles("", { signal: abort.signal });
-      const expandedEntries = await Promise.all(Object.keys(scope.expandedDirs).map(async (path) => {
-        const response = await files.listFiles(path, { signal: abort.signal });
-        return [path, response.entries] as const;
-      }));
+      const expandedEntries = await Promise.all(
+        Object.keys(scope.expandedDirs).map(async (path) => {
+          const response = await files.listFiles(path, { signal: abort.signal });
+          return [path, response.entries] as const;
+        }),
+      );
       if (!this.isCurrentTreeRequest(scope, generation, abort)) return;
       scope.fileTree = root.entries;
       scope.expandedDirs = Object.fromEntries(expandedEntries);
@@ -236,11 +240,7 @@ export class FilesRuntime {
     this.notify(scope);
   }
 
-  startWorkspaceUpload(
-    context: WorkspacePanelContext,
-    filesToUpload: readonly File[],
-    options: StartWorkspaceUploadOptions,
-  ): WorkspaceUploadRun | undefined {
+  startWorkspaceUpload(context: WorkspacePanelContext, filesToUpload: readonly File[], options: StartWorkspaceUploadOptions): WorkspaceUploadRun | undefined {
     const scope = this.bindContext(context);
     const files = this.requireFiles(scope);
     if (files === undefined || filesToUpload.length === 0) return undefined;
@@ -539,7 +539,7 @@ export class FilesRuntime {
       batch.status = failed.length === 0 ? "completed" : "error";
       batch.completedAt = this.now();
       if (failed.length === 0) delete batch.error;
-      else batch.error = failed.length === 1 ? failed[0]?.error ?? "Workspace upload failed" : `${String(failed.length)} files failed to upload`;
+      else batch.error = failed.length === 1 ? (failed[0]?.error ?? "Workspace upload failed") : `${String(failed.length)} files failed to upload`;
       for (const pending of batch.files.filter((file) => file.status === "pending" || file.status === "uploading")) {
         pending.status = "cancelled";
         pending.error = "Not uploaded.";
@@ -717,8 +717,7 @@ function normalizeWorkspaceUploadPath(value: string, label: string, options: { a
 }
 
 function hasInFlightUpload(scope: ScopeRecord): boolean {
-  return scope.uploadTasks.size > 0
-    || Object.values(scope.uploadBatches).some((batch) => batch.status === "uploading");
+  return scope.uploadTasks.size > 0 || Object.values(scope.uploadBatches).some((batch) => batch.status === "uploading");
 }
 
 function percentFor(loaded: number, total: number): number {
@@ -731,8 +730,10 @@ function omitKey<T>(record: Record<string, T>, keyToOmit: string): Record<string
 }
 
 function isAbortError(error: unknown): boolean {
-  return (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError")
-    || (error instanceof Error && error.name === "AbortError");
+  return (
+    (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError")
+    || (error instanceof Error && error.name === "AbortError")
+  );
 }
 
 function errorMessage(error: unknown): string {

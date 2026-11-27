@@ -78,7 +78,13 @@ export function partialAsksFromTranscript(branch: readonly unknown[], askId: str
       const ask = parseAsk(message["details"]["ask"]);
       // A revision lists only the questions still open, so the order keeps every id where it first appeared.
       if (ask?.askId === askId) order.push(...ask.questions.map((question) => question.id).filter((id) => !order.includes(id)));
-    } else if (entry["type"] === "custom" && entry["customType"] === ASK_USER_CLOSED_CUSTOM_TYPE && isOutcome(entry["data"]) && entry["data"].askId === askId && entry["data"].partial === true) {
+    } else if (
+      entry["type"] === "custom"
+      && entry["customType"] === ASK_USER_CLOSED_CUSTOM_TYPE
+      && isOutcome(entry["data"])
+      && entry["data"].askId === askId
+      && entry["data"].partial === true
+    ) {
       earlier.push(entry["data"]);
     }
   }
@@ -92,8 +98,14 @@ function deliveryKey(askId: string, partial: unknown, revision: unknown): string
 
 // Shape checks only: PI WEB itself wrote these entries.
 function isPendingAsk(value: unknown): value is PendingAskUser {
-  return isRecord(value) && typeof value["askId"] === "string" && typeof value["askedAt"] === "string" && typeof value["updatedAt"] === "string"
-    && typeof value["revision"] === "string" && Array.isArray(value["questions"]);
+  return (
+    isRecord(value)
+    && typeof value["askId"] === "string"
+    && typeof value["askedAt"] === "string"
+    && typeof value["updatedAt"] === "string"
+    && typeof value["revision"] === "string"
+    && Array.isArray(value["questions"])
+  );
 }
 
 function isOutcome(value: unknown): value is AskUserOutcome {

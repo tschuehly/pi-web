@@ -28,7 +28,10 @@ export class SessionEventHub {
   }
 
   private readonly seqBySession = new Map<string, number>();
-  private readonly globalUpdates = new Map<string, { sent: string | undefined; sentAt: number; pending: string | undefined; timer: ReturnType<typeof setTimeout> | undefined }>();
+  private readonly globalUpdates = new Map<
+    string,
+    { sent: string | undefined; sentAt: number; pending: string | undefined; timer: ReturnType<typeof setTimeout> | undefined }
+  >();
   private globalJoinFrame: (() => RealtimeEvent) | undefined;
   private readonly subscriberListeners = new Set<(sessionId: string, watched: boolean) => void>();
 
@@ -57,7 +60,9 @@ export class SessionEventHub {
   /** Called when a session gains its first browser subscriber (true) or loses its last (false). */
   onSessionSubscribersChange(listener: (sessionId: string, watched: boolean) => void): () => void {
     this.subscriberListeners.add(listener);
-    return () => { this.subscriberListeners.delete(listener); };
+    return () => {
+      this.subscriberListeners.delete(listener);
+    };
   }
 
   private notifySubscribers(sessionId: string, watched: boolean): void {
@@ -95,7 +100,8 @@ export class SessionEventHub {
     const referenceEvent = projectBrowserSessionEvent(event, (image) => this.mediaIndex.reference(mediaScope, image));
     const generation = event.generation ?? this.generation(sessionId);
     const sockets = this.socketsBySession.get(sessionId);
-    if (sockets !== undefined && sockets.inline.size > 0) this.sendToSockets(sockets.inline, JSON.stringify({ ...projectBrowserSessionEvent(event), seq, generation }));
+    if (sockets !== undefined && sockets.inline.size > 0)
+      this.sendToSockets(sockets.inline, JSON.stringify({ ...projectBrowserSessionEvent(event), seq, generation }));
     if (sockets !== undefined && sockets.reference.size > 0) this.sendToSockets(sockets.reference, JSON.stringify({ ...referenceEvent, seq, generation }));
   }
 
@@ -128,16 +134,19 @@ export class SessionEventHub {
         this.globalUpdates.set(key, update);
       }
       if (payload === (update.pending ?? update.sent)) return;
-      const final = event.type === "activity.update"
-        ? event.activity.phase !== "active"
-        : !event.status.isStreaming && !event.status.isCompacting && !event.status.isBashRunning;
+      const final =
+        event.type === "activity.update"
+          ? event.activity.phase !== "active"
+          : !event.status.isStreaming && !event.status.isCompacting && !event.status.isBashRunning;
       const elapsed = Date.now() - update.sentAt;
       if (final || update.sent === undefined || elapsed >= 500) {
         this.flushGlobalUpdate(key, payload);
       } else {
         update.pending = payload;
         if (!update.timer) {
-          update.timer = setTimeout(() => { this.flushGlobalUpdate(key); }, 500 - elapsed);
+          update.timer = setTimeout(() => {
+            this.flushGlobalUpdate(key);
+          }, 500 - elapsed);
           update.timer.unref();
         }
       }

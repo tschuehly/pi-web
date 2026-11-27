@@ -85,7 +85,13 @@ describe("plain Markdown code blocks", () => {
 
   it("keeps code inert while preserving surrounding Markdown and inline code", () => {
     const root = document.createElement("div");
-    root.innerHTML = toSafeMarkdownHtml('## Heading\n\n**Prose** with `inline`.\n\n```html\n<img src="x" onerror="bad()">\n**literal** & text\n```', undefined, undefined, true, PLAIN_CODE_BLOCK_POLICY);
+    root.innerHTML = toSafeMarkdownHtml(
+      '## Heading\n\n**Prose** with `inline`.\n\n```html\n<img src="x" onerror="bad()">\n**literal** & text\n```',
+      undefined,
+      undefined,
+      true,
+      PLAIN_CODE_BLOCK_POLICY,
+    );
     expect(root.querySelector("h2")?.textContent).toBe("Heading");
     expect(root.querySelector("strong")?.textContent).toBe("Prose");
     expect(root.querySelector("code")?.textContent).toBe("inline");
@@ -180,11 +186,14 @@ describe("workspace Markdown downloads", () => {
     expect(url.searchParams.get("download")).toBe("1");
   });
 
-  it.each(["https://example.com/file", "http://example.com", "mailto:hello@example.com", "#section", "//example.com/file"])("preserves browser link %s", (destination) => {
-    const anchor = link(`[link](${destination})`, workspace);
-    expect(anchor.getAttribute("href")).toBe(destination);
-    expect(anchor.rel).toBe("noreferrer noopener");
-  });
+  it.each(["https://example.com/file", "http://example.com", "mailto:hello@example.com", "#section", "//example.com/file"])(
+    "preserves browser link %s",
+    (destination) => {
+      const anchor = link(`[link](${destination})`, workspace);
+      expect(anchor.getAttribute("href")).toBe(destination);
+      expect(anchor.rel).toBe("noreferrer noopener");
+    },
+  );
 
   it("does not share resolved links between workspaces, machines or context-free consumers", () => {
     const text = "[download](result.zip)";
@@ -252,11 +261,14 @@ describe("workspace Markdown downloads", () => {
     }
   });
 
-  it.each(["`origin/main`", "`npm run dev`", "`https://example.com/a.md`", "[`/srv/x.md`](https://example.com)", "```\n/srv/work/a.md\n```", "`a/b`"])("leaves %s unlinked as a file", (text) => {
-    const div = render(text, workspace);
-    expect(div.querySelector("[data-workspace-file], [data-outside-file]")).toBeNull();
-    expect(div.querySelector("code")?.textContent.trim()).not.toBe("");
-  });
+  it.each(["`origin/main`", "`npm run dev`", "`https://example.com/a.md`", "[`/srv/x.md`](https://example.com)", "```\n/srv/work/a.md\n```", "`a/b`"])(
+    "leaves %s unlinked as a file",
+    (text) => {
+      const div = render(text, workspace);
+      expect(div.querySelector("[data-workspace-file], [data-outside-file]")).toBeNull();
+      expect(div.querySelector("code")?.textContent.trim()).not.toBe("");
+    },
+  );
 
   it("does not link inline code without a workspace context", () => {
     expect(render("`/srv/work/a.md`").querySelector("a")).toBeNull();
@@ -295,6 +307,11 @@ describe("workspace Markdown downloads", () => {
     // Only identity and path participate in context selection.
     expect(markdownWorkspaceContext("remote", undefined, { id: "s", cwd: "/srv/work" })).toBeUndefined();
     expect(markdownWorkspaceContext("remote", selected, { id: "s", cwd: "/different" })).toBeUndefined();
-    expect(markdownWorkspaceContext("remote", selected, { id: "s", cwd: "/srv/work" })).toEqual({ machineId: "remote", projectId: "p", workspaceId: "w", root: "/srv/work/" });
+    expect(markdownWorkspaceContext("remote", selected, { id: "s", cwd: "/srv/work" })).toEqual({
+      machineId: "remote",
+      projectId: "p",
+      workspaceId: "w",
+      root: "/srv/work/",
+    });
   });
 });

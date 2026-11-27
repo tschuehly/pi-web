@@ -27,16 +27,18 @@ describe("SessionUnreadStore", () => {
     expect(store.observeActivityState("session-1", "/repo", true)).toEqual([]);
     const completed = store.observeActivityState("session-1", "/repo", false);
 
-    expect(completed).toMatchObject([{
-      event: {
-        type: "sessions.unread",
-        catalogId: "catalog-a",
-        catalogRevision: 1,
-        sessionId: "session-1",
-        cwd: "/repo",
-        unread: { completionOrder: 1, completedAt: "2026-07-20T00:00:00.000Z" },
+    expect(completed).toMatchObject([
+      {
+        event: {
+          type: "sessions.unread",
+          catalogId: "catalog-a",
+          catalogRevision: 1,
+          sessionId: "session-1",
+          cwd: "/repo",
+          unread: { completionOrder: 1, completedAt: "2026-07-20T00:00:00.000Z" },
+        },
       },
-    }]);
+    ]);
     expect(store.catalogSnapshot()).toMatchObject({
       catalogId: "catalog-a",
       catalogRevision: 1,
@@ -54,11 +56,13 @@ describe("SessionUnreadStore", () => {
     const secondOrder = currentOrder(store, "session-1", "/repo");
 
     expect(secondOrder).toBeGreaterThan(firstOrder);
-    expect(store.acknowledge("session-1", {
-      cwd: "/repo",
-      catalogId: "catalog-a",
-      throughCompletionOrder: firstOrder,
-    }).mutations).toEqual([]);
+    expect(
+      store.acknowledge("session-1", {
+        cwd: "/repo",
+        catalogId: "catalog-a",
+        throughCompletionOrder: firstOrder,
+      }).mutations,
+    ).toEqual([]);
     expect(currentOrder(store, "session-1", "/repo")).toBe(secondOrder);
 
     const acknowledged = store.acknowledge("session-1", {
@@ -66,21 +70,25 @@ describe("SessionUnreadStore", () => {
       catalogId: "catalog-a",
       throughCompletionOrder: secondOrder,
     });
-    expect(acknowledged.mutations).toMatchObject([{
-      event: {
-        type: "sessions.unread",
-        catalogId: "catalog-a",
-        catalogRevision: 3,
-        sessionId: "session-1",
-        unread: null,
+    expect(acknowledged.mutations).toMatchObject([
+      {
+        event: {
+          type: "sessions.unread",
+          catalogId: "catalog-a",
+          catalogRevision: 3,
+          sessionId: "session-1",
+          unread: null,
+        },
       },
-    }]);
+    ]);
     expect(store.catalogSnapshot().sessions).toEqual([]);
-    expect(store.acknowledge("session-1", {
-      cwd: "/repo",
-      catalogId: "catalog-a",
-      throughCompletionOrder: secondOrder,
-    }).mutations).toEqual([]);
+    expect(
+      store.acknowledge("session-1", {
+        cwd: "/repo",
+        catalogId: "catalog-a",
+        throughCompletionOrder: secondOrder,
+      }).mutations,
+    ).toEqual([]);
   });
 
   it("rejects stale acknowledgements from a reset catalog epoch", () => {
@@ -110,9 +118,7 @@ describe("SessionUnreadStore", () => {
       throughCompletionOrder: repoBOrder,
     });
 
-    expect(store.catalogSnapshot().sessions).toMatchObject([
-      { sessionId: "session-1", cwd: "/repo-a", completionOrder: 1 },
-    ]);
+    expect(store.catalogSnapshot().sessions).toMatchObject([{ sessionId: "session-1", cwd: "/repo-a", completionOrder: 1 }]);
   });
 
   it("forgets a closing runtime's active latch without manufacturing a completion", () => {
@@ -138,9 +144,11 @@ describe("SessionUnreadStore", () => {
     complete(store, "tracked", "/repo");
     const removed = store.excludeSession("tracked", "/repo");
 
-    expect(removed).toMatchObject([{
-      event: { catalogId: "catalog-a", sessionId: "tracked", cwd: "/repo", unread: null },
-    }]);
+    expect(removed).toMatchObject([
+      {
+        event: { catalogId: "catalog-a", sessionId: "tracked", cwd: "/repo", unread: null },
+      },
+    ]);
     expect(store.catalogSnapshot().sessions).toEqual([]);
   });
 
@@ -169,16 +177,13 @@ describe("SessionUnreadStore", () => {
     const retained = store.catalogSnapshot().sessions.filter((summary) => summary.sessionId === "same-id");
 
     expect(store.reconcileWorkspaces(new Set(["/repo/nested/.."]))).toEqual([
-      { event: { type: "sessions.unread", catalogId: "catalog-a", catalogRevision: 5,
-        sessionId: "child", cwd: "/repo/child", unread: null } },
-      { event: { type: "sessions.unread", catalogId: "catalog-a", catalogRevision: 6,
-        sessionId: "prefix", cwd: "/repo-other", unread: null } },
+      { event: { type: "sessions.unread", catalogId: "catalog-a", catalogRevision: 5, sessionId: "child", cwd: "/repo/child", unread: null } },
+      { event: { type: "sessions.unread", catalogId: "catalog-a", catalogRevision: 6, sessionId: "prefix", cwd: "/repo-other", unread: null } },
     ]);
     expect(store.catalogSnapshot().sessions).toEqual(retained);
     expect(store.reconcileWorkspaces(["/repo/"])).toEqual([]);
     complete(store, "new", "/repo/./");
     expect(currentOrder(store, "new", "/repo/./")).toBe(5);
-
   });
 
   it("clears orphan active latches without maintaining permanent workspace eligibility", () => {
@@ -298,7 +303,9 @@ describe("SessionUnreadStore", () => {
     const store = new SessionUnreadStore({
       persistence,
       createCatalogId: () => "catalog-reset",
-      onPersistenceError: (operation, error) => { errors.push({ operation, error }); },
+      onPersistenceError: (operation, error) => {
+        errors.push({ operation, error });
+      },
       now: () => new Date("2026-07-20T00:00:00.000Z"),
     });
 
@@ -317,11 +324,13 @@ describe("SessionUnreadStore", () => {
     });
 
     complete(store, "session-1", "/repo");
-    expect(store.acknowledge("session-1", {
-      cwd: "/repo",
-      catalogId: "catalog-old",
-      throughCompletionOrder: Number.MAX_SAFE_INTEGER,
-    }).mutations).toEqual([]);
+    expect(
+      store.acknowledge("session-1", {
+        cwd: "/repo",
+        catalogId: "catalog-old",
+        throughCompletionOrder: Number.MAX_SAFE_INTEGER,
+      }).mutations,
+    ).toEqual([]);
     expect(store.catalogSnapshot().sessions).toHaveLength(1);
   });
 
@@ -331,29 +340,29 @@ describe("SessionUnreadStore", () => {
       catalogId: "catalog-old",
       catalogRevision: 1,
       nextCompletionOrder: 1,
-      sessions: [{
-        sessionId: "x".repeat(SESSION_UNREAD_SESSION_ID_MAX_LENGTH + 1),
-        cwd: "/repo",
-        completionOrder: 1,
-        completedAt: "2026-07-20T00:00:00.000Z",
-      }],
+      sessions: [
+        {
+          sessionId: "x".repeat(SESSION_UNREAD_SESSION_ID_MAX_LENGTH + 1),
+          cwd: "/repo",
+          completionOrder: 1,
+          completedAt: "2026-07-20T00:00:00.000Z",
+        },
+      ],
     });
     const errors: unknown[] = [];
     const store = new SessionUnreadStore({
       persistence,
       createCatalogId: () => "catalog-reset",
-      onPersistenceError: (_operation, error) => { errors.push(error); },
+      onPersistenceError: (_operation, error) => {
+        errors.push(error);
+      },
     });
 
     await store.load();
 
     expect(errors).toHaveLength(1);
     expect(store.catalogSnapshot()).toEqual({ catalogId: "catalog-reset", catalogRevision: 0, sessions: [] });
-    expect(() => store.observeActivityState(
-      "x".repeat(SESSION_UNREAD_SESSION_ID_MAX_LENGTH + 1),
-      "/repo",
-      true,
-    )).toThrow("sessionId exceeds its length limit");
+    expect(() => store.observeActivityState("x".repeat(SESSION_UNREAD_SESSION_ID_MAX_LENGTH + 1), "/repo", true)).toThrow("sessionId exceeds its length limit");
   });
 
   it("rejects an oversized persisted catalog instead of loading unbounded state", async () => {
@@ -374,7 +383,9 @@ describe("SessionUnreadStore", () => {
     const store = new SessionUnreadStore({
       persistence,
       createCatalogId: () => "catalog-reset",
-      onPersistenceError: (_operation, error) => { errors.push(error); },
+      onPersistenceError: (_operation, error) => {
+        errors.push(error);
+      },
     });
 
     await store.load();
@@ -395,12 +406,16 @@ describe("SessionUnreadStore", () => {
       throughCompletionOrder: order,
     });
 
-    await vi.waitFor(() => { expect(persistence.savedStates).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(persistence.savedStates).toHaveLength(1);
+    });
     expect(persistence.maximumConcurrentSaves).toBe(1);
     expect(persistence.savedStates[0]?.sessions).toHaveLength(1);
 
     persistence.releaseNextSave();
-    await vi.waitFor(() => { expect(persistence.savedStates).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(persistence.savedStates).toHaveLength(2);
+    });
     expect(persistence.maximumConcurrentSaves).toBe(1);
     expect(persistence.savedStates[1]?.sessions).toEqual([]);
 
@@ -417,11 +432,15 @@ describe("SessionUnreadStore", () => {
     complete(store, "session-0", "/repo");
     for (let index = 1; index <= 200; index += 1) complete(store, `session-${index.toString()}`, "/repo");
 
-    await vi.waitFor(() => { expect(persistence.savedStates).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(persistence.savedStates).toHaveLength(1);
+    });
     expect(persistence.savedStates[0]).toMatchObject({ catalogRevision: 1, nextCompletionOrder: 1 });
 
     persistence.releaseNextSave();
-    await vi.waitFor(() => { expect(persistence.savedStates).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(persistence.savedStates).toHaveLength(2);
+    });
     expect(persistence.savedStates[1]).toMatchObject({ catalogRevision: 201, nextCompletionOrder: 201 });
 
     persistence.releaseNextSave();
@@ -432,14 +451,20 @@ describe("SessionUnreadStore", () => {
   it("holds one latest snapshot without retrying every mutation during a storage outage", async () => {
     const saveError = new Error("storage unavailable");
     const save = vi.fn<SessionUnreadPersistence["save"]>(() => Promise.reject(saveError));
-    const store = persistedStore({
-      load: () => Promise.resolve(emptyPersistedState("catalog-a")),
-      save,
-    }, "unused-catalog", "2026-07-20T00:00:00.000Z");
+    const store = persistedStore(
+      {
+        load: () => Promise.resolve(emptyPersistedState("catalog-a")),
+        save,
+      },
+      "unused-catalog",
+      "2026-07-20T00:00:00.000Z",
+    );
     await store.load();
 
     complete(store, "session-0", "/repo");
-    await vi.waitFor(() => { expect(save).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(save).toHaveBeenCalledOnce();
+    });
     for (let index = 1; index <= 100; index += 1) complete(store, `session-${index.toString()}`, "/repo");
     await Promise.resolve();
 
@@ -455,7 +480,9 @@ describe("SessionUnreadStore", () => {
       persistence,
       createCatalogId: () => "unused-catalog",
       now: () => new Date("2026-07-20T00:00:00.000Z"),
-      onPersistenceError: (_operation, error) => { errors.push(error); },
+      onPersistenceError: (_operation, error) => {
+        errors.push(error);
+      },
     });
     await store.load();
     complete(store, "session-1", "/repo");
@@ -480,7 +507,9 @@ describe("SessionUnreadStore", () => {
     const store = new SessionUnreadStore({
       persistence: { load: () => Promise.reject(loadError), save },
       createCatalogId: () => "catalog-reset",
-      onPersistenceError: (operation, error) => { errors.push({ operation, error }); },
+      onPersistenceError: (operation, error) => {
+        errors.push({ operation, error });
+      },
     });
 
     await expect(store.load()).rejects.toBe(loadError);
@@ -499,7 +528,9 @@ describe("SessionUnreadStore", () => {
         save: () => Promise.reject(saveError),
       },
       createCatalogId: () => "catalog-reset",
-      onPersistenceError: (operation, error) => { errors.push({ operation, error }); },
+      onPersistenceError: (operation, error) => {
+        errors.push({ operation, error });
+      },
     });
 
     await expect(store.load()).rejects.toBe(saveError);
@@ -518,7 +549,9 @@ describe("FileSessionUnreadPersistence", () => {
     const store = new SessionUnreadStore({
       persistence: new FileSessionUnreadPersistence(filePath),
       createCatalogId: () => "catalog-reset",
-      onPersistenceError: (_operation, error) => { errors.push(error); },
+      onPersistenceError: (_operation, error) => {
+        errors.push(error);
+      },
     });
 
     await store.load();
@@ -567,11 +600,7 @@ function storeAt(iso: string, catalogId: string): SessionUnreadStore {
   return new SessionUnreadStore({ now: () => new Date(iso), createCatalogId: () => catalogId });
 }
 
-function persistedStore(
-  persistence: SessionUnreadPersistence,
-  catalogId: string,
-  iso: string,
-): SessionUnreadStore {
+function persistedStore(persistence: SessionUnreadPersistence, catalogId: string, iso: string): SessionUnreadStore {
   return new SessionUnreadStore({
     persistence,
     createCatalogId: () => catalogId,

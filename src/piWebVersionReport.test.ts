@@ -31,10 +31,12 @@ describe("probeRunningComponentReady", () => {
     };
 
     try {
-      await expect(probeRunningComponentReady("web", {
-        configEnv: { PI_WEB_CONFIG: configPath },
-        fetch: fetchImplementation,
-      })).resolves.toBe(true);
+      await expect(
+        probeRunningComponentReady("web", {
+          configEnv: { PI_WEB_CONFIG: configPath },
+          fetch: fetchImplementation,
+        }),
+      ).resolves.toBe(true);
       expect(requests).toEqual(["http://127.0.0.1:9123/api/pi-web/health"]);
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -49,29 +51,50 @@ describe("probeRunningComponentReady", () => {
     const fetchImplementation: typeof globalThis.fetch = (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       requests.push(url);
-      return Promise.resolve(url.endsWith("/health") ? new Response("Not found", { status: 404 }) : new Response(JSON.stringify({
-        packageName: "@jmfederico/pi-web", generatedAt: "2026-08-01T00:00:00.000Z",
-        components: { web: componentStatus(), sessiond: sessiondStatus({ available: false }) },
-      }), { status: 200 }));
+      return Promise.resolve(
+        url.endsWith("/health")
+          ? new Response("Not found", { status: 404 })
+          : new Response(
+              JSON.stringify({
+                packageName: "@jmfederico/pi-web",
+                generatedAt: "2026-08-01T00:00:00.000Z",
+                components: { web: componentStatus(), sessiond: sessiondStatus({ available: false }) },
+              }),
+              { status: 200 },
+            ),
+      );
     };
     try {
       await expect(probeRunningComponentReady("web", { configEnv: { PI_WEB_CONFIG: configPath }, fetch: fetchImplementation })).resolves.toBe(true);
       expect(requests).toEqual(["http://127.0.0.1:9123/api/pi-web/health", "http://127.0.0.1:9123/api/pi-web/version"]);
-    } finally { rmSync(directory, { recursive: true, force: true }); }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
-  it.each([new Response("failed", { status: 503 }), new Response('{"ok":false}'), new Response("not json")])("rejects unhealthy responses without falling back", async (response) => {
-    const directory = mkdtempSync(join(tmpdir(), "pi-web-version-probe-"));
-    const configPath = join(directory, "managed.json");
-    writeFileSync(configPath, JSON.stringify({ port: 9123 }));
-    let calls = 0;
-    try {
-      await expect(probeRunningComponentReady("web", {
-        configEnv: { PI_WEB_CONFIG: configPath }, fetch: () => { calls++; return Promise.resolve(response); },
-      })).resolves.toBe(false);
-      expect(calls).toBe(1);
-    } finally { rmSync(directory, { recursive: true, force: true }); }
-  });
+  it.each([new Response("failed", { status: 503 }), new Response('{"ok":false}'), new Response("not json")])(
+    "rejects unhealthy responses without falling back",
+    async (response) => {
+      const directory = mkdtempSync(join(tmpdir(), "pi-web-version-probe-"));
+      const configPath = join(directory, "managed.json");
+      writeFileSync(configPath, JSON.stringify({ port: 9123 }));
+      let calls = 0;
+      try {
+        await expect(
+          probeRunningComponentReady("web", {
+            configEnv: { PI_WEB_CONFIG: configPath },
+            fetch: () => {
+              calls++;
+              return Promise.resolve(response);
+            },
+          }),
+        ).resolves.toBe(false);
+        expect(calls).toBe(1);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("does not probe an endpoint when the selected config is malformed", async () => {
     const directory = mkdtempSync(join(tmpdir(), "pi-web-version-probe-"));
@@ -84,10 +107,12 @@ describe("probeRunningComponentReady", () => {
     };
 
     try {
-      await expect(probeRunningComponentReady("web", {
-        configEnv: { PI_WEB_CONFIG: configPath },
-        fetch: fetchImplementation,
-      })).resolves.toBe(false);
+      await expect(
+        probeRunningComponentReady("web", {
+          configEnv: { PI_WEB_CONFIG: configPath },
+          fetch: fetchImplementation,
+        }),
+      ).resolves.toBe(false);
       expect(requests).toBe(0);
     } finally {
       rmSync(directory, { recursive: true, force: true });
@@ -99,14 +124,21 @@ describe("printPiWebVersionReport release checks", () => {
   let directory: string;
   let configEnv: NodeJS.ProcessEnv;
   const npmUrl = "https://registry.npmjs.org/%40jmfederico%2Fpi-web/latest";
-  const output = (): string => vi.mocked(console.log).mock.calls.map((args) => args.join(" ")).join("\n");
-  const localResponse = (): Response => Response.json({
-    packageName: "@jmfederico/pi-web", generatedAt: "2026-08-01T00:00:00.000Z",
-    components: { web: componentStatus(), sessiond: sessiondStatus() },
-  });
-  const reportFetch = (remote: typeof globalThis.fetch) => vi.fn<typeof globalThis.fetch>((input, init) =>
-    (typeof input === "string" ? input : input instanceof URL ? input.href : input.url) === npmUrl
-      ? remote(input, init) : Promise.resolve(localResponse()));
+  const output = (): string =>
+    vi
+      .mocked(console.log)
+      .mock.calls.map((args) => args.join(" "))
+      .join("\n");
+  const localResponse = (): Response =>
+    Response.json({
+      packageName: "@jmfederico/pi-web",
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      components: { web: componentStatus(), sessiond: sessiondStatus() },
+    });
+  const reportFetch = (remote: typeof globalThis.fetch) =>
+    vi.fn<typeof globalThis.fetch>((input, init) =>
+      (typeof input === "string" ? input : input instanceof URL ? input.href : input.url) === npmUrl ? remote(input, init) : Promise.resolve(localResponse()),
+    );
 
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "pi-web-release-report-"));
@@ -164,7 +196,9 @@ describe("printPiWebVersionReport release checks", () => {
 
   it("permits empty policy settings", async () => {
     const result = await printPiWebVersionReport({
-      check: true, configEnv, env: { PI_WEB_OFFLINE: "", PI_SKIP_VERSION_CHECK: "" },
+      check: true,
+      configEnv,
+      env: { PI_WEB_OFFLINE: "", PI_SKIP_VERSION_CHECK: "" },
       fetch: reportFetch(() => Promise.resolve(Response.json({ version: "1.202612.4" }))),
     });
     expect(result.release?.status).toBe("available");
@@ -184,7 +218,10 @@ describe("printPiWebVersionReport release checks", () => {
 
   it("reports invalid JSON instead of claiming a successful check", async () => {
     const result = await printPiWebVersionReport({
-      check: true, configEnv, env: {}, fetch: reportFetch(() => Promise.resolve(new Response("not json"))),
+      check: true,
+      configEnv,
+      env: {},
+      fetch: reportFetch(() => Promise.resolve(new Response("not json"))),
     });
     expect(result.release?.status).toBe("error");
     if (result.release?.status === "error") expect(result.release.error.length).toBeGreaterThan(0);

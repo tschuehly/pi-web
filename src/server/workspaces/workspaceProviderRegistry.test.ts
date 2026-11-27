@@ -4,10 +4,7 @@ import type { ProviderRemoveContext, ProviderWorkspace, WorkspaceProvider } from
 import type { Project } from "../types.js";
 import type { ServerPluginProviderContribution } from "../plugins/serverPluginRuntime.js";
 import { ProjectScopedSpawnTargetResolver } from "../sessions/spawnTargetResolver.js";
-import {
-  eligibleWorkspaceProviderContributions,
-  WorkspaceProviderRegistry,
-} from "./workspaceProviderRegistry.js";
+import { eligibleWorkspaceProviderContributions, WorkspaceProviderRegistry } from "./workspaceProviderRegistry.js";
 
 const project: Project = {
   id: "project-1",
@@ -33,20 +30,18 @@ describe("WorkspaceProviderRegistry", () => {
     const fallbackProbe = vi.fn(() => Promise.resolve<"claim">("claim"));
     const primary = provider({
       probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([
-        workspace("root", hostPath("/repo"), true, {
-          publicMetadata: { changeId: "abc", nested: [1, true, null] },
-        }),
-        workspace("feature", hostPath("/linked"), false, {
-          removal: { actionLabel: "Remove", confirmation: "Remove linked?" },
-        }),
-      ]),
+      list: () =>
+        Promise.resolve([
+          workspace("root", hostPath("/repo"), true, {
+            publicMetadata: { changeId: "abc", nested: [1, true, null] },
+          }),
+          workspace("feature", hostPath("/linked"), false, {
+            removal: { actionLabel: "Remove", confirmation: "Remove linked?" },
+          }),
+        ]),
       prepareRemove: () => Promise.resolve({ title: "Remove", command: "tool remove" }),
     });
-    const registry = registryFor([
-      contribution("fallback", provider({ fallback: true, probe: fallbackProbe })),
-      contribution("primary", primary),
-    ]);
+    const registry = registryFor([contribution("fallback", provider({ fallback: true, probe: fallbackProbe })), contribution("primary", primary)]);
 
     const resolution = await registry.resolve(project);
 
@@ -100,16 +95,15 @@ describe("WorkspaceProviderRegistry", () => {
       baselineLists += 1;
       return baselineLists === 1
         ? firstBaselineList.promise
-        : Promise.resolve([
-            workspace("root", hostPath("/repo"), true),
-            workspace("fresh", hostPath("/fresh"), false),
-          ]);
+        : Promise.resolve([workspace("root", hostPath("/repo"), true), workspace("fresh", hostPath("/fresh"), false)]);
     });
     const registry = registryFor([contribution("owner", provider({ probe, list }))]);
 
     const first = registry.resolve(project);
     const equivalent = registry.resolve({ ...project });
-    await vi.waitFor(() => { expect(list).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(list).toHaveBeenCalledOnce();
+    });
 
     const differentSnapshot = await registry.resolve({ ...project, name: "Renamed" });
     expect(differentSnapshot.workspaces).toHaveLength(1);
@@ -137,20 +131,27 @@ describe("WorkspaceProviderRegistry", () => {
       }),
     ];
     let listCalls = 0;
-    const registry = registryFor([contribution("owner", provider({
-      probe: () => Promise.resolve("claim"),
-      list: () => {
-        listCalls += 1;
-        return listCalls === 2 ? blockedList.promise : Promise.resolve(topology);
-      },
-      prepareRemove: () => Promise.resolve({ title: "Disconnect", command: "tool disconnect" }),
-    }))]);
+    const registry = registryFor([
+      contribution(
+        "owner",
+        provider({
+          probe: () => Promise.resolve("claim"),
+          list: () => {
+            listCalls += 1;
+            return listCalls === 2 ? blockedList.promise : Promise.resolve(topology);
+          },
+          prepareRemove: () => Promise.resolve({ title: "Disconnect", command: "tool disconnect" }),
+        }),
+      ),
+    ]);
     const initial = await registry.resolve(project);
     const workspaceId = initial.workspaces.find(({ path }) => path === hostPath("/view"))?.id;
     if (workspaceId === undefined) throw new Error("Expected removable workspace");
 
     const pendingResolution = registry.resolve(project);
-    await vi.waitFor(() => { expect(listCalls).toBe(2); });
+    await vi.waitFor(() => {
+      expect(listCalls).toBe(2);
+    });
     const removal = await registry.resolveRemoval(project, workspaceId);
 
     expect(removal.target.id).toBe(workspaceId);
@@ -167,16 +168,23 @@ describe("WorkspaceProviderRegistry", () => {
       path: string,
       confirmation: string,
     ): Promise<{ id: string; precondition: string }> => {
-      const registry = registryFor([contribution(pluginId, provider({
-        probe: () => Promise.resolve("claim"),
-        list: () => Promise.resolve([
-          workspace("main", hostPath("/repo"), true),
-          workspace("secondary", path, false, {
-            removal: { actionLabel: "Remove", confirmation },
+      const registry = registryFor([
+        contribution(
+          pluginId,
+          provider({
+            probe: () => Promise.resolve("claim"),
+            list: () =>
+              Promise.resolve([
+                workspace("main", hostPath("/repo"), true),
+                workspace("secondary", path, false, {
+                  removal: { actionLabel: "Remove", confirmation },
+                }),
+              ]),
+            prepareRemove: () => Promise.resolve({ title: "Remove", command: "tool remove" }),
           }),
-        ]),
-        prepareRemove: () => Promise.resolve({ title: "Remove", command: "tool remove" }),
-      }), moduleRevision)]);
+          moduleRevision,
+        ),
+      ]);
       const target = (await registry.resolve(project)).workspaces.find(({ isMain }) => !isMain);
       if (target?.removal === undefined) throw new Error("Expected removable workspace");
       return { id: target.id, precondition: target.removal.precondition };
@@ -190,20 +198,10 @@ describe("WorkspaceProviderRegistry", () => {
     const wordingChanged = await resolveTarget("primary", "revision-1", hostPath("/linked"), "Disconnect linked?");
 
     expect(same).toEqual(baseline);
-    expect(new Set([
-      baseline.id,
-      ownerChanged.id,
-      revisionChanged.id,
-      pathChanged.id,
-      wordingChanged.id,
-    ])).toEqual(new Set([baseline.id]));
-    expect(new Set([
-      baseline.precondition,
-      ownerChanged.precondition,
-      revisionChanged.precondition,
-      pathChanged.precondition,
-      wordingChanged.precondition,
-    ]).size).toBe(5);
+    expect(new Set([baseline.id, ownerChanged.id, revisionChanged.id, pathChanged.id, wordingChanged.id])).toEqual(new Set([baseline.id]));
+    expect(
+      new Set([baseline.precondition, ownerChanged.precondition, revisionChanged.precondition, pathChanged.precondition, wordingChanged.precondition]).size,
+    ).toBe(5);
     expect(baseline.precondition).toMatch(/^v1\.[A-Za-z0-9_-]{43}$/u);
     expect(baseline.precondition).not.toContain("primary");
     expect(baseline.precondition).not.toContain("/linked");
@@ -214,11 +212,14 @@ describe("WorkspaceProviderRegistry", () => {
       contribution("unhealthy", provider({ probe: () => Promise.resolve("claim") })),
       contribution("degraded", provider({ probe: () => Promise.resolve("pass") })),
       contribution("missing-inspection", provider({ probe: () => Promise.resolve("claim") })),
-      contribution("fallback", provider({
-        fallback: true,
-        probe: () => Promise.resolve("claim"),
-        list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
-      })),
+      contribution(
+        "fallback",
+        provider({
+          fallback: true,
+          probe: () => Promise.resolve("claim"),
+          list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
+        }),
+      ),
     ];
     const eligible = eligibleWorkspaceProviderContributions(contributions, [
       { pluginId: "unhealthy", health: { status: "unhealthy" } },
@@ -235,13 +236,35 @@ describe("WorkspaceProviderRegistry", () => {
   it("evaluates fallback providers only after every primary passes", async () => {
     const calls: string[] = [];
     const registry = registryFor([
-      contribution("primary-b", provider({ probe: () => { calls.push("primary-b"); return Promise.resolve("pass"); } })),
-      contribution("fallback", provider({
-        fallback: true,
-        probe: () => { calls.push("fallback"); return Promise.resolve("claim"); },
-        list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
-      })),
-      contribution("primary-a", provider({ probe: () => { calls.push("primary-a"); return Promise.resolve("pass"); } })),
+      contribution(
+        "primary-b",
+        provider({
+          probe: () => {
+            calls.push("primary-b");
+            return Promise.resolve("pass");
+          },
+        }),
+      ),
+      contribution(
+        "fallback",
+        provider({
+          fallback: true,
+          probe: () => {
+            calls.push("fallback");
+            return Promise.resolve("claim");
+          },
+          list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
+        }),
+      ),
+      contribution(
+        "primary-a",
+        provider({
+          probe: () => {
+            calls.push("primary-a");
+            return Promise.resolve("pass");
+          },
+        }),
+      ),
     ]);
 
     const resolution = await registry.resolve(project);
@@ -272,11 +295,13 @@ describe("WorkspaceProviderRegistry", () => {
     expect(resolution).toMatchObject({
       status: "degraded",
       workspaces: [{ path: hostPath("/repo"), isMain: true }],
-      diagnostics: [{
-        code: "claim-conflict",
-        tier,
-        pluginIds: ["one", "two"],
-      }],
+      diagnostics: [
+        {
+          code: "claim-conflict",
+          tier,
+          pluginIds: ["one", "two"],
+        },
+      ],
     });
     expect(resolution.workspaces[0]).not.toHaveProperty("provider");
     expect(lowerProbe).not.toHaveBeenCalled();
@@ -293,11 +318,14 @@ describe("WorkspaceProviderRegistry", () => {
     const { registry, logger } = registryFixture([
       contribution("invalid", invalidProbeProvider),
       contribution("rejected", provider({ probe: () => Promise.reject(new Error("detector broke")) })),
-      contribution("git-shaped-fixture", provider({
-        fallback: true,
-        probe: () => Promise.resolve("claim"),
-        list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
-      })),
+      contribution(
+        "git-shaped-fixture",
+        provider({
+          fallback: true,
+          probe: () => Promise.resolve("claim"),
+          list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
+        }),
+      ),
     ]);
 
     const resolution = await registry.resolve(project);
@@ -314,22 +342,33 @@ describe("WorkspaceProviderRegistry", () => {
     vi.useFakeTimers();
     let observedSignal: AbortSignal | undefined;
     const hanging = provider({
-      probe: (_project, signal) => new Promise((_resolve, rejectPromise) => {
-        observedSignal = signal;
-        signal.addEventListener("abort", () => {
-          const reason: unknown = signal.reason;
-          rejectPromise(reason instanceof Error ? reason : new Error("Fixture probe aborted", { cause: reason }));
-        }, { once: true });
-      }),
+      probe: (_project, signal) =>
+        new Promise((_resolve, rejectPromise) => {
+          observedSignal = signal;
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              rejectPromise(reason instanceof Error ? reason : new Error("Fixture probe aborted", { cause: reason }));
+            },
+            { once: true },
+          );
+        }),
     });
-    const registry = registryFor([
-      contribution("hanging", hanging),
-      contribution("fallback", provider({
-        fallback: true,
-        probe: () => Promise.resolve("claim"),
-        list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
-      })),
-    ], { providerTimeoutMs: 25 });
+    const registry = registryFor(
+      [
+        contribution("hanging", hanging),
+        contribution(
+          "fallback",
+          provider({
+            fallback: true,
+            probe: () => Promise.resolve("claim"),
+            list: () => Promise.resolve([workspace("root", hostPath("/repo"), true)]),
+          }),
+        ),
+      ],
+      { providerTimeoutMs: 25 },
+    );
 
     const resolving = registry.resolve(project);
     await vi.advanceTimersByTimeAsync(25);
@@ -347,10 +386,13 @@ describe("WorkspaceProviderRegistry", () => {
   it("keeps a successful claimant as owner when listing fails instead of switching to fallback", async () => {
     const fallbackProbe = vi.fn(() => Promise.resolve<"claim">("claim"));
     const registry = registryFor([
-      contribution("owner", provider({
-        probe: () => Promise.resolve("claim"),
-        list: () => Promise.reject(new Error("listing broke")),
-      })),
+      contribution(
+        "owner",
+        provider({
+          probe: () => Promise.resolve("claim"),
+          list: () => Promise.reject(new Error("listing broke")),
+        }),
+      ),
       contribution("fallback", provider({ fallback: true, probe: fallbackProbe })),
     ]);
 
@@ -427,10 +469,18 @@ describe("WorkspaceProviderRegistry", () => {
   });
 
   it("rejects inaccessible workspace paths through the host path boundary", async () => {
-    const registry = registryFor([contribution("owner", provider({
-      probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([workspace("root", hostPath("/repo"), true), workspace("gone", hostPath("/gone"), false)]),
-    }))], { pathInspector: (path) => path !== hostPath("/gone") });
+    const registry = registryFor(
+      [
+        contribution(
+          "owner",
+          provider({
+            probe: () => Promise.resolve("claim"),
+            list: () => Promise.resolve([workspace("root", hostPath("/repo"), true), workspace("gone", hostPath("/gone"), false)]),
+          }),
+        ),
+      ],
+      { pathInspector: (path) => path !== hostPath("/gone") },
+    );
 
     const resolution = await registry.resolve(project);
 
@@ -447,28 +497,43 @@ describe("WorkspaceProviderRegistry", () => {
     const releaseCallback = deferred<undefined>();
     let callbackFinished = false;
     let listedSignal: AbortSignal | undefined;
-    const { registry, logger } = registryFixture([contribution("owner", provider({
-      probe: () => Promise.resolve("claim"),
-      list: async (_project, signal) => {
-        listedSignal = signal;
-        callbackStarted.resolve(undefined);
-        await new Promise<void>((resolveAbort) => {
-          signal.addEventListener("abort", () => { resolveAbort(); }, { once: true });
-        });
-        callbackAborted.resolve(undefined);
-        await releaseCallback.promise;
-        callbackFinished = true;
-        return [];
-      },
-    }))]);
+    const { registry, logger } = registryFixture([
+      contribution(
+        "owner",
+        provider({
+          probe: () => Promise.resolve("claim"),
+          list: async (_project, signal) => {
+            listedSignal = signal;
+            callbackStarted.resolve(undefined);
+            await new Promise<void>((resolveAbort) => {
+              signal.addEventListener(
+                "abort",
+                () => {
+                  resolveAbort();
+                },
+                { once: true },
+              );
+            });
+            callbackAborted.resolve(undefined);
+            await releaseCallback.promise;
+            callbackFinished = true;
+            return [];
+          },
+        }),
+      ),
+    ]);
     const pending = registry.resolve(project);
     await callbackStarted.promise;
 
     let closeFinished = false;
     const closing = registry.closeAll("provider shutdown");
     void closing.then(
-      () => { closeFinished = true; },
-      () => { closeFinished = true; },
+      () => {
+        closeFinished = true;
+      },
+      () => {
+        closeFinished = true;
+      },
     );
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError", message: "provider shutdown" });
@@ -502,20 +567,28 @@ describe("WorkspaceProviderRegistry", () => {
         }
         listedSignal = signal;
         return new Promise((_resolve, rejectPromise) => {
-          signal.addEventListener("abort", () => {
-            const reason: unknown = signal.reason;
-            rejectPromise(reason instanceof Error ? reason : new Error("List cancelled", { cause: reason }));
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              rejectPromise(reason instanceof Error ? reason : new Error("List cancelled", { cause: reason }));
+            },
+            { once: true },
+          );
         });
       },
       prepareRemove: ({ signal }) => {
         if (mode !== "prepare") return Promise.resolve({ title: "Disconnect", command: "board disconnect" });
         preparedSignal = signal;
         return new Promise((_resolve, rejectPromise) => {
-          signal.addEventListener("abort", () => {
-            const reason: unknown = signal.reason;
-            rejectPromise(reason instanceof Error ? reason : new Error("Preparation cancelled", { cause: reason }));
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              rejectPromise(reason instanceof Error ? reason : new Error("Preparation cancelled", { cause: reason }));
+            },
+            { once: true },
+          );
         });
       },
     });
@@ -526,7 +599,9 @@ describe("WorkspaceProviderRegistry", () => {
     mode = "list";
     const listController = new AbortController();
     const pendingResolution = registry.resolveRemoval(project, workspaceId, listController.signal);
-    await vi.waitFor(() => { expect(listedSignal).toBeInstanceOf(AbortSignal); });
+    await vi.waitFor(() => {
+      expect(listedSignal).toBeInstanceOf(AbortSignal);
+    });
     const resolutionExpectation = expect(pendingResolution).rejects.toMatchObject({ name: "AbortError" });
     listController.abort(new DOMException("Removal request cancelled", "AbortError"));
     await resolutionExpectation;
@@ -537,7 +612,9 @@ describe("WorkspaceProviderRegistry", () => {
     const current = await registry.resolveRemoval(project, workspaceId, prepareController.signal);
     mode = "prepare";
     const pendingPlan = current.prepare();
-    await vi.waitFor(() => { expect(preparedSignal).toBeInstanceOf(AbortSignal); });
+    await vi.waitFor(() => {
+      expect(preparedSignal).toBeInstanceOf(AbortSignal);
+    });
     const planExpectation = expect(pendingPlan).rejects.toMatchObject({ name: "AbortError" });
     prepareController.abort(new DOMException("Removal request cancelled", "AbortError"));
     await planExpectation;
@@ -550,17 +627,23 @@ describe("WorkspaceProviderRegistry", () => {
       observedRemoveContext = context;
       return Promise.resolve({ title: "Detach view", command: "board detach view" });
     });
-    const registry = registryFor([contribution("board", provider({
-      probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([
-        workspace("main", hostPath("/repo"), true),
-        workspace("view", hostPath("/view"), false, {
-          data: { privateId: "view-1" },
-          removal: { actionLabel: "Disconnect", confirmation: "Disconnect view?" },
+    const registry = registryFor([
+      contribution(
+        "board",
+        provider({
+          probe: () => Promise.resolve("claim"),
+          list: () =>
+            Promise.resolve([
+              workspace("main", hostPath("/repo"), true),
+              workspace("view", hostPath("/view"), false, {
+                data: { privateId: "view-1" },
+                removal: { actionLabel: "Disconnect", confirmation: "Disconnect view?" },
+              }),
+            ]),
+          prepareRemove,
         }),
-      ]),
-      prepareRemove,
-    }))]);
+      ),
+    ]);
     const workspaceId = (await registry.resolve(project)).workspaces.find(({ path }) => path === hostPath("/view"))?.id;
     if (workspaceId === undefined) throw new Error("Expected removable workspace");
 
@@ -576,21 +659,20 @@ describe("WorkspaceProviderRegistry", () => {
     expect(Object.isFrozen(observedRemoveContext?.project)).toBe(true);
     expect(Object.isFrozen(observedRemoveContext?.workspace)).toBe(true);
     expect(Object.isFrozen(observedRemoveContext?.workspace.removal)).toBe(true);
-    await expect(registry.resolveRemoval(project, "stale-id"))
-      .rejects.toMatchObject({ code: "workspace-not-found", statusCode: 404 });
+    await expect(registry.resolveRemoval(project, "stale-id")).rejects.toMatchObject({ code: "workspace-not-found", statusCode: 404 });
     const conflict = registryFor([
       contribution("one", provider({ probe: () => Promise.resolve("claim") })),
       contribution("two", provider({ probe: () => Promise.resolve("claim") })),
     ]);
-    await expect(conflict.resolveRemoval(project, workspaceId))
-      .rejects.toMatchObject({ code: "owner-conflict", statusCode: 409 });
+    await expect(conflict.resolveRemoval(project, workspaceId)).rejects.toMatchObject({ code: "owner-conflict", statusCode: 409 });
 
     const invalidProvider = provider({
       probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([
-        workspace("main", hostPath("/repo"), true),
-        workspace("view", hostPath("/view"), false, { removal: { actionLabel: "Disconnect", confirmation: "Disconnect?" } }),
-      ]),
+      list: () =>
+        Promise.resolve([
+          workspace("main", hostPath("/repo"), true),
+          workspace("view", hostPath("/view"), false, { removal: { actionLabel: "Disconnect", confirmation: "Disconnect?" } }),
+        ]),
       prepareRemove: () => Promise.resolve({ title: "valid", command: "valid" }),
     });
     Object.defineProperty(invalidProvider, "prepareRemove", { value: () => Promise.resolve({ title: "", command: "ignored" }) });
@@ -602,17 +684,33 @@ describe("WorkspaceProviderRegistry", () => {
 
     vi.useFakeTimers();
     let observedSignal: AbortSignal | undefined;
-    const hangingRegistry = registryFor([contribution("hanging", provider({
-      probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([
-        workspace("main", hostPath("/repo"), true),
-        workspace("view", hostPath("/view"), false, { removal: { actionLabel: "Disconnect", confirmation: "Disconnect?" } }),
-      ]),
-      prepareRemove: ({ signal }) => new Promise((_resolve, rejectPromise) => {
-        observedSignal = signal;
-        signal.addEventListener("abort", () => { rejectPromise(new Error("planner aborted")); }, { once: true });
-      }),
-    }))], { providerTimeoutMs: 25 });
+    const hangingRegistry = registryFor(
+      [
+        contribution(
+          "hanging",
+          provider({
+            probe: () => Promise.resolve("claim"),
+            list: () =>
+              Promise.resolve([
+                workspace("main", hostPath("/repo"), true),
+                workspace("view", hostPath("/view"), false, { removal: { actionLabel: "Disconnect", confirmation: "Disconnect?" } }),
+              ]),
+            prepareRemove: ({ signal }) =>
+              new Promise((_resolve, rejectPromise) => {
+                observedSignal = signal;
+                signal.addEventListener(
+                  "abort",
+                  () => {
+                    rejectPromise(new Error("planner aborted"));
+                  },
+                  { once: true },
+                );
+              }),
+          }),
+        ),
+      ],
+      { providerTimeoutMs: 25 },
+    );
     const hangingId = (await hangingRegistry.resolve(project)).workspaces.find(({ path }) => path === hostPath("/view"))?.id;
     if (hangingId === undefined) throw new Error("Expected hanging-plan workspace");
     const hangingTarget = await hangingRegistry.resolveRemoval(project, hangingId);
@@ -632,12 +730,14 @@ describe("WorkspaceProviderRegistry", () => {
     expect(first).toMatchObject({
       status: "folder",
       projectId: project.id,
-      workspaces: [{
-        projectId: project.id,
-        path: hostPath("/repo"),
-        label: "Project",
-        isMain: true,
-      }],
+      workspaces: [
+        {
+          projectId: project.id,
+          path: hostPath("/repo"),
+          label: "Project",
+          isMain: true,
+        },
+      ],
       diagnostics: [],
     });
     expect(first.workspaces[0]?.id).toMatch(/^[a-f0-9]{12}$/u);
@@ -646,13 +746,15 @@ describe("WorkspaceProviderRegistry", () => {
 
   it("serves live provider workspaces to spawned-session target validation", async () => {
     let linkedPath = hostPath("/first-linked");
-    const registry = registryFor([contribution("owner", provider({
-      probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([
-        workspace("root", hostPath("/repo"), true),
-        workspace(linkedPath, linkedPath, false),
-      ]),
-    }))]);
+    const registry = registryFor([
+      contribution(
+        "owner",
+        provider({
+          probe: () => Promise.resolve("claim"),
+          list: () => Promise.resolve([workspace("root", hostPath("/repo"), true), workspace(linkedPath, linkedPath, false)]),
+        }),
+      ),
+    ]);
     const resolver = new ProjectScopedSpawnTargetResolver({
       projects: { list: () => Promise.resolve([project]) },
       workspaces: registry,
@@ -676,10 +778,7 @@ interface RegistryFixtureOptions {
   pathInspector?: (path: string) => boolean | Promise<boolean>;
 }
 
-function registryFor(
-  contributions: readonly ServerPluginProviderContribution[],
-  options: RegistryFixtureOptions = {},
-): WorkspaceProviderRegistry {
+function registryFor(contributions: readonly ServerPluginProviderContribution[], options: RegistryFixtureOptions = {}): WorkspaceProviderRegistry {
   return registryFixture(contributions, options).registry;
 }
 
@@ -699,11 +798,7 @@ function registryFixture(
   };
 }
 
-function contribution(
-  pluginId: string,
-  workspaceProvider: WorkspaceProvider,
-  moduleRevision = "1",
-): ServerPluginProviderContribution {
+function contribution(pluginId: string, workspaceProvider: WorkspaceProvider, moduleRevision = "1"): ServerPluginProviderContribution {
   return {
     pluginId,
     pluginName: pluginId,
@@ -724,18 +819,15 @@ function provider(overrides: Partial<WorkspaceProvider> = {}): WorkspaceProvider
   };
 }
 
-function workspace(
-  key: string,
-  path: string,
-  isMain: boolean,
-  extras: Partial<ProviderWorkspace> = {},
-): ProviderWorkspace {
+function workspace(key: string, path: string, isMain: boolean, extras: Partial<ProviderWorkspace> = {}): ProviderWorkspace {
   return { key, path, label: key, isMain, ...extras };
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolveDeferred: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolveDeferred = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
   if (resolveDeferred === undefined) throw new Error("Deferred promise was not initialized");
   return { promise, resolve: resolveDeferred };
 }

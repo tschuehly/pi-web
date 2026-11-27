@@ -127,7 +127,8 @@ export class SessionMediaIndex {
     if (byteSize === undefined) return undefined;
     const dimensions = this.readDimensions(source, mimeType);
     const image: ImageMemo = {
-      source, mimeType,
+      source,
+      mimeType,
       reference: { type: "image", mediaId: this.hash(key), mimeType, byteSize, ...dimensions },
     };
     this.blocks.set(block, image);
@@ -196,7 +197,7 @@ function imageByteSize(source: string): number | undefined {
   if (remainder === 1 || (padding > 0 && (source.length % 4 !== 0 || padding !== 4 - remainder))) return undefined;
   const last = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(source.charAt(length - 1));
   if ((remainder === 2 && (last & 15) !== 0) || (remainder === 3 && (last & 3) !== 0)) return undefined;
-  return Math.floor(length * 3 / 4);
+  return Math.floor((length * 3) / 4);
 }
 
 /** Only Pi content containers, not arbitrary tool arguments or provider metadata. */

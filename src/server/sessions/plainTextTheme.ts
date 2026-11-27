@@ -117,9 +117,7 @@ class PlainTextTheme extends Theme {
     return "256color";
   }
 
-  override getThinkingBorderColor(
-    level: Parameters<Theme["getThinkingBorderColor"]>[0],
-  ): ReturnType<Theme["getThinkingBorderColor"]> {
+  override getThinkingBorderColor(level: Parameters<Theme["getThinkingBorderColor"]>[0]): ReturnType<Theme["getThinkingBorderColor"]> {
     void level;
     return preserveText;
   }

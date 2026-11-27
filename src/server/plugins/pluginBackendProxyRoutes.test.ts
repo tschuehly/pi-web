@@ -8,11 +8,13 @@ let request: ReturnType<typeof vi.fn<SessionDaemonRequestClient["request"]>>;
 
 beforeEach(() => {
   app = Fastify({ logger: false });
-  request = vi.fn<SessionDaemonRequestClient["request"]>(() => Promise.resolve({
-    statusCode: 200,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ counts: { open: 2 } }),
-  }));
+  request = vi.fn<SessionDaemonRequestClient["request"]>(() =>
+    Promise.resolve({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ counts: { open: 2 } }),
+    }),
+  );
   registerPairedPluginBackendProxyRoutes(app, { request });
 });
 
@@ -50,16 +52,22 @@ describe("local paired plugin backend proxy route", () => {
   });
 
   it("preserves JSON primitives and attributable upstream failures", async () => {
-    request
-      .mockResolvedValueOnce({ statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("ready") })
-      .mockResolvedValueOnce({
-        statusCode: 501,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ error: "operation unavailable", code: "operation-unavailable", pluginId: "board", operation: "cards.summary" }),
-      });
+    request.mockResolvedValueOnce({ statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify("ready") }).mockResolvedValueOnce({
+      statusCode: 501,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: "operation unavailable", code: "operation-unavailable", pluginId: "board", operation: "cards.summary" }),
+    });
 
-    const success = await app.inject({ method: "POST", url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary", payload: { revision: "r1", input: null } });
-    const failure = await app.inject({ method: "POST", url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary", payload: { revision: "r1", input: null } });
+    const success = await app.inject({
+      method: "POST",
+      url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary",
+      payload: { revision: "r1", input: null },
+    });
+    const failure = await app.inject({
+      method: "POST",
+      url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary",
+      payload: { revision: "r1", input: null },
+    });
 
     expect(success.json()).toBe("ready");
     expect(failure.statusCode).toBe(501);
@@ -78,16 +86,22 @@ describe("local paired plugin backend proxy route", () => {
   });
 
   it("maps daemon transport loss and an old daemon route to explicit gateway errors", async () => {
-    request
-      .mockRejectedValueOnce(new Error("connect ECONNREFUSED"))
-      .mockResolvedValueOnce({
-        statusCode: 404,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Route POST:/paired-plugin-backends/board not found", error: "Not Found", statusCode: 404 }),
-      });
+    request.mockRejectedValueOnce(new Error("connect ECONNREFUSED")).mockResolvedValueOnce({
+      statusCode: 404,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "Route POST:/paired-plugin-backends/board not found", error: "Not Found", statusCode: 404 }),
+    });
 
-    const unavailable = await app.inject({ method: "POST", url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary", payload: { revision: "r1", input: null } });
-    const unsupported = await app.inject({ method: "POST", url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary", payload: { revision: "r1", input: null } });
+    const unavailable = await app.inject({
+      method: "POST",
+      url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary",
+      payload: { revision: "r1", input: null },
+    });
+    const unsupported = await app.inject({
+      method: "POST",
+      url: "/api/paired-plugin-backends/board/projects/p1/workspaces/w1/cards.summary",
+      payload: { revision: "r1", input: null },
+    });
 
     expect(unavailable.statusCode).toBe(502);
     expect(unavailable.json()).toMatchObject({ code: "daemon-unavailable", pluginId: "board", operation: "cards.summary" });

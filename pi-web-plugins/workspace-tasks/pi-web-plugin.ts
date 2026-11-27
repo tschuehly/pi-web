@@ -3,7 +3,9 @@ import { TASKS_CONFIG_PATH } from "./config.js";
 import { defineTasksPanelElement, tasksPanelBadge } from "./tasksPanelElement.js";
 
 const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse(value) {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Stylesheet integration capability v1 requires registerRoot and createController");
@@ -13,10 +15,16 @@ const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCap
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "createController" in value && typeof value.createController === "function"
-    && "subscribe" in value && typeof value.subscribe === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+  );
 }
 
 const plugin = {
@@ -61,7 +69,8 @@ const plugin = {
             `,
             order: 40,
             badge: (context) => tasksPanelBadge(context),
-            render: (context) => html`<pi-web-workspace-tasks-panel .stylesheetIntegration=${stylesheetIntegration} .context=${context}></pi-web-workspace-tasks-panel>`,
+            render: (context) =>
+              html`<pi-web-workspace-tasks-panel .stylesheetIntegration=${stylesheetIntegration} .context=${context}></pi-web-workspace-tasks-panel>`,
           },
         ],
       },

@@ -16,7 +16,10 @@ const PREVIEW = {
 let dir: string;
 let script: string;
 let asked: string[];
-const allow: NativeConfirm = (text) => { asked.push(text); return Promise.resolve(true); };
+const allow: NativeConfirm = (text) => {
+  asked.push(text);
+  return Promise.resolve(true);
+};
 
 /** A fake promote-installed: records its arguments, prints $OUT, writes $ERR to stderr and exits $CODE. */
 async function fake(out: string, code = 0, err = ""): Promise<void> {
@@ -36,8 +39,11 @@ beforeEach(async () => {
   script = join(dir, "promote-installed");
   asked = [];
 });
-const post = (payload: Record<string, unknown>, confirm?: NativeConfirm) => app(script, confirm).then((server) => server.inject({ method: "POST", url: "/api/install/latest", payload }));
-afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+const post = (payload: Record<string, unknown>, confirm?: NativeConfirm) =>
+  app(script, confirm).then((server) => server.inject({ method: "POST", url: "/api/install/latest", payload }));
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
 
 describe("install latest routes", () => {
   it("GET passes the dry-run JSON through", async () => {
@@ -89,7 +95,9 @@ describe("install latest routes", () => {
     await fake("");
     expect((await post({ from: PREVIEW.installed, to: PREVIEW.latest })).statusCode).toBe(200);
     await rm(join(dir, "args"));
-    const off = await (await app(script, "off")).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed, to: PREVIEW.latest } });
+    const off = await (
+      await app(script, "off")
+    ).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed, to: PREVIEW.latest } });
     expect(off.statusCode).toBe(501);
     expect(nativeConfirm("linux")).toBeUndefined();
     expect(nativeConfirm("darwin")).toBeTypeOf("function");
@@ -111,7 +119,9 @@ describe("install latest routes", () => {
 
   it("POST refuses a pair that is not two revisions without running the script", async () => {
     await fake("");
-    const response = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: "--force", piWeb: "6438f69" }, to: PREVIEW.latest } });
+    const response = await (
+      await app()
+    ).inject({ method: "POST", url: "/api/install/latest", payload: { from: { workbench: "--force", piWeb: "6438f69" }, to: PREVIEW.latest } });
     expect(response.statusCode).toBe(400);
     const noTo = await (await app()).inject({ method: "POST", url: "/api/install/latest", payload: { from: PREVIEW.installed } });
     expect(noTo.statusCode).toBe(400);
@@ -125,7 +135,9 @@ describe("install latest routes", () => {
   });
 
   it("finds the script beside the Durable host entry, or the override", () => {
-    expect(promoteInstalledScript({ PI_WEB_DURABLE_HOST: "/b/pi-workbench-1aa2/packages/durable-pilot/src/chat-host-main.ts" })).toBe("/b/pi-workbench-1aa2/scripts/promote-installed");
+    expect(promoteInstalledScript({ PI_WEB_DURABLE_HOST: "/b/pi-workbench-1aa2/packages/durable-pilot/src/chat-host-main.ts" })).toBe(
+      "/b/pi-workbench-1aa2/scripts/promote-installed",
+    );
     expect(promoteInstalledScript({ PI_WEB_PROMOTE_INSTALLED: "/x/promote", PI_WEB_DURABLE_HOST: "/b/p/d/s/h.ts" })).toBe("/x/promote");
     expect(promoteInstalledScript({})).toBeUndefined();
   });

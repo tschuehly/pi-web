@@ -1,7 +1,14 @@
 import { stylesheetIntegrationCapability } from "../../plugins/styles";
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { clampPanelWidth, panelResizeConstraints, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints, type ResizablePanelSide } from "../../appShell/panelResizeController";
+import {
+  clampPanelWidth,
+  panelResizeConstraints,
+  panelWidthFromDrag,
+  panelWidthFromKeyboard,
+  type PanelResizeConstraints,
+  type ResizablePanelSide,
+} from "../../appShell/panelResizeController";
 
 export type PanelEdgeSide = ResizablePanelSide;
 
@@ -63,12 +70,24 @@ export class AppPanelEdgeControl extends LitElement {
         aria-valuemin=${String(constraints.minWidth)}
         aria-valuemax=${String(constraints.maxWidth)}
         aria-valuenow=${this.resizeAriaValueNow()}
-        @pointerdown=${(event: PointerEvent) => { this.onResizePointerDown(event); }}
-        @pointermove=${(event: PointerEvent) => { this.onResizePointerMove(event); }}
-        @pointerup=${(event: PointerEvent) => { this.onResizePointerUp(event); }}
-        @pointercancel=${(event: PointerEvent) => { this.onResizePointerCancel(event); }}
-        @dblclick=${(event: MouseEvent) => { this.onResizeDoubleClick(event); }}
-        @keydown=${(event: KeyboardEvent) => { this.onResizeKeyDown(event); }}
+        @pointerdown=${(event: PointerEvent) => {
+          this.onResizePointerDown(event);
+        }}
+        @pointermove=${(event: PointerEvent) => {
+          this.onResizePointerMove(event);
+        }}
+        @pointerup=${(event: PointerEvent) => {
+          this.onResizePointerUp(event);
+        }}
+        @pointercancel=${(event: PointerEvent) => {
+          this.onResizePointerCancel(event);
+        }}
+        @dblclick=${(event: MouseEvent) => {
+          this.onResizeDoubleClick(event);
+        }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.onResizeKeyDown(event);
+        }}
       ></div>
     `;
   }

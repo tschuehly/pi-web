@@ -13,20 +13,64 @@ const [NOTES, RELEASE, GUIDE] = [E2E_SESSION_ID, E2E_MORE_CHATS[0].id, E2E_MORE_
  * Crowded: one Workstream of eight long-titled tabs, five of them placeholders, NOTES last.
  */
 function seededWindow(workspaceId: string, oneWorkstream = false, crowded = false, looseGuide = false, threeWorkstreams = false) {
-  const chat = (sessionId: string, title: string, workstream: { id: string; title: string } | undefined) => ({ sessionId, title, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream });
+  const chat = (sessionId: string, title: string, workstream: { id: string; title: string } | undefined) => ({
+    sessionId,
+    title,
+    machineId: "local",
+    projectId: E2E_PROJECT_ID,
+    workspaceId,
+    workstream,
+  });
   const dogfooding = { id: "ws-dogfooding", title: "Pi Workbench UI dogfooding and two-tier tab layout review" };
   const docs = { id: "ws-docs", title: "Docs" };
   if (threeWorkstreams) {
-    return { e2e: { name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {}, chats: [chat(NOTES, "Where are the notes?", dogfooding), chat(RELEASE, "Draft the release notes", { id: "ws-release", title: "Release" }), chat(GUIDE, "Review the install guide", docs)] } };
+    return {
+      e2e: {
+        name: "Window 1",
+        layout: "tabs",
+        maximized: false,
+        focused: NOTES,
+        lastActive: {},
+        chats: [
+          chat(NOTES, "Where are the notes?", dogfooding),
+          chat(RELEASE, "Draft the release notes", { id: "ws-release", title: "Release" }),
+          chat(GUIDE, "Review the install guide", docs),
+        ],
+      },
+    };
   }
   if (crowded) {
-    const filler = Array.from({ length: 5 }, (_, index) => chat(`crowded-${String(index)}`, `A long Chat title that has to ellipsize ${String(index)}`, dogfooding));
-    return { e2e: { name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {}, chats: [...filler, chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", dogfooding), chat(NOTES, "Where are the notes?", dogfooding)] } };
+    const filler = Array.from({ length: 5 }, (_, index) =>
+      chat(`crowded-${String(index)}`, `A long Chat title that has to ellipsize ${String(index)}`, dogfooding),
+    );
+    return {
+      e2e: {
+        name: "Window 1",
+        layout: "tabs",
+        maximized: false,
+        focused: NOTES,
+        lastActive: {},
+        chats: [
+          ...filler,
+          chat(RELEASE, "Draft the release notes", dogfooding),
+          chat(GUIDE, "Review the install guide", dogfooding),
+          chat(NOTES, "Where are the notes?", dogfooding),
+        ],
+      },
+    };
   }
   return {
     e2e: {
-      name: "Window 1", layout: "tabs", maximized: false, focused: NOTES, lastActive: {},
-      chats: [chat(NOTES, "Where are the notes?", dogfooding), chat(RELEASE, "Draft the release notes", dogfooding), chat(GUIDE, "Review the install guide", looseGuide ? undefined : oneWorkstream ? dogfooding : docs)],
+      name: "Window 1",
+      layout: "tabs",
+      maximized: false,
+      focused: NOTES,
+      lastActive: {},
+      chats: [
+        chat(NOTES, "Where are the notes?", dogfooding),
+        chat(RELEASE, "Draft the release notes", dogfooding),
+        chat(GUIDE, "Review the install guide", looseGuide ? undefined : oneWorkstream ? dogfooding : docs),
+      ],
     },
   };
 }
@@ -36,7 +80,12 @@ async function openSeededWindow(page: Page, oneWorkstream = false, crowded = fal
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
   // Only the first page seeds: a window this test opens later must find the store as the first one left it.
-  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream, crowded, looseGuide, threeWorkstreams))] as const);
+  await page.addInitScript(
+    ([key, value]) => {
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+    },
+    [STORE_KEY, JSON.stringify(seededWindow(workspaceId, oneWorkstream, crowded, looseGuide, threeWorkstreams))] as const,
+  );
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
   await page.goto(target.toString());
@@ -70,16 +119,23 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   expect(burger !== null && row !== null && burger.y >= row.y && burger.y + burger.height <= row.y + row.height).toBe(true);
   // The burger opens labelled items; Escape folds it back to the burger.
   const menu = await openChatMenu(tabRowTools(page));
-  for (const name of ["Files", "Session tree", "Copy session info", "Workbench settings"]) await expect(menu.getByRole("button", { name, exact: true })).toBeVisible();
+  for (const name of ["Files", "Session tree", "Copy session info", "Workbench settings"])
+    await expect(menu.getByRole("button", { name, exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(menu.locator(".files-toggle")).toBeHidden();
   await expect(shownChat(page).locator("header")).toHaveCount(0);
   // Tabs keep between 120px and 200px, a long title ellipsized with the full title as the tooltip; × shows on every Chat tab.
-  const widths = await page.locator("workbench-window-tabs .workstream-tab, workbench-window-tabs .chat-tab").evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().width));
+  const widths = await page
+    .locator("workbench-window-tabs .workstream-tab, workbench-window-tabs .chat-tab")
+    .evaluateAll((tabs) => tabs.map((tab) => tab.getBoundingClientRect().width));
   expect(Math.max(...widths)).toBeLessThanOrEqual(200);
   expect(Math.min(...widths)).toBeGreaterThanOrEqual(120);
   await expect(workstreamTab(page, "dogfooding")).toHaveAttribute("title", "Workstream: Pi Workbench UI dogfooding and two-tier tab layout review");
-  expect(await workstreamTab(page, "dogfooding").locator(".title").evaluate((title) => title.scrollWidth > title.clientWidth)).toBe(true);
+  expect(
+    await workstreamTab(page, "dogfooding")
+      .locator(".title")
+      .evaluate((title) => title.scrollWidth > title.clientWidth),
+  ).toBe(true);
   await expect(chatTab(page, "Draft the release notes").locator(".close")).toBeVisible();
 
   await chatTab(page, "Draft the release notes").click();
@@ -137,7 +193,14 @@ test("switches Workstreams back to their last Chat, lays them out as a grid, and
   await expect(workstreamTab(page, "dogfooding")).toHaveAttribute("data-session", RELEASE);
 });
 
-interface SwitchFrame { phase: string; tabs: { session: string; width: number; selected: boolean; status: string; color: string; opacity: string }[]; shown: string; articles: number; scrollTop: number; atBottom: boolean }
+interface SwitchFrame {
+  phase: string;
+  tabs: { session: string; width: number; selected: boolean; status: string; color: string; opacity: string }[];
+  shown: string;
+  articles: number;
+  scrollTop: number;
+  atBottom: boolean;
+}
 
 /** Samples every frame: the Chat tabs' widths, colours and selection, and the Chat on screen with its transcript scroll. */
 function sampleFrames(): void {
@@ -150,7 +213,14 @@ function sampleFrames(): void {
     const chat = shell?.querySelector("chat-view")?.shadowRoot?.querySelector(".chat");
     frames.push({
       phase: String(Reflect.get(window, "switchPhase")),
-      tabs: [...tabs?.querySelectorAll<HTMLElement>(".chat-tab") ?? []].map((tab) => ({ session: tab.dataset["session"] ?? "", width: tab.getBoundingClientRect().width, selected: tab.getAttribute("aria-selected") === "true", status: tab.dataset["status"] ?? "", color: getComputedStyle(tab).color, opacity: getComputedStyle(tab).opacity })),
+      tabs: [...(tabs?.querySelectorAll<HTMLElement>(".chat-tab") ?? [])].map((tab) => ({
+        session: tab.dataset["session"] ?? "",
+        width: tab.getBoundingClientRect().width,
+        selected: tab.getAttribute("aria-selected") === "true",
+        status: tab.dataset["status"] ?? "",
+        color: getComputedStyle(tab).color,
+        opacity: getComputedStyle(tab).opacity,
+      })),
       shown: shell?.getAttribute("data-session") ?? "",
       articles: chat?.querySelectorAll("article").length ?? 0,
       scrollTop: chat?.scrollTop ?? -1,
@@ -159,7 +229,9 @@ function sampleFrames(): void {
     if (Reflect.get(window, "switchFrames") === frames) requestAnimationFrame(afterPaint);
   };
   // Read once the frame's animation callbacks (scroll restores among them) ran and it painted.
-  const afterPaint = () => { setTimeout(sample, 0); };
+  const afterPaint = () => {
+    setTimeout(sample, 0);
+  };
   requestAnimationFrame(afterPaint);
 }
 
@@ -167,7 +239,10 @@ test("switches tabs steadily: same tab widths, one selected tab, never a blank C
   await openSeededWindow(page, true);
   await expect(shownChat(page).locator("chat-view article").first()).toBeVisible();
   const transcript = (page: Page) => shownChat(page).locator("chat-view .chat");
-  const phase = (name: string) => page.evaluate((value) => { Reflect.set(window, "switchPhase", value); }, name);
+  const phase = (name: string) =>
+    page.evaluate((value) => {
+      Reflect.set(window, "switchPhase", value);
+    }, name);
   const show = async (session: string, title: string) => {
     await chatTab(page, title).click();
     await expect(shownChat(page)).toHaveAttribute("data-session", session);
@@ -184,8 +259,20 @@ test("switches tabs steadily: same tab widths, one selected tab, never a blank C
   const releaseTop = await transcript(page).evaluate((chat) => chat.scrollTop);
   expect(releaseTop).toBeGreaterThan(0);
   await phase("again");
-  for (const [session, title] of [[NOTES, "Where are the notes?"], [GUIDE, "Review the install guide"], [RELEASE, "Draft the release notes"], [NOTES, "Where are the notes?"], [RELEASE, "Draft the release notes"], [GUIDE, "Review the install guide"]] as const) await show(session, title);
-  const frames = await page.evaluate(() => { const frames = Reflect.get(window, "switchFrames") as SwitchFrame[]; Reflect.set(window, "switchFrames", undefined); return frames; });
+  for (const [session, title] of [
+    [NOTES, "Where are the notes?"],
+    [GUIDE, "Review the install guide"],
+    [RELEASE, "Draft the release notes"],
+    [NOTES, "Where are the notes?"],
+    [RELEASE, "Draft the release notes"],
+    [GUIDE, "Review the install guide"],
+  ] as const)
+    await show(session, title);
+  const frames = await page.evaluate(() => {
+    const frames = Reflect.get(window, "switchFrames") as SwitchFrame[];
+    Reflect.set(window, "switchFrames", undefined);
+    return frames;
+  });
 
   await test.info().attach("tab-switch-frames", { body: JSON.stringify(frames), contentType: "application/json" });
   expect(frames.length).toBeGreaterThan(30);
@@ -197,9 +284,14 @@ test("switches tabs steadily: same tab widths, one selected tab, never a blank C
   expect(unsteady, "frames without exactly one selected, fully opaque tab").toEqual([]);
   // The selected tab is in full text colour from its first frame: no fade through grey.
   expect(new Set(frames.flatMap((frame) => frame.tabs.filter((tab) => tab.selected).map((tab) => tab.color))).size, "selected tab colours").toBe(1);
-  expect(frames.filter((frame) => frame.shown === "" || frame.articles === 0), "blank Chat frames").toEqual([]);
+  expect(
+    frames.filter((frame) => frame.shown === "" || frame.articles === 0),
+    "blank Chat frames",
+  ).toEqual([]);
   const again = frames.filter((frame) => frame.phase === "again");
-  expect(new Set(again.filter((frame) => frame.shown === RELEASE).map((frame) => Math.round(frame.scrollTop))), "RELEASE scroll in every frame").toEqual(new Set([Math.round(releaseTop)]));
+  expect(new Set(again.filter((frame) => frame.shown === RELEASE).map((frame) => Math.round(frame.scrollTop))), "RELEASE scroll in every frame").toEqual(
+    new Set([Math.round(releaseTop)]),
+  );
   expect(frames.filter((frame) => frame.shown === GUIDE && !frame.atBottom).length, "GUIDE frames off its bottom").toBe(0);
 });
 
@@ -213,12 +305,19 @@ test("a crowded tab row keeps every tool clickable: only the Chat tabs shrink an
       // A trial click fails when another element (the tab strip) covers the control's centre.
       await control.click({ trial: true, timeout: 2000 });
       const box = await control.boundingBox();
-      expect(box !== null && box.x >= 0 && box.x + box.width <= 900, `${await control.getAttribute("aria-label") ?? await control.innerText()} inside the window`).toBe(true);
+      expect(
+        box !== null && box.x >= 0 && box.x + box.width <= 900,
+        `${(await control.getAttribute("aria-label")) ?? (await control.innerText())} inside the window`,
+      ).toBe(true);
     }
     const strip = await page.locator("workbench-window-tabs .tabs.chats").evaluate((tabs) => {
       const selected = tabs.querySelector('[aria-selected="true"]')?.getBoundingClientRect();
       const bounds = tabs.getBoundingClientRect();
-      return { scrolls: tabs.scrollWidth > tabs.clientWidth, inView: selected !== undefined && selected.left >= bounds.left - 1 && selected.right <= bounds.right + 1, widths: [...tabs.children].map((tab) => tab.getBoundingClientRect().width) };
+      return {
+        scrolls: tabs.scrollWidth > tabs.clientWidth,
+        inView: selected !== undefined && selected.left >= bounds.left - 1 && selected.right <= bounds.right + 1,
+        widths: [...tabs.children].map((tab) => tab.getBoundingClientRect().width),
+      };
     });
     expect(strip.scrolls).toBe(true);
     expect(strip.inView).toBe(true);
@@ -230,7 +329,9 @@ test("a crowded tab row keeps every tool clickable: only the Chat tabs shrink an
 
 for (const scale of ["1", "1.25"]) {
   test(`the tab row's controls share one centre and one gap per group at interface scale ${scale}`, async ({ page }) => {
-    await page.addInitScript((value) => { localStorage.setItem("pi-web-app-scale", value); }, scale);
+    await page.addInitScript((value) => {
+      localStorage.setItem("pi-web-app-scale", value);
+    }, scale);
     await page.setViewportSize({ width: 1000, height: 820 });
     await openSeededWindow(page, true);
     await expect(chatMenu(tabRowTools(page))).toBeVisible();
@@ -242,7 +343,9 @@ for (const scale of ["1", "1.25"]) {
       const gaps = (group: Element[]) => group.slice(1).map((element, index) => box(element).left - box(group[index] ?? element).right);
       return {
         centre: bar === null || bar === undefined ? NaN : box(bar).top + box(bar).height / 2,
-        centres: [...tools, ...actions, ...(tabs.shadowRoot?.querySelectorAll(".chat-tab .title") ?? [])].map((element) => box(element).top + box(element).height / 2),
+        centres: [...tools, ...actions, ...(tabs.shadowRoot?.querySelectorAll(".chat-tab .title") ?? [])].map(
+          (element) => box(element).top + box(element).height / 2,
+        ),
         toolGaps: gaps(tools),
         actionGaps: gaps([...actions]),
       };
@@ -256,22 +359,29 @@ for (const scale of ["1", "1.25"]) {
 /** Each Grid tile, by Chat: its box, its transcript's box, its first visible message and where it sits, and its outline. */
 function gridLayout() {
   const app = document.querySelector("pi-workbench-app")?.shadowRoot;
-  const rect = (element: Element | null | undefined) => { const box = element?.getBoundingClientRect(); return box === undefined ? [] : [box.x, box.y, box.width, box.height].map(Math.round); };
-  return [...app?.querySelectorAll<HTMLElement>(".grid > .tile") ?? []].map((tile) => {
-    const view = tile.querySelector("main.chat-shell chat-view") ?? tile.querySelector("workbench-chat-pane")?.shadowRoot?.querySelector("chat-view");
-    const chat = view?.shadowRoot?.querySelector(".chat");
-    const top = chat?.getBoundingClientRect().top ?? 0;
-    const first = [...chat?.querySelectorAll<HTMLElement>("[data-scroll-anchor-id]") ?? []].find((element) => element.getBoundingClientRect().bottom > top + 1);
-    return {
-      session: tile.dataset["session"] ?? tile.querySelector<HTMLElement>("main.chat-shell")?.dataset["session"] ?? "",
-      focused: tile.dataset["focused"] === "true",
-      outlined: getComputedStyle(tile).outlineStyle !== "none",
-      tile: rect(tile),
-      transcript: rect(chat),
-      anchor: first?.dataset["scrollAnchorId"] ?? "none",
-      message: Math.round(first?.getBoundingClientRect().top ?? -1),
-    };
-  }).sort((a, b) => a.session.localeCompare(b.session));
+  const rect = (element: Element | null | undefined) => {
+    const box = element?.getBoundingClientRect();
+    return box === undefined ? [] : [box.x, box.y, box.width, box.height].map(Math.round);
+  };
+  return [...(app?.querySelectorAll<HTMLElement>(".grid > .tile") ?? [])]
+    .map((tile) => {
+      const view = tile.querySelector("main.chat-shell chat-view") ?? tile.querySelector("workbench-chat-pane")?.shadowRoot?.querySelector("chat-view");
+      const chat = view?.shadowRoot?.querySelector(".chat");
+      const top = chat?.getBoundingClientRect().top ?? 0;
+      const first = [...(chat?.querySelectorAll<HTMLElement>("[data-scroll-anchor-id]") ?? [])].find(
+        (element) => element.getBoundingClientRect().bottom > top + 1,
+      );
+      return {
+        session: tile.dataset["session"] ?? tile.querySelector<HTMLElement>("main.chat-shell")?.dataset["session"] ?? "",
+        focused: tile.dataset["focused"] === "true",
+        outlined: getComputedStyle(tile).outlineStyle !== "none",
+        tile: rect(tile),
+        transcript: rect(chat),
+        anchor: first?.dataset["scrollAnchorId"] ?? "none",
+        message: Math.round(first?.getBoundingClientRect().top ?? -1),
+      };
+    })
+    .sort((a, b) => a.session.localeCompare(b.session));
 }
 
 type GridLayout = ReturnType<typeof gridLayout>;
@@ -289,9 +399,10 @@ function probeGrid() {
   const phase = () => String(Reflect.get(window, "gridProbePhase") ?? "focus");
   const observer = new MutationObserver((records) => {
     if (phase() === "page") return;
-    for (const record of records) for (const removed of record.removedNodes) {
-      for (const [session, view] of identities) if (removed === view || removed.contains(view)) failures.push(`${phase()}: removed ${session}`);
-    }
+    for (const record of records)
+      for (const removed of record.removedNodes) {
+        for (const [session, view] of identities) if (removed === view || removed.contains(view)) failures.push(`${phase()}: removed ${session}`);
+      }
   });
   const sample = () => {
     frames++;
@@ -300,27 +411,41 @@ function probeGrid() {
       const view = tile.querySelector("chat-view") ?? pane?.shadowRoot?.querySelector("chat-view");
       const session = tile.dataset["session"] ?? tile.querySelector<HTMLElement>("main.chat-shell")?.dataset["session"] ?? "";
       const chat = view?.shadowRoot?.querySelector<HTMLElement>(".chat");
-      for (const node of [root, pane?.shadowRoot, view?.shadowRoot]) if (node !== null && node !== undefined && !observed.has(node)) {
-        observed.add(node); observer.observe(node, { childList: true, subtree: true });
-      }
+      for (const node of [root, pane?.shadowRoot, view?.shadowRoot])
+        if (node !== null && node !== undefined && !observed.has(node)) {
+          observed.add(node);
+          observer.observe(node, { childList: true, subtree: true });
+        }
       if (view !== null && view !== undefined) {
         const before = identities.get(session);
         if (before !== undefined && before !== view && phase() !== "page") failures.push(`${phase()}: recreated ${session}`);
         identities.set(session, view);
       }
       if (tile.getBoundingClientRect().width === 0 || getComputedStyle(tile).visibility === "hidden") continue;
-      if (chat === null || chat === undefined || chat.querySelectorAll("article").length === 0 || chat.getBoundingClientRect().height < 1) failures.push(`${phase()}: empty ${session}`);
+      if (chat === null || chat === undefined || chat.querySelectorAll("article").length === 0 || chat.getBoundingClientRect().height < 1)
+        failures.push(`${phase()}: empty ${session}`);
       // A white fallback in dark mode is never the themed content box.
-      if (matchMedia("(prefers-color-scheme: dark)").matches && [tile, chat].some((element) => element !== null && element !== undefined && getComputedStyle(element).backgroundColor === "rgb(255, 255, 255)")) failures.push(`${phase()}: white ${session}`);
+      if (
+        matchMedia("(prefers-color-scheme: dark)").matches
+        && [tile, chat].some((element) => element !== null && element !== undefined && getComputedStyle(element).backgroundColor === "rgb(255, 255, 255)")
+      )
+        failures.push(`${phase()}: white ${session}`);
       if (chat !== null && chat !== undefined && phase() === "focus") {
         const top = scrolls.get(session);
         if (top !== undefined && Math.abs(top - chat.scrollTop) > 1) failures.push(`focus: scrolled ${session}: ${String(top)} -> ${String(chat.scrollTop)}`);
         scrolls.set(session, chat.scrollTop);
       }
     }
-    if (!stopped) requestAnimationFrame(() => { setTimeout(sample, 0); });
+    if (!stopped)
+      requestAnimationFrame(() => {
+        setTimeout(sample, 0);
+      });
   };
-  Reflect.set(window, "finishGridProbe", () => { stopped = true; observer.disconnect(); return { frames, failures: [...new Set(failures)] }; });
+  Reflect.set(window, "finishGridProbe", () => {
+    stopped = true;
+    observer.disconnect();
+    return { frames, failures: [...new Set(failures)] };
+  });
   sample();
 }
 
@@ -330,10 +455,16 @@ for (const scheme of ["dark", "light"] as const) {
     const sessions = [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id];
     const connections: string[] = [];
     const transcriptReads: string[] = [];
-    page.on("websocket", (socket) => { connections.push(socket.url()); });
-    page.on("request", (request) => { if (request.url().includes("/transcript-snapshot") || request.url().includes("/messages?")) transcriptReads.push(request.url()); });
+    page.on("websocket", (socket) => {
+      connections.push(socket.url());
+    });
+    page.on("request", (request) => {
+      if (request.url().includes("/transcript-snapshot") || request.url().includes("/messages?")) transcriptReads.push(request.url());
+    });
     await openGrid(page, sessions);
-    await page.locator(`.tile[data-session="${E2E_LONG_CHAT.id}"] chat-view .chat`).evaluate((element: HTMLElement) => { element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.6); });
+    await page.locator(`.tile[data-session="${E2E_LONG_CHAT.id}"] chat-view .chat`).evaluate((element: HTMLElement) => {
+      element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.6);
+    });
     await page.waitForTimeout(400);
     const joined = connections.length;
     const loaded = transcriptReads.length;
@@ -355,7 +486,9 @@ for (const scheme of ["dark", "light"] as const) {
     expect(connections.length, "focus switches open no connections").toBe(joined);
     expect(transcriptReads.length, "focus switches reload no transcripts").toBe(loaded);
     const beforeLayout = await page.evaluate(gridLayout);
-    await page.evaluate(() => { Reflect.set(window, "gridProbePhase", "layout"); });
+    await page.evaluate(() => {
+      Reflect.set(window, "gridProbePhase", "layout");
+    });
     await page.locator('.tile[data-focused="true"] .cm-content').click();
     await page.keyboard.type("retained composer");
     for (let index = 0; index < 2; index++) {
@@ -368,7 +501,9 @@ for (const scheme of ["dark", "light"] as const) {
     await expect(page.locator('.tile[data-focused="true"] .cm-content')).toHaveText("retained composer");
     // Full size is not a composer shortcut: leave the text field before pressing it.
     await page.locator('.tile[data-focused="true"] .tile-bar').click();
-    await page.locator('.tile[data-focused="true"] .cm-content').evaluate((element: HTMLElement) => { element.blur(); });
+    await page.locator('.tile[data-focused="true"] .cm-content').evaluate((element: HTMLElement) => {
+      element.blur();
+    });
     for (let index = 0; index < 2; index++) {
       await page.keyboard.press("Control+Enter");
       await expect(page.locator(".grid[data-single]")).toHaveCount(index === 0 ? 1 : 0);
@@ -379,13 +514,22 @@ for (const scheme of ["dark", "light"] as const) {
     const result = await page.evaluate(() => (Reflect.get(window, "finishGridProbe") as () => { frames: number; failures: string[] })());
     expect(result.frames).toBeGreaterThan(30);
     expect(result.failures, `${String(result.frames)} sampled frames`).toEqual([]);
-    await test.info().attach("grid-frame-probe", { body: JSON.stringify({ ...result, connections: joined, transcriptReads: loaded }), contentType: "application/json" });
+    await test
+      .info()
+      .attach("grid-frame-probe", { body: JSON.stringify({ ...result, connections: joined, transcriptReads: loaded }), contentType: "application/json" });
   });
 }
 
 test("a pointer returns to a retained Chat dialog with keyboard focus inside it", async ({ page }) => {
   await openGrid(page, [NOTES, RELEASE]);
-  await page.route("**/commands/run", (route) => route.fulfill({ json: { type: "tree", tree: { nodes: [{ id: "entry", parentId: null, kind: "assistant", summary: "Reply" }], activeLeafId: "entry", activePathIds: ["entry"] } } }));
+  await page.route("**/commands/run", (route) =>
+    route.fulfill({
+      json: {
+        type: "tree",
+        tree: { nodes: [{ id: "entry", parentId: null, kind: "assistant", summary: "Reply" }], activeLeafId: "entry", activePathIds: ["entry"] },
+      },
+    }),
+  );
   const tile = page.locator(`.tile[data-session="${NOTES}"]`);
   const menu = await openChatMenu(tile);
   await menu.getByRole("button", { name: "Session tree", exact: true }).click();
@@ -393,7 +537,9 @@ test("a pointer returns to a retained Chat dialog with keyboard focus inside it"
   const entry = tree.locator('[data-tree-node-id="entry"]');
   await expect(entry).toBeFocused();
   for (const target of [tile.locator(".tile-title"), tile.getByRole("button", { name: "Chat menu", exact: true })]) {
-    await page.evaluate((sessionId) => { window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId } })); }, RELEASE);
+    await page.evaluate((sessionId) => {
+      window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId } }));
+    }, RELEASE);
     await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
     await expect(tree).toBeHidden();
     await page.locator('.tile[data-focused="true"] .cm-content').click();
@@ -409,14 +555,26 @@ test("a pointer returns to a retained Chat dialog with keyboard focus inside it"
 
 test("Grid paging keeps the outgoing page painted until every incoming tile has its transcript", async ({ page }) => {
   await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id, E2E_ASK_CHAT.id, E2E_CROWDED_ASK_CHAT.id]);
-  await page.locator(`.tile[data-session="${E2E_LONG_CHAT.id}"] chat-view .chat`).evaluate((element: HTMLElement) => { element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.6); });
+  await page.locator(`.tile[data-session="${E2E_LONG_CHAT.id}"] chat-view .chat`).evaluate((element: HTMLElement) => {
+    element.scrollTop = Math.round((element.scrollHeight - element.clientHeight) * 0.6);
+  });
   await page.waitForTimeout(400);
   const before = await page.evaluate(gridLayout);
-  await page.evaluate(() => { Reflect.set(window, "gridProbePhase", "page"); });
+  await page.evaluate(() => {
+    Reflect.set(window, "gridProbePhase", "page");
+  });
   await page.evaluate(probeGrid);
   let arrive = () => {};
-  const arrival = new Promise<void>((resolve) => { arrive = resolve; });
-  await page.route((url) => url.pathname.includes("/transcript-snapshot") && (url.pathname.includes(GUIDE) || url.pathname.includes(E2E_CROWDED_ASK_CHAT.id)), async (route) => { await arrival; await route.continue(); });
+  const arrival = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  await page.route(
+    (url) => url.pathname.includes("/transcript-snapshot") && (url.pathname.includes(GUIDE) || url.pathname.includes(E2E_CROWDED_ASK_CHAT.id)),
+    async (route) => {
+      await arrival;
+      await route.continue();
+    },
+  );
   try {
     await page.getByRole("button", { name: "Next page", exact: true }).click();
     await page.waitForTimeout(350);
@@ -432,7 +590,9 @@ test("Grid paging keeps the outgoing page painted until every incoming tile has 
     expect(result.failures).toEqual([]);
     expect(movedTiles(before, await page.evaluate(gridLayout)), "Page round trip restores Grid anchors").toEqual([]);
     await test.info().attach("grid-page-probe", { body: JSON.stringify(result), contentType: "application/json" });
-  } finally { arrive(); }
+  } finally {
+    arrive();
+  }
 });
 
 /** Opens a Grid of `sessions` with `focused` outlined, at 1440×900, once every tile shows its transcript. */
@@ -440,10 +600,26 @@ async function openGrid(page: Page, sessions: readonly string[], focused = sessi
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const url = process.env["PI_WEB_E2E_CHAT_URL"];
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
-  const workstreams = [{ id: "ws-dogfooding", title: "Dogfooding" }, { id: "ws-docs", title: "Docs" }, { id: "ws-grid", title: "Grid focus" }];
-  const chats = sessions.map((sessionId, index) => ({ sessionId, title: `Chat ${String(index + 1)}`, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream: workstreams[index % workstreams.length] }));
+  const workstreams = [
+    { id: "ws-dogfooding", title: "Dogfooding" },
+    { id: "ws-docs", title: "Docs" },
+    { id: "ws-grid", title: "Grid focus" },
+  ];
+  const chats = sessions.map((sessionId, index) => ({
+    sessionId,
+    title: `Chat ${String(index + 1)}`,
+    machineId: "local",
+    projectId: E2E_PROJECT_ID,
+    workspaceId,
+    workstream: workstreams[index % workstreams.length],
+  }));
   // Seeds only the first load, so a reload finds what the window stored.
-  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused, lastActive: {}, chats } })] as const);
+  await page.addInitScript(
+    ([key, value]) => {
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+    },
+    [STORE_KEY, JSON.stringify({ e2e: { name: "Window 1", layout: "grid", maximized: false, focused, lastActive: {}, chats } })] as const,
+  );
   await page.setViewportSize({ width: 1440, height: 900 });
   const target = new URL(url);
   target.searchParams.set("win", "e2e");
@@ -461,7 +637,9 @@ function movedTiles(before: GridLayout, after: GridLayout) {
     const now = after[index];
     const numbers = [...was.tile, ...was.transcript, was.message];
     const nowNumbers = now === undefined ? [] : [...now.tile, ...now.transcript, now.message];
-    return now?.session === was.session && now.anchor === was.anchor && numbers.every((value, at) => Math.abs(value - (nowNumbers[at] ?? NaN)) <= 1) ? [] : [{ was, now }];
+    return now?.session === was.session && now.anchor === was.anchor && numbers.every((value, at) => Math.abs(value - (nowNumbers[at] ?? NaN)) <= 1)
+      ? []
+      : [{ was, now }];
   });
 }
 
@@ -471,18 +649,25 @@ async function focusTile(page: Page, session: string): Promise<void> {
   const box = await page.locator(`.grid > .tile[data-session="${session}"]`).boundingBox();
   if (box === null) throw new Error(`tile ${session} is not on screen`);
   const x = box.x + box.width / 2;
-  const y = await page.evaluate(([px, top, bottom]) => {
-    for (let py = top; py < bottom; py += 8) {
-      let hit: Element | null = document.elementFromPoint(px, py);
-      while (hit?.shadowRoot) { const inner = hit.shadowRoot.elementFromPoint(px, py); if (inner === null || inner === hit) break; hit = inner; }
-      let interactive = false;
-      for (let node: Element | null = hit; node !== null; node = node.parentElement ?? ((node.getRootNode() as ShadowRoot).host ?? null)) {
-        if (node.matches("a, button, summary, input, textarea, [role=button], [contenteditable]")) interactive = true;
+  const y = await page.evaluate(
+    ([px, top, bottom]) => {
+      for (let py = top; py < bottom; py += 8) {
+        let hit: Element | null = document.elementFromPoint(px, py);
+        while (hit?.shadowRoot) {
+          const inner = hit.shadowRoot.elementFromPoint(px, py);
+          if (inner === null || inner === hit) break;
+          hit = inner;
+        }
+        let interactive = false;
+        for (let node: Element | null = hit; node !== null; node = node.parentElement ?? (node.getRootNode() as ShadowRoot).host ?? null) {
+          if (node.matches("a, button, summary, input, textarea, [role=button], [contenteditable]")) interactive = true;
+        }
+        if (hit !== null && !interactive) return py;
       }
-      if (hit !== null && !interactive) return py;
-    }
-    throw new Error("no plain point in the tile transcript");
-  }, [x, box.y + box.height / 3, box.y + box.height * 0.6] as const);
+      throw new Error("no plain point in the tile transcript");
+    },
+    [x, box.y + box.height / 3, box.y + box.height * 0.6] as const,
+  );
   await page.mouse.click(x, y);
   await expect(page.locator('.tile[data-focused="true"] main.chat-shell')).toHaveAttribute("data-session", session);
   await page.waitForTimeout(800);
@@ -498,7 +683,10 @@ for (const count of [2, 4]) {
       await focusTile(page, session);
       const after = await page.evaluate(gridLayout);
       expect(movedTiles(before, after), `tiles that moved after focusing ${session}`).toEqual([]);
-      expect(after.filter((tile) => tile.outlined).map((tile) => tile.session), "only the focused tile is outlined").toEqual([session]);
+      expect(
+        after.filter((tile) => tile.outlined).map((tile) => tile.session),
+        "only the focused tile is outlined",
+      ).toEqual([session]);
       await page.keyboard.type("typed here");
       await expect(page.locator('.tile[data-focused="true"] .cm-content')).toHaveText("typed here");
       await page.keyboard.press("Meta+a");
@@ -511,7 +699,10 @@ test("focusing the full-width tile of three keeps the scrolled top-right tile wh
   const sessions = [NOTES, E2E_LONG_CHAT.id, GUIDE];
   await openGrid(page, sessions, E2E_LONG_CHAT.id);
   await page.locator('.tile[data-focused="true"] chat-view .chat').hover();
-  for (let step = 0; step < 4; step += 1) { await page.mouse.wheel(0, -1200); await page.waitForTimeout(200); }
+  for (let step = 0; step < 4; step += 1) {
+    await page.mouse.wheel(0, -1200);
+    await page.waitForTimeout(200);
+  }
   await page.waitForTimeout(800);
   const before = await page.evaluate(gridLayout);
   for (const session of [GUIDE, E2E_LONG_CHAT.id]) {
@@ -528,7 +719,11 @@ test("every Grid tile's composer is one row that grows with a multi-line draft",
   for (const height of heights) expect(height).toBeLessThanOrEqual(36);
   // The field spans the tile; inside it the model is one icon, so the text keeps all but the icon strip at the right edge.
   const tile = page.locator('.tile[data-focused="true"]');
-  const [tileBox, field, text, model] = await Promise.all([tile, tile.locator("prompt-editor .input-row"), tile.locator("prompt-editor .editor-wrap"), tile.locator("model-effort-picker .trigger")].map(async (locator) => (await locator.boundingBox())?.width ?? 0));
+  const [tileBox, field, text, model] = await Promise.all(
+    [tile, tile.locator("prompt-editor .input-row"), tile.locator("prompt-editor .editor-wrap"), tile.locator("model-effort-picker .trigger")].map(
+      async (locator) => (await locator.boundingBox())?.width ?? 0,
+    ),
+  );
   expect(field).toBeGreaterThanOrEqual((tileBox ?? 0) - 16);
   expect(model).toBeLessThanOrEqual(30);
   expect(text).toBeGreaterThanOrEqual((field ?? 0) - 220);
@@ -573,7 +768,17 @@ test("Files stays open beside the Grid when focus moves, and moves no tile", asy
 });
 
 test("a window-wide notice shows once above the Grid and stays put when focus moves", async ({ page }) => {
-  await page.addInitScript(() => { Object.defineProperty(window, "Notification", { configurable: true, value: class { static permission = "denied"; static requestPermission() { return Promise.resolve("denied"); } } }); });
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: class {
+        static permission = "denied";
+        static requestPermission() {
+          return Promise.resolve("denied");
+        }
+      },
+    });
+  });
   await openGrid(page, [NOTES, RELEASE]);
   // Shown once, above the Grid: not inside a tile, where it would move with focus.
   await expect(page.locator("p.error[role=alert]", { hasText: "notifications" })).toHaveCount(1);
@@ -596,7 +801,14 @@ async function dragDivider(page: Page, axis: "columns" | "rows", delta: number):
   await page.mouse.move(axis === "columns" ? x + delta : x, axis === "rows" ? y + delta : y, { steps: 12 });
   await page.mouse.up();
   // Two frames, so the tiles' resize observers have kept their Chats' scroll at the new size.
-  await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => { requestAnimationFrame(resolve); }); }));
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(resolve);
+        });
+      }),
+  );
 }
 
 const tileBox = async (page: Page, session: string) => {
@@ -658,10 +870,10 @@ test("dragging the Grid's dividers resizes its columns and rows, which survive f
 
   // Files narrows the Grid but keeps the shares, as far as the far tile's minimum allows.
   const gridWidth = async () => (await page.locator(".grid").boundingBox())?.width ?? Number.NaN;
-  const share = (await tileBox(page, NOTES)).width / await gridWidth();
+  const share = (await tileBox(page, NOTES)).width / (await gridWidth());
   await (await openChatMenu(page.locator('.tile[data-focused="true"] > .tile-bar'))).locator(".files-toggle").click();
   await expect(page.locator("workbench-files-pane")).toBeVisible();
-  await expect.poll(async () => (await tileBox(page, NOTES)).width / await gridWidth()).toBeCloseTo(Math.min(share, 1 - 321 / (await gridWidth())), 1);
+  await expect.poll(async () => (await tileBox(page, NOTES)).width / (await gridWidth())).toBeCloseTo(Math.min(share, 1 - 321 / (await gridWidth())), 1);
 
   // Keyboard: arrows along the divider's axis, Shift for larger steps.
   await rows.focus();
@@ -672,46 +884,85 @@ test("dragging the Grid's dividers resizes its columns and rows, which survive f
   await expect(rows).toHaveAttribute("aria-valuenow", String(valueNow - 8));
 });
 
-interface DragCost { appRenders: number; chatViewRenders: number; frames: number[]; layout: number[] }
+interface DragCost {
+  appRenders: number;
+  chatViewRenders: number;
+  frames: number[];
+  layout: number[];
+}
 
 /**
  * Drags `axis`'s divider (held down by the page's mouse) one pointermove a frame for `frames` frames, swinging 300px
  * either way, and counts the renders of pi-workbench-app and every chat-view, each frame's gap and its forced layout.
  */
 async function measureDividerDrag(page: Page, axis: "columns" | "rows", frames: number): Promise<DragCost> {
-  return page.evaluate(async ([axis, frames]) => {
-    const cost: DragCost = { appRenders: 0, chatViewRenders: 0, frames: [], layout: [] };
-    const restore: (() => void)[] = [];
-    for (const [tag, key] of [["pi-workbench-app", "appRenders"], ["chat-view", "chatViewRenders"]] as const) {
-      const proto = customElements.get(tag)?.prototype as { update(changed: unknown): void } | undefined;
-      if (proto === undefined) throw new Error(`no ${tag}`);
-      const update = proto.update;
-      proto.update = function (this: unknown, changed: unknown) { cost[key] += 1; update.call(this, changed); };
-      restore.push(() => { proto.update = update; });
-    }
-    const find = (root: Document | ShadowRoot, selector: string): HTMLElement | undefined => root.querySelector<HTMLElement>(selector) ?? [...root.querySelectorAll("*")].flatMap((element) => element.shadowRoot === null ? [] : [find(element.shadowRoot, selector)]).find((found) => found !== undefined);
-    const handle = find(document, `.grid-divider[data-axis="${axis}"]`);
-    const app = find(document, "pi-workbench-app") as (HTMLElement & { updateComplete: Promise<unknown> }) | undefined;
-    if (handle === undefined || app === undefined) throw new Error(`no ${axis} divider`);
-    const layout = () => { const start = performance.now(); handle.parentElement?.querySelector(".tile")?.getBoundingClientRect(); return performance.now() - start; };
-    const box = handle.getBoundingClientRect();
-    const [x, y] = axis === "columns" ? [box.x + box.width / 2, box.y + box.height / 4] : [box.x + box.width / 4, box.y + box.height / 2];
-    const frame = () => new Promise<number>((resolve) => { requestAnimationFrame(resolve); });
-    let last = await frame();
-    for (let index = 1; index <= frames; index += 1) {
-      const now = await frame();
-      cost.frames.push(now - last);
-      last = now;
-      // Whether a move lands in a render or in the next frame's write, these two layouts time what the frame pays for it.
-      const written = layout();
-      const offset = 300 * Math.sin(index / frames * 1.5 * Math.PI);
-      handle.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 1, bubbles: true, composed: true, cancelable: true, clientX: axis === "columns" ? x + offset : x, clientY: axis === "rows" ? y + offset : y }));
-      await app.updateComplete;
-      cost.layout.push(written + layout());
-    }
-    for (const undo of restore) undo();
-    return cost;
-  }, [axis, frames] as const);
+  return page.evaluate(
+    async ([axis, frames]) => {
+      const cost: DragCost = { appRenders: 0, chatViewRenders: 0, frames: [], layout: [] };
+      const restore: (() => void)[] = [];
+      for (const [tag, key] of [
+        ["pi-workbench-app", "appRenders"],
+        ["chat-view", "chatViewRenders"],
+      ] as const) {
+        const proto = customElements.get(tag)?.prototype as { update(changed: unknown): void } | undefined;
+        if (proto === undefined) throw new Error(`no ${tag}`);
+        const update = proto.update;
+        proto.update = function (this: unknown, changed: unknown) {
+          cost[key] += 1;
+          update.call(this, changed);
+        };
+        restore.push(() => {
+          proto.update = update;
+        });
+      }
+      const find = (root: Document | ShadowRoot, selector: string): HTMLElement | undefined =>
+        root.querySelector<HTMLElement>(selector)
+        ?? [...root.querySelectorAll("*")]
+          .flatMap((element) => (element.shadowRoot === null ? [] : [find(element.shadowRoot, selector)]))
+          .find((found) => found !== undefined);
+      const handle = find(document, `.grid-divider[data-axis="${axis}"]`);
+      const app = find(document, "pi-workbench-app") as (HTMLElement & { updateComplete: Promise<unknown> }) | undefined;
+      if (handle === undefined || app === undefined) throw new Error(`no ${axis} divider`);
+      const layout = () => {
+        const start = performance.now();
+        handle.parentElement?.querySelector(".tile")?.getBoundingClientRect();
+        return performance.now() - start;
+      };
+      const box = handle.getBoundingClientRect();
+      const [x, y] = axis === "columns" ? [box.x + box.width / 2, box.y + box.height / 4] : [box.x + box.width / 4, box.y + box.height / 2];
+      const frame = () =>
+        new Promise<number>((resolve) => {
+          requestAnimationFrame(resolve);
+        });
+      let last = await frame();
+      for (let index = 1; index <= frames; index += 1) {
+        const now = await frame();
+        cost.frames.push(now - last);
+        last = now;
+        // Whether a move lands in a render or in the next frame's write, these two layouts time what the frame pays for it.
+        const written = layout();
+        const offset = 300 * Math.sin((index / frames) * 1.5 * Math.PI);
+        handle.dispatchEvent(
+          new PointerEvent("pointermove", {
+            pointerId: 1,
+            pointerType: "mouse",
+            isPrimary: true,
+            buttons: 1,
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+            clientX: axis === "columns" ? x + offset : x,
+            clientY: axis === "rows" ? y + offset : y,
+          }),
+        );
+        await app.updateComplete;
+        cost.layout.push(written + layout());
+      }
+      for (const undo of restore) undo();
+      return cost;
+    },
+    [axis, frames] as const,
+  );
 }
 
 test("dragging a Grid divider over four long transcripts renders nothing per pointermove", async ({ page }) => {
@@ -726,7 +977,9 @@ test("dragging a Grid divider over four long transcripts renders nothing per poi
   const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length * 0.95)] ?? Number.NaN;
   const span = cost.frames.reduce((sum, gap) => sum + gap, 0);
   // Review numbers, not asserted: frame rates vary by machine.
-  console.log(`Grid drag: ${JSON.stringify({ appRenders: cost.appRenders, chatViewRenders: cost.chatViewRenders, fps: Math.round(cost.frames.length / span * 1000), frameGapP95: p95(cost.frames), longFrames: cost.frames.filter((gap) => gap > 50).length, layoutP95: p95(cost.layout) })}`);
+  console.log(
+    `Grid drag: ${JSON.stringify({ appRenders: cost.appRenders, chatViewRenders: cost.chatViewRenders, fps: Math.round((cost.frames.length / span) * 1000), frameGapP95: p95(cost.frames), longFrames: cost.frames.filter((gap) => gap > 50).length, layoutP95: p95(cost.layout) })}`,
+  );
   // The drag writes the Grid's template itself, once a frame: a render per move would re-render every tile's Chat.
   expect(cost.appRenders).toBe(0);
   expect(cost.chatViewRenders).toBe(0);
@@ -770,16 +1023,26 @@ test("captures Grid composers for review", async ({ browser }) => {
       await openGrid(page, [NOTES, RELEASE, GUIDE, E2E_LONG_CHAT.id]);
       await page.setViewportSize({ width, height: 900 });
       await page.waitForTimeout(600);
-      const shot = async (name: string) => { await page.screenshot({ path: join(SHOTS ?? "", `grid-composer-${name}-${String(width)}-${scheme}.png`) }); };
+      const shot = async (name: string) => {
+        await page.screenshot({ path: join(SHOTS ?? "", `grid-composer-${name}-${String(width)}-${scheme}.png`) });
+      };
       await shot("idle");
-      widths[`${String(width)}-${scheme}`] = await page.locator(".grid > .tile").evaluateAll((tiles) => tiles.map((tile) => {
-        const find = (root: Element | ShadowRoot): Element | undefined => root.querySelector("prompt-editor") ?? [...root.querySelectorAll("*")].flatMap((element) => element.shadowRoot === null ? [] : [find(element.shadowRoot)]).find((found) => found !== undefined);
-        const editor = find(tile)?.shadowRoot;
-        const box = (selector: string) => Math.round(editor?.querySelector(selector)?.getBoundingClientRect().width ?? 0);
-        return { tile: Math.round(tile.getBoundingClientRect().width), box: box(".input-row"), text: box(".editor-wrap") };
-      }));
+      widths[`${String(width)}-${scheme}`] = await page.locator(".grid > .tile").evaluateAll((tiles) =>
+        tiles.map((tile) => {
+          const find = (root: Element | ShadowRoot): Element | undefined =>
+            root.querySelector("prompt-editor")
+            ?? [...root.querySelectorAll("*")]
+              .flatMap((element) => (element.shadowRoot === null ? [] : [find(element.shadowRoot)]))
+              .find((found) => found !== undefined);
+          const editor = find(tile)?.shadowRoot;
+          const box = (selector: string) => Math.round(editor?.querySelector(selector)?.getBoundingClientRect().width ?? 0);
+          return { tile: Math.round(tile.getBoundingClientRect().width), box: box(".input-row"), text: box(".editor-wrap") };
+        }),
+      );
       await page.locator('.tile[data-focused="true"] prompt-editor .cm-content').click();
-      await page.keyboard.insertText("A first line long enough to wrap before the icons at the right edge of the field in every tile width\nSecond line\nThird line");
+      await page.keyboard.insertText(
+        "A first line long enough to wrap before the icons at the right edge of the field in every tile width\nSecond line\nThird line",
+      );
       await page.waitForTimeout(300);
       await shot("typing");
       await page.keyboard.press("ControlOrMeta+a");
@@ -818,28 +1081,46 @@ test("a tile's Full size and Close icons sit centred in their buttons", async ({
   await openGrid(page, [NOTES, RELEASE]);
   const bar = page.locator(`.tile[data-session="${RELEASE}"] > .tile-bar`);
   await bar.hover();
-  const offsets = await bar.locator(".tile-actions .icon-button").evaluateAll((buttons) => buttons.map((button) => {
-    const outer = button.getBoundingClientRect();
-    const icon = button.querySelector("svg")?.getBoundingClientRect();
-    return icon === undefined ? Infinity : Math.max(Math.abs(icon.x + icon.width / 2 - (outer.x + outer.width / 2)), Math.abs(icon.y + icon.height / 2 - (outer.y + outer.height / 2)));
-  }));
+  const offsets = await bar.locator(".tile-actions .icon-button").evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const outer = button.getBoundingClientRect();
+      const icon = button.querySelector("svg")?.getBoundingClientRect();
+      return icon === undefined
+        ? Infinity
+        : Math.max(Math.abs(icon.x + icon.width / 2 - (outer.x + outer.width / 2)), Math.abs(icon.y + icon.height / 2 - (outer.y + outer.height / 2)));
+    }),
+  );
   expect(offsets).toHaveLength(2);
   for (const offset of offsets) expect(offset).toBeLessThanOrEqual(0.5);
 });
 
 /** The Chat tile and the neighbour preview beside it during a swipe. */
-const swipeStage = (page: Page) => page.locator("pi-workbench-app").evaluate((app) => {
-  const tile = app.shadowRoot?.querySelector<HTMLElement>('.grid > .tile[data-focused="true"]');
-  const peek = app.shadowRoot?.querySelector<HTMLElement>(".swipe-peek");
-  return { tileLeft: tile?.getBoundingClientRect().left, transform: tile?.style.transform, peekLeft: peek === null || peek === undefined ? undefined : peek.getBoundingClientRect().left, peekVisible: peek === null || peek === undefined ? false : getComputedStyle(peek).visibility === "visible" };
-});
+const swipeStage = (page: Page) =>
+  page.locator("pi-workbench-app").evaluate((app) => {
+    const tile = app.shadowRoot?.querySelector<HTMLElement>('.grid > .tile[data-focused="true"]');
+    const peek = app.shadowRoot?.querySelector<HTMLElement>(".swipe-peek");
+    return {
+      tileLeft: tile?.getBoundingClientRect().left,
+      transform: tile?.style.transform,
+      peekLeft: peek === null || peek === undefined ? undefined : peek.getBoundingClientRect().left,
+      peekVisible: peek === null || peek === undefined ? false : getComputedStyle(peek).visibility === "visible",
+    };
+  });
 
 test("a swipe to a Chat that loads slowly shows its preview, and a vertical scroll meanwhile never strands the Chat offscreen", async ({ page }) => {
   await openSeededWindow(page, true);
   await expect(shownChat(page).locator("chat-view article").first()).toBeVisible();
   let arrive = () => {};
-  const arrived = new Promise<void>((resolve) => { arrive = resolve; });
-  await page.route((url) => url.pathname.includes(RELEASE) && url.pathname.includes("/transcript-snapshot"), async (route) => { await arrived; await route.continue(); });
+  const arrived = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  await page.route(
+    (url) => url.pathname.includes(RELEASE) && url.pathname.includes("/transcript-snapshot"),
+    async (route) => {
+      await arrived;
+      await route.continue();
+    },
+  );
   await shownChat(page).locator("chat-view .chat").hover();
   // One big sample is a flick: it moves on at once, and the neighbour's preview fills the stage while its Chat loads.
   await page.mouse.wheel(40, 0);
@@ -851,7 +1132,10 @@ test("a swipe to a Chat that loads slowly shows its preview, and a vertical scro
   await expect(shownChat(page)).toHaveAttribute("data-session", NOTES);
   await page.mouse.wheel(0, 20);
   arrive();
-  for (let step = 0; step < 12; step += 1) { await page.waitForTimeout(40); await page.mouse.wheel(0, 20); }
+  for (let step = 0; step < 12; step += 1) {
+    await page.waitForTimeout(40);
+    await page.mouse.wheel(0, 20);
+  }
   await expect(shownChat(page)).toHaveAttribute("data-session", RELEASE);
   await expect.poll(() => swipeStage(page)).toMatchObject({ tileLeft: 0, transform: "", peekVisible: false });
   await chatTab(page, "Review the install guide").click();
@@ -911,7 +1195,9 @@ test("Back to a Chat moved to another window shows it there, which keeps it", as
 });
 
 test("places the move menu at the pointer under a larger interface scale", async ({ page }) => {
-  await page.addInitScript(() => { localStorage.setItem("pi-web-app-scale", "1.25"); });
+  await page.addInitScript(() => {
+    localStorage.setItem("pi-web-app-scale", "1.25");
+  });
   await openSeededWindow(page);
   const tab = chatTab(page, "Draft the release notes");
   const box = await tab.boundingBox();
@@ -938,11 +1224,16 @@ async function openWindow(page: Page, windowId: string, sessionId?: string): Pro
 /** A real WebKit quota, not a mocked setItem: draft writes and ownership writes compete for the same space. */
 async function fillStorage(page: Page): Promise<void> {
   await page.evaluate(() => {
-    let low = 0, high = 10 * 1024 * 1024;
+    let low = 0,
+      high = 10 * 1024 * 1024;
     while (low < high) {
       const length = Math.ceil((low + high) / 2);
-      try { localStorage.setItem("ownership-quota", "x".repeat(length)); low = length; }
-      catch { high = length - 1; }
+      try {
+        localStorage.setItem("ownership-quota", "x".repeat(length));
+        low = length;
+      } catch {
+        high = length - 1;
+      }
     }
   });
 }
@@ -954,12 +1245,17 @@ test("r6–r7: full storage refuses both unrecorded owners and recovers", async 
   await openWindow(other, "quota2");
   await expect(other.locator('[data-view="chooser"]')).toBeVisible();
   await fillStorage(page);
-  for (const [window, id] of [[page, "quota1"], [other, "quota2"]] as const) {
+  for (const [window, id] of [
+    [page, "quota1"],
+    [other, "quota2"],
+  ] as const) {
     await openWindow(window, id, NOTES);
     await expect(window.getByRole("alert").filter({ hasText: "storage is full" })).toBeVisible();
     await expect(composer(window)).toHaveCount(0);
   }
-  await page.evaluate(() => { localStorage.removeItem("ownership-quota"); });
+  await page.evaluate(() => {
+    localStorage.removeItem("ownership-quota");
+  });
   await openWindow(page, "quota1", NOTES);
   await expect(composer(page)).toBeVisible();
 });
@@ -996,21 +1292,31 @@ test("r7: a title update rejected by real quota does not retry itself", async ({
   const attempts = await page.locator("pi-workbench-app").evaluate(async (app) => {
     const original = Storage.prototype.setItem;
     let count = 0;
-    Storage.prototype.setItem = function (key, value) { if (key === "pi-workbench.windows.v1") count++; original.call(this, key, value); };
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "pi-workbench.windows.v1") count++;
+      original.call(this, key, value);
+    };
     try {
       const sessions = Reflect.get(app, "sessions") as { applyGlobalEvent: (event: unknown) => void };
       const state = Reflect.get(app, "app") as { selectedSession: { id: string } };
       sessions.applyGlobalEvent({ type: "session.name", sessionId: state.selectedSession.id, name: "Long new title " + "x".repeat(100) });
-      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
       return count;
-    } finally { localStorage.removeItem("ownership-quota"); Storage.prototype.setItem = original; }
+    } finally {
+      localStorage.removeItem("ownership-quota");
+      Storage.prototype.setItem = original;
+    }
   });
   expect(attempts).toBeLessThanOrEqual(1);
 });
 
 test("without Web Locks a draft outlives its closed window", async ({ context }) => {
   // Plain-http LAN origins lack navigator.locks; window stores then live per tab, drafts must not.
-  await context.addInitScript(() => { Object.defineProperty(Navigator.prototype, "locks", { get: () => undefined, configurable: true }); });
+  await context.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "locks", { get: () => undefined, configurable: true });
+  });
   const page = await context.newPage();
   await openWindow(page, "plain1", NOTES);
   await composer(page).click();
@@ -1024,12 +1330,14 @@ test("without Web Locks a draft outlives its closed window", async ({ context })
 
 test("r9: a reload mid-creation reopens the created Chat with its draft", async ({ page }) => {
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let row: { id: string } | undefined;
   await page.route("**/sessions", async (route) => {
     if (route.request().method() !== "POST") return route.continue();
     const response = await route.fetch();
-    row = await response.json() as typeof row;
+    row = (await response.json()) as typeof row;
     await gate;
     // The reload already dropped this request.
     await route.fulfill({ response }).catch(() => undefined);
@@ -1049,13 +1357,20 @@ test("r9: a reload mid-creation reopens the created Chat with its draft", async 
     await expect(page.locator("workbench-window-tabs .chat-tab[data-session^='creating:']")).toHaveCount(0);
     await page.reload();
     await expect(shownChat(page)).toHaveAttribute("data-session", row?.id ?? "");
-  } finally { release(); }
+  } finally {
+    release();
+  }
 });
 
 test("a Chat with an unacknowledged send stays in its window, which restores the refused prompt", async ({ page, context }) => {
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  await page.route("**/prompt", async (route) => { await gate; await route.fulfill({ status: 503, json: { error: "busy" } }); });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/prompt", async (route) => {
+    await gate;
+    await route.fulfill({ status: 503, json: { error: "busy" } });
+  });
   try {
     await openWindow(page, "sending", NOTES);
     await composer(page).click();
@@ -1073,24 +1388,31 @@ test("a Chat with an unacknowledged send stays in its window, which restores the
     release();
     await expect(composer(page)).toHaveText("do not lose me");
     expect(await page.evaluate((id) => localStorage.getItem(`pi-web:prompt-draft:local:${id}`), NOTES)).toBe("do not lose me");
-  } finally { release(); }
+  } finally {
+    release();
+  }
 });
 
 for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"] as const) {
   test(`r5–r8: pending ownership stays exclusive through ${scenario}`, async ({ page, context }) => {
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     let row: { id: string; startupToken?: string } | undefined;
     await page.route("**/sessions", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
       const response = await route.fetch();
-      row = await response.json() as typeof row;
+      row = (await response.json()) as typeof row;
       await gate;
       await route.fulfill({ response });
     });
     await openWindow(page, "source", NOTES);
     await expect(composer(page)).toBeVisible();
-    if (scenario === "missed-startup") await page.locator("pi-workbench-app").evaluate((app) => { (Reflect.get(app, "realtime") as { close: () => void }).close(); });
+    if (scenario === "missed-startup")
+      await page.locator("pi-workbench-app").evaluate((app) => {
+        (Reflect.get(app, "realtime") as { close: () => void }).close();
+      });
     await page.locator("workbench-window-tabs button.add").click();
     await page.getByRole("button", { name: "New Chat", exact: true }).click();
     await expect(shownChat(page)).toHaveAttribute("data-session", /^creating:/);
@@ -1103,14 +1425,20 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
     if (row === undefined || tempId === null) throw new Error("New Chat did not start");
     try {
       if (scenario === "missed-startup") {
-        await page.locator("pi-workbench-app").evaluate((app) => { (Reflect.get(app, "connectRealtime") as () => void).call(app); });
-        await expect.poll(() => page.locator("pi-workbench-app").evaluate((app) => (Reflect.get(app, "realtime") as { socket?: WebSocket }).socket?.readyState)).toBe(1);
+        await page.locator("pi-workbench-app").evaluate((app) => {
+          (Reflect.get(app, "connectRealtime") as () => void).call(app);
+        });
+        await expect
+          .poll(() => page.locator("pi-workbench-app").evaluate((app) => (Reflect.get(app, "realtime") as { socket?: WebSocket }).socket?.readyState))
+          .toBe(1);
       }
       if (scenario === "missed-startup") {
-        expect(await page.locator("pi-workbench-app").evaluate((app) => {
-          const sessions = Reflect.get(app, "sessions") as { pendingSessionStarts: Map<string, { backendSessionId?: string }> };
-          return [...sessions.pendingSessionStarts.values()].map((pending) => pending.backendSessionId ?? null);
-        })).toEqual([null]);
+        expect(
+          await page.locator("pi-workbench-app").evaluate((app) => {
+            const sessions = Reflect.get(app, "sessions") as { pendingSessionStarts: Map<string, { backendSessionId?: string }> };
+            return [...sessions.pendingSessionStarts.values()].map((pending) => pending.backendSessionId ?? null);
+          }),
+        ).toEqual([null]);
       }
       await composer(page).click();
       await page.keyboard.type("source first prompt");
@@ -1130,7 +1458,13 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
         await expect(composer(page)).toHaveText("source first prompt");
         await expect(shownChat(page)).toHaveAttribute("data-session", tempId);
       } else if (scenario === "images-and-send") {
-        await shownChat(page).locator('prompt-editor input.attachment-input').setInputFiles({ name: "source.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
+        await shownChat(page)
+          .locator("prompt-editor input.attachment-input")
+          .setInputFiles({
+            name: "source.png",
+            mimeType: "image/png",
+            buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64"),
+          });
         await expect(page.locator("prompt-editor .attachment-chip")).toHaveCount(1);
       }
       const target = await context.newPage();
@@ -1146,14 +1480,19 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
       await expect(composer(page)).toContainText("edit");
       if (scenario === "images-and-send") {
         let submitted: { text: string; attachments: { name: string; reference: string }[] } | undefined;
-        await page.route("**/prompt", async (route) => { submitted = route.request().postDataJSON() as typeof submitted; await route.fulfill({ json: { accepted: true } }); });
+        await page.route("**/prompt", async (route) => {
+          submitted = route.request().postDataJSON() as typeof submitted;
+          await route.fulfill({ json: { accepted: true } });
+        });
         await page.getByRole("button", { name: "Send message", exact: true }).click();
         await expect.poll(() => submitted).toBeTruthy();
         expect(submitted?.attachments).toMatchObject([{ name: "source.png", reference: "[PIC_1]" }]);
         expect(submitted?.text).toContain("[PIC_1]");
         await expect(composer(page)).not.toContainText("source first prompt");
         await expect(page.locator("prompt-editor .attachment-chip")).toHaveCount(0);
-        await target.evaluate(() => { localStorage.setItem("unrelated-setting", "yes"); });
+        await target.evaluate(() => {
+          localStorage.setItem("unrelated-setting", "yes");
+        });
         await expect(composer(page)).not.toContainText("source first prompt");
         expect(await page.evaluate((id) => localStorage.getItem(`pi-web:prompt-draft:local:${id}`), row.id)).toBeNull();
       } else {
@@ -1170,7 +1509,9 @@ for (const scenario of ["move", "reselect", "missed-startup", "images-and-send"]
           await expect(shownChat(page)).not.toHaveAttribute("data-session", row.id);
         }
       }
-    } finally { release(); }
+    } finally {
+      release();
+    }
   });
 }
 
@@ -1199,7 +1540,10 @@ test("captures the window layouts for review", async ({ browser }) => {
   test.setTimeout(180_000);
   const shot = (page: Page, name: string) => page.screenshot({ path: join(SHOTS ?? "", name) });
   for (const scheme of ["dark", "light"] as const) {
-    for (const [label, width] of [["900", 900], ["1440", 1440]] as const) {
+    for (const [label, width] of [
+      ["900", 900],
+      ["1440", 1440],
+    ] as const) {
       const open = async (seed: (page: Page) => Promise<void>) => {
         const context = await browser.newContext({ viewport: { width, height: 820 }, colorScheme: scheme });
         const page = await context.newPage();

@@ -1,29 +1,61 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 import { McpAuthFlowService } from "./mcpAuthFlowService.js";
 
 const services: PiSessionService[] = [];
-afterEach(async () => { await Promise.all(services.splice(0).map((service) => service.dispose())); });
+afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.dispose()));
+});
 
 async function fixture() {
   const fake = fakeRuntime("session-1");
   fake.session.settingsManager.isProjectTrusted = () => true;
-  fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "mcp", sourceInfo: { path: "builtin:mcp" }, getArgumentCompletions: () => [{ value: "login alpha", label: "alpha", description: "Connected (unchanged)" }, { value: "login beta", label: "beta" }] }];
+  fake.session.extensionRunner.getRegisteredCommands = () => [
+    {
+      invocationName: "mcp",
+      sourceInfo: { path: "builtin:mcp" },
+      getArgumentCompletions: () => [
+        { value: "login alpha", label: "alpha", description: "Connected (unchanged)" },
+        { value: "login beta", label: "beta" },
+      ],
+    },
+  ];
   const events = new CapturingSessionEventHub();
   let archived = false;
   const service = new PiSessionService(events, {
-    agentDir: "/tmp/pi-web-test-agent", modelRuntime: testModelRuntime,
-    sessionManager: sessionGateway([sessionRecord("session-1")]), archiveStore: {
+    agentDir: "/tmp/pi-web-test-agent",
+    modelRuntime: testModelRuntime,
+    sessionManager: sessionGateway([sessionRecord("session-1")]),
+    archiveStore: {
       ...emptyArchiveStore(),
       get: () => Promise.resolve(archived ? { sessionId: "session-1", cwd: "/workspace", archivedAt: "2026-01-01T00:00:00.000Z" } : undefined),
     },
-    createAgentRuntime: runtimeCreator(fake.runtime), heartbeatIntervalMs: 60_000,
+    createAgentRuntime: runtimeCreator(fake.runtime),
+    heartbeatIntervalMs: 60_000,
   });
   services.push(service);
   await service.status(sessionRef("session-1"));
   const binding = required(fake.calls.bindExtensions.at(-1));
-  return { fake, events, service, ui: required(binding.uiContext), binding, archive: () => { archived = true; } };
+  return {
+    fake,
+    events,
+    service,
+    ui: required(binding.uiContext),
+    binding,
+    archive: () => {
+      archived = true;
+    },
+  };
 }
 
 describe("PiSessionService MCP auth bridge", () => {
@@ -36,10 +68,16 @@ describe("PiSessionService MCP auth bridge", () => {
       expect(text).toBe("/mcp login alpha");
       required(McpAuthFlowService.current()).openUrl("https://example.test/authorize");
       expect(await ui.input("Redirect")).toBe("redirect");
-      await new Promise<void>((resolve) => { finish = resolve; });
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
       ui.notify("Pi final notice", "error");
       // A timer born in the command scope retains ALS ancestry after finish. Info-level notices stay out of the tray (e4e651b9).
-      void new Promise<void>((resolve) => { background = resolve; }).then(() => { ui.notify("background after finish", "warning"); });
+      void new Promise<void>((resolve) => {
+        background = resolve;
+      }).then(() => {
+        ui.notify("background after finish", "warning");
+      });
     };
     const flow = await service.startMcpAuth(sessionRef("session-1"), "login");
     expect(flow.select?.message).toBe("Choose an MCP server");
@@ -52,16 +90,24 @@ describe("PiSessionService MCP auth bridge", () => {
     const opened = events.sessionEvents.find(({ event }) => event.type === "dialog.opened");
     expect(opened?.event.type).toBe("dialog.opened");
     service.mcpAuthFlows.respond(flow.flowId, required(flow.select).requestId, "alpha");
-    await vi.waitFor(() => { expect(service.mcpAuthFlows.get(flow.flowId).prompt).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(service.mcpAuthFlows.get(flow.flowId).prompt).toBeDefined();
+    });
     service.mcpAuthFlows.respond(flow.flowId, required(service.mcpAuthFlows.get(flow.flowId).prompt).requestId, "redirect");
-    await vi.waitFor(() => { expect(finish).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(finish).toBeDefined();
+    });
     expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("running");
     await expect(service.startMcpAuth(sessionRef("session-1"), "logout")).rejects.toThrow();
     finish();
-    await vi.waitFor(() => { expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete");
+    });
     expect(service.mcpAuthFlows.get(flow.flowId).progress).toEqual(["Pi final notice"]);
     required(background)();
-    await vi.waitFor(() => { expect(service.notificationInbox(sessionRef("session-1")).notifications.some((item) => item.message === "background after finish")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(service.notificationInbox(sessionRef("session-1")).notifications.some((item) => item.message === "background after finish")).toBe(true);
+    });
     expect(service.mcpAuthFlows.get(flow.flowId).progress).toEqual(["Pi final notice"]);
     await service.dispose();
     await ordinary;
@@ -69,9 +115,15 @@ describe("PiSessionService MCP auth bridge", () => {
 
   it("captures the SDK's swallowed command error emission as flow error", async () => {
     const { fake, service, binding } = await fixture();
-    fake.session.prompt = (text) => { if (text === "/mcp") return Promise.resolve(); binding.onError?.({ extensionPath: "builtin:mcp", event: "command", error: "broken" }); return Promise.resolve(); };
+    fake.session.prompt = (text) => {
+      if (text === "/mcp") return Promise.resolve();
+      binding.onError?.({ extensionPath: "builtin:mcp", event: "command", error: "broken" });
+      return Promise.resolve();
+    };
     const flow = await service.startMcpAuth(sessionRef("session-1"), "logout", "alpha");
-    await vi.waitFor(() => { expect(service.mcpAuthFlows.get(flow.flowId)).toMatchObject({ status: "error", error: "builtin:mcp: broken" }); });
+    await vi.waitFor(() => {
+      expect(service.mcpAuthFlows.get(flow.flowId)).toMatchObject({ status: "error", error: "builtin:mcp: broken" });
+    });
   });
 
   it("rejects a read-only original session ref before running a command", async () => {
@@ -95,12 +147,16 @@ describe("PiSessionService MCP auth bridge", () => {
   });
   it("always asks for a single server and targets exactly that name", async () => {
     const { fake, service } = await fixture();
-    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "mcp", sourceInfo: { path: "builtin:mcp" }, getArgumentCompletions: () => [{ value: "login only", label: "only" }] }];
+    fake.session.extensionRunner.getRegisteredCommands = () => [
+      { invocationName: "mcp", sourceInfo: { path: "builtin:mcp" }, getArgumentCompletions: () => [{ value: "login only", label: "only" }] },
+    ];
     const flow = await service.startMcpAuth(sessionRef("session-1"), "login");
     expect(flow.select?.options).toEqual([{ value: "only", label: "only" }]);
     expect(fake.calls.prompt.map((call) => call.text)).toEqual(["/mcp"]);
     service.mcpAuthFlows.respond(flow.flowId, required(flow.select).requestId, "only");
-    await vi.waitFor(() => { expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete");
+    });
     expect(fake.calls.prompt.at(-1)?.text).toBe("/mcp login only");
     expect(service.mcpAuthFlows.get(flow.flowId)).toMatchObject({ providerName: "only", mcpMode: "login" });
   });
@@ -115,7 +171,9 @@ describe("PiSessionService MCP auth bridge", () => {
       return Promise.resolve();
     };
     const flow = await service.startMcpAuth(sessionRef("session-1"), mode, "beta");
-    await vi.waitFor(() => { expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete");
+    });
     const final = service.mcpAuthFlows.get(flow.flowId);
     expect(final).toMatchObject({ providerName: "beta", mcpMode: mode, progress: [mode === "login" ? "Already signed in." : "No stored credentials."] });
     expect(final.auth).toBeUndefined();
@@ -137,8 +195,12 @@ describe("PiSessionService MCP auth bridge", () => {
       required(McpAuthFlowService.current()).openUrl("https://secret.test/token");
       return Promise.resolve();
     };
-    expect(await service.mcpAuthServers(sessionRef("session-1"))).toEqual({ servers: [{ name: "alpha", description: "Connected (unchanged)" }, { name: "beta" }] });
-    expect(events.sessionEvents.slice(previous).filter(({ event }) => ["message.append", "dialog.opened", "notification.added"].includes(event.type))).toEqual([]);
+    expect(await service.mcpAuthServers(sessionRef("session-1"))).toEqual({
+      servers: [{ name: "alpha", description: "Connected (unchanged)" }, { name: "beta" }],
+    });
+    expect(events.sessionEvents.slice(previous).filter(({ event }) => ["message.append", "dialog.opened", "notification.added"].includes(event.type))).toEqual(
+      [],
+    );
     expect(service.notificationInbox(sessionRef("session-1")).notifications).toEqual([]);
     expect(fake.calls.sendCustomMessage).toEqual([]);
   });
@@ -156,14 +218,27 @@ describe("PiSessionService MCP auth bridge", () => {
     let release!: () => void;
     fake.session.prompt = (text) => {
       expect(text).toBe("/mcp");
-      return new Promise<void>((resolve) => { release = () => { ready = true; resolve(); }; });
+      return new Promise<void>((resolve) => {
+        release = () => {
+          ready = true;
+          resolve();
+        };
+      });
     };
-    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "mcp", sourceInfo: { path: "builtin:mcp" }, getArgumentCompletions: () => {
-      expect(ready).toBe(true);
-      return [{ value: "login alpha", label: "alpha" }];
-    } }];
+    fake.session.extensionRunner.getRegisteredCommands = () => [
+      {
+        invocationName: "mcp",
+        sourceInfo: { path: "builtin:mcp" },
+        getArgumentCompletions: () => {
+          expect(ready).toBe(true);
+          return [{ value: "login alpha", label: "alpha" }];
+        },
+      },
+    ];
     const listing = service.mcpAuthServers(sessionRef("session-1"));
-    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(release).toBeDefined();
+    });
     await expect(service.prompt(sessionRef("session-1"), "do not run")).rejects.toThrow("MCP authentication operation");
     await expect(service.mcpAuthServers(sessionRef("session-1"))).rejects.toThrow();
     release();
@@ -172,7 +247,14 @@ describe("PiSessionService MCP auth bridge", () => {
 
   it("respects a machine lock held by another session", async () => {
     const { fake, service } = await fixture();
-    const other = service.mcpAuthFlows.start({ sessionId: "other", identity: {}, isCurrent: () => true, run: async () => { await required(McpAuthFlowService.current()).input("Wait"); } });
+    const other = service.mcpAuthFlows.start({
+      sessionId: "other",
+      identity: {},
+      isCurrent: () => true,
+      run: async () => {
+        await required(McpAuthFlowService.current()).input("Wait");
+      },
+    });
     await expect(service.mcpAuthServers(sessionRef("session-1"))).rejects.toThrow("machine");
     expect(fake.calls.prompt).toEqual([]);
     service.mcpAuthFlows.cancel(other.flowId);
@@ -180,9 +262,13 @@ describe("PiSessionService MCP auth bridge", () => {
 
   it("reports no eligible servers without an auth command or success assertion", async () => {
     const { fake, service } = await fixture();
-    fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "mcp", sourceInfo: { path: "builtin:mcp" }, getArgumentCompletions: () => null }];
+    fake.session.extensionRunner.getRegisteredCommands = () => [
+      { invocationName: "mcp", sourceInfo: { path: "builtin:mcp" }, getArgumentCompletions: () => null },
+    ];
     const flow = await service.startMcpAuth(sessionRef("session-1"), "login");
-    await vi.waitFor(() => { expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(service.mcpAuthFlows.get(flow.flowId).status).toBe("complete");
+    });
     expect(service.mcpAuthFlows.get(flow.flowId).progress).toEqual(["No eligible MCP servers are available for this action."]);
     expect(fake.calls.prompt.map((call) => call.text)).toEqual(["/mcp"]);
   });

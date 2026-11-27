@@ -24,7 +24,9 @@ export async function superviseDevelopmentProcesses(start, { signals = process, 
   const children = new Set();
   let finished = false;
   let finish;
-  const completed = new Promise((resolve) => { finish = resolve; });
+  const completed = new Promise((resolve) => {
+    finish = resolve;
+  });
   const finishWith = (code) => {
     if (finished) return;
     finished = true;
@@ -32,7 +34,11 @@ export async function superviseDevelopmentProcesses(start, { signals = process, 
   };
   const add = (child) => {
     children.add(child);
-    child.once("error", (error) => { children.delete(child); console.error(error); finishWith(1); });
+    child.once("error", (error) => {
+      children.delete(child);
+      console.error(error);
+      finishWith(1);
+    });
     child.once("exit", (code, signal) => {
       children.delete(child);
       finishWith(code ?? (signal === "SIGINT" ? 130 : 1));
@@ -51,13 +57,22 @@ export async function superviseDevelopmentProcesses(start, { signals = process, 
     signals.removeListener("SIGTERM", onTerminate);
     for (const child of children) stop(child);
     if (children.size > 0) {
-      const force = setTimeout(() => { for (const child of children) stop(child, "SIGKILL"); }, 30_000);
+      const force = setTimeout(() => {
+        for (const child of children) stop(child, "SIGKILL");
+      }, 30_000);
       try {
-        await Promise.all([...children].map((child) => new Promise((resolve) => {
-          if (child.exitCode !== null || child.signalCode !== null) resolve();
-          else child.once("exit", resolve);
-        })));
-      } finally { clearTimeout(force); }
+        await Promise.all(
+          [...children].map(
+            (child) =>
+              new Promise((resolve) => {
+                if (child.exitCode !== null || child.signalCode !== null) resolve();
+                else child.once("exit", resolve);
+              }),
+          ),
+        );
+      } finally {
+        clearTimeout(force);
+      }
     }
   }
 }

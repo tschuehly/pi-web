@@ -4,13 +4,23 @@ import type { SessionStatus } from "../api";
 import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, WATCHER_STATUS_KEY } from "../extensionStatusSnapshots";
 import { DelegateRoster } from "./DelegateRoster";
 
-afterEach(() => { document.body.replaceChildren(); vi.useRealTimers(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  vi.useRealTimers();
+});
 
 function status(extensionStatuses: Record<string, string>, activeToolExecutions?: SessionStatus["activeToolExecutions"]): SessionStatus {
   return {
-    sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
-    extensionStatuses, ...(activeToolExecutions === undefined ? {} : { activeToolExecutions }),
+    sessionId: "s",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+    extensionStatuses,
+    ...(activeToolExecutions === undefined ? {} : { activeToolExecutions }),
   };
 }
 
@@ -36,16 +46,32 @@ function row(shadow: ShadowRoot, key: string): HTMLElement {
 function visibleText(element: Element | null): string {
   return [...(element?.childNodes ?? [])]
     .filter((node) => !(node instanceof Comment) && !(node instanceof HTMLElement && node.classList.contains("visually-hidden")))
-    .map((node) => node.textContent ?? "").join("").trim();
+    .map((node) => node.textContent ?? "")
+    .join("")
+    .trim();
 }
 
 describe("DelegateRoster delegate rows", () => {
   it("leads with the child's own report and keeps inferred activity, objectives and model details out of the row text", async () => {
-    const { shadow } = await mount(status(delegates([
-      { id: "a", kind: "subagent", name: "Composer", role: "implementation", model: "openai-codex/gpt-5.6-sol-20260921", effort: "medium", objective: "Implement the long assignment", activity: "reading src/a.ts", reportedStatus: "Setting up the worktree" },
-      { id: "b", kind: "worker", name: "Rows", activity: "reading src/b.ts" },
-      { id: "c", kind: "subagent", activity: "success" },
-    ])));
+    const { shadow } = await mount(
+      status(
+        delegates([
+          {
+            id: "a",
+            kind: "subagent",
+            name: "Composer",
+            role: "implementation",
+            model: "openai-codex/gpt-5.6-sol-20260921",
+            effort: "medium",
+            objective: "Implement the long assignment",
+            activity: "reading src/a.ts",
+            reportedStatus: "Setting up the worktree",
+          },
+          { id: "b", kind: "worker", name: "Rows", activity: "reading src/b.ts" },
+          { id: "c", kind: "subagent", activity: "success" },
+        ]),
+      ),
+    );
 
     const report = row(shadow, "delegate:a").querySelector(".report");
     expect(visibleText(report)).toBe("Setting up the worktree");
@@ -63,15 +89,28 @@ describe("DelegateRoster delegate rows", () => {
   });
 
   it("puts failures and results to collect first and names every state in words, not colour alone", async () => {
-    const { shadow } = await mount(status(delegates([
-      { id: "run", kind: "worker", name: "Grid", activity: "editing" },
-      { id: "done", kind: "subagent", name: "Review", activity: "success" },
-      { id: "fail", kind: "subagent", name: "Spec", activity: "execution_failed" },
-      { id: "late", kind: "subagent", name: "Slow", activity: "timed out" },
-    ])));
+    const { shadow } = await mount(
+      status(
+        delegates([
+          { id: "run", kind: "worker", name: "Grid", activity: "editing" },
+          { id: "done", kind: "subagent", name: "Review", activity: "success" },
+          { id: "fail", kind: "subagent", name: "Spec", activity: "execution_failed" },
+          { id: "late", kind: "subagent", name: "Slow", activity: "timed out" },
+        ]),
+      ),
+    );
 
-    expect([...shadow.querySelectorAll(".row")].map((element) => element.getAttribute("data-row-key"))).toEqual(["delegate:fail", "delegate:late", "delegate:done", "delegate:run"]);
-    const states = (key: string) => [row(shadow, key).querySelector(".kind")?.getAttribute("aria-label"), visibleText(row(shadow, key).querySelector(".status")), row(shadow, key).querySelector(".status")?.getAttribute("title")];
+    expect([...shadow.querySelectorAll(".row")].map((element) => element.getAttribute("data-row-key"))).toEqual([
+      "delegate:fail",
+      "delegate:late",
+      "delegate:done",
+      "delegate:run",
+    ]);
+    const states = (key: string) => [
+      row(shadow, key).querySelector(".kind")?.getAttribute("aria-label"),
+      visibleText(row(shadow, key).querySelector(".status")),
+      row(shadow, key).querySelector(".status")?.getAttribute("title"),
+    ];
     expect(states("delegate:fail")).toEqual(["Subagent, failed", "Execution failed", "Failed: execution failed"]);
     expect(states("delegate:late")).toEqual(["Subagent, failed", "Timed out", "Failed: timed out"]);
     expect(states("delegate:done")).toEqual(["Subagent, to collect", "To collect", "Finished; its result is waiting to be collected"]);
@@ -82,17 +121,40 @@ describe("DelegateRoster delegate rows", () => {
   it("shows how long each delegate has run and how fresh its report is, flags a quiet one, and stops counting when it ends", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     vi.setSystemTime(new Date("2026-10-21T10:20:00.000Z"));
-    const { element, shadow } = await mount(status(delegates([
-      { id: "fresh", kind: "subagent", name: "Fresh", reportedStatus: "Writing tests", startedAt: "2026-10-21T10:08:00.000Z", reportedAt: "2026-10-21T10:19:15.000Z" },
-      { id: "quiet", kind: "worker", name: "Quiet", reportedStatus: "Running e2e", startedAt: "2026-10-21T09:00:00.000Z", reportedAt: "2026-10-21T10:05:00.000Z" },
-      { id: "new", kind: "subagent", name: "New", startedAt: "2026-10-21T10:19:58.000Z" },
-      { id: "done", kind: "subagent", name: "Done", activity: "success", startedAt: "2026-10-21T10:00:00.000Z", endedAt: "2026-10-21T10:04:30.000Z" },
-      { id: "legacy", kind: "subagent", name: "Legacy", reportedStatus: "Old Workbench" },
-    ])), (roster) => { roster.collapsed = false; });
+    const { element, shadow } = await mount(
+      status(
+        delegates([
+          {
+            id: "fresh",
+            kind: "subagent",
+            name: "Fresh",
+            reportedStatus: "Writing tests",
+            startedAt: "2026-10-21T10:08:00.000Z",
+            reportedAt: "2026-10-21T10:19:15.000Z",
+          },
+          {
+            id: "quiet",
+            kind: "worker",
+            name: "Quiet",
+            reportedStatus: "Running e2e",
+            startedAt: "2026-10-21T09:00:00.000Z",
+            reportedAt: "2026-10-21T10:05:00.000Z",
+          },
+          { id: "new", kind: "subagent", name: "New", startedAt: "2026-10-21T10:19:58.000Z" },
+          { id: "done", kind: "subagent", name: "Done", activity: "success", startedAt: "2026-10-21T10:00:00.000Z", endedAt: "2026-10-21T10:04:30.000Z" },
+          { id: "legacy", kind: "subagent", name: "Legacy", reportedStatus: "Old Workbench" },
+        ]),
+      ),
+      (roster) => {
+        roster.collapsed = false;
+      },
+    );
     const times = (key: string) => [visibleText(row(shadow, key).querySelector(".status")), visibleText(row(shadow, key).querySelector(".elapsed"))];
 
-    expect([...shadow.querySelectorAll(".row")].map((element) => element.getAttribute("data-row-key")), "a quiet delegate rises above healthy ones")
-      .toEqual(["delegate:done", "delegate:quiet", "delegate:fresh", "delegate:new", "delegate:legacy"]);
+    expect(
+      [...shadow.querySelectorAll(".row")].map((element) => element.getAttribute("data-row-key")),
+      "a quiet delegate rises above healthy ones",
+    ).toEqual(["delegate:done", "delegate:quiet", "delegate:fresh", "delegate:new", "delegate:legacy"]);
     expect(times("delegate:fresh")).toEqual(["45s ago", "12m"]);
     expect(row(shadow, "delegate:fresh").querySelector(".status .visually-hidden")?.textContent).toBe("Reported ");
     expect(row(shadow, "delegate:fresh").querySelector(".elapsed .visually-hidden")?.textContent).toBe("Running for ");
@@ -126,15 +188,36 @@ describe("DelegateRoster delegate rows", () => {
 
 describe("DelegateRoster watcher and shell rows", () => {
   it("keeps every source in one stable grid across lifecycle updates and reconnects, rendering untrusted text as text", async () => {
-    const watcher = { logicalId: "same", handleId: "handle", label: "<script>not markup</script>", mode: "poll", scope: "[REDACTED]", state: "watching", consecutiveFailures: 0, startedAt: "2026-08-02T10:00:00.000Z" };
+    const watcher = {
+      logicalId: "same",
+      handleId: "handle",
+      label: "<script>not markup</script>",
+      mode: "poll",
+      scope: "[REDACTED]",
+      state: "watching",
+      consecutiveFailures: 0,
+      startedAt: "2026-08-02T10:00:00.000Z",
+    };
     const shell = { id: "same", kind: "shell", toolName: "bash", label: "Shell command" } as const;
-    const sources = (watchers: unknown[] = [watcher], tools: SessionStatus["activeToolExecutions"] = [shell]) => status({
-      ...delegates([{ id: "same", kind: "worker", name: "Agent", activity: "running" }, { id: "done", kind: "subagent", name: "Result", activity: "success" }]),
-      [WATCHER_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, watchers }),
-    }, tools);
+    const sources = (watchers: unknown[] = [watcher], tools: SessionStatus["activeToolExecutions"] = [shell]) =>
+      status(
+        {
+          ...delegates([
+            { id: "same", kind: "worker", name: "Agent", activity: "running" },
+            { id: "done", kind: "subagent", name: "Result", activity: "success" },
+          ]),
+          [WATCHER_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, watchers }),
+        },
+        tools,
+      );
     const { element, shadow } = await mount(sources());
 
-    expect([...shadow.querySelectorAll(".row")].map((element) => element.getAttribute("data-row-key"))).toEqual(["delegate:done", "delegate:same", "watcher:same", "shell:same"]);
+    expect([...shadow.querySelectorAll(".row")].map((element) => element.getAttribute("data-row-key"))).toEqual([
+      "delegate:done",
+      "delegate:same",
+      "watcher:same",
+      "shell:same",
+    ]);
     expect(shadow.querySelector(".aggregate")?.textContent).toBe("1 to collect · 1 running · 1 watcher · 1 shell");
     const watcherRow = row(shadow, "watcher:same");
     expect(watcherRow.querySelector(".kind")?.getAttribute("aria-label")).toBe("Poll watcher, watching");
@@ -144,7 +227,10 @@ describe("DelegateRoster watcher and shell rows", () => {
     expect(shadow.querySelector("script")).toBeNull();
     expect(visibleText(row(shadow, "shell:same").querySelector(".report"))).toBe("Built-in bash tool");
 
-    element.status = sources([{ ...watcher, handleId: "recovered", label: undefined, state: "suspended", consecutiveFailures: 3 }], [shell, { id: "two", kind: "shell", toolName: "shell", label: "Interactive shell", startedAt: "2026-08-02T10:00:01Z" }]);
+    element.status = sources(
+      [{ ...watcher, handleId: "recovered", label: undefined, state: "suspended", consecutiveFailures: 3 }],
+      [shell, { id: "two", kind: "shell", toolName: "shell", label: "Interactive shell", startedAt: "2026-08-02T10:00:01Z" }],
+    );
     await element.updateComplete;
     expect(row(shadow, "watcher:same"), "a row keeps its element across updates").toBe(watcherRow);
     expect(watcherRow.querySelector(".name")?.textContent).toBe("recovered");
@@ -159,14 +245,30 @@ describe("DelegateRoster watcher and shell rows", () => {
   });
 
   it("keeps delegates and shells visible when monitor status is malformed, and shows a watcher without scope plainly", async () => {
-    const { element, shadow } = await mount(status({ ...delegates([{ id: "one", kind: "worker" }]), [WATCHER_STATUS_KEY]: '{"schemaVersion":1,"watchers":[{}]}' },
-      [{ id: "shell:one", kind: "shell", toolName: "shell", label: "Interactive shell" }]));
+    const { element, shadow } = await mount(
+      status({ ...delegates([{ id: "one", kind: "worker" }]), [WATCHER_STATUS_KEY]: '{"schemaVersion":1,"watchers":[{}]}' }, [
+        { id: "shell:one", kind: "shell", toolName: "shell", label: "Interactive shell" },
+      ]),
+    );
     expect(shadow.querySelectorAll(".row")).toHaveLength(2);
     expect(shadow.querySelector(".aggregate")?.textContent).toBe("1 running · 1 shell");
 
-    element.status = status({ [WATCHER_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, watchers: [
-      { logicalId: "watch", handleId: "handle", mode: "file", scope: "", state: "quarantined", consecutiveFailures: 0, startedAt: "2026-08-02T10:00:00.000Z" },
-    ] }) });
+    element.status = status({
+      [WATCHER_STATUS_KEY]: JSON.stringify({
+        schemaVersion: 1,
+        watchers: [
+          {
+            logicalId: "watch",
+            handleId: "handle",
+            mode: "file",
+            scope: "",
+            state: "quarantined",
+            consecutiveFailures: 0,
+            startedAt: "2026-08-02T10:00:00.000Z",
+          },
+        ],
+      }),
+    });
     await element.updateComplete;
     expect(shadow.querySelector(".kind")?.getAttribute("aria-label")).toBe("File watcher, quarantined");
     expect(shadow.querySelector(".report.fallback")?.textContent).toBe("No scope given");
@@ -174,9 +276,18 @@ describe("DelegateRoster watcher and shell rows", () => {
   });
 
   it("expands a background bash row to show its command, recent output, and log path", async () => {
-    const { element, shadow } = await mount(status({ [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, jobs: [{ id: "job-1", elapsedSeconds: 84, bytes: 4096, command: "npm test", output: "passing\n", logPath: "/jobs/job-1/output.log" }] }) }));
+    const { element, shadow } = await mount(
+      status({
+        [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({
+          schemaVersion: 1,
+          jobs: [{ id: "job-1", elapsedSeconds: 84, bytes: 4096, command: "npm test", output: "passing\n", logPath: "/jobs/job-1/output.log" }],
+        }),
+      }),
+    );
     const jobRow = row(shadow, "background-bash:job-1");
-    expect([visibleText(jobRow.querySelector(".report")), jobRow.querySelector(".status")?.textContent, visibleText(jobRow.querySelector(".elapsed"))]).toEqual(["npm test", "4.0 KB", "1m"]);
+    expect([visibleText(jobRow.querySelector(".report")), jobRow.querySelector(".status")?.textContent, visibleText(jobRow.querySelector(".elapsed"))]).toEqual(
+      ["npm test", "4.0 KB", "1m"],
+    );
     const toggle = jobRow.querySelector<HTMLButtonElement>("button.expand");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(shadow.querySelector(".bash-log")).toBeNull();
@@ -204,8 +315,15 @@ describe("DelegateRoster watcher and shell rows", () => {
 
 describe("DelegateRoster disclosure", () => {
   it("stays collapsed across live updates until its button is clicked again", async () => {
-    const items = [{ id: "one", kind: "worker", activity: "running" }, { id: "two", kind: "subagent", activity: "success" }];
-    const { element, shadow } = await mount(status(delegates(items)), (roster) => { roster.onToggleCollapsed = () => { roster.collapsed = !roster.collapsed; }; });
+    const items = [
+      { id: "one", kind: "worker", activity: "running" },
+      { id: "two", kind: "subagent", activity: "success" },
+    ];
+    const { element, shadow } = await mount(status(delegates(items)), (roster) => {
+      roster.onToggleCollapsed = () => {
+        roster.collapsed = !roster.collapsed;
+      };
+    });
     const toggle = shadow.querySelector<HTMLButtonElement>(".section-toggle");
     expect(toggle?.getAttribute("aria-controls")).toBe("delegate-roster-rows");
     toggle?.focus();
@@ -227,7 +345,10 @@ describe("DelegateRoster disclosure", () => {
   });
 
   it("folds away entirely in a collapsed Grid tile, leaving the composer's badge, and shows as usual when expanded", async () => {
-    const { element, shadow } = await mount(status(delegates([{ id: "a", kind: "subagent", name: "Review" }])), (roster) => { roster.compact = true; roster.collapsed = true; });
+    const { element, shadow } = await mount(status(delegates([{ id: "a", kind: "subagent", name: "Review" }])), (roster) => {
+      roster.compact = true;
+      roster.collapsed = true;
+    });
     expect(shadow.querySelector("section")).toBeNull();
     element.collapsed = false;
     await element.updateComplete;
@@ -238,13 +359,17 @@ describe("DelegateRoster disclosure", () => {
 
 describe("model label", () => {
   it("shows each delegate's model as its nickname plus its short effort, the full model in the tooltip", async () => {
-    const { shadow } = await mount(status(delegates([
-      { id: "o", kind: "subagent", name: "Opus run", model: "anthropic/claude-opus-5-5", effort: "high", startedAt: new Date().toISOString() },
-      { id: "a", kind: "subagent", name: "Astra run", model: "openai-codex/gpt-6-astra", effort: "xhigh", startedAt: new Date().toISOString() },
-      { id: "l", kind: "worker", name: "Luna run", model: "openai-codex/gpt-6-luna", effort: "low", startedAt: new Date().toISOString() },
-      { id: "u", kind: "subagent", name: "Other", model: "local/qwen-9b-20260101", startedAt: new Date().toISOString() },
-      { id: "n", kind: "subagent", name: "No model", startedAt: new Date().toISOString() },
-    ])));
+    const { shadow } = await mount(
+      status(
+        delegates([
+          { id: "o", kind: "subagent", name: "Opus run", model: "anthropic/claude-opus-5-5", effort: "high", startedAt: new Date().toISOString() },
+          { id: "a", kind: "subagent", name: "Astra run", model: "openai-codex/gpt-6-astra", effort: "xhigh", startedAt: new Date().toISOString() },
+          { id: "l", kind: "worker", name: "Luna run", model: "openai-codex/gpt-6-luna", effort: "low", startedAt: new Date().toISOString() },
+          { id: "u", kind: "subagent", name: "Other", model: "local/qwen-9b-20260101", startedAt: new Date().toISOString() },
+          { id: "n", kind: "subagent", name: "No model", startedAt: new Date().toISOString() },
+        ]),
+      ),
+    );
     const label = (key: string) => row(shadow, key).querySelector(".model");
     const effort = (key: string) => label(key)?.querySelector(".effort")?.textContent;
     expect(label("delegate:o")?.textContent.trim()).toBe("Opushigh");

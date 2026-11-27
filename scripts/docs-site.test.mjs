@@ -40,7 +40,11 @@ describe("configuration documentation navigation", () => {
       for (const table of tables) {
         expect(table.closest("details")).toBeNull();
         expect([...table.querySelectorAll("thead th")].map((cell) => cell.textContent)).toEqual([
-          "Setting", "Applies to", "Default", "What it changes", "Apply / restart",
+          "Setting",
+          "Applies to",
+          "Default",
+          "What it changes",
+          "Apply / restart",
         ]);
         for (const row of table.querySelectorAll("tbody tr")) {
           expect(row.children.length).toBe(5);
@@ -70,7 +74,10 @@ describe("configuration documentation navigation", () => {
           const content = readFileSync(target, "utf8");
           if (filename.endsWith(".md")) {
             const headings = [...content.matchAll(/^#{1,6} (.+)$/gm)].map((match) =>
-              match[1].toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s/g, "-"),
+              match[1]
+                .toLowerCase()
+                .replace(/[^\w\s-]/g, "")
+                .replace(/\s/g, "-"),
             );
             expect(headings, href).toContain(fragment);
           } else {
@@ -106,24 +113,27 @@ describe("plugin guide", () => {
 });
 
 describe("plugin directory navigation", () => {
-  it.each(["index", "remote-first", "machines", "install", "config", "faq", "plugins", "community-plugins"])("opens the directory from the Plugins menu on %s", (page) => {
-    const window = new Window();
-    try {
-      window.document.write(readFileSync(new URL(`../docs/${page}.html`, import.meta.url), "utf8"));
-      const link = [...window.document.querySelectorAll(".nav-pages a")].find((link) => link.textContent === "Plugins");
-      expect(link.getAttribute("href")).toBe("community-plugins");
-      expect(link.getAttribute("aria-current")).toBe(page === "community-plugins" ? "page" : null);
-      if (page === "community-plugins") {
-        expect(window.document.querySelector('.page-hero a[href="plugins"]').textContent).toBe("Plugin guide");
-        expect(window.document.querySelector('.page-hero a[href="plugins#agent-development"]').textContent).toBe("Build a plugin");
+  it.each(["index", "remote-first", "machines", "install", "config", "faq", "plugins", "community-plugins"])(
+    "opens the directory from the Plugins menu on %s",
+    (page) => {
+      const window = new Window();
+      try {
+        window.document.write(readFileSync(new URL(`../docs/${page}.html`, import.meta.url), "utf8"));
+        const link = [...window.document.querySelectorAll(".nav-pages a")].find((link) => link.textContent === "Plugins");
+        expect(link.getAttribute("href")).toBe("community-plugins");
+        expect(link.getAttribute("aria-current")).toBe(page === "community-plugins" ? "page" : null);
+        if (page === "community-plugins") {
+          expect(window.document.querySelector('.page-hero a[href="plugins"]').textContent).toBe("Plugin guide");
+          expect(window.document.querySelector('.page-hero a[href="plugins#agent-development"]').textContent).toBe("Build a plugin");
+        }
+        if (page === "plugins") {
+          expect(window.document.querySelector('.page-hero a[href="community-plugins"]').textContent).toContain("Browse community plugins");
+        }
+      } finally {
+        window.close();
       }
-      if (page === "plugins") {
-        expect(window.document.querySelector('.page-hero a[href="community-plugins"]').textContent).toContain("Browse community plugins");
-      }
-    } finally {
-      window.close();
-    }
-  });
+    },
+  );
 });
 
 describe("community plugin discovery", () => {
@@ -132,10 +142,7 @@ describe("community plugin discovery", () => {
     try {
       window.document.write(readFileSync(new URL("../docs/community-plugins.html", import.meta.url), "utf8"));
       const searches = [...window.document.querySelectorAll('#discover a[href^="https://www.npmjs.com/search"]')];
-      expect(searches.map((link) => new URL(link.href).searchParams.get("q"))).toEqual([
-        "keywords:pi-web.dev-plugin",
-        "keywords:pi-web-plugin",
-      ]);
+      expect(searches.map((link) => new URL(link.href).searchParams.get("q"))).toEqual(["keywords:pi-web.dev-plugin", "keywords:pi-web-plugin"]);
       const snippet = window.document.querySelector("#publish pre code");
       expect(snippet.closest(".code-card")).not.toBeNull();
       const keywords = JSON.parse(snippet.textContent).keywords;
@@ -232,8 +239,8 @@ describe("homepage screenshot themes", () => {
     else window.document.documentElement.dataset.theme = pageTheme;
     window.localStorage.setItem("pi-web-theme", pageTheme);
     const matchMedia = window.matchMedia.bind(window);
-    window.matchMedia = (query) => query === "(prefers-reduced-motion: reduce)" ? motion
-      : query === "(prefers-color-scheme: light)" ? colorScheme : matchMedia(query);
+    window.matchMedia = (query) =>
+      query === "(prefers-reduced-motion: reduce)" ? motion : query === "(prefers-color-scheme: light)" ? colorScheme : matchMedia(query);
     if (runScript) window.eval(siteScript);
   }
 
@@ -259,7 +266,7 @@ describe("homepage screenshot themes", () => {
     openPage({ pageTheme });
     expect(selected()).toBe(first);
     expect(query("[data-demo-controls]").hidden).toBe(false);
-    expect([...window.document.querySelectorAll("[data-demo-dot]:not([hidden])")].map(dot => dot.dataset.demoTheme)).toEqual([first, second]);
+    expect([...window.document.querySelectorAll("[data-demo-dot]:not([hidden])")].map((dot) => dot.dataset.demoTheme)).toEqual([first, second]);
     vi.advanceTimersByTime(2999);
     expect(selected()).toBe(first);
     vi.advanceTimersByTime(1);

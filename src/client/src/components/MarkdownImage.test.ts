@@ -104,7 +104,9 @@ it("remembers outside-image geometry without persisting or granting approval", a
 });
 
 it("keeps native loading and current sizing usable when persistence is unavailable", async () => {
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota exceeded"); });
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+    throw new Error("quota exceeded");
+  });
   const { image, presentation, native } = await mountWorkspace();
   loadIntrinsicDimensions(native, 640, 480);
   await settleImage(image);
@@ -220,18 +222,24 @@ it("expires remembered consent after 15 minutes without extending it on revisit"
 
 it("disables sources without granting outside approval through the inactive request button", async () => {
   const { image, presentation, native } = await mountOutside("disabled-approval-test");
-  image.loadingDisabled = true; await settleImage(image);
+  image.loadingDisabled = true;
+  await settleImage(image);
   const show = imageButton(presentation, ".placeholder");
   expect(show.disabled).toBe(true);
-  show.click(); await settleImage(image);
-  image.loadingDisabled = false; await settleImage(image);
+  show.click();
+  await settleImage(image);
+  image.loadingDisabled = false;
+  await settleImage(image);
   expect(show.disabled).toBe(false);
   expect(native.hasAttribute("src")).toBe(false);
-  show.click(); await settleImage(image);
+  show.click();
+  await settleImage(image);
   expect(native.src).toBe(previewUrl);
-  image.loadingDisabled = true; await settleImage(image);
+  image.loadingDisabled = true;
+  await settleImage(image);
   expect(native.hasAttribute("src")).toBe(false);
-  image.loadingDisabled = false; await settleImage(image);
+  image.loadingDisabled = false;
+  await settleImage(image);
   expect(native.src).toBe(previewUrl);
 });
 

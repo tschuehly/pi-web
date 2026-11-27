@@ -81,7 +81,9 @@ describe("path access policy", () => {
       target: await realpath(join(workspace, "local.txt")),
       displayPath: "local.txt",
     });
-    await expect(resolveWorkspacePathAccessTarget(workspace, join(workspace, "local.txt"), { allowedPaths: [join(root, "missing")] })).rejects.toThrow("does not exist");
+    await expect(resolveWorkspacePathAccessTarget(workspace, join(workspace, "local.txt"), { allowedPaths: [join(root, "missing")] })).rejects.toThrow(
+      "does not exist",
+    );
   });
 
   it("denies absolute targets outside allowed roots and through symlink escapes", async () => {
@@ -110,7 +112,7 @@ describe("path access policy", () => {
     await mkdir(workspace);
     await mkdir(realAllowed);
     await writeFile(join(realAllowed, "data.txt"), "allowed\n");
-    if (!await trySymlink(realAllowed, linkedAllowed)) return;
+    if (!(await trySymlink(realAllowed, linkedAllowed))) return;
 
     const policy = await createPathAccessPolicy(workspace, { allowedPaths: [linkedAllowed] });
 

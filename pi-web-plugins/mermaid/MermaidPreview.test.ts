@@ -27,10 +27,12 @@ async function preview(input: ContentRendererInput, loadEngine?: () => Promise<s
 describe("Mermaid isolation and lifecycle", () => {
   it("requires renderer support rather than silently loading on older API v4 hosts", async () => {
     const { default: plugin } = await import("./pi-web-plugin");
-    expect(plugin.requires).toEqual(expect.arrayContaining([
-      expect.objectContaining({ pluginId: "pi-web", id: "content-rendering", version: 1 }),
-      expect.objectContaining({ pluginId: "pi-web", id: "stylesheet-integration", version: 1 }),
-    ]));
+    expect(plugin.requires).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ pluginId: "pi-web", id: "content-rendering", version: 1 }),
+        expect.objectContaining({ pluginId: "pi-web", id: "stylesheet-integration", version: 1 }),
+      ]),
+    );
   });
 
   it("embeds only trusted engine code under a no-network policy and escapes script terminators", () => {
@@ -46,7 +48,9 @@ describe("Mermaid isolation and lifecycle", () => {
     const controller = new AbortController();
     const fail = vi.fn();
     const element = await preview({ text: "graph TD; A-->B", signal: controller.signal, fail });
-    await vi.waitFor(() => { expect(element.shadowRoot?.querySelector("iframe")).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(element.shadowRoot?.querySelector("iframe")).not.toBeNull();
+    });
     const frame = element.shadowRoot?.querySelector("iframe");
     if (frame?.contentWindow === null || frame?.contentWindow === undefined) throw new Error("Missing frame window");
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
@@ -69,14 +73,20 @@ describe("Mermaid isolation and lifecycle", () => {
   });
 
   it("uses the active package's loader and ignores a previous package's late engine failure", async () => {
-    let rejectOld: (error: Error) => void = () => { throw new Error("Not initialized"); };
-    const oldEngine = new Promise<string>((_resolve, reject) => { rejectOld = reject; });
+    let rejectOld: (error: Error) => void = () => {
+      throw new Error("Not initialized");
+    };
+    const oldEngine = new Promise<string>((_resolve, reject) => {
+      rejectOld = reject;
+    });
     const fail = vi.fn();
     const element = await preview({ text: "same source", signal: new AbortController().signal, fail }, () => oldEngine);
     const activeLoader = vi.fn().mockResolvedValue("/* active package engine */");
     element.loadEngine = activeLoader;
     await element.updateComplete;
-    await vi.waitFor(() => { expect(element.shadowRoot?.querySelector("iframe")?.srcdoc).toContain("active package engine"); });
+    await vi.waitFor(() => {
+      expect(element.shadowRoot?.querySelector("iframe")?.srcdoc).toContain("active package engine");
+    });
     rejectOld(new Error("old machine unavailable"));
     await Promise.resolve();
     expect(fail).not.toHaveBeenCalled();
@@ -85,7 +95,10 @@ describe("Mermaid isolation and lifecycle", () => {
 
   it("reports a bounded failure if the engine never becomes ready and cancels the timeout on disconnect", async () => {
     vi.useFakeTimers();
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => undefined)));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
     const fail = vi.fn();
     const element = await preview({ text: "source", signal: new AbortController().signal, fail });
     await vi.advanceTimersByTimeAsync(30_000);
@@ -99,9 +112,16 @@ describe("Mermaid isolation and lifecycle", () => {
   });
 
   it("ignores engine loading results after disconnect and reports fetch failures", async () => {
-    let resolveEngine: (response: Response) => void = () => { throw new Error("Not initialized"); };
-    const pending = new Promise<Response>((resolve) => { resolveEngine = resolve; });
-    vi.stubGlobal("fetch", vi.fn(() => pending));
+    let resolveEngine: (response: Response) => void = () => {
+      throw new Error("Not initialized");
+    };
+    const pending = new Promise<Response>((resolve) => {
+      resolveEngine = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => pending),
+    );
     const fail = vi.fn();
     const element = await preview({ text: "old", signal: new AbortController().signal, fail });
     element.remove();
@@ -114,7 +134,9 @@ describe("Mermaid isolation and lifecycle", () => {
 
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 })));
     await preview({ text: "new", signal: new AbortController().signal, fail });
-    await vi.waitFor(() => { expect(fail).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(fail).toHaveBeenCalledOnce();
+    });
     expect(fail.mock.calls[0]?.[0]).toEqual(new Error("Mermaid engine unavailable (503)"));
   });
 });

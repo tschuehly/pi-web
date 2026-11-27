@@ -25,7 +25,11 @@ function scheduleNextEnhancement(): void {
     const next = pendingEnhancements.values().next().value;
     if (next !== undefined) {
       pendingEnhancements.delete(next);
-      try { next(); } finally { scheduleNextEnhancement(); }
+      try {
+        next();
+      } finally {
+        scheduleNextEnhancement();
+      }
     }
   });
 }
@@ -54,16 +58,16 @@ export class VisibleContentController implements ReactiveController {
 
   constructor(
     private readonly host: ContentHost,
-    private readonly visibilityChanged: (visible: boolean) => void = () => { host.requestUpdate(); },
+    private readonly visibilityChanged: (visible: boolean) => void = () => {
+      host.requestUpdate();
+    },
     private readonly getTarget: () => Element | undefined = () => host,
   ) {
     host.addController(this);
   }
 
   get visible(): boolean {
-    return this.host.isConnected && this.intersecting
-      && this.host.ownerDocument.visibilityState !== "hidden"
-      && this.details.every((details) => details.open);
+    return this.host.isConnected && this.intersecting && this.host.ownerDocument.visibilityState !== "hidden" && this.details.every((details) => details.open);
   }
 
   hostConnected(): void {

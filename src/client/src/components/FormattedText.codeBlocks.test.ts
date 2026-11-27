@@ -5,11 +5,7 @@ import { html, render } from "lit";
 import { marked } from "marked";
 import type { ContentRendererInput, ContentRenderRequest } from "../../../plugin-api";
 import { writeClipboardText } from "../clipboard";
-import {
-  DEFAULT_CODE_BLOCK_POLICY,
-  PLAIN_CODE_BLOCK_POLICY,
-  type CodeBlockPolicy,
-} from "../formatting/codeBlockPolicy";
+import { DEFAULT_CODE_BLOCK_POLICY, PLAIN_CODE_BLOCK_POLICY, type CodeBlockPolicy } from "../formatting/codeBlockPolicy";
 import { createContentRenderingService, type ChatContentRendering } from "../formatting/contentRendering";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
 import { ContentRenderingBoundary } from "./ContentRenderingBoundary";
@@ -67,7 +63,7 @@ function diagramRendering(renderMode: "automatic" | "manual" = "automatic") {
   const draw = vi.fn((input: ContentRendererInput) => html`<b class="diagram-preview">${input.text}</b>`);
   // Renderer identity stays stable when only the surrounding source policy changes.
   const choices = [{ id: "diagram", label: "Diagram", renderer: { id: "diagram", renderMode, render: draw } }];
-  const select = vi.fn((request: ContentRenderRequest) => request.language === "diagram" ? choices : []);
+  const select = vi.fn((request: ContentRenderRequest) => (request.language === "diagram" ? choices : []));
   const service = createContentRenderingService(select);
   const inspect = vi.spyOn(service, "renderMarkdown");
   return { draw, select, service, inspect };
@@ -89,39 +85,42 @@ it("preserves the standalone native, scrolling, copyable default and ignores a c
   expect(view.renderRoot.querySelectorAll(".code-copy-button")).toHaveLength(1);
 });
 
-it.each(["plain", "code"] as const)("preserves unchanged %s source and Copy focus/feedback while trailing prose streams without matching previews", async (presentation) => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
-  const service = createContentRenderingService(() => []);
-  const view = await mount(`${literalMarkdown}\n\nMore explanation after the code`, { ...DEFAULT_CODE_BLOCK_POLICY, presentation }, service);
-  const source = view.renderRoot.querySelector<HTMLElement>("pre, .plain-code-block");
-  const copy = view.renderRoot.querySelector<HTMLButtonElement>(".code-copy-button");
-  if (source === null || copy === null) throw new Error("Expected source and its Copy button");
-  const header = view.renderRoot.querySelector(".code-block-header");
-  const label = header?.querySelector(".code-block-label");
-  expect(label?.textContent).toBe("text");
-  copy.focus();
-  copy.click();
-  await settle(view);
-  expect(copy.getAttribute("aria-label")).toBe("Copied code block");
-
-  for (const chunk of [" grows", " across another streamed update."]) {
-    view.text += chunk;
+it.each(["plain", "code"] as const)(
+  "preserves unchanged %s source and Copy focus/feedback while trailing prose streams without matching previews",
+  async (presentation) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const service = createContentRenderingService(() => []);
+    const view = await mount(`${literalMarkdown}\n\nMore explanation after the code`, { ...DEFAULT_CODE_BLOCK_POLICY, presentation }, service);
+    const source = view.renderRoot.querySelector<HTMLElement>("pre, .plain-code-block");
+    const copy = view.renderRoot.querySelector<HTMLButtonElement>(".code-copy-button");
+    if (source === null || copy === null) throw new Error("Expected source and its Copy button");
+    const header = view.renderRoot.querySelector(".code-block-header");
+    const label = header?.querySelector(".code-block-label");
+    expect(label?.textContent).toBe("text");
+    copy.focus();
+    copy.click();
     await settle(view);
-    expect(view.renderRoot.querySelector("pre, .plain-code-block")).toBe(source);
-    expect(view.renderRoot.querySelector(".code-copy-button")).toBe(copy);
-    expect(view.renderRoot.querySelector(".code-block-header")).toBe(header);
-    expect(header?.querySelector(".code-block-label")).toBe(label);
-    expect(view.renderRoot.querySelector("pi-web-content-renderer, select")).toBeNull();
-    expect(view.shadowRoot?.activeElement).toBe(copy);
     expect(copy.getAttribute("aria-label")).toBe("Copied code block");
-    expect(source.textContent).toBe(`${literalSource}\n`);
-  }
-  expect(view.renderRoot.querySelector(".formatted")?.textContent).toContain("More explanation after the code grows across another streamed update.");
-  expect(writeClipboardText).toHaveBeenCalledOnce();
-  expect(writeClipboardText).toHaveBeenCalledWith(`${literalSource}\n`);
-  await vi.advanceTimersByTimeAsync(1200);
-  expect(copy.getAttribute("aria-label")).toBe("Copy code block");
-});
+
+    for (const chunk of [" grows", " across another streamed update."]) {
+      view.text += chunk;
+      await settle(view);
+      expect(view.renderRoot.querySelector("pre, .plain-code-block")).toBe(source);
+      expect(view.renderRoot.querySelector(".code-copy-button")).toBe(copy);
+      expect(view.renderRoot.querySelector(".code-block-header")).toBe(header);
+      expect(header?.querySelector(".code-block-label")).toBe(label);
+      expect(view.renderRoot.querySelector("pi-web-content-renderer, select")).toBeNull();
+      expect(view.shadowRoot?.activeElement).toBe(copy);
+      expect(copy.getAttribute("aria-label")).toBe("Copied code block");
+      expect(source.textContent).toBe(`${literalSource}\n`);
+    }
+    expect(view.renderRoot.querySelector(".formatted")?.textContent).toContain("More explanation after the code grows across another streamed update.");
+    expect(writeClipboardText).toHaveBeenCalledOnce();
+    expect(writeClipboardText).toHaveBeenCalledWith(`${literalSource}\n`);
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(copy.getAttribute("aria-label")).toBe("Copy code block");
+  },
+);
 
 it("keeps the plain chat baseline literal while bypassing all preview inspection", async () => {
   expect(PLAIN_CODE_BLOCK_POLICY).toEqual({ presentation: "plain", overflow: "wrap", copy: false, previews: false });
@@ -290,12 +289,16 @@ it.each(["text", "markdown"] as const)("keeps public plugin %s hosts on undefine
   const source = "<source> & raw";
   const root = document.createElement("div");
   document.body.append(root);
-  render(surface === "text"
-    ? service.capability.renderText({ machineId: "local", language: "diagram", text: source })
-    : service.capability.renderMarkdown({
-      machineId: "local", text: `\`\`\`diagram\n${source}\n\`\`\``,
-      toSafeHtml: (text) => toSafeMarkdownHtml(text, undefined, undefined, true, PLAIN_CODE_BLOCK_POLICY),
-    }), root);
+  render(
+    surface === "text"
+      ? service.capability.renderText({ machineId: "local", language: "diagram", text: source })
+      : service.capability.renderMarkdown({
+          machineId: "local",
+          text: `\`\`\`diagram\n${source}\n\`\`\``,
+          toSafeHtml: (text) => toSafeMarkdownHtml(text, undefined, undefined, true, PLAIN_CODE_BLOCK_POLICY),
+        }),
+    root,
+  );
   if (surface === "markdown") {
     const boundary = root.querySelector("pi-web-content-rendering-boundary");
     if (!(boundary instanceof ContentRenderingBoundary)) throw new Error("Expected a public Markdown boundary");

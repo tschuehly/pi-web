@@ -3,30 +3,45 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
-  createAgentSessionFromServices, createAgentSessionServices, createEventBus,
-  DefaultResourceLoader, SessionManager, SettingsManager,
-  type AgentSession, type ExtensionCommandContext,
+  createAgentSessionFromServices,
+  createAgentSessionServices,
+  createEventBus,
+  DefaultResourceLoader,
+  SessionManager,
+  SettingsManager,
+  type AgentSession,
+  type ExtensionCommandContext,
 } from "../../piSdk.js";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { PiSessionEventConnections } from "./piSessionEventConnections.js";
 import { PiSessionService } from "./piSessionService.js";
 import {
-  CapturingSessionEventHub, createTestModelRuntime, emptyArchiveStore,
-  resolveSessionFileFromList, sessionGateway, testModel,
+  CapturingSessionEventHub,
+  createTestModelRuntime,
+  emptyArchiveStore,
+  resolveSessionFileFromList,
+  sessionGateway,
+  testModel,
 } from "./piSessionService.testSupport.js";
 
 function assistant(text: string): AssistantMessage {
   return {
-    role: "assistant", content: [{ type: "text", text }],
-    api: "anthropic-messages", provider: testModel().provider, model: testModel().id,
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "anthropic-messages",
+    provider: testModel().provider,
+    model: testModel().id,
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-    stopReason: "stop", timestamp: 1,
+    stopReason: "stop",
+    timestamp: 1,
   };
 }
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((settle) => { resolve = settle; });
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
   return { promise, resolve };
 }
 
@@ -43,16 +58,32 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
   const directory = await mkdtemp(join(tmpdir(), "pi-web-extension-commands-"));
   const agentDir = join(directory, "agent");
   const sessionDir = join(directory, "sessions");
-  const controls: { input?: ReturnType<typeof gate>; tree?: ReturnType<typeof gate>; fork?: ReturnType<typeof gate>; cancelTree: boolean; cancelFork: boolean; forkStartupDialog: boolean; reloadStartupDialog: boolean; appendTreeEntry?: boolean; treeLabel?: string } = {
-    cancelTree: false, cancelFork: false, forkStartupDialog: false, reloadStartupDialog: false,
+  const controls: {
+    input?: ReturnType<typeof gate>;
+    tree?: ReturnType<typeof gate>;
+    fork?: ReturnType<typeof gate>;
+    cancelTree: boolean;
+    cancelFork: boolean;
+    forkStartupDialog: boolean;
+    reloadStartupDialog: boolean;
+    appendTreeEntry?: boolean;
+    treeLabel?: string;
+  } = {
+    cancelTree: false,
+    cancelFork: false,
+    forkStartupDialog: false,
+    reloadStartupDialog: false,
   };
   const cleanup: { service?: PiSessionService } = {};
   onTestFinished(async () => {
     controls.input?.release.resolve();
     controls.tree?.release.resolve();
     controls.fork?.release.resolve();
-    try { await cleanup.service?.dispose(); }
-    finally { await rm(directory, { recursive: true, force: true }); }
+    try {
+      await cleanup.service?.dispose();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
   const manager = SessionManager.create(directory, sessionDir);
   if (options.rootUser !== true) {
@@ -69,8 +100,12 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
   if (originalFile === undefined) throw new Error("Fixture must have a persistent session file");
 
   const modelRuntime = await createTestModelRuntime();
-  const modelCall = vi.fn(() => { throw new Error("Extension commands must not call a model"); });
-  onTestFinished(() => { expect(modelCall).not.toHaveBeenCalled(); });
+  const modelCall = vi.fn(() => {
+    throw new Error("Extension commands must not call a model");
+  });
+  onTestFinished(() => {
+    expect(modelCall).not.toHaveBeenCalled();
+  });
   const sessionEvents = new PiSessionEventConnections();
   // No realtime subscriber: discovery, dialogs and drafts must work by reads alone.
   const hub = new CapturingSessionEventHub();
@@ -90,85 +125,114 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
   let pending: { action: CommandAction; complete: (outcome: CommandOutcome) => void } | undefined;
   const list = () => SessionManager.list(directory, sessionDir);
   const hosted = new PiSessionService(hub, {
-    agentDir, modelRuntime, sessionEvents, heartbeatIntervalMs: 60_000,
+    agentDir,
+    modelRuntime,
+    sessionEvents,
+    heartbeatIntervalMs: 60_000,
     archiveStore: {
       ...emptyArchiveStore(),
-      get: () => Promise.resolve(archived ? { sessionId: manager.getSessionId(), cwd: directory, archivedAt: "2026-02-01T10:00:00.000Z", archivePath: originalFile } : undefined),
+      get: () =>
+        Promise.resolve(
+          archived ? { sessionId: manager.getSessionId(), cwd: directory, archivedAt: "2026-02-01T10:00:00.000Z", archivePath: originalFile } : undefined,
+        ),
     },
     sessionManager: {
-      ...sessionGateway([]), create: () => manager, open: (path) => SessionManager.open(path, sessionDir),
-      list, listAll: list, resolveSessionFile: resolveSessionFileFromList(list),
+      ...sessionGateway([]),
+      create: () => manager,
+      open: (path) => SessionManager.open(path, sessionDir),
+      list,
+      listAll: list,
+      resolveSessionFile: resolveSessionFileFromList(list),
     },
     createRuntime: async ({ cwd, sessionManager, sessionStartEvent }) => {
       const bus = createEventBus();
       const services = await createAgentSessionServices({
-        cwd, agentDir, modelRuntime,
+        cwd,
+        agentDir,
+        modelRuntime,
         settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false }, cacheWarming: "off" }),
         resourceLoaderOptions: {
-          eventBus: bus, noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
+          eventBus: bus,
+          noExtensions: true,
+          noSkills: true,
+          noPromptTemplates: true,
+          noThemes: true,
           agentsFilesOverride: () => ({ agentsFiles: [] }),
-          extensionFactories: [(pi) => {
-            const loaded = ++generation;
-            pi.on("session_start", async (event, ctx) => {
-              const id = ctx.sessionManager.getSessionId();
-              starts.push({ id, generation: loaded, reason: event.reason });
-              if (event.reason === "fork" && controls.forkStartupDialog) {
-                const dialog: (typeof startupDialogs)[number] = { id, announcedBeforeStart: hub.globalEvents.some((item) => item.type === "session.created" && item.session.id === id) };
-                startupDialogs.push(dialog);
-                dialog.accepted = await ctx.ui.confirm("Start this fork?", "Answer when a client joins later");
-              }
-              if (event.reason === "reload" && controls.reloadStartupDialog) {
-                reloadDialogs.push(ctx.ui.confirm("Start after reload?", "Keep this replacement dialog answerable"));
-              }
-            });
-            pi.on("session_before_tree", async () => {
-              const held = controls.tree;
-              held?.entered.resolve();
-              await held?.release.promise;
-              return { cancel: controls.cancelTree, ...(controls.treeLabel === undefined ? {} : { label: controls.treeLabel }) };
-            });
-            pi.on("session_tree", (event, ctx) => {
-              treeEvents.push({
-                oldLeafId: event.oldLeafId, newLeafId: event.newLeafId,
-                leafId: ctx.sessionManager.getLeafId(),
-                branchIds: ctx.sessionManager.getBranch().map((entry) => entry.id),
-                messages: structuredClone(current?.messages ?? []),
+          extensionFactories: [
+            (pi) => {
+              const loaded = ++generation;
+              pi.on("session_start", async (event, ctx) => {
+                const id = ctx.sessionManager.getSessionId();
+                starts.push({ id, generation: loaded, reason: event.reason });
+                if (event.reason === "fork" && controls.forkStartupDialog) {
+                  const dialog: (typeof startupDialogs)[number] = {
+                    id,
+                    announcedBeforeStart: hub.globalEvents.some((item) => item.type === "session.created" && item.session.id === id),
+                  };
+                  startupDialogs.push(dialog);
+                  dialog.accepted = await ctx.ui.confirm("Start this fork?", "Answer when a client joins later");
+                }
+                if (event.reason === "reload" && controls.reloadStartupDialog) {
+                  reloadDialogs.push(ctx.ui.confirm("Start after reload?", "Keep this replacement dialog answerable"));
+                }
               });
-              if (controls.appendTreeEntry === true) pi.appendEntry("navigation-proof", { retained: true });
-            });
-            pi.on("session_before_fork", async () => {
-              const held = controls.fork;
-              held?.entered.resolve();
-              await held?.release.promise;
-              return { cancel: controls.cancelFork };
-            });
-            // Hold a real hosted prompt receipt without starting a model run.
-            pi.on("input", async () => {
-              const held = controls.input;
-              held?.entered.resolve();
-              await held?.release.promise;
-              return { action: "handled" };
-            });
-            pi.events.on("fixture:run-command", () => {
-              pi.sendUserMessage("/tree-regression", { expandPromptTemplates: true });
-            });
-            pi.registerCommand("tree-regression", {
-              handler: async (_args, ctx) => {
-                const command = pending;
-                if (command === undefined) throw new Error("Unexpected fixture command");
-                // Keep only plain callbacks across fork/reload, never reuse a stale pi/ctx.
-                try { command.complete({ result: await command.action(ctx) }); }
-                catch (error) { command.complete({ error: error instanceof Error ? error.message : String(error) }); }
-              },
-            });
-          }],
+              pi.on("session_before_tree", async () => {
+                const held = controls.tree;
+                held?.entered.resolve();
+                await held?.release.promise;
+                return { cancel: controls.cancelTree, ...(controls.treeLabel === undefined ? {} : { label: controls.treeLabel }) };
+              });
+              pi.on("session_tree", (event, ctx) => {
+                treeEvents.push({
+                  oldLeafId: event.oldLeafId,
+                  newLeafId: event.newLeafId,
+                  leafId: ctx.sessionManager.getLeafId(),
+                  branchIds: ctx.sessionManager.getBranch().map((entry) => entry.id),
+                  messages: structuredClone(current?.messages ?? []),
+                });
+                if (controls.appendTreeEntry === true) pi.appendEntry("navigation-proof", { retained: true });
+              });
+              pi.on("session_before_fork", async () => {
+                const held = controls.fork;
+                held?.entered.resolve();
+                await held?.release.promise;
+                return { cancel: controls.cancelFork };
+              });
+              // Hold a real hosted prompt receipt without starting a model run.
+              pi.on("input", async () => {
+                const held = controls.input;
+                held?.entered.resolve();
+                await held?.release.promise;
+                return { action: "handled" };
+              });
+              pi.events.on("fixture:run-command", () => {
+                pi.sendUserMessage("/tree-regression", { expandPromptTemplates: true });
+              });
+              pi.registerCommand("tree-regression", {
+                handler: async (_args, ctx) => {
+                  const command = pending;
+                  if (command === undefined) throw new Error("Unexpected fixture command");
+                  // Keep only plain callbacks across fork/reload, never reuse a stale pi/ctx.
+                  try {
+                    command.complete({ result: await command.action(ctx) });
+                  } catch (error) {
+                    command.complete({ error: error instanceof Error ? error.message : String(error) });
+                  }
+                },
+              });
+            },
+          ],
         },
       });
       expect(services.resourceLoader).toBeInstanceOf(DefaultResourceLoader);
       expect(services.resourceLoader.getExtensions().errors).toEqual([]);
       const result = await createAgentSessionFromServices({
-        services, sessionManager, ...(sessionStartEvent === undefined ? {} : { sessionStartEvent }),
-        model: testModel(), thinkingLevel: "off", noTools: "all",
+        services,
+        sessionManager,
+        ...(sessionStartEvent === undefined ? {} : { sessionStartEvent }),
+        model: testModel(),
+        thinkingLevel: "off",
+        noTools: "all",
       });
       result.session.agent.streamFunction = modelCall;
       sessionEvents.register(result.session, bus);
@@ -188,7 +252,9 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
     if (current === undefined) throw new Error("Fixture session has not started");
     return current;
   }
-  function ref() { return { id: session().sessionId, cwd: directory }; }
+  function ref() {
+    return { id: session().sessionId, cwd: directory };
+  }
   async function run(action: CommandAction, viaEvents = false): Promise<CommandOutcome> {
     const completion = deferred<CommandOutcome>();
     pending = { action, complete: completion.resolve };
@@ -200,9 +266,29 @@ async function fixture(options: { rootUser?: boolean; notificationsDisabled?: bo
     try {
       connection.emit("fixture:run-command", null);
       return await completion.promise;
-    } finally { connection.close(); }
+    } finally {
+      connection.close();
+    }
   }
-  return { service: hosted, hub, manager, controls, session, ref, run, starts, treeEvents, startupDialogs, reloadDialogs, diskList: list, earlier: earlier ?? draft, draft, latest, draftText, originalFile };
+  return {
+    service: hosted,
+    hub,
+    manager,
+    controls,
+    session,
+    ref,
+    run,
+    starts,
+    treeEvents,
+    startupDialogs,
+    reloadDialogs,
+    diskList: list,
+    earlier: earlier ?? draft,
+    draft,
+    latest,
+    draftText,
+    originalFile,
+  };
 }
 
 describe("message history shortcuts with native Pi", () => {
@@ -225,20 +311,40 @@ describe("message history shortcuts with native Pi", () => {
       stopReason: "toolUse" as const,
     };
     const selectedId = f.manager.appendMessage(selected);
-    const bashResult = { role: "toolResult" as const, toolCallId: "bash-call", toolName: "bash", isError: true,
-      content: [{ type: "text" as const, text: "Previously recorded error" }], timestamp: 3 };
+    const bashResult = {
+      role: "toolResult" as const,
+      toolCallId: "bash-call",
+      toolName: "bash",
+      isError: true,
+      content: [{ type: "text" as const, text: "Previously recorded error" }],
+      timestamp: 3,
+    };
     f.manager.appendMessage(bashResult);
     f.manager.appendCustomEntry("tool-metadata", { retained: true });
-    const readResult = { role: "toolResult" as const, toolCallId: "read-call", toolName: "read", isError: false,
-      content: [{ type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" }], timestamp: 4 };
+    const readResult = {
+      role: "toolResult" as const,
+      toolCallId: "read-call",
+      toolName: "read",
+      isError: false,
+      content: [{ type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" }],
+      timestamp: 4,
+    };
     f.manager.appendMessage(readResult);
     f.manager.appendCustomMessageEntry("checkpoint-notice", "Retain this intervening notice", true);
-    const technical = { ...assistant(""), content: [
-      { type: "toolCall" as const, id: "technical-call", name: "bash", arguments: { command: "printf recorded" } },
-    ], stopReason: "toolUse" as const };
+    const technical = {
+      ...assistant(""),
+      content: [{ type: "toolCall" as const, id: "technical-call", name: "bash", arguments: { command: "printf recorded" } }],
+      stopReason: "toolUse" as const,
+    };
     f.manager.appendMessage(technical);
-    const technicalResult = { role: "toolResult" as const, toolCallId: "technical-call", toolName: "bash", isError: false,
-      content: [{ type: "text" as const, text: "Recorded technical output" }], timestamp: 5 };
+    const technicalResult = {
+      role: "toolResult" as const,
+      toolCallId: "technical-call",
+      toolName: "bash",
+      isError: false,
+      content: [{ type: "text" as const, text: "Recorded technical output" }],
+      timestamp: 5,
+    };
     f.manager.appendMessage(technicalResult);
     const checkpointEndId = customTail
       ? f.manager.appendCustomMessageEntry("checkpoint-tail", "Retain this final notice, not an editor draft", true)
@@ -265,17 +371,26 @@ describe("message history shortcuts with native Pi", () => {
       else expect(persisted).not.toContainEqual(readResult);
       expect(persisted).not.toContainEqual(later);
     } else {
-      await expect(f.service.navigateTree(originalRef, {
-        targetId: selectedId, expectedLeafId: laterId, summary: { mode: "none" }, ...boundary,
-      })).resolves.toEqual({ cancelled: false });
+      await expect(
+        f.service.navigateTree(originalRef, {
+          targetId: selectedId,
+          expectedLeafId: laterId,
+          summary: { mode: "none" },
+          ...boundary,
+        }),
+      ).resolves.toEqual({ cancelled: false });
       const expectedLeafId = retainCheckpoint ? checkpointEndId : selectedId;
       expect(f.manager.getLeafId()).toBe(expectedLeafId);
       // Observe the native event and context inside the extension handler, not
       // just the host's final state after native navigation has returned.
-      expect(f.treeEvents).toEqual([expect.objectContaining({
-        oldLeafId: laterId, newLeafId: expectedLeafId, leafId: expectedLeafId,
-        messages: f.session().messages,
-      })]);
+      expect(f.treeEvents).toEqual([
+        expect.objectContaining({
+          oldLeafId: laterId,
+          newLeafId: expectedLeafId,
+          leafId: expectedLeafId,
+          messages: f.session().messages,
+        }),
+      ]);
       if (retainCheckpoint) expect(f.treeEvents[0]?.branchIds).toContain(checkpointEndId);
     }
 
@@ -283,10 +398,20 @@ describe("message history shortcuts with native Pi", () => {
     if (retainCheckpoint) {
       expect(f.session().messages).toContainEqual(technical);
       expect(f.session().messages).toContainEqual(expect.objectContaining({ role: "custom", customType: "checkpoint-notice" }));
-      expect(f.session().sessionManager.getBranch().map((entry) => entry.id)).toContain(checkpointEndId);
+      expect(
+        f
+          .session()
+          .sessionManager.getBranch()
+          .map((entry) => entry.id),
+      ).toContain(checkpointEndId);
     } else {
       expect(f.session().messages).not.toContainEqual(technical);
-      expect(f.session().sessionManager.getBranch().map((entry) => entry.id)).not.toContain(checkpointEndId);
+      expect(
+        f
+          .session()
+          .sessionManager.getBranch()
+          .map((entry) => entry.id),
+      ).not.toContain(checkpointEndId);
     }
     for (const result of [bashResult, readResult, technicalResult]) {
       if (retainCheckpoint) expect(f.session().messages).toContainEqual(result);
@@ -351,15 +476,25 @@ describe("message history shortcuts with native Pi", () => {
     f.session().refreshContext();
     f.controls.treeLabel = "Extension bookmark";
 
-    await expect(f.service.navigateTree(f.ref(), {
-      targetId: selectedId, expectedLeafId: laterId, retainCheckpoint: true, summary: { mode: "none" },
-    })).resolves.toEqual({ cancelled: false });
+    await expect(
+      f.service.navigateTree(f.ref(), {
+        targetId: selectedId,
+        expectedLeafId: laterId,
+        retainCheckpoint: true,
+        summary: { mode: "none" },
+      }),
+    ).resolves.toEqual({ cancelled: false });
     const labelEntry = f.manager.getLeafEntry();
     expect(labelEntry).toMatchObject({ type: "label", parentId: noticeId, targetId: noticeId, label: "Extension bookmark" });
     expect(f.manager.getLabel(noticeId)).toBe("Extension bookmark");
-    expect(f.treeEvents).toEqual([expect.objectContaining({
-      oldLeafId: laterId, newLeafId: labelEntry?.id, leafId: labelEntry?.id, messages: f.session().messages,
-    })]);
+    expect(f.treeEvents).toEqual([
+      expect.objectContaining({
+        oldLeafId: laterId,
+        newLeafId: labelEntry?.id,
+        leafId: labelEntry?.id,
+        messages: f.session().messages,
+      }),
+    ]);
     expect(f.treeEvents[0]?.branchIds).toContain(noticeId);
     expect(f.session().messages).toContainEqual(expect.objectContaining({ role: "custom", customType: "checkpoint-tail" }));
     expect(f.session().messages).not.toContainEqual(later);
@@ -375,17 +510,28 @@ describe("message history shortcuts with native Pi", () => {
     const { branch, resetLeaf } = f.manager;
 
     for (const expectedLeafId of [laterId, noticeId]) {
-      await expect(f.service.navigateTree(f.ref(), {
-        targetId: noticeId, expectedLeafId, retainCheckpoint: true, summary: { mode: "none" },
-      })).resolves.toEqual({ cancelled: false });
+      await expect(
+        f.service.navigateTree(f.ref(), {
+          targetId: noticeId,
+          expectedLeafId,
+          retainCheckpoint: true,
+          summary: { mode: "none" },
+        }),
+      ).resolves.toEqual({ cancelled: false });
       expect(f.manager.getLeafId()).toBe(noticeId);
       expect(f.manager.getBranch().map((entry) => entry.id)).toEqual([noticeId]);
       expect(f.manager).toHaveProperty("branch", branch);
       expect(f.manager).toHaveProperty("resetLeaf", resetLeaf);
     }
-    expect(f.treeEvents).toEqual([expect.objectContaining({
-      oldLeafId: laterId, newLeafId: noticeId, leafId: noticeId, branchIds: [noticeId], messages: f.session().messages,
-    })]);
+    expect(f.treeEvents).toEqual([
+      expect.objectContaining({
+        oldLeafId: laterId,
+        newLeafId: noticeId,
+        leafId: noticeId,
+        branchIds: [noticeId],
+        messages: f.session().messages,
+      }),
+    ]);
     expect(f.session().messages).toEqual([expect.objectContaining({ role: "custom", customType: "root-checkpoint" })]);
   });
 
@@ -397,9 +543,14 @@ describe("message history shortcuts with native Pi", () => {
     const laterId = f.manager.appendMessage(assistant("Later reply"));
     f.session().refreshContext();
 
-    await expect(f.service.navigateTree(f.ref(), {
-      targetId: noticeId, expectedLeafId: laterId, retainCheckpoint, summary: { mode: "none" },
-    })).resolves.toEqual(retainCheckpoint ? { cancelled: false } : { cancelled: false, editorText: noticeText });
+    await expect(
+      f.service.navigateTree(f.ref(), {
+        targetId: noticeId,
+        expectedLeafId: laterId,
+        retainCheckpoint,
+        summary: { mode: "none" },
+      }),
+    ).resolves.toEqual(retainCheckpoint ? { cancelled: false } : { cancelled: false, editorText: noticeText });
     const leafId = retainCheckpoint ? noticeId : selectedId;
     expect(f.manager.getLeafId()).toBe(leafId);
     expect(f.treeEvents).toEqual([expect.objectContaining({ oldLeafId: laterId, newLeafId: leafId, leafId, messages: f.session().messages })]);
@@ -408,17 +559,29 @@ describe("message history shortcuts with native Pi", () => {
   it.each(["fork", "back"] as const)("%s still restores a selected user message as editable text", async (action) => {
     const f = await fixture();
     if (action === "fork") {
-      await expect(f.service.forkFromTree(f.ref(), {
-        entryId: f.draft, expectedLeafId: f.latest, retainCheckpoint: true,
-      })).resolves.toMatchObject({ cancelled: false, promptDraft: f.draftText });
+      await expect(
+        f.service.forkFromTree(f.ref(), {
+          entryId: f.draft,
+          expectedLeafId: f.latest,
+          retainCheckpoint: true,
+        }),
+      ).resolves.toMatchObject({ cancelled: false, promptDraft: f.draftText });
     } else {
-      await expect(f.service.navigateTree(f.ref(), {
-        targetId: f.draft, expectedLeafId: f.latest, summary: { mode: "none" }, retainCheckpoint: true,
-      })).resolves.toEqual({ cancelled: false, editorText: f.draftText });
+      await expect(
+        f.service.navigateTree(f.ref(), {
+          targetId: f.draft,
+          expectedLeafId: f.latest,
+          summary: { mode: "none" },
+          retainCheckpoint: true,
+        }),
+      ).resolves.toEqual({ cancelled: false, editorText: f.draftText });
     }
-    expect(f.session().messages).not.toContainEqual(expect.objectContaining({
-      role: "user", content: [{ type: "text", text: f.draftText }],
-    }));
+    expect(f.session().messages).not.toContainEqual(
+      expect.objectContaining({
+        role: "user",
+        content: [{ type: "text", text: f.draftText }],
+      }),
+    );
     expect(f.session().messages).not.toContainEqual(assistant("Later answer"));
     expect(f.session().messages).toContainEqual(assistant("Earlier answer"));
   });
@@ -462,25 +625,29 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const originalBytes = await readFile(f.originalFile, "utf8");
     const originalEntries = structuredClone(original.sessionManager.getEntries());
     let freshId: string | undefined;
-    await expect(f.run((ctx) => ctx.fork(f.draft, {
-      position,
-      withSession: async (fresh) => {
-        expect(fresh === ctx).toBe(false);
-        freshId = fresh.sessionManager.getSessionId();
-        expect(freshId).not.toBe(original.sessionId);
-        expect(fresh.sessionManager.getSessionName()).toBe("Extension command regression — Fork 1");
-        expect(await f.service.list(f.ref().cwd)).toContainEqual(expect.objectContaining({ id: freshId }));
-        const status = await f.service.status(f.ref());
-        if (position === "before") expect(status).toHaveProperty("suggestedInput", f.draftText);
-        else expect(status).not.toHaveProperty("suggestedInput");
-        const branch = fresh.sessionManager.getBranch().map((entry) => entry.id);
-        expect(branch).toContain(f.earlier);
-        if (position === "before") expect(branch).not.toContain(f.draft);
-        else expect(branch).toContain(f.draft);
-        expect(() => ctx.sessionManager.getSessionId()).toThrow("stale");
-        await fresh.sendMessage({ customType: "fork-proof", content: "Fresh fork context", display: true });
-      },
-    }))).resolves.toEqual({ result: { cancelled: false } });
+    await expect(
+      f.run((ctx) =>
+        ctx.fork(f.draft, {
+          position,
+          withSession: async (fresh) => {
+            expect(fresh === ctx).toBe(false);
+            freshId = fresh.sessionManager.getSessionId();
+            expect(freshId).not.toBe(original.sessionId);
+            expect(fresh.sessionManager.getSessionName()).toBe("Extension command regression — Fork 1");
+            expect(await f.service.list(f.ref().cwd)).toContainEqual(expect.objectContaining({ id: freshId }));
+            const status = await f.service.status(f.ref());
+            if (position === "before") expect(status).toHaveProperty("suggestedInput", f.draftText);
+            else expect(status).not.toHaveProperty("suggestedInput");
+            const branch = fresh.sessionManager.getBranch().map((entry) => entry.id);
+            expect(branch).toContain(f.earlier);
+            if (position === "before") expect(branch).not.toContain(f.draft);
+            else expect(branch).toContain(f.draft);
+            expect(() => ctx.sessionManager.getSessionId()).toThrow("stale");
+            await fresh.sendMessage({ customType: "fork-proof", content: "Fresh fork context", display: true });
+          },
+        }),
+      ),
+    ).resolves.toEqual({ result: { cancelled: false } });
     const forked = f.session();
     expect(forked.sessionId).toBe(freshId);
     expect(forked.sessionFile).not.toBe(f.originalFile);
@@ -497,10 +664,14 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     expect(f.hub.sessionEvents.filter(({ event }) => event.type === "session.tree.changed")).toEqual([
       { sessionId: original.sessionId, event: { type: "session.tree.changed" } },
     ]);
-    expect(await f.service.list(f.ref().cwd)).toContainEqual(expect.objectContaining({
-      id: freshId, path: forked.sessionFile, parentSessionPath: f.originalFile,
-      name: "Extension command regression — Fork 1",
-    }));
+    expect(await f.service.list(f.ref().cwd)).toContainEqual(
+      expect.objectContaining({
+        id: freshId,
+        path: forked.sessionFile,
+        parentSessionPath: f.originalFile,
+        name: "Extension command regression — Fork 1",
+      }),
+    );
     const status = await f.service.status(f.ref());
     if (position === "before") expect(status).toHaveProperty("suggestedInput", f.draftText);
     else expect(status).not.toHaveProperty("suggestedInput");
@@ -515,22 +686,26 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const originalId = f.session().sessionId;
     let firstId: string | undefined;
     let finalId: string | undefined;
-    await expect(f.run((ctx) => ctx.fork(f.draft, {
-      position: "at",
-      withSession: async (fresh) => {
-        firstId = fresh.sessionManager.getSessionId();
-        expect(fresh.sessionManager.getSessionName()).toBe("Extension command regression — Fork 1");
-        await fresh.fork(f.draft, {
+    await expect(
+      f.run((ctx) =>
+        ctx.fork(f.draft, {
           position: "at",
-          withSession: async (next) => {
-            finalId = next.sessionManager.getSessionId();
-            expect(next.sessionManager.getSessionName()).toBe("Extension command regression — Fork 2");
-            expect(() => fresh.sessionManager.getLeafId()).toThrow("stale");
-            await next.navigateTree(f.draft);
+          withSession: async (fresh) => {
+            firstId = fresh.sessionManager.getSessionId();
+            expect(fresh.sessionManager.getSessionName()).toBe("Extension command regression — Fork 1");
+            await fresh.fork(f.draft, {
+              position: "at",
+              withSession: async (next) => {
+                finalId = next.sessionManager.getSessionId();
+                expect(next.sessionManager.getSessionName()).toBe("Extension command regression — Fork 2");
+                expect(() => fresh.sessionManager.getLeafId()).toThrow("stale");
+                await next.navigateTree(f.draft);
+              },
+            });
           },
-        });
-      },
-    }))).resolves.toEqual({ result: { cancelled: false } });
+        }),
+      ),
+    ).resolves.toEqual({ result: { cancelled: false } });
     expect(finalId).not.toBe(firstId);
     expect(f.session().sessionId).toBe(finalId);
     const discovered = await f.service.list(f.ref().cwd);
@@ -539,7 +714,9 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     expect(await f.service.runCommand(f.ref(), "/tree")).toMatchObject({ type: "tree", tree: { activeLeafId: f.earlier } });
     expect(await f.service.status(f.ref())).toHaveProperty("suggestedInput", f.draftText);
     expect(f.session().agent.state.messages).toEqual(f.session().sessionManager.buildSessionContext().messages);
-    expect((await f.service.messages(f.ref())).messages).not.toContainEqual(expect.objectContaining({ role: "user", content: [{ type: "text", text: f.draftText }] }));
+    expect((await f.service.messages(f.ref())).messages).not.toContainEqual(
+      expect.objectContaining({ role: "user", content: [{ type: "text", text: f.draftText }] }),
+    );
     expect(f.hub.sessionEvents.filter(({ event }) => event.type === "session.tree.changed")).toEqual([
       { sessionId: originalId, event: { type: "session.tree.changed" } },
       { sessionId: firstId, event: { type: "session.tree.changed" } },
@@ -557,13 +734,20 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     f.controls.forkStartupDialog = true;
     let accepted: boolean | undefined;
     let settled = false;
-    const operation = f.run((ctx) => ctx.fork(f.draft, {
-      withSession: async (fresh) => {
-        expect(fresh.sessionManager.getSessionName()).toContain("— Fork 1");
-        expect(() => ctx.sessionManager.getLeafId()).toThrow("stale");
-        accepted = await fresh.ui.confirm("Continue fork?", "Confirm the replacement workflow");
-      },
-    })).then((outcome) => { settled = true; return outcome; });
+    const operation = f
+      .run((ctx) =>
+        ctx.fork(f.draft, {
+          withSession: async (fresh) => {
+            expect(fresh.sessionManager.getSessionName()).toContain("— Fork 1");
+            expect(() => ctx.sessionManager.getLeafId()).toThrow("stale");
+            accepted = await fresh.ui.confirm("Continue fork?", "Confirm the replacement workflow");
+          },
+        }),
+      )
+      .then((outcome) => {
+        settled = true;
+        return outcome;
+      });
 
     // A client arrives after the operation has parked. It uses only list/status/answer APIs.
     const discovered = await vi.waitFor(async () => {
@@ -612,15 +796,19 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const held = gate();
     let late: Promise<unknown> | undefined;
     let firstId: string | undefined;
-    await expect(f.run((ctx) => ctx.fork(f.draft, {
-      position: "at",
-      withSession: async (fresh) => {
-        firstId = fresh.sessionManager.getSessionId();
-        f.controls.fork = held;
-        late = fresh.fork(f.draft, { position: "at" });
-        await held.entered.promise;
-      },
-    }))).resolves.toEqual({ result: { cancelled: false } });
+    await expect(
+      f.run((ctx) =>
+        ctx.fork(f.draft, {
+          position: "at",
+          withSession: async (fresh) => {
+            firstId = fresh.sessionManager.getSessionId();
+            f.controls.fork = held;
+            late = fresh.fork(f.draft, { position: "at" });
+            await held.entered.promise;
+          },
+        }),
+      ),
+    ).resolves.toEqual({ result: { cancelled: false } });
     expect(await f.service.list(f.ref().cwd)).toContainEqual(expect.objectContaining({ id: firstId }));
     held.release.resolve();
     await late;
@@ -636,13 +824,17 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const f = await fixture();
     const released = deferred();
     let late: Promise<unknown> | undefined;
-    await expect(f.run((ctx) => ctx.fork(f.draft, {
-      position: "at",
-      withSession: (fresh) => {
-        late = released.promise.then(() => fresh.navigateTree(f.draft));
-        return Promise.resolve();
-      },
-    }))).resolves.toEqual({ result: { cancelled: false } });
+    await expect(
+      f.run((ctx) =>
+        ctx.fork(f.draft, {
+          position: "at",
+          withSession: (fresh) => {
+            late = released.promise.then(() => fresh.navigateTree(f.draft));
+            return Promise.resolve();
+          },
+        }),
+      ),
+    ).resolves.toEqual({ result: { cancelled: false } });
     const forkedId = f.session().sessionId;
     released.resolve();
     await late;
@@ -660,14 +852,18 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const originalId = f.session().sessionId;
     const bytes = await readFile(f.originalFile, "utf8");
     let firstId: string | undefined;
-    await expect(f.run((ctx) => ctx.fork(f.draft, {
-      position: nested ? "at" : "before",
-      withSession: async (fresh) => {
-        firstId = fresh.sessionManager.getSessionId();
-        if (nested) await fresh.fork(f.draft);
-        throw new Error("Post-fork workflow failed");
-      },
-    }))).resolves.toEqual({ error: "Post-fork workflow failed" });
+    await expect(
+      f.run((ctx) =>
+        ctx.fork(f.draft, {
+          position: nested ? "at" : "before",
+          withSession: async (fresh) => {
+            firstId = fresh.sessionManager.getSessionId();
+            if (nested) await fresh.fork(f.draft);
+            throw new Error("Post-fork workflow failed");
+          },
+        }),
+      ),
+    ).resolves.toEqual({ error: "Post-fork workflow failed" });
     const currentId = f.session().sessionId;
     expect(currentId).not.toBe(originalId);
     if (nested) expect(currentId).not.toBe(firstId);
@@ -682,9 +878,7 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const inbox = f.service.notificationInbox(f.ref());
     expect(inbox.summary).toMatchObject({ sessionId: currentId, retainedCount: 1, highestSeverity: "error" });
     expect(inbox.notifications).toEqual([expect.objectContaining({ message: "Post-fork workflow failed", severity: "error" })]);
-    expect(f.service.notificationCatalog().sessions).toEqual([
-      expect.objectContaining({ sessionId: currentId, retainedCount: 1, highestSeverity: "error" }),
-    ]);
+    expect(f.service.notificationCatalog().sessions).toEqual([expect.objectContaining({ sessionId: currentId, retainedCount: 1, highestSeverity: "error" })]);
     expect(f.hub.sessionEvents.filter(({ event }) => event.type === "session.error")).toEqual([
       { sessionId: currentId, event: { type: "session.error", message: "Post-fork workflow failed" } },
     ]);
@@ -703,7 +897,9 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     expect(f.manager.getLeafId()).toBe(f.latest);
     expect(f.service.activeCount()).toBe(1);
     held.release.resolve();
-    await vi.waitFor(async () => { expect(await f.service.runCommand(f.ref(), "/tree")).toMatchObject({ type: "tree" }); });
+    await vi.waitFor(async () => {
+      expect(await f.service.runCommand(f.ref(), "/tree")).toMatchObject({ type: "tree" });
+    });
 
     f.controls.cancelTree = true;
     f.controls.cancelFork = true;
@@ -721,36 +917,39 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     expect(f.manager.getLeafId()).toBe(f.earlier);
   });
 
-  it.each([false, true])("settles obsolete reload dialogs but retains replacement session_start dialogs (notificationsDisabled=%s)", async (notificationsDisabled) => {
-    const f = await fixture({ notificationsDisabled });
-    const ctx = f.session().extensionRunner.createContext();
-    const confirm = ctx.ui.confirm("Old confirm?", "From the obsolete runner");
-    const input = ctx.ui.input("Old input?");
-    const oldDialogs = (await f.service.status(f.ref())).pendingDialogs ?? [];
-    expect(oldDialogs).toHaveLength(2);
-    expect(oldDialogs.every((dialog) => !dialog.runScoped)).toBe(true);
-    f.controls.reloadStartupDialog = true;
+  it.each([false, true])(
+    "settles obsolete reload dialogs but retains replacement session_start dialogs (notificationsDisabled=%s)",
+    async (notificationsDisabled) => {
+      const f = await fixture({ notificationsDisabled });
+      const ctx = f.session().extensionRunner.createContext();
+      const confirm = ctx.ui.confirm("Old confirm?", "From the obsolete runner");
+      const input = ctx.ui.input("Old input?");
+      const oldDialogs = (await f.service.status(f.ref())).pendingDialogs ?? [];
+      expect(oldDialogs).toHaveLength(2);
+      expect(oldDialogs.every((dialog) => !dialog.runScoped)).toBe(true);
+      f.controls.reloadStartupDialog = true;
 
-    await expect(f.run((command) => command.reload())).resolves.toEqual({ result: undefined });
+      await expect(f.run((command) => command.reload())).resolves.toEqual({ result: undefined });
 
-    expect(() => ctx.sessionManager.getSessionId()).toThrow("stale");
-    const replacement = (await f.service.status(f.ref())).pendingDialogs ?? [];
-    expect(replacement).toEqual([expect.objectContaining({ title: "Start after reload?" })]);
-    await expect(confirm).resolves.toBe(false);
-    await expect(input).resolves.toBeUndefined();
-    expect(f.hub.sessionEvents.flatMap(({ event }) => event.type === "dialog.closed" ? [event] : [])).toEqual(
-      oldDialogs.map(({ dialogId }) => ({ type: "dialog.closed", dialogId, reason: "session-ended" })),
-    );
-    for (const old of oldDialogs) {
-      await expect(f.service.answerDialog(f.ref(), old.dialogId, true)).resolves.toHaveProperty("result", "stale");
-    }
-    if (notificationsDisabled) expect(f.service.notificationCatalog().sessions).toEqual([]);
-    const dialog = replacement[0];
-    if (dialog === undefined) throw new Error("Missing replacement dialog");
-    await f.service.answerDialog(f.ref(), dialog.dialogId, true);
-    await expect(f.reloadDialogs[0]).resolves.toBe(true);
-    expect((await f.service.status(f.ref())).pendingDialogs ?? []).toEqual([]);
-  });
+      expect(() => ctx.sessionManager.getSessionId()).toThrow("stale");
+      const replacement = (await f.service.status(f.ref())).pendingDialogs ?? [];
+      expect(replacement).toEqual([expect.objectContaining({ title: "Start after reload?" })]);
+      await expect(confirm).resolves.toBe(false);
+      await expect(input).resolves.toBeUndefined();
+      expect(f.hub.sessionEvents.flatMap(({ event }) => (event.type === "dialog.closed" ? [event] : []))).toEqual(
+        oldDialogs.map(({ dialogId }) => ({ type: "dialog.closed", dialogId, reason: "session-ended" })),
+      );
+      for (const old of oldDialogs) {
+        await expect(f.service.answerDialog(f.ref(), old.dialogId, true)).resolves.toHaveProperty("result", "stale");
+      }
+      if (notificationsDisabled) expect(f.service.notificationCatalog().sessions).toEqual([]);
+      const dialog = replacement[0];
+      if (dialog === undefined) throw new Error("Missing replacement dialog");
+      await f.service.answerDialog(f.ref(), dialog.dialogId, true);
+      await expect(f.reloadDialogs[0]).resolves.toBe(true);
+      expect((await f.service.status(f.ref())).pendingDialogs ?? []).toEqual([]);
+    },
+  );
 
   it.each([false, true])("settles obsolete dialogs when SDK reload fails before session_start (notificationsDisabled=%s)", async (notificationsDisabled) => {
     const f = await fixture({ notificationsDisabled });
@@ -759,7 +958,9 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     const old = (await f.service.status(f.ref())).pendingDialogs?.[0];
     if (old === undefined) throw new Error("Missing old dialog");
     const failedSettings = vi.spyOn(f.session().settingsManager, "reload").mockRejectedValueOnce(new Error("settings reload failed"));
-    onTestFinished(() => { failedSettings.mockRestore(); });
+    onTestFinished(() => {
+      failedSettings.mockRestore();
+    });
 
     await expect(f.run((command) => command.reload())).resolves.toEqual({ error: "settings reload failed" });
 
@@ -767,7 +968,7 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     expect((await f.service.status(f.ref())).pendingDialogs ?? []).toEqual([]);
     await expect(confirm).resolves.toBe(false);
     expect(f.starts).toHaveLength(1);
-    expect(f.hub.sessionEvents.flatMap(({ event }) => event.type === "dialog.closed" ? [event] : [])).toEqual([
+    expect(f.hub.sessionEvents.flatMap(({ event }) => (event.type === "dialog.closed" ? [event] : []))).toEqual([
       { type: "dialog.closed", dialogId: old.dialogId, reason: "session-ended" },
     ]);
     expect(f.hub.sessionEvents).toContainEqual({ sessionId: f.ref().id, event: { type: "session.error", message: "settings reload failed" } });
@@ -782,7 +983,9 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
       await nativeReload(options);
       throw new Error("reload failed after startup");
     });
-    onTestFinished(() => { failedReload.mockRestore(); });
+    onTestFinished(() => {
+      failedReload.mockRestore();
+    });
 
     await expect(f.run((command) => command.reload())).resolves.toEqual({ error: "reload failed after startup" });
 
@@ -827,7 +1030,10 @@ describe("hosted ExtensionCommandContext actions with native Pi", () => {
     await expect(f.run((ctx) => ctx.navigateTree(f.latest))).resolves.toEqual({ result: { cancelled: false } });
     expect(f.manager.getLeafId()).toBe(f.latest);
     await expect(f.run((ctx) => ctx.newSession())).resolves.toHaveProperty("error", expect.stringContaining("ctx.newSession() is not supported in PI WEB"));
-    await expect(f.run((ctx) => ctx.switchSession(f.originalFile))).resolves.toHaveProperty("error", expect.stringContaining("ctx.switchSession() is not supported in PI WEB"));
+    await expect(f.run((ctx) => ctx.switchSession(f.originalFile))).resolves.toHaveProperty(
+      "error",
+      expect.stringContaining("ctx.switchSession() is not supported in PI WEB"),
+    );
     expect(f.session().sessionId).toBe(originalId);
     expect(f.service.activeCount()).toBe(1);
   });

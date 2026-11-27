@@ -15,7 +15,8 @@ const cliEnv: NodeJS.ProcessEnv = {
   HOME: process.env["HOME"],
   DOCKER_CONFIG: process.env["DOCKER_CONFIG"],
 };
-const composeAvailable = process.platform !== "win32"
+const composeAvailable =
+  process.platform !== "win32"
   && spawnSync("sh", ["-c", ":"], { env: cliEnv, timeout: 5_000 }).status === 0
   && spawnSync("docker", ["compose", "version"], { env: cliEnv, timeout: 5_000 }).status === 0;
 const hostProfiles = ["linux-native-docker", "mac-docker-desktop"];
@@ -43,11 +44,7 @@ describe.skipIf(!composeAvailable)("Docker Compose mount ownership (requires POS
     dockerDir = join(checkoutDir, "docker");
     dataDir = join(tempDir, "data");
     const devEnvDir = join(checkoutDir, ".pi-web");
-    await Promise.all([
-      mkdir(dockerDir, { recursive: true }),
-      mkdir(devEnvDir, { recursive: true }),
-      mkdir(dataDir, { recursive: true }),
-    ]);
+    await Promise.all([mkdir(dockerDir, { recursive: true }), mkdir(devEnvDir, { recursive: true }), mkdir(dataDir, { recursive: true })]);
     await Promise.all([
       copyFile(join(repoRoot, "docker", "compose.dev.yml"), join(dockerDir, "compose.dev.yml")),
       copyFile(join(repoRoot, "docker", "compose.yml"), join(dockerDir, "compose.yml")),
@@ -61,67 +58,77 @@ describe.skipIf(!composeAvailable)("Docker Compose mount ownership (requires POS
     tempDir = "";
   });
 
-  it.each(devScenarios)("preserves dev mounts after host override ($profile, $checkout)", async ({ profile, checkout }) => {
-    const hostCheckout = checkout === "/workspace" ? "/workspace" : checkoutDir;
-    const config = await effectiveComposeConfig("compose.dev.yml", profile, hostCheckout);
-    const checkoutTargets = [...new Set(["/workspace", hostCheckout])];
-    const dependencyTargets = checkoutTargets.map((target) => `${target}/node_modules`);
+  it.each(devScenarios)(
+    "preserves dev mounts after host override ($profile, $checkout)",
+    async ({ profile, checkout }) => {
+      const hostCheckout = checkout === "/workspace" ? "/workspace" : checkoutDir;
+      const config = await effectiveComposeConfig("compose.dev.yml", profile, hostCheckout);
+      const checkoutTargets = [...new Set(["/workspace", hostCheckout])];
+      const dependencyTargets = checkoutTargets.map((target) => `${target}/node_modules`);
 
-    // Compose config reports logical volume keys, not the project-prefixed engine volume name.
-    expect(config).toHaveProperty("volumes.node_modules");
-    for (const serviceName of ["web", "sessiond"]) {
-      const mounts = serviceMounts(config, serviceName);
-      expectUniqueTargets(mounts, serviceName);
-      for (const target of checkoutTargets) {
-        expect(mounts.filter((mount) => mount.target === target)).toMatchObject([
-          { type: "bind", source: hostCheckout, target },
-        ]);
+      // Compose config reports logical volume keys, not the project-prefixed engine volume name.
+      expect(config).toHaveProperty("volumes.node_modules");
+      for (const serviceName of ["web", "sessiond"]) {
+        const mounts = serviceMounts(config, serviceName);
+        expectUniqueTargets(mounts, serviceName);
+        for (const target of checkoutTargets) {
+          expect(mounts.filter((mount) => mount.target === target)).toMatchObject([{ type: "bind", source: hostCheckout, target }]);
+        }
+        const dependencyMounts = mounts.filter((mount) => mount.type === "volume");
+        expect(dependencyMounts.map((mount) => mount.target).sort()).toEqual([...dependencyTargets].sort());
+        for (const target of dependencyTargets) {
+          expect(dependencyMounts.filter((mount) => mount.target === target)).toMatchObject([
+            { type: "volume", source: "node_modules", target, volume: { nocopy: true } },
+          ]);
+        }
+        // Prove the generated host override actually participated in the merge.
+        expect(mounts).toEqual(
+          expect.arrayContaining([expect.objectContaining({ type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" })]),
+        );
+        expect(config).toHaveProperty(`services.${serviceName}.environment.HOSTEXEC_MODE`, profile === "linux-native-docker" ? "nsenter" : "disabled");
       }
-      const dependencyMounts = mounts.filter((mount) => mount.type === "volume");
-      expect(dependencyMounts.map((mount) => mount.target).sort()).toEqual([...dependencyTargets].sort());
-      for (const target of dependencyTargets) {
-        expect(dependencyMounts.filter((mount) => mount.target === target)).toMatchObject([
-          { type: "volume", source: "node_modules", target, volume: { nocopy: true } },
-        ]);
+
+      const initMounts = serviceMounts(config, "data-init");
+      expectUniqueTargets(initMounts, "data-init");
+      // Exact targets exclude broad host mounts and the host-path checkout/dependency aliases.
+      expect(initMounts.map((mount) => mount.target).sort()).toEqual(["/data", "/workspace", "/workspace/node_modules"]);
+      expect(initMounts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "bind", source: hostCheckout, target: "/workspace" }),
+          expect.objectContaining({ type: "volume", source: "node_modules", target: "/workspace/node_modules", volume: { nocopy: true } }),
+          expect.objectContaining({ type: "bind", source: dataDir, target: "/data" }),
+        ]),
+      );
+    },
+    15_000,
+  );
+
+  it.each(hostProfiles)(
+    "does not add development volumes to runtime (%s)",
+    async (profile) => {
+      // Even with the dev repo variable set, the runtime file must not consume it.
+      const config = await effectiveComposeConfig("compose.yml", profile, checkoutDir);
+
+      expect(config).not.toHaveProperty("volumes.node_modules");
+      expect(config).not.toHaveProperty("services.data-init");
+      for (const serviceName of ["web", "sessiond"]) {
+        const mounts = serviceMounts(config, serviceName);
+        expectUniqueTargets(mounts, serviceName);
+        expect(mounts.filter((mount) => mount.type === "volume")).toEqual([]);
+        const targets = mounts.map((mount) => mount.target);
+        for (const target of ["/workspace", "/workspace/node_modules", checkoutDir, join(checkoutDir, "node_modules")]) {
+          expect(targets).not.toContain(target);
+        }
+        expect(mounts).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ type: "bind", source: dataDir, target: "/data" }),
+            expect.objectContaining({ type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }),
+          ]),
+        );
       }
-      // Prove the generated host override actually participated in the merge.
-      expect(mounts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }),
-      ]));
-      expect(config).toHaveProperty(`services.${serviceName}.environment.HOSTEXEC_MODE`, profile === "linux-native-docker" ? "nsenter" : "disabled");
-    }
-
-    const initMounts = serviceMounts(config, "data-init");
-    expectUniqueTargets(initMounts, "data-init");
-    // Exact targets exclude broad host mounts and the host-path checkout/dependency aliases.
-    expect(initMounts.map((mount) => mount.target).sort()).toEqual(["/data", "/workspace", "/workspace/node_modules"]);
-    expect(initMounts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: "bind", source: hostCheckout, target: "/workspace" }),
-      expect.objectContaining({ type: "volume", source: "node_modules", target: "/workspace/node_modules", volume: { nocopy: true } }),
-      expect.objectContaining({ type: "bind", source: dataDir, target: "/data" }),
-    ]));
-  }, 15_000);
-
-  it.each(hostProfiles)("does not add development volumes to runtime (%s)", async (profile) => {
-    // Even with the dev repo variable set, the runtime file must not consume it.
-    const config = await effectiveComposeConfig("compose.yml", profile, checkoutDir);
-
-    expect(config).not.toHaveProperty("volumes.node_modules");
-    expect(config).not.toHaveProperty("services.data-init");
-    for (const serviceName of ["web", "sessiond"]) {
-      const mounts = serviceMounts(config, serviceName);
-      expectUniqueTargets(mounts, serviceName);
-      expect(mounts.filter((mount) => mount.type === "volume")).toEqual([]);
-      const targets = mounts.map((mount) => mount.target);
-      for (const target of ["/workspace", "/workspace/node_modules", checkoutDir, join(checkoutDir, "node_modules")]) {
-        expect(targets).not.toContain(target);
-      }
-      expect(mounts).toEqual(expect.arrayContaining([
-        expect.objectContaining({ type: "bind", source: dataDir, target: "/data" }),
-        expect.objectContaining({ type: "bind", source: "/var/run/docker.sock", target: "/var/run/docker.sock" }),
-      ]));
-    }
-  }, 15_000);
+    },
+    15_000,
+  );
 });
 
 async function effectiveComposeConfig(composeFile: string, profile: string, hostCheckout: string): Promise<unknown> {
@@ -135,16 +142,29 @@ async function effectiveComposeConfig(composeFile: string, profile: string, host
     DOCKER_HOST: `unix://${join(tempDir, "absent-docker.sock")}`,
   };
   // Source the real generator, supplying only target and profile: no control-path bind.
-  await execUtf8("sh", [
-    "-eu", "-c", '. "$1"\npi_web_docker_host_write_compose_override "$2" "$3"',
-    "pi-web-compose-test", hostProfileScript, overridePath, profile,
-  ], { env, encoding: "utf8", timeout: 5_000 });
-  const { stdout } = await execUtf8("docker", [
-    "compose", "--project-name", "pi-web-compose-test",
-    "--env-file", join(dataDir, "container.env"),
-    "-f", join(dockerDir, composeFile), "-f", overridePath,
-    "config", "--format", "json",
-  ], { cwd: dockerDir, env, encoding: "utf8", timeout: 5_000 });
+  await execUtf8(
+    "sh",
+    ["-eu", "-c", '. "$1"\npi_web_docker_host_write_compose_override "$2" "$3"', "pi-web-compose-test", hostProfileScript, overridePath, profile],
+    { env, encoding: "utf8", timeout: 5_000 },
+  );
+  const { stdout } = await execUtf8(
+    "docker",
+    [
+      "compose",
+      "--project-name",
+      "pi-web-compose-test",
+      "--env-file",
+      join(dataDir, "container.env"),
+      "-f",
+      join(dockerDir, composeFile),
+      "-f",
+      overridePath,
+      "config",
+      "--format",
+      "json",
+    ],
+    { cwd: dockerDir, env, encoding: "utf8", timeout: 5_000 },
+  );
   const config: unknown = JSON.parse(stdout);
   return config;
 }

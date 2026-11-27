@@ -42,12 +42,17 @@ describe("PI WEB interface scale preference", () => {
     const store = new Map<string, string>();
     const storage: DensityStorage = {
       getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => { store.set(key, value); setItem(key, value); },
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+        setItem(key, value);
+      },
     };
     writeStoredInterfaceScale(2, storage);
     expect(setItem).toHaveBeenCalledWith(INTERFACE_SCALE_STORAGE_KEY, String(MAX_INTERFACE_SCALE));
     expect(readStoredInterfaceScale(storage)).toBe(2);
-    expect(() => { writeStoredInterfaceScale(1.1, throwingStorage()); }).not.toThrow();
+    expect(() => {
+      writeStoredInterfaceScale(1.1, throwingStorage());
+    }).not.toThrow();
   });
 
   it.each([0.8, 1, 1.25, 1.5, 2])("applies zoom and the shared active-scale property at %s", (scale) => {
@@ -79,12 +84,21 @@ describe("PI WEB interface scale preference", () => {
 });
 
 function storageWith(value: string | null): DensityStorage {
-  return { getItem: () => value, setItem: () => { /* Test storage accepts writes. */ } };
+  return {
+    getItem: () => value,
+    setItem: () => {
+      /* Test storage accepts writes. */
+    },
+  };
 }
 
 function throwingStorage(): DensityStorage {
   return {
-    getItem: () => { throw new Error("storage unavailable"); },
-    setItem: () => { throw new Error("storage unavailable"); },
+    getItem: () => {
+      throw new Error("storage unavailable");
+    },
+    setItem: () => {
+      throw new Error("storage unavailable");
+    },
   };
 }

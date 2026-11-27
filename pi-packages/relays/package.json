@@ -8,13 +8,23 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "pi": {
-    "extensions": ["./extensions/index.js"],
-    "skills": ["./skills"],
-    "prompts": ["./prompts"]
+    "extensions": [
+      "./extensions/index.js"
+    ],
+    "skills": [
+      "./skills"
+    ],
+    "prompts": [
+      "./prompts"
+    ]
   },
   "piWeb": {
     "plugins": [
-      { "id": "relays", "browserRoot": ".", "module": "pi-web-plugin.js" }
+      {
+        "id": "relays",
+        "browserRoot": ".",
+        "module": "pi-web-plugin.js"
+      }
     ]
   }
 }

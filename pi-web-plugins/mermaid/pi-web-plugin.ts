@@ -3,7 +3,9 @@ import { loadMermaidEngine, MermaidPreview } from "./MermaidPreview";
 import { mermaidSyntaxHighlighter } from "./mermaidSyntax";
 
 const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse(value) {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Stylesheet integration capability v1 requires registerRoot and createController");
@@ -13,10 +15,16 @@ const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCap
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "createController" in value && typeof value.createController === "function"
-    && "subscribe" in value && typeof value.subscribe === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+  );
 }
 
 const plugin = {
@@ -36,13 +44,16 @@ const plugin = {
       },
       contributions: {
         syntaxHighlighters: [mermaidSyntaxHighlighter],
-        contentRenderers: [{
-          id: "diagram",
-          title: "Diagram",
-          languages: ["mermaid"],
-          fileExtensions: ["mmd", "mermaid"],
-          render: (input: ContentRendererInput) => html`<pi-web-mermaid-preview .stylesheetIntegration=${stylesheetIntegration} .input=${input} .loadEngine=${loadMermaidEngine}></pi-web-mermaid-preview>`,
-        }],
+        contentRenderers: [
+          {
+            id: "diagram",
+            title: "Diagram",
+            languages: ["mermaid"],
+            fileExtensions: ["mmd", "mermaid"],
+            render: (input: ContentRendererInput) =>
+              html`<pi-web-mermaid-preview .stylesheetIntegration=${stylesheetIntegration} .input=${input} .loadEngine=${loadMermaidEngine}></pi-web-mermaid-preview>`,
+          },
+        ],
       },
     };
   },

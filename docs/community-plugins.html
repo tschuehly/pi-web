@@ -4,27 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Community plugins · PI WEB</title>
-    <meta
-      name="description"
-      content="Find community-contributed PI WEB plugins on npm and learn how to publish your own."
-    />
+    <meta name="description" content="Find community-contributed PI WEB plugins on npm and learn how to publish your own." />
     <link rel="canonical" href="https://pi-web.dev/community-plugins" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="PI WEB" />
     <meta property="og:title" content="Community plugins · PI WEB" />
-    <meta
-      property="og:description"
-      content="Find community-contributed PI WEB plugins on npm and learn how to publish your own."
-    />
+    <meta property="og:description" content="Find community-contributed PI WEB plugins on npm and learn how to publish your own." />
     <meta property="og:url" content="https://pi-web.dev/community-plugins" />
     <meta property="og:image" content="https://pi-web.dev/assets/pi-web-banner.png" />
     <meta property="og:image:alt" content="PI WEB browser UI for persistent Pi Coding Agent sessions" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Community plugins · PI WEB" />
-    <meta
-      name="twitter:description"
-      content="Find community-contributed PI WEB plugins on npm and learn how to publish your own."
-    />
+    <meta name="twitter:description" content="Find community-contributed PI WEB plugins on npm and learn how to publish your own." />
     <meta name="twitter:image" content="https://pi-web.dev/assets/pi-web-banner.png" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
     <script>
@@ -87,7 +78,10 @@
           <div class="doc-content">
             <section id="discover">
               <h2>Community packages</h2>
-              <p class="plugin-trust-notice"><strong>Community-contributed, not reviewed or endorsed.</strong> Packages can run with your user permissions. Install only from authors you trust.</p>
+              <p class="plugin-trust-notice">
+                <strong>Community-contributed, not reviewed or endorsed.</strong> Packages can run with your user permissions. Install only from authors you
+                trust.
+              </p>
               <div data-plugin-search>
                 <form class="plugin-search-form" role="search">
                   <label for="plugin-query">Search community plugins</label>
@@ -110,7 +104,10 @@
                 <ul class="plugin-results" data-plugin-results aria-label="Community plugin results" aria-busy="false"></ul>
                 <button class="button secondary" type="button" data-plugin-more hidden>Load more</button>
               </div>
-              <p>Browse directly on npm: <a href="https://www.npmjs.com/search?q=keywords%3Api-web.dev-plugin">PI WEB plugins</a> · <a href="https://www.npmjs.com/search?q=keywords%3Api-web-plugin">broader plugin search</a> (may include unrelated packages).</p>
+              <p>
+                Browse directly on npm: <a href="https://www.npmjs.com/search?q=keywords%3Api-web.dev-plugin">PI WEB plugins</a> ·
+                <a href="https://www.npmjs.com/search?q=keywords%3Api-web-plugin">broader plugin search</a> (may include unrelated packages).
+              </p>
             </section>
             <details id="install" class="config-details plugin-guide">
               <summary>Install a plugin</summary>
@@ -118,19 +115,36 @@
                 <li>Copy the package name from npm.</li>
                 <li>In PI WEB, open <strong>Settings → Pi packages</strong> on the machine where you want to install it.</li>
                 <li>Enter <code>npm:package-name</code> (or <code>npm:@scope/package-name</code>) and choose <strong>Install</strong>.</li>
-                <li>Open <strong>Settings → PI WEB plugins</strong> to check the integration and enable it if needed. Follow any reload or restart guidance shown there.</li>
+                <li>
+                  Open <strong>Settings → PI WEB plugins</strong> to check the integration and enable it if needed. Follow any reload or restart guidance shown
+                  there.
+                </li>
               </ol>
-              <p>Installing a package and enabling its web integration are separate decisions. See <a href="plugins#install-and-manage">Install and manage</a> for details.</p>
+              <p>
+                Installing a package and enabling its web integration are separate decisions. See
+                <a href="plugins#install-and-manage">Install and manage</a> for details.
+              </p>
             </details>
             <details id="publish" class="config-details plugin-guide">
               <summary>Share your plugin</summary>
               <p>Publish a public npm package with a working <code>piWeb.plugins</code> declaration and add these keywords to its <code>package.json</code>:</p>
-              <div class="code-card"><pre><code>{
+              <div class="code-card">
+                <pre><code>{
   "keywords": ["pi-web.dev-plugin", "pi-package", "pi-web-plugin"]
-}</code></pre></div>
-              <p>Use <code>pi-web.dev-plugin</code> to identify plugins for this project. Include <code>pi-web-plugin</code> too so users of the broader search can find them.</p>
-              <p>No keyword registration or submission to PI WEB is needed. Publish a new package version with the keywords; discovery depends on npm search indexing and may not be immediate.</p>
-              <p>Include a useful description, repository link, installation instructions, and supported PI WEB versions so users can evaluate your package. The keyword makes it discoverable; it does not replace the plugin manifest.</p>
+}</code></pre>
+              </div>
+              <p>
+                Use <code>pi-web.dev-plugin</code> to identify plugins for this project. Include <code>pi-web-plugin</code> too so users of the broader search
+                can find them.
+              </p>
+              <p>
+                No keyword registration or submission to PI WEB is needed. Publish a new package version with the keywords; discovery depends on npm search
+                indexing and may not be immediate.
+              </p>
+              <p>
+                Include a useful description, repository link, installation instructions, and supported PI WEB versions so users can evaluate your package. The
+                keyword makes it discoverable; it does not replace the plugin manifest.
+              </p>
               <p><a href="plugins.md#agent-development">Publishing contracts and examples →</a></p>
             </details>
           </div>

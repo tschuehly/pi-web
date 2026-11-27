@@ -76,9 +76,15 @@ export class ModalSurface extends LitElement {
     this.activationAttempted = true;
     const registration = registerRenderedModal({
       element: dialog,
-      focus: () => { this.focusDialogContent(); },
-      onTopChange: () => { this.requestUpdate(); },
-      syncVisibility: () => { this.syncNativeModal(); },
+      focus: () => {
+        this.focusDialogContent();
+      },
+      onTopChange: () => {
+        this.requestUpdate();
+      },
+      syncVisibility: () => {
+        this.syncNativeModal();
+      },
     });
     this.modalRegistration = registration;
     try {
@@ -129,7 +135,9 @@ export class ModalSurface extends LitElement {
         aria-hidden=${isTop ? nothing : "true"}
         aria-busy=${this.busy ? "true" : "false"}
         aria-label=${this.label ?? nothing}>
-        <div class="backdrop" @mousedown=${(event: MouseEvent) => { this.handleBackdropMouseDown(event); }}>
+        <div class="backdrop" @mousedown=${(event: MouseEvent) => {
+          this.handleBackdropMouseDown(event);
+        }}>
           <section class="surface"><slot></slot></section>
         </div>
       </dialog>
@@ -286,6 +294,6 @@ function flattenedChildElements(parent: Element | ShadowRoot): Element[] {
     const rendered = assigned.length === 0 ? parent.childNodes : assigned;
     return Array.from(rendered).filter((node): node is Element => node instanceof Element);
   }
-  const renderedRoot = parent instanceof Element ? parent.shadowRoot ?? parent : parent;
+  const renderedRoot = parent instanceof Element ? (parent.shadowRoot ?? parent) : parent;
   return Array.from(renderedRoot.children);
 }

@@ -9,10 +9,11 @@ import { createServerPluginPiSessionEventsCapabilityFactory } from "./serverPlug
 function harness() {
   const project: Project = { id: "project", name: "Project", path: resolve("/repo"), createdAt: "2026-09-10T00:00:00.000Z" };
   const workspace = { id: "workspace", projectId: project.id, path: resolve("/repo/worktree"), label: "Worktree", isMain: false };
-  const projects = { requireProject: vi.fn((id: string) => id === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))) };
+  const projects = { requireProject: vi.fn((id: string) => (id === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found")))) };
   const workspaces = { resolve: vi.fn(() => Promise.resolve({ status: "folder" as const, projectId: project.id, workspaces: [workspace], diagnostics: [] })) };
   const registry = new PiSessionEventConnections();
-  const session = {}, bus = createEventBus();
+  const session = {},
+    bus = createEventBus();
   registry.register(session, bus);
   const sessions = { connectSessionEvents: vi.fn((_ref: { id: string; cwd: string }, lifetime: AbortSignal) => registry.connect(session, lifetime)) };
   const factory = createServerPluginPiSessionEventsCapabilityFactory({ projects, workspaces, sessions });
@@ -30,7 +31,9 @@ describe("selected-machine hosted session event capability", () => {
     const connection = await fixture.capability.connect(fixture.selection);
     const received = vi.fn();
     connection.on("reply", received);
-    fixture.bus.on("request", (data) => { fixture.bus.emit("reply", data); });
+    fixture.bus.on("request", (data) => {
+      fixture.bus.emit("reply", data);
+    });
     connection.emit("request", { id: 1 });
     expect(received).toHaveBeenCalledWith({ id: 1 });
     expect(remote.sessions.connectSessionEvents).not.toHaveBeenCalled();

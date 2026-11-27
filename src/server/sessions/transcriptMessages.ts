@@ -12,9 +12,12 @@ export function historyMessagesFromEntries(entries: readonly unknown[]): unknown
     }
     let message: unknown;
     if (entry["type"] === "message") message = annotateAssistantThinkingLevel(entry["message"], thinkingLevel);
-    else if (entry["type"] === "custom_message" && entry["display"] === true) message = { role: "custom", content: entry["content"], customType: entry["customType"], details: entry["details"] };
-    else if (entry["type"] === "compaction") message = { role: "system", source: "compaction", content: `Compacted history:\n\n${stringValue(entry["summary"])}` };
-    else if (entry["type"] === "branch_summary") message = { role: "system", source: "branch_summary", content: `Branch summary:\n\n${stringValue(entry["summary"])}` };
+    else if (entry["type"] === "custom_message" && entry["display"] === true)
+      message = { role: "custom", content: entry["content"], customType: entry["customType"], details: entry["details"] };
+    else if (entry["type"] === "compaction")
+      message = { role: "system", source: "compaction", content: `Compacted history:\n\n${stringValue(entry["summary"])}` };
+    else if (entry["type"] === "branch_summary")
+      message = { role: "system", source: "branch_summary", content: `Branch summary:\n\n${stringValue(entry["summary"])}` };
     else continue;
     if (isRecord(message)) {
       // Only the enclosing durable entry is authoritative, never message.id/entryId.

@@ -60,22 +60,28 @@ export function snapshotRequiredTerminalService(value: unknown): RequiredTermina
     throw new Error("Required Terminal server entry did not provide its composition service");
   }
   return Object.freeze({
-    closeForCwd: (cwd: string) => { Reflect.apply(closeForCwd, value, [cwd]); },
+    closeForCwd: (cwd: string) => {
+      Reflect.apply(closeForCwd, value, [cwd]);
+    },
     runCommand: (options: RunTerminalCommandOptions) => requireCommandRun(Reflect.apply(runCommand, value, [options])),
     bindActivitySink: (sink: RequiredTerminalActivitySink) => {
-      Reflect.apply(bindActivitySink, value, [Object.freeze({
-        updateTerminal: (terminal: RequiredTerminalActivity) => { sink.updateTerminal(terminal); },
-        removeTerminal: (terminalId: string, cwd?: string) => { sink.removeTerminal(terminalId, cwd); },
-      })]);
+      Reflect.apply(bindActivitySink, value, [
+        Object.freeze({
+          updateTerminal: (terminal: RequiredTerminalActivity) => {
+            sink.updateTerminal(terminal);
+          },
+          removeTerminal: (terminalId: string, cwd?: string) => {
+            sink.removeTerminal(terminalId, cwd);
+          },
+        }),
+      ]);
     },
   });
 }
 
 export function unavailableRequiredTerminalService(): RequiredTerminalService {
   const unavailable = (): never => {
-    throw new RequiredTerminalUnavailableError(
-      "Required Terminal plugin is unavailable in recovery safe start; workspace removal cannot continue",
-    );
+    throw new RequiredTerminalUnavailableError("Required Terminal plugin is unavailable in recovery safe start; workspace removal cannot continue");
   };
   return Object.freeze({
     closeForCwd: unavailable,
@@ -90,7 +96,8 @@ function requireCommandRun(value: unknown): TerminalCommandRun {
   const exitCode = optionalFiniteNumber(value["exitCode"]);
   const startedAt = optionalString(value["startedAt"]);
   const completedAt = optionalString(value["completedAt"]);
-  if (typeof value["id"] !== "string"
+  if (
+    typeof value["id"] !== "string"
     || typeof value["origin"] !== "string"
     || typeof value["projectId"] !== "string"
     || typeof value["workspaceId"] !== "string"
@@ -102,7 +109,8 @@ function requireCommandRun(value: unknown): TerminalCommandRun {
     || typeof value["createdAt"] !== "string"
     || startedAt === invalidOptionalField
     || completedAt === invalidOptionalField
-    || !isStringRecord(value["metadata"])) {
+    || !isStringRecord(value["metadata"])
+  ) {
     throw invalidCommandRun();
   }
   return {

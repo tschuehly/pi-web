@@ -17,16 +17,27 @@ export interface LocalReadonlySessionManager {
   getEntries: () => readonly unknown[];
   getTree: () => unknown;
   getSessionName: () => string | undefined;
-};
+}
 
 /** Local type for AgentToolCallOutcome — not re-exported from pi-coding-agent index. */
-interface LocalAgentToolCallOutcome { id: string; result: unknown; isError: boolean };
+interface LocalAgentToolCallOutcome {
+  id: string;
+  result: unknown;
+  isError: boolean;
+}
 
 import { InMemoryCredentialStore, type Credential, type CredentialStore } from "@earendil-works/pi-ai";
 import type { GlobalSessionEvent, SessionNotificationSummaryEvent, SessionUiEvent } from "../../shared/apiTypes.js";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
-import type { PiAgentSession, PiSessionListEntry, PiSessionManager, PiSessionRuntime, PiSessionServiceDependencies, ResolvedSessionFile } from "./piSessionService.js";
+import type {
+  PiAgentSession,
+  PiSessionListEntry,
+  PiSessionManager,
+  PiSessionRuntime,
+  PiSessionServiceDependencies,
+  ResolvedSessionFile,
+} from "./piSessionService.js";
 
 export class CapturingSessionEventHub extends SessionEventHub {
   readonly sessionEvents: { sessionId: string; event: SessionUiEvent }[] = [];
@@ -88,7 +99,16 @@ export function fakeSessionManager(cwd = "/workspace", patch: Partial<PiSessionM
 }
 
 export function sessionRecord(id: string, cwd = "/workspace") {
-  return { id, path: `/sessions/${id}.jsonl`, cwd, created: new Date("2026-01-01T00:00:00.000Z"), modified: new Date("2026-01-01T00:01:00.000Z"), messageCount: 0, firstMessage: "", allMessagesText: "" };
+  return {
+    id,
+    path: `/sessions/${id}.jsonl`,
+    cwd,
+    created: new Date("2026-01-01T00:00:00.000Z"),
+    modified: new Date("2026-01-01T00:01:00.000Z"),
+    messageCount: 0,
+    firstMessage: "",
+    allMessagesText: "",
+  };
 }
 
 export function sessionRef(id: string, cwd = "/workspace") {
@@ -128,31 +148,63 @@ const testExtensionUiContext: ExtensionUIContext = {
   select: () => Promise.resolve(undefined),
   confirm: () => Promise.resolve(false),
   input: () => Promise.resolve(undefined),
-  notify() { /* no-op */ },
+  notify() {
+    /* no-op */
+  },
   onTerminalInput: () => () => undefined,
-  setStatus() { /* no-op */ },
-  setWorkingMessage() { /* no-op */ },
-  setWorkingVisible() { /* no-op */ },
-  setWorkingIndicator() { /* no-op */ },
-  setHiddenThinkingLabel() { /* no-op */ },
-  setWidget() { /* no-op */ },
-  setFooter() { /* no-op */ },
-  setHeader() { /* no-op */ },
-  setTitle() { /* no-op */ },
+  setStatus() {
+    /* no-op */
+  },
+  setWorkingMessage() {
+    /* no-op */
+  },
+  setWorkingVisible() {
+    /* no-op */
+  },
+  setWorkingIndicator() {
+    /* no-op */
+  },
+  setHiddenThinkingLabel() {
+    /* no-op */
+  },
+  setWidget() {
+    /* no-op */
+  },
+  setFooter() {
+    /* no-op */
+  },
+  setHeader() {
+    /* no-op */
+  },
+  setTitle() {
+    /* no-op */
+  },
   custom: () => Promise.reject(new Error("Custom extension UI is unavailable in tests")),
-  pasteToEditor() { /* no-op */ },
-  setEditorText() { /* no-op */ },
+  pasteToEditor() {
+    /* no-op */
+  },
+  setEditorText() {
+    /* no-op */
+  },
   getEditorText: () => "",
   editor: () => Promise.resolve(undefined),
-  addAutocompleteProvider() { /* no-op */ },
-  setEditorComponent() { /* no-op */ },
+  addAutocompleteProvider() {
+    /* no-op */
+  },
+  setEditorComponent() {
+    /* no-op */
+  },
   getEditorComponent: () => undefined,
-  get theme(): ExtensionUIContext["theme"] { throw new Error("Extension UI theme is unavailable in tests"); },
+  get theme(): ExtensionUIContext["theme"] {
+    throw new Error("Extension UI theme is unavailable in tests");
+  },
   getAllThemes: () => [],
   getTheme: () => undefined,
   setTheme: () => ({ success: false, error: "Extension UI is unavailable in tests" }),
   getToolsExpanded: () => false,
-  setToolsExpanded() { /* no-op */ },
+  setToolsExpanded() {
+    /* no-op */
+  },
 };
 
 export function testModel(): NonNullable<PiAgentSession["model"]> {
@@ -168,12 +220,22 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
   const customMessageCalls: { message: { customType: string; content: string; display: boolean; details?: unknown }; options: unknown }[] = [];
   const bindExtensionCalls: TestExtensionBindings[] = [];
   const listeners: ((event: unknown) => void)[] = [];
-  const executeBash: PiAgentSession["executeBash"] = patch.executeBash
-    ?? (() => Promise.resolve({ output: "", exitCode: 0, cancelled: false, truncated: false }));
+  const executeBash: PiAgentSession["executeBash"] =
+    patch.executeBash ?? (() => Promise.resolve({ output: "", exitCode: 0, cancelled: false, truncated: false }));
   let pendingBashExecutions = 0;
   let forcedBashRunning = false;
   let extensionUiContext = testExtensionUiContext;
-  const calls = { abort: 0, bindExtensions: bindExtensionCalls, clearQueue: 0, dispose: 0, followUp: followUpCalls, prompt: promptCalls, reload: 0, sendCustomMessage: customMessageCalls, steer: steerCalls };
+  const calls = {
+    abort: 0,
+    bindExtensions: bindExtensionCalls,
+    clearQueue: 0,
+    dispose: 0,
+    followUp: followUpCalls,
+    prompt: promptCalls,
+    reload: 0,
+    sendCustomMessage: customMessageCalls,
+    steer: steerCalls,
+  };
   const session: TestSession = {
     sessionId,
     sessionFile: `/tmp/${sessionId}.jsonl`,
@@ -186,7 +248,13 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
     isCompacting: false,
     pendingMessageCount: 0,
     sessionManager: fakeSessionManager(),
-    settingsManager: { getWarnings: () => ({}), setWarnings: () => undefined, getEnabledModels: () => undefined, getProjectSettings: () => ({}), setEnabledModels: () => undefined },
+    settingsManager: {
+      getWarnings: () => ({}),
+      setWarnings: () => undefined,
+      getEnabledModels: () => undefined,
+      getProjectSettings: () => ({}),
+      setEnabledModels: () => undefined,
+    },
     modelRuntime: testModelRuntime,
     scopedModels: [],
     setScopedModels: () => undefined,
@@ -194,7 +262,9 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
       getRegisteredCommands: () => [],
       getMarkdownTransformers: () => [],
       getUIContext: () => extensionUiContext,
-      setUIContext: (uiContext) => { extensionUiContext = uiContext ?? testExtensionUiContext; },
+      setUIContext: (uiContext) => {
+        extensionUiContext = uiContext ?? testExtensionUiContext;
+      },
     },
     promptTemplates: [],
     resourceLoader: { getSkills: () => ({ skills: [] }) },
@@ -210,7 +280,15 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
       if (bindings.uiContext !== undefined) extensionUiContext = bindings.uiContext;
       return Promise.resolve();
     },
-    getSessionStats: () => ({ sessionId, totalMessages: 0, userMessages: 0, assistantMessages: 0, toolCalls: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 }),
+    getSessionStats: () => ({
+      sessionId,
+      totalMessages: 0,
+      userMessages: 0,
+      assistantMessages: 0,
+      toolCalls: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    }),
     getContextUsage: () => undefined,
     waitForIdle: () => Promise.resolve(),
     reload: () => {
@@ -248,13 +326,23 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
     getAvailableThinkingLevels: () => [],
     setThinkingLevel: () => undefined,
     cycleThinkingLevel: () => undefined,
-    setSessionName: (name: string) => { session.sessionName = name; },
+    setSessionName: (name: string) => {
+      session.sessionName = name;
+    },
     compact: () => Promise.resolve({ summary: "", tokensBefore: 0 }),
     getUserMessagesForForking: () => [],
-    agent: { streamFunction: () => { throw new Error("streamFunction should not be called in this test"); } },
+    agent: {
+      streamFunction: () => {
+        throw new Error("streamFunction should not be called in this test");
+      },
+    },
     ...patch,
-    get isBashRunning() { return forcedBashRunning || pendingBashExecutions > 0; },
-    set isBashRunning(value: boolean) { forcedBashRunning = value; },
+    get isBashRunning() {
+      return forcedBashRunning || pendingBashExecutions > 0;
+    },
+    set isBashRunning(value: boolean) {
+      forcedBashRunning = value;
+    },
     executeBash: async (...args) => {
       pendingBashExecutions += 1;
       try {
@@ -274,7 +362,14 @@ export function fakeRuntime(sessionId = "session-1", patch: Partial<TestSession>
       return Promise.resolve();
     },
   };
-  return { runtime, session, calls, emit: (event: unknown) => { for (const listener of [...listeners]) listener(event); } };
+  return {
+    runtime,
+    session,
+    calls,
+    emit: (event: unknown) => {
+      for (const listener of [...listeners]) listener(event);
+    },
+  };
 }
 
 export function runtimeCreator(runtime: PiSessionRuntime): RuntimeCreator {
@@ -325,9 +420,7 @@ export function emptyArchiveStore(): NonNullable<PiSessionServiceDependencies["a
  * Minimal readonly session manager stub for test contexts in pi 0.99+.
  * Satisfies the full `ReadonlySessionManager` Pick<SessionManager, ...> contract.
  */
-export function stubReadonlySessionManager(
-  patch: Partial<LocalReadonlySessionManager> = {},
-): LocalReadonlySessionManager {
+export function stubReadonlySessionManager(patch: Partial<LocalReadonlySessionManager> = {}): LocalReadonlySessionManager {
   return {
     getCwd: () => "/workspace",
     getSessionId: () => "session-1",
@@ -371,15 +464,23 @@ export function stubExtensionToolContext(
     model,
     scopedModels: [],
     tools: [],
-    executeTool: (): Promise<LocalAgentToolCallOutcome> => { throw new Error("executeTool not implemented in test stub"); },
+    executeTool: (): Promise<LocalAgentToolCallOutcome> => {
+      throw new Error("executeTool not implemented in test stub");
+    },
     isIdle: () => true,
     isProjectTrusted: () => false,
     signal: undefined,
-    abort: () => { /* no-op stub */ },
+    abort: () => {
+      /* no-op stub */
+    },
     hasPendingMessages: () => false,
-    shutdown: () => { /* no-op stub */ },
+    shutdown: () => {
+      /* no-op stub */
+    },
     getContextUsage: () => undefined,
-    compact: () => { /* no-op stub */ },
+    compact: () => {
+      /* no-op stub */
+    },
     getSystemPrompt: () => "",
     thinkingLevel,
     ...rest,

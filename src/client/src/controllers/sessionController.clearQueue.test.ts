@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
 import type { QueuedSessionMessage } from "../api";
-import { defaultApi, deferred, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type SessionStatus } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  deferred,
+  FakeSocket,
+  oldSession,
+  replacementSession,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+  type SessionStatus,
+} from "./sessionController.testSupport";
 
 function machine(id: string): NonNullable<AppState["selectedMachine"]> {
   return { id, name: id, kind: "remote", createdAt: "now", updatedAt: "now" };
@@ -15,8 +26,13 @@ describe("SessionController server queue mutation", () => {
     const promotedStatus: SessionStatus = { ...queuedStatus, queuedMessages: [{ kind: "steer", text: "send now" }] };
     const calls: { target: QueuedSessionMessage; machineId: string }[] = [];
     let state: AppState = {
-      ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace,
-      selectedSession: oldSession, sessions: [oldSession], status: queuedStatus, sessionStatuses: { [oldSession.id]: queuedStatus },
+      ...initialAppState(),
+      selectedMachine: machine("remote-a"),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+      status: queuedStatus,
+      sessionStatuses: { [oldSession.id]: queuedStatus },
     };
     const api: typeof defaultApi = {
       ...defaultApi,
@@ -25,7 +41,15 @@ describe("SessionController server queue mutation", () => {
         return Promise.resolve(promotedStatus);
       },
     };
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { api, socket: new FakeSocket() });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
 
     await controller.promoteQueuedMessage(target);
 
@@ -38,11 +62,24 @@ describe("SessionController server queue mutation", () => {
     const oldStatus = { ...status(oldSession.id), queuedMessages: [{ kind: "followUp" as const, text: "old" }] };
     const replacementStatus = { ...status(oldSession.id), queuedMessages: [{ kind: "steer" as const, text: "other machine" }] };
     let state: AppState = {
-      ...initialAppState(), selectedMachine: machine("remote-a"), selectedWorkspace: workspace,
-      selectedSession: oldSession, sessions: [oldSession], status: oldStatus, sessionStatuses: { [oldSession.id]: oldStatus },
+      ...initialAppState(),
+      selectedMachine: machine("remote-a"),
+      selectedWorkspace: workspace,
+      selectedSession: oldSession,
+      sessions: [oldSession],
+      status: oldStatus,
+      sessionStatuses: { [oldSession.id]: oldStatus },
     };
     const api: typeof defaultApi = { ...defaultApi, promoteAllQueuedMessages: () => request.promise };
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { api, socket: new FakeSocket() });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      undefined,
+      { api, socket: new FakeSocket() },
+    );
 
     const promoting = controller.promoteAllQueuedMessages();
     state = { ...state, selectedMachine: machine("remote-b"), status: replacementStatus, sessionStatuses: { [oldSession.id]: replacementStatus } };
@@ -84,7 +121,9 @@ describe("SessionController server queue mutation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -101,7 +140,11 @@ describe("SessionController server queue mutation", () => {
   it("does not apply a response after another session is selected", async () => {
     const request = deferred<SessionStatus>();
     const oldStatus: SessionStatus = { ...status(oldSession.id), pendingMessageCount: 1, queuedMessages: [{ kind: "followUp", text: "old queue" }] };
-    const replacementStatus: SessionStatus = { ...status(replacementSession.id), pendingMessageCount: 3, queuedMessages: [{ kind: "steer", text: "new queue" }] };
+    const replacementStatus: SessionStatus = {
+      ...status(replacementSession.id),
+      pendingMessageCount: 3,
+      queuedMessages: [{ kind: "steer", text: "new queue" }],
+    };
     let state: AppState = {
       ...initialAppState(),
       selectedWorkspace: workspace,
@@ -113,7 +156,9 @@ describe("SessionController server queue mutation", () => {
     const api: typeof defaultApi = { ...defaultApi, clearQueue: () => request.promise };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -144,7 +189,9 @@ describe("SessionController server queue mutation", () => {
     const api: typeof defaultApi = { ...defaultApi, clearQueue: () => request.promise };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -177,7 +224,9 @@ describe("SessionController server queue mutation", () => {
     const api: typeof defaultApi = { ...defaultApi, clearQueue: () => Promise.reject(new Error("queue clear failed")) };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -209,7 +258,9 @@ describe("SessionController server queue mutation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

@@ -9,15 +9,27 @@ import type { FormattedText } from "./FormattedText";
 import type { ContentRendererHost } from "./ContentRendererHost";
 import { createContentRenderingService } from "../formatting/contentRendering";
 
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+});
 
 it("scopes chat intent by machine, session, message, part and block rather than duplicate text", async () => {
   const view = new ChatView();
   view.behaviors = { ...view.behaviors, codeBlocks: { ...view.behaviors.codeBlocks, previews: true } };
   view.sessionId = "intent-session";
-  view.contentRendering = createContentRenderingService(() => [{ id: "manual", label: "Manual", renderer: { id: "manual", render: () => html`<b>Diagram</b>` } }]);
+  view.contentRendering = createContentRenderingService(() => [
+    { id: "manual", label: "Manual", renderer: { id: "manual", render: () => html`<b>Diagram</b>` } },
+  ]);
   const text = "```diagram\nsame\n```\n\n```diagram\nsame\n```";
-  view.messages = ["one", "two"].map((entryId) => ({ entryId, role: "user", parts: [{ type: "text", text }, { type: "text", text }] }));
+  view.messages = ["one", "two"].map((entryId) => ({
+    entryId,
+    role: "user",
+    parts: [
+      { type: "text", text },
+      { type: "text", text },
+    ],
+  }));
   document.body.append(view);
   await view.updateComplete;
 

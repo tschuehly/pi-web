@@ -113,15 +113,29 @@ export function persistedSubsessionCompletions(entries: readonly unknown[]): Sub
   return entries.flatMap((entry) => {
     if (!isRecord(entry) || entry["type"] !== "custom" || entry["customType"] !== SUBSESSION_COMPLETION_ENTRY_TYPE) return [];
     const data = entry["data"];
-    if (!isRecord(data) || typeof data["completionId"] !== "string" || typeof data["sessionId"] !== "string"
-      || typeof data["cwd"] !== "string" || (data["status"] !== "idle" && data["status"] !== "error")
-      || typeof data["finalText"] !== "string" || typeof data["messageCount"] !== "number"
-      || !Number.isSafeInteger(data["messageCount"]) || data["messageCount"] < 0) return [];
-    return [{
-      completionId: data["completionId"], sessionId: data["sessionId"], cwd: data["cwd"], status: data["status"],
-      finalText: data["finalText"], messageCount: data["messageCount"],
-      ...(typeof data["errorDetail"] === "string" ? { errorDetail: data["errorDetail"] } : {}),
-    }];
+    if (
+      !isRecord(data)
+      || typeof data["completionId"] !== "string"
+      || typeof data["sessionId"] !== "string"
+      || typeof data["cwd"] !== "string"
+      || (data["status"] !== "idle" && data["status"] !== "error")
+      || typeof data["finalText"] !== "string"
+      || typeof data["messageCount"] !== "number"
+      || !Number.isSafeInteger(data["messageCount"])
+      || data["messageCount"] < 0
+    )
+      return [];
+    return [
+      {
+        completionId: data["completionId"],
+        sessionId: data["sessionId"],
+        cwd: data["cwd"],
+        status: data["status"],
+        finalText: data["finalText"],
+        messageCount: data["messageCount"],
+        ...(typeof data["errorDetail"] === "string" ? { errorDetail: data["errorDetail"] } : {}),
+      },
+    ];
   });
 }
 
@@ -129,16 +143,18 @@ export function persistedSubsessionCompletions(entries: readonly unknown[]): Sub
 export function renderSubsessionCompletion(completion: SubsessionCompletion): string {
   const { sessionId, status, finalText, errorDetail } = completion;
   const error = errorDetail === undefined ? "" : `Error: ${errorDetail}\n\n`;
-  const output = finalText.length > 2000
-    ? `Output from subsession ${sessionId} was too long for this completion notice and was omitted. Call check_subsession with sessionId "${sessionId}" to retrieve the final output.`
-    : `--- SUBSESSION OUTPUT: ${sessionId} ---\n${finalText === "" ? "(no output)" : finalText}`;
+  const output =
+    finalText.length > 2000
+      ? `Output from subsession ${sessionId} was too long for this completion notice and was omitted. Call check_subsession with sessionId "${sessionId}" to retrieve the final output.`
+      : `--- SUBSESSION OUTPUT: ${sessionId} ---\n${finalText === "" ? "(no output)" : finalText}`;
   return `Subsession ${sessionId} stopped working (${status}).\n\n${error}${output}`;
 }
 
 export function renderSubsessionCompletions(completions: readonly SubsessionCompletion[], workingIds: readonly string[]): string {
-  const next = workingIds.length === 0
-    ? "No other tracked subsessions are working."
-    : `Still working: ${workingIds.join(", ")}. Continue working, or call yield_to_subsessions alone and last at the next join point. Further unread results arrive automatically; do not poll.`;
+  const next =
+    workingIds.length === 0
+      ? "No other tracked subsessions are working."
+      : `Still working: ${workingIds.join(", ")}. Continue working, or call yield_to_subsessions alone and last at the next join point. Further unread results arrive automatically; do not poll.`;
   return `${completions.map(renderSubsessionCompletion).join("\n\n")}\n\n${next}`;
 }
 

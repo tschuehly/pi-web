@@ -16,7 +16,10 @@ export class NavigationSectionResizeController implements ReactiveController {
   private readonly storage: NavigationSectionSizeStorage | undefined;
   private readonly heights: SectionHeights;
 
-  constructor(private readonly host: ReactiveControllerHost, options: NavigationSectionResizeControllerOptions = {}) {
+  constructor(
+    private readonly host: ReactiveControllerHost,
+    options: NavigationSectionResizeControllerOptions = {},
+  ) {
     this.storage = options.storage ?? browserStorage();
     this.heights = readHeights(this.storage);
     host.addController(this);

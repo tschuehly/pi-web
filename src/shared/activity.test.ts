@@ -24,7 +24,14 @@ describe("activity helpers", () => {
     // Startup is reported on the activity channel with an "active" phase because
     // a phase really is in progress, but opening a session is not work a user
     // can stop, so the marker is what separates starting from working.
-    const startup: SessionActivity = { sessionId: "s1", phase: "active", label: "Opening session", detail: "Starting the Pi session", at: "now", startup: true };
+    const startup: SessionActivity = {
+      sessionId: "s1",
+      phase: "active",
+      label: "Opening session",
+      detail: "Starting the Pi session",
+      at: "now",
+      startup: true,
+    };
 
     expect(isSessionActive(undefined, startup)).toBe(false);
     expect(isSessionActive(idleStatus, startup)).toBe(false);

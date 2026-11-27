@@ -118,7 +118,11 @@ describe("pi-web-docker command planning", () => {
     expect(devHostPlan(["--dev", "status"])).toEqual({ kind: "compose", args: ["ps"], usesGeneratedEnv: true });
     expect(devHostPlan(["--dev", "logs", "data-init"])).toEqual({ kind: "compose", args: ["logs", "-f", "data-init"], usesGeneratedEnv: true });
     expect(devHostPlan(["--dev", "shell"])).toEqual({ kind: "compose", args: ["exec", "web", "bash"], usesGeneratedEnv: true });
-    expect(devHostPlan(["--dev", "cli", "config", "show"])).toEqual({ kind: "compose", args: ["exec", "web", "pi-web", "config", "show"], usesGeneratedEnv: true });
+    expect(devHostPlan(["--dev", "cli", "config", "show"])).toEqual({
+      kind: "compose",
+      args: ["exec", "web", "pi-web", "config", "show"],
+      usesGeneratedEnv: true,
+    });
     expect(devHostPlan(["--dev", "update"])).toEqual({
       kind: "updateSequence",
       usesGeneratedEnv: true,
@@ -148,7 +152,9 @@ describe("pi-web-docker command planning", () => {
     const parsed = parsePiWebDockerArgs(["--dev", "status"]);
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) throw new Error(parsed.errors.join("\n"));
-    expect(validatePiWebDockerDevRootSafety(parsed.plan, 0)).toBe("refusing to run Docker development mode as root; retry with --allow-root if this is intentional");
+    expect(validatePiWebDockerDevRootSafety(parsed.plan, 0)).toBe(
+      "refusing to run Docker development mode as root; retry with --allow-root if this is intentional",
+    );
     expect(validatePiWebDockerDevRootSafety({ ...parsed.plan, allowRoot: true }, 0)).toBeUndefined();
     expect(validatePiWebDockerDevRootSafety(parsed.plan, 500)).toBeUndefined();
   });

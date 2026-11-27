@@ -1,4 +1,10 @@
-import type { DisplayedMessageActionAvailabilityContext, DisplayedMessageActionMessage, MessageActionAvailabilityContextV5 as MessageActionAvailabilityContext, MessageActionContribution, MessageActionMessageV5 as MessageActionMessage } from "../../../plugin-api";
+import type {
+  DisplayedMessageActionAvailabilityContext,
+  DisplayedMessageActionMessage,
+  MessageActionAvailabilityContextV5 as MessageActionAvailabilityContext,
+  MessageActionContribution,
+  MessageActionMessageV5 as MessageActionMessage,
+} from "../../../plugin-api";
 import type { ChatLine } from "../chatTypes";
 import type { WorkspacePluginBinding } from "./types";
 
@@ -18,7 +24,10 @@ export function messageActionMessage(message: ChatLine, role = message.role): Me
   return Object.freeze({
     entryId: message.entryId,
     role,
-    text: message.parts.filter((part) => part.type === "text").map((part) => part.text).join("\n\n"),
+    text: message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n\n"),
   });
 }
 
@@ -26,7 +35,11 @@ export function displayedMessageActionMessage(message: ChatLine): DisplayedMessa
   return Object.freeze({
     ...(message.entryId === undefined ? {} : { entryId: message.entryId }),
     role: message.role,
-    text: message.parts.filter((part) => part.type === "text").map((part) => part.text.trim()).filter(Boolean).join("\n\n"),
+    text: message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text.trim())
+      .filter(Boolean)
+      .join("\n\n"),
   });
 }
 
@@ -34,7 +47,9 @@ export function availableMessageActions(
   actions: readonly RegisteredMessageAction[],
   context: MessageActionAvailabilityContext,
 ): readonly AvailableMessageAction[] {
-  return actions.filter((action) => action.target !== "display").filter((action) => action.visible?.(context) ?? true)
+  return actions
+    .filter((action) => action.target !== "display")
+    .filter((action) => action.visible?.(context) ?? true)
     .map((action) => ({ action, enabled: action.enabled?.(context) ?? true, ariaLabel: action.ariaLabel?.(context) ?? action.title }));
 }
 
@@ -42,7 +57,9 @@ export function availableDisplayedMessageActions(
   actions: readonly RegisteredMessageAction[],
   context: DisplayedMessageActionAvailabilityContext,
 ): readonly AvailableMessageAction[] {
-  return actions.filter((action) => action.target === "display").filter((action) => action.visible?.(context) ?? true)
+  return actions
+    .filter((action) => action.target === "display")
+    .filter((action) => action.visible?.(context) ?? true)
     .map((action) => ({ action, enabled: action.enabled?.(context) ?? true, ariaLabel: action.ariaLabel?.(context) ?? action.title }));
 }
 
@@ -74,9 +91,13 @@ export class MessageActionAvailabilityCache {
     const cached = slices.get(key);
     if (cached !== undefined) return cached;
     const entry = includeEntryActions ? messageActionMessage(message, displayed.role) : undefined;
-    const result = actions.flatMap((action) => action.target === "display"
-      ? availableDisplayedMessageActions([action], { ...context, message: snapshot })
-      : entry === undefined ? [] : availableMessageActions([action], { ...context, message: entry }));
+    const result = actions.flatMap((action) =>
+      action.target === "display"
+        ? availableDisplayedMessageActions([action], { ...context, message: snapshot })
+        : entry === undefined
+          ? []
+          : availableMessageActions([action], { ...context, message: entry }),
+    );
     slices.set(key, result);
     this.messages.set(message, slices);
     return result;

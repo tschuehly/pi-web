@@ -16,11 +16,7 @@ describe("transcript Markdown projection", () => {
     const onError = vi.fn();
     expect(projectTranscriptMarkdown(message, [transformer, (text) => `${text}!`], onError)).toEqual({
       ...message,
-      content: [
-        { ...message.content[0], displayText: "answer!" },
-        { ...message.content[1], displayText: "reason!" },
-        message.content[2],
-      ],
+      content: [{ ...message.content[0], displayText: "answer!" }, { ...message.content[1], displayText: "reason!" }, message.content[2]],
     });
     expect(message).toEqual(original);
     expect(transformer.mock.calls).toEqual([
@@ -39,11 +35,17 @@ describe("transcript Markdown projection", () => {
   it("reports failures and continues the chain from the last successful value", () => {
     const error = new Error("broken extension");
     const onError = vi.fn();
-    const result = projectTranscriptMarkdown({ role: "assistant", content: "source" }, [
-      (text) => `${text} first`,
-      () => { throw error; },
-      (text) => `${text} last`,
-    ], onError);
+    const result = projectTranscriptMarkdown(
+      { role: "assistant", content: "source" },
+      [
+        (text) => `${text} first`,
+        () => {
+          throw error;
+        },
+        (text) => `${text} last`,
+      ],
+      onError,
+    );
     expect(result).toEqual({ role: "assistant", content: "source", displayText: "source first last" });
     expect(onError).toHaveBeenCalledWith(error, 1);
   });

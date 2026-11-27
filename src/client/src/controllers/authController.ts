@@ -79,9 +79,11 @@ export class AuthController {
     }
     const operationGeneration = this.advanceAuthOperation();
     this.setState({ authDialog: { step: "starting", machineId, title: mode === "login" ? "Sign in to an MCP server" : "Sign out of an MCP server" } });
-    await this.startFlow(() => serverName === undefined
-      ? this.api.startMcpAuth(session, mode, machineId)
-      : this.api.startMcpAuth(session, mode, machineId, serverName), machineId, operationGeneration);
+    await this.startFlow(
+      () => (serverName === undefined ? this.api.startMcpAuth(session, mode, machineId) : this.api.startMcpAuth(session, mode, machineId, serverName)),
+      machineId,
+      operationGeneration,
+    );
   }
 
   async chooseLoginMethod(authType: AuthType): Promise<void> {
@@ -94,7 +96,8 @@ export class AuthController {
       if (!this.isCurrentAuthOperation(operationGeneration) || this.getState().authDialog !== dialog) return;
       this.setState({ authDialog: { step: "providers", mode: "login", machineId, authType, providers } });
     } catch (error) {
-      if (this.isCurrentAuthOperation(operationGeneration) && this.getState().authDialog === dialog) this.browserErrors.report(machineBrowserErrorScope(machineId), String(error));
+      if (this.isCurrentAuthOperation(operationGeneration) && this.getState().authDialog === dialog)
+        this.browserErrors.report(machineBrowserErrorScope(machineId), String(error));
     }
   }
 
@@ -254,9 +257,7 @@ export class AuthController {
 
   private async startLoginFlow(provider: AuthProviderOption, machineId: string, operationGeneration: number): Promise<void> {
     await this.startFlow(
-      () => provider.authType === "oauth"
-        ? this.api.startOAuthLogin(provider.id, machineId)
-        : this.api.startInteractiveApiKeyLogin(provider.id, machineId),
+      () => (provider.authType === "oauth" ? this.api.startOAuthLogin(provider.id, machineId) : this.api.startInteractiveApiKeyLogin(provider.id, machineId)),
       machineId,
       operationGeneration,
     );
@@ -300,7 +301,7 @@ export class AuthController {
       if (flow.target === "mcp") void this.refreshStatus(machineId);
     }
     const existing = this.getState().authDialog;
-    const previousInput = existing?.step === "oauth" && existing.flow.flowId === flow.flowId ? existing.inputValue ?? "" : "";
+    const previousInput = existing?.step === "oauth" && existing.flow.flowId === flow.flowId ? (existing.inputValue ?? "") : "";
     const previousRequestId = existing?.step === "oauth" ? oauthRequestId(existing.flow) : undefined;
     const newRequestId = oauthRequestId(flow);
     const sameRequest = previousRequestId !== undefined && previousRequestId === newRequestId;
@@ -317,7 +318,9 @@ export class AuthController {
     this.stopPolling();
     const operationGeneration = this.authOperationGeneration;
     const pollGeneration = this.pollGeneration;
-    this.pollTimer = window.setInterval(() => { void this.poll(flowId, machineId, operationGeneration, pollGeneration); }, this.pollIntervalMs);
+    this.pollTimer = window.setInterval(() => {
+      void this.poll(flowId, machineId, operationGeneration, pollGeneration);
+    }, this.pollIntervalMs);
   }
 
   private stopPolling(): void {
@@ -339,7 +342,8 @@ export class AuthController {
       const read = dialog.flow.target === "mcp" ? this.api.mcpAuthFlow : this.api.oauthFlow;
       const flow = await read(flowId, machineId);
       const current = this.currentOAuthDialog(operationGeneration, flowId);
-      if (flow.flowId !== flowId || pollGeneration !== this.pollGeneration || current?.machineId !== machineId || oauthRequestId(current.flow) !== requestId) return;
+      if (flow.flowId !== flowId || pollGeneration !== this.pollGeneration || current?.machineId !== machineId || oauthRequestId(current.flow) !== requestId)
+        return;
       this.updateOAuthFlow(flow, machineId);
     } catch (error) {
       const current = this.currentOAuthDialog(operationGeneration, flowId);

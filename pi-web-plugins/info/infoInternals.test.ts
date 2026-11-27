@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { PiWebComponentStatus, PiWebReleaseStatus, PiWebStatusResponse, PluginMachine, Workspace } from "@jmfederico/pi-web/plugin-api";
-import { componentDetails, componentHealth, diagnosticsSummary, formatVersion, installationLabel, machineKindLabel, piVersionDriftNote, releaseSummary, workspaceFlags } from "./infoInternals.js";
+import {
+  componentDetails,
+  componentHealth,
+  diagnosticsSummary,
+  formatVersion,
+  installationLabel,
+  machineKindLabel,
+  piVersionDriftNote,
+  releaseSummary,
+  workspaceFlags,
+} from "./infoInternals.js";
 
 describe("componentHealth", () => {
   it("reports current when the component is available and not stale", () => {
@@ -71,26 +81,24 @@ describe("diagnosticsSummary", () => {
   it("renders a full status block for bug reports", () => {
     const summary = diagnosticsSummary({ status: statusResponse(), machine: machineFixture(), workspace: workspaceFixture() });
 
-    expect(summary).toBe([
-      "PI WEB diagnostics",
-      "Package: @jmfederico/pi-web",
-      "Web/UI: running 1.0.0 · installed 1.0.1 · pi 0.84.1 · restart needed · global npm package · /usr/lib/node_modules",
-      "Session daemon: running 1.0.0 · installed 1.0.0 · pi 0.84.1 · current · local checkout · /srv/dev/pi-web",
-      "Release: Update available: 1.1.0 (checked 2025-01-02T03:04:05Z)",
-      "Status generated: 2025-01-02T03:04:06Z",
-      "Machine: devbox (local machine)",
-      "Workspace: pi-web — /srv/dev/pi-web (provider: git, main workspace)",
-    ].join("\n"));
+    expect(summary).toBe(
+      [
+        "PI WEB diagnostics",
+        "Package: @jmfederico/pi-web",
+        "Web/UI: running 1.0.0 · installed 1.0.1 · pi 0.84.1 · restart needed · global npm package · /usr/lib/node_modules",
+        "Session daemon: running 1.0.0 · installed 1.0.0 · pi 0.84.1 · current · local checkout · /srv/dev/pi-web",
+        "Release: Update available: 1.1.0 (checked 2025-01-02T03:04:05Z)",
+        "Status generated: 2025-01-02T03:04:06Z",
+        "Machine: devbox (local machine)",
+        "Workspace: pi-web — /srv/dev/pi-web (provider: git, main workspace)",
+      ].join("\n"),
+    );
   });
 
   it("degrades gracefully when the status and workspace are unavailable", () => {
     const summary = diagnosticsSummary({ status: undefined });
 
-    expect(summary).toBe([
-      "PI WEB diagnostics",
-      "Status: unavailable",
-      "Workspace: none selected",
-    ].join("\n"));
+    expect(summary).toBe(["PI WEB diagnostics", "Status: unavailable", "Workspace: none selected"].join("\n"));
   });
 });
 
@@ -115,13 +123,15 @@ describe("small formatters", () => {
   });
 
   it("describes folder workspaces", () => {
-    expect(workspaceFlags({
-      id: "ws-1",
-      projectId: "proj-1",
-      path: "/srv/dev/plain",
-      label: "plain",
-      isMain: false,
-    })).toEqual(["folder workspace"]);
+    expect(
+      workspaceFlags({
+        id: "ws-1",
+        projectId: "proj-1",
+        path: "/srv/dev/plain",
+        label: "plain",
+        isMain: false,
+      }),
+    ).toEqual(["folder workspace"]);
   });
 });
 

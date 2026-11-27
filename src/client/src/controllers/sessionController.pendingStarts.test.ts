@@ -6,7 +6,20 @@ import { loadDraft, saveDraft } from "../promptDraftStorage";
 import { loadStagedAttachments, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
 import { SessionController } from "./sessionController";
 import type { NavigationFreshness } from "./types";
-import { emptyTranscriptApi as defaultApi, deferred, emptyPage, FakeSocket, MemoryStorage, oldSession, sessionKey, sessionLookupId, status, workspace, type AppState, type SessionInfo } from "./sessionController.testSupport";
+import {
+  emptyTranscriptApi as defaultApi,
+  deferred,
+  emptyPage,
+  FakeSocket,
+  MemoryStorage,
+  oldSession,
+  sessionKey,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+  type SessionInfo,
+} from "./sessionController.testSupport";
 
 describe("SessionController pending starts", () => {
   it("creates and selects a temporary editable session before backend start resolves", async () => {
@@ -24,7 +37,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -54,7 +69,9 @@ describe("SessionController pending starts", () => {
     let selectedAtNavigation: string | undefined;
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -90,8 +107,12 @@ describe("SessionController pending starts", () => {
     let expectedSessionId: string | undefined;
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
-      () => { publishedSessionId = state.selectedSession?.id; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => {
+        publishedSessionId = state.selectedSession?.id;
+      },
       undefined,
       {
         api: {
@@ -138,7 +159,8 @@ describe("SessionController pending starts", () => {
     const navigation: NavigationFreshness = {
       generation: 1,
       scope: ["machine", "project", "workspace", "session"],
-      isCurrent: () => route.machineId === expectedRoute.machineId
+      isCurrent: () =>
+        route.machineId === expectedRoute.machineId
         && route.projectId === expectedRoute.projectId
         && route.workspaceId === expectedRoute.workspaceId
         && route.sessionId === expectedRoute.sessionId,
@@ -147,7 +169,9 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -184,7 +208,9 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -230,7 +256,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -239,7 +267,10 @@ describe("SessionController pending starts", () => {
           startSession: () => startRequest.promise,
           messages: () => Promise.resolve(emptyPage),
           status: (session) => Promise.resolve(status(sessionLookupId(session))),
-          prompt: (_session, text) => { promptCalls.push(text); return Promise.resolve({ accepted: true }); },
+          prompt: (_session, text) => {
+            promptCalls.push(text);
+            return Promise.resolve({ accepted: true });
+          },
         },
         socket: new FakeSocket(),
         captureNavigation: () => ({ machineId: "local", projectId: workspace.projectId, workspaceId: workspace.id, sessionId: route.sessionId }),
@@ -274,21 +305,36 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
-        api: { ...defaultApi, startSession: () => startRequest.promise, messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))), prompt: () => { prompted = true; return promptRequest.promise; } },
+        api: {
+          ...defaultApi,
+          startSession: () => startRequest.promise,
+          messages: () => Promise.resolve(emptyPage),
+          status: (session) => Promise.resolve(status(sessionLookupId(session))),
+          prompt: () => {
+            prompted = true;
+            return promptRequest.promise;
+          },
+        },
         socket: new FakeSocket(),
         claimSession: () => Promise.resolve(true),
       },
     );
 
     const start = controller.startSession();
-    await vi.waitFor(() => { expect(state.selectedSession?.id).toMatch(/^creating:/); });
+    await vi.waitFor(() => {
+      expect(state.selectedSession?.id).toMatch(/^creating:/);
+    });
     await controller.send("queued first prompt");
     startRequest.resolve(started);
-    await vi.waitFor(() => { expect(prompted).toBe(true); });
+    await vi.waitFor(() => {
+      expect(prompted).toBe(true);
+    });
     await controller.selectSession(oldSession);
 
     // A tab click on the new Chat during the flush must open it, not revive the temporary composer.
@@ -304,18 +350,30 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
-        api: { ...defaultApi, startSession: () => startRequest.promise, messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))) },
+        api: {
+          ...defaultApi,
+          startSession: () => startRequest.promise,
+          messages: () => Promise.resolve(emptyPage),
+          status: (session) => Promise.resolve(status(sessionLookupId(session))),
+        },
         socket: new FakeSocket(),
-        claimSession: (session, _context, focus) => { claims.push([session.id, focus]); return Promise.resolve(true); },
+        claimSession: (session, _context, focus) => {
+          claims.push([session.id, focus]);
+          return Promise.resolve(true);
+        },
       },
     );
 
     const start = controller.startSession();
-    await vi.waitFor(() => { expect(state.selectedSession?.id).toMatch(/^creating:/); });
+    await vi.waitFor(() => {
+      expect(state.selectedSession?.id).toMatch(/^creating:/);
+    });
     await controller.selectSession(oldSession);
     startRequest.resolve(started);
     await start;
@@ -331,18 +389,31 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
-        api: { ...defaultApi, startSession: () => startRequest.promise, messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))), prompt: (session) => { prompts.push(session.id); return Promise.resolve({ accepted: true }); } },
+        api: {
+          ...defaultApi,
+          startSession: () => startRequest.promise,
+          messages: () => Promise.resolve(emptyPage),
+          status: (session) => Promise.resolve(status(sessionLookupId(session))),
+          prompt: (session) => {
+            prompts.push(session.id);
+            return Promise.resolve({ accepted: true });
+          },
+        },
         socket: new FakeSocket(),
         claimSession: () => Promise.resolve(true),
       },
     );
 
     const start = controller.startSession();
-    await vi.waitFor(() => { expect(state.selectedSession?.id).toMatch(/^creating:/); });
+    await vi.waitFor(() => {
+      expect(state.selectedSession?.id).toMatch(/^creating:/);
+    });
     const pending = state.selectedSession;
     if (pending === undefined) throw new Error("no pending Chat");
     await controller.selectSession(elsewhere, { context: { selectedWorkspace: other, sessions: [elsewhere] } });
@@ -361,7 +432,9 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api: { ...defaultApi, startSession: () => Promise.reject(new Error("down")) }, socket: new FakeSocket() },
@@ -378,13 +451,23 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
-        api: { ...defaultApi, startSession: () => Promise.resolve(started), messages: () => Promise.resolve(emptyPage), status: (session) => Promise.resolve(status(sessionLookupId(session))) },
+        api: {
+          ...defaultApi,
+          startSession: () => Promise.resolve(started),
+          messages: () => Promise.resolve(emptyPage),
+          status: (session) => Promise.resolve(status(sessionLookupId(session))),
+        },
         socket: new FakeSocket(),
-        claimSession: (session, _context, focus) => { claims.push([session.id, focus]); return Promise.resolve(true); },
+        claimSession: (session, _context, focus) => {
+          claims.push([session.id, focus]);
+          return Promise.resolve(true);
+        },
       },
     );
 
@@ -404,7 +487,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -462,7 +547,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -480,7 +567,7 @@ describe("SessionController pending starts", () => {
     expect(isCachedNewSessionInfo(state.sessions[0])).toBe(true);
   });
 
-  it("shows unrelated created sessions immediately rather than guessing which start owns them",  async () => {
+  it("shows unrelated created sessions immediately rather than guessing which start owns them", async () => {
     const started: SessionInfo = { ...oldSession, id: "started-session", path: "/tmp/started-session.jsonl" };
     const otherClientSession: SessionInfo = { ...oldSession, id: "other-client-session", path: "/tmp/other-client-session.jsonl" };
     const startRequest = deferred<SessionInfo>();
@@ -493,7 +580,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -528,7 +617,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -555,13 +646,18 @@ describe("SessionController pending starts", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      startSession: () => new Promise<SessionInfo>((resolve) => { startResolvers.push(resolve); }),
+      startSession: () =>
+        new Promise<SessionInfo>((resolve) => {
+          startResolvers.push(resolve);
+        }),
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -606,7 +702,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -638,7 +736,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -651,7 +751,11 @@ describe("SessionController pending starts", () => {
     expect(state.sessions.map((session) => session.id)).toEqual([temporaryId]);
     expect(state.sessions[0]?.persisted).toBe(false);
     expect(state.activity).toMatchObject({ sessionId: temporaryId, phase: "error", label: "Session creation failed" });
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("backend unavailable");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("backend unavailable");
 
     await controller.deleteCachedNewSession(state.sessions[0]);
 
@@ -669,7 +773,9 @@ describe("SessionController pending starts", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -687,16 +793,20 @@ describe("SessionController pending starts", () => {
 
     const originScope = workspaceBrowserErrorScope("local", workspace.projectId, workspace.id);
     expect(state.browserErrors[browserErrorScopeKey(originScope)]?.message).toBe("Failed to start session: late backend failure");
-    expect(visibleBrowserErrors(state.browserErrors, {
-      machineId: "local",
-      projectId: otherWorkspace.projectId,
-      workspaceId: otherWorkspace.id,
-    })).toEqual([]);
-    expect(visibleBrowserErrors(state.browserErrors, {
-      machineId: "local",
-      projectId: workspace.projectId,
-      workspaceId: workspace.id,
-    })).toEqual([{ scope: originScope, message: "Failed to start session: late backend failure" }]);
+    expect(
+      visibleBrowserErrors(state.browserErrors, {
+        machineId: "local",
+        projectId: otherWorkspace.projectId,
+        workspaceId: otherWorkspace.id,
+      }),
+    ).toEqual([]);
+    expect(
+      visibleBrowserErrors(state.browserErrors, {
+        machineId: "local",
+        projectId: workspace.projectId,
+        workspaceId: workspace.id,
+      }),
+    ).toEqual([{ scope: originScope, message: "Failed to start session: late backend failure" }]);
     expect(state.sessions).toEqual([]);
     expect(temporaryId).toMatch(/^creating:/);
   });
@@ -709,11 +819,16 @@ describe("SessionController pending starts", () => {
     const api: typeof defaultApi = {
       ...defaultApi,
       startSession: () => startRequest.promise,
-      stop: (session) => { stoppedIds.push(sessionLookupId(session)); return Promise.resolve({ stopped: true }); },
+      stop: (session) => {
+        stoppedIds.push(sessionLookupId(session));
+        return Promise.resolve({ stopped: true });
+      },
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

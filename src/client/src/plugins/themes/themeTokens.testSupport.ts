@@ -17,5 +17,8 @@ export function bundledThemeToken(themeId: string, token: string): string {
 /** The bundled theme pack's themes, read from its source (registration needs an HTTP stylesheet origin). */
 export function bundledThemes(): { id: string; colorScheme: "light" | "dark" }[] {
   const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
-  return Array.from(source.matchAll(/id: "([\w-]+)",\s*name:[\s\S]*?colorScheme: "(light|dark)"/gu), (match) => ({ id: `themes:${match[1] ?? ""}`, colorScheme: match[2] === "light" ? "light" : "dark" }));
+  return Array.from(source.matchAll(/id: "([\w-]+)",\s*name:[\s\S]*?colorScheme: "(light|dark)"/gu), (match) => ({
+    id: `themes:${match[1] ?? ""}`,
+    colorScheme: match[2] === "light" ? "light" : "dark",
+  }));
 }

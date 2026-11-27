@@ -54,12 +54,16 @@ export class SessionStorageTerminalSelectionMemory extends InMemoryTerminalSelec
 
   override rememberTerminal(scope: string, terminalId: string): void {
     super.rememberTerminal(scope, terminalId);
-    this.mutateStoredEntries((entries) => { entries.set(scope, terminalId); });
+    this.mutateStoredEntries((entries) => {
+      entries.set(scope, terminalId);
+    });
   }
 
   override forgetWorkspace(scope: string): void {
     super.forgetWorkspace(scope);
-    this.mutateStoredEntries((entries) => { entries.delete(scope); });
+    this.mutateStoredEntries((entries) => {
+      entries.delete(scope);
+    });
   }
 
   override forgetTerminal(terminalId: string): void {
@@ -79,10 +83,13 @@ export class SessionStorageTerminalSelectionMemory extends InMemoryTerminalSelec
         this.storage?.removeItem(terminalSelectionStorageKey);
         return;
       }
-      this.storage?.setItem(terminalSelectionStorageKey, JSON.stringify({
-        version: 1,
-        entries: [...entries],
-      }));
+      this.storage?.setItem(
+        terminalSelectionStorageKey,
+        JSON.stringify({
+          version: 1,
+          entries: [...entries],
+        }),
+      );
     } catch {
       // Keep the in-memory selection when session storage is unavailable or full.
     }
@@ -93,7 +100,10 @@ export function terminalSelectionScope(machineId: string, workspacePath: string)
   return `${machineId}:${workspacePath}`;
 }
 
-export function selectPreferredTerminal(terminals: readonly TerminalInfo[], options?: { targetTerminalId?: string | undefined; latestTerminalId?: string | undefined }): TerminalInfo | undefined {
+export function selectPreferredTerminal(
+  terminals: readonly TerminalInfo[],
+  options?: { targetTerminalId?: string | undefined; latestTerminalId?: string | undefined },
+): TerminalInfo | undefined {
   const targetTerminalId = options?.targetTerminalId;
   if (targetTerminalId !== undefined && targetTerminalId !== "") return terminals.find((terminal) => terminal.id === targetTerminalId);
 
@@ -124,7 +134,8 @@ function loadEntries(storage: KeyValueStorage | undefined): [string, string][] {
     const value: unknown = JSON.parse(raw);
     if (!isRecord(value) || value["version"] !== 1 || !Array.isArray(value["entries"])) return [];
     return value["entries"].flatMap((entry): [string, string][] => {
-      if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string" || entry[0] === "" || typeof entry[1] !== "string" || entry[1] === "") return [];
+      if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== "string" || entry[0] === "" || typeof entry[1] !== "string" || entry[1] === "")
+        return [];
       return [[entry[0], entry[1]]];
     });
   } catch {

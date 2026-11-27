@@ -99,8 +99,7 @@ class GitUiController {
   ) {}
 
   canInspectWorkspace(workspace: Workspace | undefined): boolean {
-    return workspace !== undefined &&
-      (workspace.provider === undefined || workspace.provider.pluginId === this.sourcePluginId);
+    return workspace !== undefined && (workspace.provider === undefined || workspace.provider.pluginId === this.sourcePluginId);
   }
 
   state(context: WorkspacePanelContext): GitWorkspaceUiState {
@@ -171,8 +170,7 @@ class GitUiController {
         state.status = state.status?.hash === status.hash ? state.status : status;
         state.stale = false;
         const path = state.selectedDiffPath;
-        if (path !== undefined && status.files.some((file) => file.path === path)
-          && this.connectedWorkspaceKey === workspaceContextKey(context)) {
+        if (path !== undefined && status.files.some((file) => file.path === path) && this.connectedWorkspaceKey === workspaceContextKey(context)) {
           // Let the diff result resolve errors without briefly clearing a persistent failure.
           await this.refreshDiff(state, path, context, background);
         } else {
@@ -188,8 +186,14 @@ class GitUiController {
         state.statusRequest = undefined;
         const wasLoading = state.statusLoading;
         state.statusLoading = false;
-        if (wasLoading || previousStatus !== state.status || previousError !== state.error
-          || previousStale !== state.stale || previousPath !== state.selectedDiffPath) this.requestRender(state);
+        if (
+          wasLoading
+          || previousStatus !== state.status
+          || previousError !== state.error
+          || previousStale !== state.stale
+          || previousPath !== state.selectedDiffPath
+        )
+          this.requestRender(state);
       });
     state.statusRequest = request;
     return request;
@@ -354,8 +358,8 @@ class GitUiController {
       if (state.retained && state.diffRequestSequence === sequence && state.selectedDiffPath === path) {
         const wasLoading = state.diffLoading;
         state.diffLoading = false;
-        if (wasLoading || previousDiff !== state.selectedDiff || previousStagedDiff !== state.selectedStagedDiff
-          || previousError !== state.error) this.requestRender(state);
+        if (wasLoading || previousDiff !== state.selectedDiff || previousStagedDiff !== state.selectedStagedDiff || previousError !== state.error)
+          this.requestRender(state);
       }
     }
   }
@@ -375,7 +379,9 @@ function createGitActions(panelId: string, controller: GitUiController): PluginA
       shortcutAliases: ["core:view.git"],
       group: "Navigation",
       enabled: hasGitWorkspace,
-      run: (context) => { context.selectWorkspaceTool(panelId); },
+      run: (context) => {
+        context.selectWorkspaceTool(panelId);
+      },
     },
     {
       id: "workspace.refresh-git",
@@ -422,7 +428,12 @@ function requestGitBackend(context: WorkspacePanelContext, operation: string, in
   return context.peer.request(operation, input);
 }
 
-function renderGitPanel(html: HtmlTemplateTag, controller: GitUiController, context: WorkspacePanelContext, stylesheetIntegration: StylesheetIntegrationCapabilityV1 | undefined) {
+function renderGitPanel(
+  html: HtmlTemplateTag,
+  controller: GitUiController,
+  context: WorkspacePanelContext,
+  stylesheetIntegration: StylesheetIntegrationCapabilityV1 | undefined,
+) {
   const state = controller.state(context);
   const viewState = controller.viewState(state);
   return html`
@@ -435,7 +446,9 @@ function renderGitPanel(html: HtmlTemplateTag, controller: GitUiController, cont
         <div class="ui-toolbar-group git-toolbar-actions">
           ${viewState.expandablePaths.length === 0 ? null : renderExpandCollapseAll(html, controller, context, state, viewState.expandablePaths)}
           ${renderViewToggle(html, controller, context)}
-          <button type="button" class="ui-button" ?disabled=${state.statusLoading} @click=${() => { void controller.refresh(context); }}>Refresh</button>
+          <button type="button" class="ui-button" ?disabled=${state.statusLoading} @click=${() => {
+            void controller.refresh(context);
+          }}>Refresh</button>
         </div>
       </section>
       ${state.error === undefined ? null : html`<div class="git-error" role="alert">${state.error}</div>`}
@@ -458,7 +471,9 @@ function renderViewToggle(html: HtmlTemplateTag, controller: GitUiController, co
 
 function renderViewToggleButton(html: HtmlTemplateTag, controller: GitUiController, context: WorkspacePanelContext, view: GitFileView, label: string) {
   const active = controller.currentView() === view;
-  return html`<button type="button" class="ui-button" aria-pressed=${String(active)} @click=${() => { controller.setView(context, view); }}>${label}</button>`;
+  return html`<button type="button" class="ui-button" aria-pressed=${String(active)} @click=${() => {
+    controller.setView(context, view);
+  }}>${label}</button>`;
 }
 
 function renderExpandCollapseAll(
@@ -469,7 +484,9 @@ function renderExpandCollapseAll(
   expandablePaths: readonly string[],
 ) {
   const allExpanded = expandablePaths.every((path) => state.expandedDirectories.has(path));
-  return html`<button type="button" class="ui-button" @click=${() => { controller.toggleExpandAll(context, expandablePaths, allExpanded); }}>${allExpanded ? "Collapse all" : "Expand all"}</button>`;
+  return html`<button type="button" class="ui-button" @click=${() => {
+    controller.toggleExpandAll(context, expandablePaths, allExpanded);
+  }}>${allExpanded ? "Collapse all" : "Expand all"}</button>`;
 }
 
 function renderFileList(
@@ -484,9 +501,10 @@ function renderFileList(
   if (!status.isGitRepo) return html`<p class="git-muted">Not a git repository.</p>`;
   const summary = html`<p class="git-summary">${gitSummary(status)}</p>`;
   if (status.files.length === 0) return html`${summary}<p class="git-muted">No changes.</p>`;
-  const body = controller.currentView() === "tree"
-    ? viewState.nodes.map((node) => renderTreeNode(html, controller, context, state, node, 0))
-    : renderListBody(html, controller, context, state, viewState.listModel);
+  const body =
+    controller.currentView() === "tree"
+      ? viewState.nodes.map((node) => renderTreeNode(html, controller, context, state, node, 0))
+      : renderListBody(html, controller, context, state, viewState.listModel);
   return html`${summary}${body}`;
 }
 
@@ -512,14 +530,20 @@ function renderSubmoduleGroup(
 ) {
   const expanded = state.expandedDirectories.has(group.path);
   return html`
-    <button type="button" class="ui-button ui-file-row" style="--depth:0" title=${group.path} aria-expanded=${String(expanded)} @click=${() => { controller.toggleDirectory(context, group.path); }}>
+    <button type="button" class="ui-button ui-file-row" style="--depth:0" title=${group.path} aria-expanded=${String(expanded)} @click=${() => {
+      controller.toggleDirectory(context, group.path);
+    }}>
       <span class="ui-file-leading" aria-hidden="true">${expanded ? "▾" : "▸"}</span>
       <span class="ui-file-label">${group.name}${submoduleBadge(html)}</span>
     </button>
-    ${expanded ? html`
+    ${
+      expanded
+        ? html`
       ${group.pointer === undefined ? null : renderSelectableRow(html, controller, context, state, group.path, group.pointer.name, group.pointer.file, 1)}
       ${group.files.map((entry) => renderSubmoduleFileRow(html, controller, context, state, entry))}
-    ` : null}
+    `
+        : null
+    }
   `;
 }
 
@@ -544,7 +568,9 @@ function renderTreeNode(
   if (node.kind === "directory") {
     const expanded = state.expandedDirectories.has(node.path);
     return html`
-      <button type="button" class="ui-button ui-file-row" style=${`--depth:${String(depth)}`} title=${node.path} aria-expanded=${String(expanded)} @click=${() => { controller.toggleDirectory(context, node.path); }}>
+      <button type="button" class="ui-button ui-file-row" style=${`--depth:${String(depth)}`} title=${node.path} aria-expanded=${String(expanded)} @click=${() => {
+        controller.toggleDirectory(context, node.path);
+      }}>
         <span class="ui-file-leading" aria-hidden="true">${expanded ? "▾" : "▸"}</span>
         <span class="ui-file-label">${node.name}${node.isSubmodule === true ? submoduleBadge(html) : null}</span>
       </button>
@@ -554,13 +580,7 @@ function renderTreeNode(
   return renderSelectableRow(html, controller, context, state, node.path, node.name, node.file, depth);
 }
 
-function renderFileRow(
-  html: HtmlTemplateTag,
-  controller: GitUiController,
-  context: WorkspacePanelContext,
-  state: GitWorkspaceUiState,
-  file: GitStatusFile,
-) {
+function renderFileRow(html: HtmlTemplateTag, controller: GitUiController, context: WorkspacePanelContext, state: GitWorkspaceUiState, file: GitStatusFile) {
   return renderSelectableRow(html, controller, context, state, file.path, file.path, file, 0);
 }
 
@@ -576,7 +596,9 @@ function renderSelectableRow(
 ) {
   const selected = state.selectedDiffPath === path;
   return html`
-    <button type="button" class=${selected ? "ui-button ui-file-row selected" : "ui-button ui-file-row"} style=${`--depth:${String(depth)}`} title=${path} aria-current=${selected ? "page" : "false"} @click=${() => { controller.selectDiff(context, path); }}>
+    <button type="button" class=${selected ? "ui-button ui-file-row selected" : "ui-button ui-file-row"} style=${`--depth:${String(depth)}`} title=${path} aria-current=${selected ? "page" : "false"} @click=${() => {
+      controller.selectDiff(context, path);
+    }}>
       <span class="ui-file-leading" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path></svg></span>
       <span class="ui-file-label">${label}</span>
       <span class="ui-file-meta">${stateLabel(file.index, file.workingTree)}</span>
@@ -596,17 +618,21 @@ function renderDiffViewer(html: HtmlTemplateTag, state: GitWorkspaceUiState) {
 
 function renderDiffSection(html: HtmlTemplateTag, view: GitDiffView) {
   const diff = view.response;
-  const lines = view.lines ??= parseUnifiedDiff(diff.diff);
+  const lines = (view.lines ??= parseUnifiedDiff(diff.diff));
   return html`
     <section class="git-diff-section">
       <div class="git-viewer-header"><strong>${diff.path ?? "diff"}</strong><small>${diff.staged ? "staged" : "unstaged"}${diff.truncated ? " · truncated" : ""}</small></div>
-      ${lines.length === 0 ? html`<p class="git-muted">No diff.</p>` : html`
+      ${
+        lines.length === 0
+          ? html`<p class="git-muted">No diff.</p>`
+          : html`
         <div class="git-diff-scroller">
           <div class="git-diff-grid" role="table" aria-label="Unified diff">
             ${lines.map((line) => renderDiffLine(html, line))}
           </div>
         </div>
-      `}
+      `
+      }
     </section>
   `;
 }
@@ -730,8 +756,8 @@ function formatLineNumber(lineNumber: number | undefined): string {
 function createDiffView(response: GitDiffResponse, previous: GitDiffView | undefined): GitDiffView {
   if (previous?.response.hash !== response.hash) return { response, lines: undefined };
   // The hash covers diff text, not the metadata displayed beside it.
-  if (previous.response.path === response.path && previous.response.staged === response.staged
-    && previous.response.truncated === response.truncated) return previous;
+  if (previous.response.path === response.path && previous.response.staged === response.staged && previous.response.truncated === response.truncated)
+    return previous;
   return { response, lines: previous.lines };
 }
 

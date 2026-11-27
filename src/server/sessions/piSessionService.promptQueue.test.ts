@@ -8,7 +8,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PiWebConfigResponse, PiWebConfigValues } from "../../shared/apiTypes.js";
 import { appendInlineImageReferenceMapping, PiSessionService, stripInlineImageReferenceMapping } from "./piSessionService.js";
 import { createFilePiWebConfigService } from "../configRoutes.js";
-import { CapturingSessionEventHub, createTestModelRuntime, fakeRuntime, fakeSessionManager, runtimeCreator, seedCredential, sessionGateway, sessionRecord, sessionRef, TEST_MODEL_ID, TEST_MODEL_PROVIDER, testModel, testModelRuntime, type RuntimeCreator } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  createTestModelRuntime,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  seedCredential,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  TEST_MODEL_ID,
+  TEST_MODEL_PROVIDER,
+  testModel,
+  testModelRuntime,
+  type RuntimeCreator,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -16,9 +31,7 @@ describe("appendInlineImageReferenceMapping", () => {
   it("maps the exact surviving reference order to the following image blocks", () => {
     const displayText = "compare [PIC_3] and [PIC_1]";
     const providerText = appendInlineImageReferenceMapping(displayText, ["[PIC_1]", "[PIC_3]"]);
-    expect(providerText).toBe(
-      "compare [PIC_3] and [PIC_1]\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]\n2. [PIC_3]",
-    );
+    expect(providerText).toBe("compare [PIC_3] and [PIC_1]\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]\n2. [PIC_3]");
     expect(stripInlineImageReferenceMapping(providerText)).toBe(displayText);
   });
 });
@@ -26,7 +39,10 @@ describe("appendInlineImageReferenceMapping", () => {
 function namingConfigResponse(sessionNaming?: PiWebConfigValues["sessionNaming"]): PiWebConfigResponse {
   const config = sessionNaming === undefined ? {} : { sessionNaming };
   return {
-    path: "/tmp/pi-web/config.json", exists: true, config, effectiveConfig: config,
+    path: "/tmp/pi-web/config.json",
+    exists: true,
+    config,
+    effectiveConfig: config,
     envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
   };
 }
@@ -68,18 +84,24 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       sessionManager: sessionGateway([sessionRecord("image-text-session")]),
       heartbeatIntervalMs: 60_000,
     });
-    const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
-    const displayTexts = [
-      "/Users/thomas/project screenshot [PIC_1]",
-      "  /not-a-command inspect [PIC_1]\n",
-    ];
+    const attachment = {
+      kind: "image",
+      reference: "[PIC_1]",
+      mimeType: "image/png",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    };
+    const displayTexts = ["/Users/thomas/project screenshot [PIC_1]", "  /not-a-command inspect [PIC_1]\n"];
 
     for (const displayText of displayTexts) await service.prompt(sessionRef("image-text-session"), displayText, undefined, [attachment]);
 
     expect(fake.calls.prompt.map(({ text }) => text)).toEqual(displayTexts.map((text) => appendInlineImageReferenceMapping(text, ["[PIC_1]"])));
     const appendEvents = hub.sessionEvents.filter(({ event }) => event.type === "message.append").map(({ event }) => JSON.stringify(event));
     expect(appendEvents).toHaveLength(displayTexts.length);
-    expect(appendEvents.every((event, index) => event.includes(JSON.stringify(displayTexts[index] ?? "").slice(1, -1)) && !event.includes("Image blocks immediately following"))).toBe(true);
+    expect(
+      appendEvents.every(
+        (event, index) => event.includes(JSON.stringify(displayTexts[index] ?? "").slice(1, -1)) && !event.includes("Image blocks immediately following"),
+      ),
+    ).toBe(true);
     await service.dispose();
   });
 
@@ -104,10 +126,14 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     expect(fake.calls.prompt[0]?.text).toBe(appendInlineImageReferenceMapping("compare [PIC_1] with [PIC_2]", ["[PIC_2]", "[PIC_1]"]));
     const options = fake.calls.prompt[0]?.options;
     const images: unknown = typeof options === "object" && options !== null ? Reflect.get(options, "images") : undefined;
-    expect(Array.isArray(images) ? images.map((image: unknown) => {
-      const data: unknown = typeof image === "object" && image !== null ? Reflect.get(image, "data") : undefined;
-      return data;
-    }) : []).toEqual([bluePixel, redPixel]);
+    expect(
+      Array.isArray(images)
+        ? images.map((image: unknown) => {
+            const data: unknown = typeof image === "object" && image !== null ? Reflect.get(image, "data") : undefined;
+            return data;
+          })
+        : [],
+    ).toEqual([bluePixel, redPixel]);
     await service.dispose();
   });
 
@@ -121,7 +147,11 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       sessionManager: sessionGateway([sessionRecord("old-client-image-session")]),
       heartbeatIntervalMs: 60_000,
     });
-    const legacyAttachment = { kind: "image", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+    const legacyAttachment = {
+      kind: "image",
+      mimeType: "image/png",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    };
 
     await service.prompt(sessionRef("old-client-image-session"), "legacy image", undefined, [legacyAttachment]);
 
@@ -169,7 +199,12 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       sessionManager: sessionGateway([sessionRecord("queued-image-text-session")]),
       heartbeatIntervalMs: 60_000,
     });
-    const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+    const attachment = {
+      kind: "image",
+      reference: "[PIC_1]",
+      mimeType: "image/png",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    };
     const providerText = appendInlineImageReferenceMapping("inspect [PIC_1]", ["[PIC_1]"]);
 
     await service.prompt(sessionRef("queued-image-text-session"), "inspect [PIC_1]", "followUp", [attachment]);
@@ -185,7 +220,9 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const fake = fakeRuntime("slash-image-session");
     fake.session.extensionRunner.getRegisteredCommands = () => [{ invocationName: "command" }];
     fake.session.promptTemplates = [{ name: "template-name" }];
-    fake.session.resourceLoader.getSkills = () => ({ skills: [{ name: "skill-name", filePath: "/skills/skill-name/SKILL.md", baseDir: "/skills/skill-name" }] });
+    fake.session.resourceLoader.getSkills = () => ({
+      skills: [{ name: "skill-name", filePath: "/skills/skill-name/SKILL.md", baseDir: "/skills/skill-name" }],
+    });
     const hub = new CapturingSessionEventHub();
     const service = new PiSessionService(hub, {
       agentDir: TEST_AGENT_DIR,
@@ -194,7 +231,12 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       sessionManager: sessionGateway([sessionRecord("slash-image-session")]),
       heartbeatIntervalMs: 60_000,
     });
-    const attachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" };
+    const attachment = {
+      kind: "image",
+      reference: "[PIC_1]",
+      mimeType: "image/png",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    };
     const prompts = [
       ["/model inspect [PIC_1]", "/model inspect"],
       ["/command [PIC_1] --raw", "/command --raw"],
@@ -209,11 +251,13 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const displayed = hub.sessionEvents.filter(({ event }) => event.type === "message.append").map(({ event }) => JSON.stringify(event));
     expect(displayed).toHaveLength(cleaned.length);
     expect(displayed.every((event, index) => event.includes(cleaned[index] ?? "") && !event.includes("[PIC_1]"))).toBe(true);
-    expect(fake.calls.prompt.every(({ options }) => {
-      if (typeof options !== "object" || options === null) return false;
-      const images: unknown = Reflect.get(options, "images");
-      return Array.isArray(images) && images.length === 1;
-    })).toBe(true);
+    expect(
+      fake.calls.prompt.every(({ options }) => {
+        if (typeof options !== "object" || options === null) return false;
+        const images: unknown = Reflect.get(options, "images");
+        return Array.isArray(images) && images.length === 1;
+      }),
+    ).toBe(true);
 
     const legacyAttachment = { kind: "image", mimeType: "image/png", data: attachment.data };
     await service.prompt(sessionRef("slash-image-session"), "  /command literal [PIC_1]\n", undefined, [legacyAttachment]);
@@ -252,7 +296,9 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
 
   it("echoes the user message for direct prompts but not command-forwarded ones", async () => {
     const fake = fakeRuntime("echo-session", {
-      resourceLoader: { getSkills: () => ({ skills: [{ name: "skill-creator", filePath: "/skills/skill-creator/SKILL.md", baseDir: "/skills/skill-creator" }] }) },
+      resourceLoader: {
+        getSkills: () => ({ skills: [{ name: "skill-creator", filePath: "/skills/skill-creator/SKILL.md", baseDir: "/skills/skill-creator" }] }),
+      },
     });
     const hub = new CapturingSessionEventHub();
     const service = new PiSessionService(hub, {
@@ -335,7 +381,9 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     });
 
     await service.prompt(sessionRef("name-session"), "Please fix the login bug");
-    await vi.waitFor(() => { expect(fake.session.sessionName).toBe("Fix login bug"); });
+    await vi.waitFor(() => {
+      expect(fake.session.sessionName).toBe("Fix login bug");
+    });
 
     expect(streamCalls).toHaveLength(1);
     expect(streamCalls[0]).toMatchObject({ streamModel: configured ? namingModel : model, options: { maxTokens: configured ? 2048 : 24 } });
@@ -357,50 +405,76 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const streamFn: StreamFn = (model, _context, options) => {
       const stream = createAssistantMessageEventStream();
       const message: AssistantMessage = {
-        role: "assistant", content: [{ type: "text", text: "Generated title" }],
-        api: model.api, provider: model.provider, model: model.id,
+        role: "assistant",
+        content: [{ type: "text", text: "Generated title" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        stopReason: "stop", timestamp: Date.now(),
+        stopReason: "stop",
+        timestamp: Date.now(),
       };
       calls.push({
-        model: `${model.provider}/${model.id}`, maxTokens: options?.maxTokens, reasoning: options?.reasoning, timeoutMs: timeout.mock.lastCall?.[0],
-        finish: () => { stream.push({ type: "done", reason: "stop", message }); stream.end(message); },
+        model: `${model.provider}/${model.id}`,
+        maxTokens: options?.maxTokens,
+        reasoning: options?.reasoning,
+        timeoutMs: timeout.mock.lastCall?.[0],
+        finish: () => {
+          stream.push({ type: "done", reason: "stop", message });
+          stream.end(message);
+        },
       });
       return stream;
     };
-    const fakes = ["live-first", "live-second", "live-third"].map((id) => fakeRuntime(id, { model: sessionModel, thinkingLevel: "high", agent: { streamFunction: streamFn } }));
+    const fakes = ["live-first", "live-second", "live-third"].map((id) =>
+      fakeRuntime(id, { model: sessionModel, thinkingLevel: "high", agent: { streamFunction: streamFn } }),
+    );
     const remaining = [...fakes];
     const service = new PiSessionService(new CapturingSessionEventHub(), {
-      agentDir: TEST_AGENT_DIR, modelRuntime: testModelRuntime,
+      agentDir: TEST_AGENT_DIR,
+      modelRuntime: testModelRuntime,
       sessionManager: sessionGateway(fakes.map((fake) => sessionRecord(fake.session.sessionId))),
       createAgentRuntime: () => {
         const next = remaining.shift();
         if (next === undefined) throw new Error("Unexpected runtime open");
         return Promise.resolve(next.runtime);
       },
-      config: { read }, heartbeatIntervalMs: 60_000,
+      config: { read },
+      heartbeatIntervalMs: 60_000,
     });
     try {
       await service.prompt(sessionRef("live-first"), "First request");
-      await vi.waitFor(() => { expect(calls).toHaveLength(1); });
+      await vi.waitFor(() => {
+        expect(calls).toHaveLength(1);
+      });
       await config.write({ sessionNaming: { model: `${alternate.provider}/${alternate.id}`, maxTokens: 2048, thinkingLevel: "off", timeoutMs: 90_000 } });
       expect(calls[0]).toMatchObject({ model: `${sessionModel.provider}/${sessionModel.id}`, maxTokens: 24, reasoning: "minimal", timeoutMs: 10_000 });
       calls[0]?.finish();
-      await vi.waitFor(() => { expect(fakes[0]?.session.sessionName).toBe("Generated title"); });
+      await vi.waitFor(() => {
+        expect(fakes[0]?.session.sessionName).toBe("Generated title");
+      });
 
       await service.prompt(sessionRef("live-second"), "Second request");
-      await vi.waitFor(() => { expect(calls).toHaveLength(2); });
+      await vi.waitFor(() => {
+        expect(calls).toHaveLength(2);
+      });
       expect(calls[1]).toMatchObject({ model: `${alternate.provider}/${alternate.id}`, maxTokens: 2048, reasoning: undefined, timeoutMs: 90_000 });
       // Direct file edits must work too, without a save notification or reload.
       await writeFile(configPath, "{}\n", "utf8");
       calls[1]?.finish();
-      await vi.waitFor(() => { expect(fakes[1]?.session.sessionName).toBe("Generated title"); });
+      await vi.waitFor(() => {
+        expect(fakes[1]?.session.sessionName).toBe("Generated title");
+      });
 
       await service.prompt(sessionRef("live-third"), "Third request");
-      await vi.waitFor(() => { expect(calls).toHaveLength(3); });
+      await vi.waitFor(() => {
+        expect(calls).toHaveLength(3);
+      });
       expect(calls[2]).toMatchObject({ model: `${sessionModel.provider}/${sessionModel.id}`, maxTokens: 24, reasoning: "minimal", timeoutMs: 10_000 });
       calls[2]?.finish();
-      await vi.waitFor(() => { expect(fakes[2]?.session.sessionName).toBe("Generated title"); });
+      await vi.waitFor(() => {
+        expect(fakes[2]?.session.sessionName).toBe("Generated title");
+      });
       await service.prompt(sessionRef("live-first"), "Another request");
       expect(calls).toHaveLength(3);
       expect(read).toHaveBeenCalledTimes(3);
@@ -422,16 +496,20 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       modelRuntime: testModelRuntime,
       createAgentRuntime: runtimeCreator(fake.runtime),
       sessionManager: sessionGateway([sessionRecord("missing-naming-model")]),
-      config: { read: () => {
-        if (readFails) throw expectedError;
-        return namingConfigResponse({ model: "missing-provider/missing-model" });
-      } },
+      config: {
+        read: () => {
+          if (readFails) throw expectedError;
+          return namingConfigResponse({ model: "missing-provider/missing-model" });
+        },
+      },
       logger: { info },
       heartbeatIntervalMs: 60_000,
     });
     try {
       await service.prompt(sessionRef("missing-naming-model"), "Please fix the login bug");
-      await vi.waitFor(() => { expect(fake.session.sessionName).toBe("Please fix the login bug"); });
+      await vi.waitFor(() => {
+        expect(fake.session.sessionName).toBe("Please fix the login bug");
+      });
       expect(fake.calls.prompt).toHaveLength(1);
       expect(info).toHaveBeenCalledWith({ sessionId: "missing-naming-model", err: expectedError }, "Session naming failed; using the first-message fallback");
     } finally {
@@ -440,7 +518,10 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
   });
 
   it("includes queued message details in session status", async () => {
-    const messages = [{ role: "user", content: "hello" }, { role: "assistant", content: "hi" }];
+    const messages = [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+    ];
     const fake = fakeRuntime("status-session", {
       messages,
       sessionManager: fakeSessionManager("/workspace", {
@@ -460,7 +541,10 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
 
     await expect(service.status(sessionRef("status-session"))).resolves.toMatchObject({
       pendingMessageCount: 2,
-      queuedMessages: [{ kind: "steer", text: "adjust this turn" }, { kind: "followUp", text: "then do this" }],
+      queuedMessages: [
+        { kind: "steer", text: "adjust this turn" },
+        { kind: "followUp", text: "then do this" },
+      ],
       messageCount: 2,
     });
     await service.dispose();
@@ -512,7 +596,9 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       fake.calls.prompt.push({ text, options });
       if (options === undefined) {
         fake.session.isStreaming = true;
-        return new Promise<void>((resolve) => { resolveFirstPrompt = resolve; });
+        return new Promise<void>((resolve) => {
+          resolveFirstPrompt = resolve;
+        });
       }
       return Promise.resolve();
     };
@@ -531,7 +617,10 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     expect(hub.sessionEvents.some(({ event }) => event.type === "message.append")).toBe(false);
     await expect(service.status(sessionRef("compacting-session"))).resolves.toMatchObject({
       pendingMessageCount: 2,
-      queuedMessages: [{ kind: "followUp", text: "Start task 1" }, { kind: "followUp", text: "Then task 2" }],
+      queuedMessages: [
+        { kind: "followUp", text: "Start task 1" },
+        { kind: "followUp", text: "Then task 2" },
+      ],
     });
 
     fake.session.isCompacting = false;
@@ -592,13 +681,17 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       operations.push(`steer:${text}`);
       steeringMessages.push(text);
       requeuedImages.push(images);
-      return new Promise<void>((resolve) => { releases.push(resolve); });
+      return new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
     };
     fake.session.followUp = (text, images) => {
       operations.push(`followUp:${text}`);
       followUpMessages.push(text);
       requeuedImages.push(images);
-      return new Promise<void>((resolve) => { releases.push(resolve); });
+      return new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
     };
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
@@ -607,7 +700,13 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       sessionManager: sessionGateway([sessionRecord("promote-one-session")]),
       heartbeatIntervalMs: 60_000,
     });
-    const imageAttachment = { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", name: "pixel.png" };
+    const imageAttachment = {
+      kind: "image",
+      reference: "[PIC_1]",
+      mimeType: "image/png",
+      data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      name: "pixel.png",
+    };
     const promotedText = appendInlineImageReferenceMapping("promote me", [imageAttachment.reference]);
     await service.prompt(sessionRef("promote-one-session"), "existing steer", "steer");
     await service.prompt(sessionRef("promote-one-session"), "promote me", "followUp", [imageAttachment]);
@@ -617,13 +716,17 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     const originalImages: unknown = Reflect.get(originalOptions, "images");
 
     const promotion = service.promoteQueuedMessage(sessionRef("promote-one-session"), { kind: "followUp", text: "promote me" });
-    await vi.waitFor(() => { expect(operations).toHaveLength(4); });
+    await vi.waitFor(() => {
+      expect(operations).toHaveLength(4);
+    });
 
     expect(operations).toEqual(["clear", "steer:existing steer", `steer:${promotedText}`, "followUp:keep later"]);
     expect(steeringMessages).toEqual(["existing steer", promotedText]);
     expect(followUpMessages).toEqual(["keep later"]);
     expect(requeuedImages[1]).toEqual(originalImages);
-    releases.forEach((release) => { release(); });
+    releases.forEach((release) => {
+      release();
+    });
     await expect(promotion).resolves.toMatchObject({
       queuedMessages: [
         { kind: "steer", text: "existing steer" },
@@ -895,19 +998,17 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
       try {
         await writeLocalModelsConfig(modelsPath, "listed-model");
         const listed = await service.availableModels(sessionRef("models-session"));
-        expect(listed).toEqual(expect.arrayContaining([
-          expect.objectContaining({ provider: "test-local", id: "listed-model" }),
-        ]));
-        expect(listed).not.toEqual(expect.arrayContaining([
-          expect.objectContaining({ provider: "test-local", id: "initial-model" }),
-        ]));
+        expect(listed).toEqual(expect.arrayContaining([expect.objectContaining({ provider: "test-local", id: "listed-model" })]));
+        expect(listed).not.toEqual(expect.arrayContaining([expect.objectContaining({ provider: "test-local", id: "initial-model" })]));
 
         await writeLocalModelsConfig(modelsPath, "selected-model");
         await expect(service.setModel(sessionRef("models-session"), "test-local", "selected-model")).resolves.toBeDefined();
-        expect(setSessionModel).toHaveBeenCalledWith(expect.objectContaining({
-          provider: "test-local",
-          id: "selected-model",
-        }));
+        expect(setSessionModel).toHaveBeenCalledWith(
+          expect.objectContaining({
+            provider: "test-local",
+            id: "selected-model",
+          }),
+        );
       } finally {
         await service.dispose();
       }
@@ -946,7 +1047,10 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
     service.applyAuthChange({ removedProviderId: "anthropic" });
     service.applyAuthChange({ removedProviderId: "anthropic" });
 
-    const warningCount = () => hub.sessionEvents.filter(({ event }) => event.type === "command.output" && event.level === "error" && event.message.includes(`${TEST_MODEL_PROVIDER}/${TEST_MODEL_ID}`)).length;
+    const warningCount = () =>
+      hub.sessionEvents.filter(
+        ({ event }) => event.type === "command.output" && event.level === "error" && event.message.includes(`${TEST_MODEL_PROVIDER}/${TEST_MODEL_ID}`),
+      ).length;
     expect(warningCount()).toBe(1);
     expect(hub.globalEvents.some((event) => event.type === "status.update" && event.status.sessionId === "auth-session")).toBe(true);
 
@@ -980,23 +1084,28 @@ describe("PiSessionService prompt, queue, and auth warnings", () => {
 });
 
 async function writeLocalModelsConfig(path: string, modelId: string): Promise<void> {
-  await writeFile(path, JSON.stringify({
-    providers: {
-      "test-local": {
-        name: "Test Local",
-        baseUrl: "http://127.0.0.1:1234/v1",
-        apiKey: "offline-test-key",
-        api: "openai-completions",
-        models: [{
-          id: modelId,
-          name: modelId,
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 1_000,
-          maxTokens: 100,
-        }],
+  await writeFile(
+    path,
+    JSON.stringify({
+      providers: {
+        "test-local": {
+          name: "Test Local",
+          baseUrl: "http://127.0.0.1:1234/v1",
+          apiKey: "offline-test-key",
+          api: "openai-completions",
+          models: [
+            {
+              id: modelId,
+              name: modelId,
+              reasoning: false,
+              input: ["text"],
+              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              contextWindow: 1_000,
+              maxTokens: 100,
+            },
+          ],
+        },
       },
-    },
-  }));
+    }),
+  );
 }

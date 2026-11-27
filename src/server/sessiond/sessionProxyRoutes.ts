@@ -1,10 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { WebSocket, type RawData } from "ws";
-import {
-  SessionDaemonClient,
-  type SessionDaemonRequestOptions,
-  type SessionDaemonStreamResponse,
-} from "../../sessiond/sessionDaemonClient.js";
+import { SessionDaemonClient, type SessionDaemonRequestOptions, type SessionDaemonStreamResponse } from "../../sessiond/sessionDaemonClient.js";
 import { requestCancellation } from "../requestCancellation.js";
 
 export interface SessionProxyDaemon {
@@ -20,7 +16,11 @@ export interface SessionProxyDaemon {
 
 export function registerSessionProxyRoutes(app: FastifyInstance, daemon: SessionProxyDaemon = new SessionDaemonClient(), prefix = "/api"): void {
   // Browser operations wait out a daemon restart; the health and runtime probes report it down at once.
-  const proxy = async (request: { method: string; url: string; body?: unknown }, reply: FastifyReply, startup: SessionDaemonRequestOptions = { waitForStartup: true }) => {
+  const proxy = async (
+    request: { method: string; url: string; body?: unknown },
+    reply: FastifyReply,
+    startup: SessionDaemonRequestOptions = { waitForStartup: true },
+  ) => {
     try {
       const upstream = await daemon.request(request.method, stripPrefix(request.url, prefix), request.body, startup);
       reply.code(upstream.statusCode);
@@ -112,12 +112,24 @@ function requestFailed(reply: FastifyReply, error: unknown): void {
 }
 
 function bridgeSockets(client: WebSocket, upstream: WebSocket): void {
-  client.on("message", (data, isBinary) => { sendIfOpen(upstream, data, isBinary); });
-  upstream.on("message", (data, isBinary) => { sendIfOpen(client, data, isBinary); });
-  client.on("close", () => { upstream.close(); });
-  upstream.on("close", () => { client.close(); });
-  upstream.on("error", () => { client.close(); });
-  client.on("error", () => { upstream.close(); });
+  client.on("message", (data, isBinary) => {
+    sendIfOpen(upstream, data, isBinary);
+  });
+  upstream.on("message", (data, isBinary) => {
+    sendIfOpen(client, data, isBinary);
+  });
+  client.on("close", () => {
+    upstream.close();
+  });
+  upstream.on("close", () => {
+    client.close();
+  });
+  upstream.on("error", () => {
+    client.close();
+  });
+  client.on("error", () => {
+    upstream.close();
+  });
 }
 
 function sendIfOpen(socket: WebSocket, data: RawData, isBinary: boolean): void {

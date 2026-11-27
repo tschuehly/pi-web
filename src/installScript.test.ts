@@ -20,12 +20,7 @@ describe.skipIf(process.platform === "win32")("global install script", () => {
 
     await execUtf8("sh", [installerPath], fixture.env);
 
-    expect((await readFile(fixture.npmArgsPath, "utf8")).trim().split("\n")).toEqual([
-      "install",
-      "-g",
-      "@jmfederico/pi-web",
-      "--allow-scripts=node-pty",
-    ]);
+    expect((await readFile(fixture.npmArgsPath, "utf8")).trim().split("\n")).toEqual(["install", "-g", "@jmfederico/pi-web", "--allow-scripts=node-pty"]);
     expect((await readFile(fixture.piWebArgsPath, "utf8")).trim().split("\n")).toEqual(["install"]);
   });
 });
@@ -42,8 +37,8 @@ async function createFixture(): Promise<{
   const npmPath = join(root, "npm");
   const piWebPath = join(root, "pi-web");
   await Promise.all([
-    writeFile(npmPath, "#!/usr/bin/env sh\nprintf '%s\\n' \"$@\" > \"$FAKE_NPM_ARGS\"\n"),
-    writeFile(piWebPath, "#!/usr/bin/env sh\nprintf '%s\\n' \"$@\" > \"$FAKE_PI_WEB_ARGS\"\n"),
+    writeFile(npmPath, '#!/usr/bin/env sh\nprintf \'%s\\n\' "$@" > "$FAKE_NPM_ARGS"\n'),
+    writeFile(piWebPath, '#!/usr/bin/env sh\nprintf \'%s\\n\' "$@" > "$FAKE_PI_WEB_ARGS"\n'),
   ]);
   await Promise.all([chmod(npmPath, 0o755), chmod(piWebPath, 0o755)]);
   return {

@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 
-import type { JsonValue, PluginPeerChannelOptions, PluginPeer, StylesheetIntegrationCapabilityV1, WorkspacePanelContext, WorkspacePanelNavigationV1 } from "@jmfederico/pi-web/plugin-api";
+import type {
+  JsonValue,
+  PluginPeerChannelOptions,
+  PluginPeer,
+  StylesheetIntegrationCapabilityV1,
+  WorkspacePanelContext,
+  WorkspacePanelNavigationV1,
+} from "@jmfederico/pi-web/plugin-api";
 import { Terminal, type ITerminalOptions } from "@xterm/xterm";
 import * as xterm from "@xterm/xterm";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -26,7 +33,9 @@ describe("Terminal panel lifecycle", () => {
     panel.stylesheetIntegration = {
       registerRoot: (root) => {
         roots.add(root);
-        return () => { roots.delete(root); };
+        return () => {
+          roots.delete(root);
+        };
       },
       createController: vi.fn(),
       subscribe: () => () => undefined,
@@ -39,8 +48,7 @@ describe("Terminal panel lifecycle", () => {
     Reflect.set(panel, "softKeysEnabled", true);
     await panel.updateComplete;
 
-    expect(panel.shadowRoot?.querySelector(TERMINAL_SOFT_KEYS_ELEMENT)?.localName)
-      .toBe(TERMINAL_SOFT_KEYS_ELEMENT);
+    expect(panel.shadowRoot?.querySelector(TERMINAL_SOFT_KEYS_ELEMENT)?.localName).toBe(TERMINAL_SOFT_KEYS_ELEMENT);
     expect(panel.shadowRoot?.querySelector("pi-web-terminal-soft-keys-terminal")).toBeNull();
     const keys = panel.shadowRoot?.querySelector(TERMINAL_SOFT_KEYS_ELEMENT);
     expect(roots).toEqual(new Set([panel.shadowRoot, keys?.shadowRoot]));
@@ -245,8 +253,7 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const memory = new InMemoryTerminalSelectionMemory();
     const runtime = new TerminalBrowserRuntime(memory);
-    const request = vi.fn((operation: string): Promise<JsonValue> =>
-      Promise.resolve(operation === "terminal.list" ? [terminalInfo("remembered-shell")] : []));
+    const request = vi.fn((operation: string): Promise<JsonValue> => Promise.resolve(operation === "terminal.list" ? [terminalInfo("remembered-shell")] : []));
     const rejectedNavigation = vi.fn(() => false);
     const context = terminalContext({
       peer: terminalPeer(request),
@@ -278,9 +285,9 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const create = deferred<JsonValue>();
     const setNavigation = vi.fn(() => true);
-    const request = vi.fn((operation: string): Promise<JsonValue> => operation === "terminal.create"
-      ? create.promise
-      : Promise.resolve(operation === "terminal.list" ? [terminalInfo("old-shell")] : []));
+    const request = vi.fn((operation: string): Promise<JsonValue> =>
+      operation === "terminal.create" ? create.promise : Promise.resolve(operation === "terminal.list" ? [terminalInfo("old-shell")] : []),
+    );
     panel.context = terminalContext({ peer: terminalPeer(request), navigation: { ...terminalNavigation(), set: setNavigation } });
     panel.runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
     Reflect.set(panel, "visible", true);
@@ -313,11 +320,16 @@ describe("Terminal panel lifecycle", () => {
     const explicitPanel = createTerminalPanel();
     const setNavigation = vi.fn();
     const explicitRequest = vi.fn((operation: string): Promise<JsonValue> =>
-      Promise.resolve(operation === "terminal.create" ? terminalInfo("created-terminal") : []));
-    Reflect.set(explicitPanel, "context", terminalContext({
-      peer: terminalPeer(explicitRequest),
-      navigation: { ...terminalNavigation(undefined, "open-1"), set: setNavigation },
-    }));
+      Promise.resolve(operation === "terminal.create" ? terminalInfo("created-terminal") : []),
+    );
+    Reflect.set(
+      explicitPanel,
+      "context",
+      terminalContext({
+        peer: terminalPeer(explicitRequest),
+        navigation: { ...terminalNavigation(undefined, "open-1"), set: setNavigation },
+      }),
+    );
     Reflect.set(explicitPanel, "runtime", new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory()));
     callPanelMethod(explicitPanel, "willUpdate");
 
@@ -332,8 +344,7 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
     const setNavigation = vi.fn(() => false);
-    const request = vi.fn((operation: string): Promise<JsonValue> =>
-      Promise.resolve(operation === "terminal.create" ? terminalInfo("created-terminal") : []));
+    const request = vi.fn((operation: string): Promise<JsonValue> => Promise.resolve(operation === "terminal.create" ? terminalInfo("created-terminal") : []));
     const context = terminalContext({
       peer: terminalPeer(request),
       navigation: { ...terminalNavigation(undefined, "open-1"), set: setNavigation },
@@ -369,14 +380,16 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
     const pendingCreate = deferred<JsonValue>();
-    const request = vi.fn((operation: string): Promise<JsonValue> => operation === "terminal.create" ? pendingCreate.promise : Promise.resolve([]));
+    const request = vi.fn((operation: string): Promise<JsonValue> => (operation === "terminal.create" ? pendingCreate.promise : Promise.resolve([])));
     const initialContext = terminalContext({ peer: terminalPeer(request) });
     Reflect.set(panel, "context", initialContext);
     Reflect.set(panel, "runtime", runtime);
     callPanelMethod(panel, "willUpdate");
 
     const starting = callAsyncPanelMethod(panel, "startTerminal");
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledWith("terminal.create", expect.anything(), expect.anything()); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledWith("terminal.create", expect.anything(), expect.anything());
+    });
 
     const setNavigation = vi.fn();
     const newerContext = terminalContext({
@@ -403,9 +416,9 @@ describe("Terminal panel lifecycle", () => {
     const secondCreate = deferred<JsonValue>();
     const creates = [firstCreate, secondCreate];
     const setNavigation = vi.fn();
-    const request = vi.fn((operation: string): Promise<JsonValue> => operation === "terminal.create"
-      ? (creates.shift()?.promise ?? Promise.reject(new Error("Unexpected terminal create")))
-      : Promise.resolve([]));
+    const request = vi.fn((operation: string): Promise<JsonValue> =>
+      operation === "terminal.create" ? (creates.shift()?.promise ?? Promise.reject(new Error("Unexpected terminal create"))) : Promise.resolve([]),
+    );
     const context = terminalContext({
       peer: terminalPeer(request),
       navigation: { ...terminalNavigation(undefined), set: setNavigation },
@@ -473,7 +486,10 @@ describe("Terminal panel lifecycle", () => {
   });
 
   it.each([
-    ["load", "load"], ["load", "start"], ["start", "load"], ["start", "start"],
+    ["load", "load"],
+    ["load", "start"],
+    ["start", "load"],
+    ["start", "start"],
   ] as const)("preserves shell creation with %s initiated first and %s settled first", async (initiatedFirst, settledFirst) => {
     const panel = createTerminalPanel();
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
@@ -517,8 +533,9 @@ describe("Terminal panel lifecycle", () => {
   it("does not resurrect a successfully closed terminal from an in-flight list", async () => {
     const panel = createTerminalPanel();
     const listing = deferred<JsonValue>();
-    const request = vi.fn((operation: string): Promise<JsonValue> => operation === "terminal.list"
-      ? listing.promise : Promise.resolve(operation === "terminal.close" ? { closed: true } : []));
+    const request = vi.fn((operation: string): Promise<JsonValue> =>
+      operation === "terminal.list" ? listing.promise : Promise.resolve(operation === "terminal.close" ? { closed: true } : []),
+    );
     Reflect.set(panel, "context", terminalContext({ peer: terminalPeer(request) }));
     Reflect.set(panel, "runtime", new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory()));
     callPanelMethod(panel, "willUpdate");
@@ -552,7 +569,9 @@ describe("Terminal panel lifecycle", () => {
     callPanelMethod(panel, "willUpdate");
 
     const starting = callAsyncPanelMethod(panel, "startTerminal");
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledWith("terminal.create", expect.anything(), expect.anything()); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledWith("terminal.create", expect.anything(), expect.anything());
+    });
     Reflect.set(panel, "context", contextB);
     callPanelMethod(panel, "willUpdate");
 
@@ -669,7 +688,11 @@ describe("Terminal panel lifecycle", () => {
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect(listings).toBe(2);
-      for (const [delay, expected] of [[1_000, 3], [2_000, 4], [5_000, 5]] as const) {
+      for (const [delay, expected] of [
+        [1_000, 3],
+        [2_000, 4],
+        [5_000, 5],
+      ] as const) {
         await vi.advanceTimersByTimeAsync(delay - 1);
         expect(listings).toBe(expected - 1);
         await vi.advanceTimersByTimeAsync(1);
@@ -700,8 +723,7 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const memory = new InMemoryTerminalSelectionMemory();
     const runtime = new TerminalBrowserRuntime(memory);
-    const request = vi.fn((operation: string): Promise<JsonValue> =>
-      Promise.resolve(operation === "terminal.list" ? [terminalInfo("terminal-live")] : []));
+    const request = vi.fn((operation: string): Promise<JsonValue> => Promise.resolve(operation === "terminal.list" ? [terminalInfo("terminal-live")] : []));
     // The host rejects the fallback selection write, so the requested terminal stays
     // absent from the list and the reload reason never clears on its own.
     const context = terminalContext({
@@ -720,10 +742,7 @@ describe("Terminal panel lifecycle", () => {
       await vi.advanceTimersByTimeAsync(1_000);
     }
 
-    expect(request.mock.calls.map(([operation]) => operation)).toEqual([
-      "terminal.list", "terminal.list-runs",
-      "terminal.list", "terminal.list-runs",
-    ]);
+    expect(request.mock.calls.map(([operation]) => operation)).toEqual(["terminal.list", "terminal.list-runs", "terminal.list", "terminal.list-runs"]);
     panel.disconnectedCallback();
   });
 
@@ -763,10 +782,7 @@ describe("Terminal panel lifecycle", () => {
       await vi.advanceTimersByTimeAsync(1_000);
     }
 
-    expect(request.mock.calls.map(([operation]) => operation)).toEqual([
-      "terminal.list", "terminal.list-runs",
-      "terminal.list", "terminal.list-runs",
-    ]);
+    expect(request.mock.calls.map(([operation]) => operation)).toEqual(["terminal.list", "terminal.list-runs", "terminal.list", "terminal.list-runs"]);
     expect(Reflect.get(panel, "selectedId")).toBe("terminal-live");
     panel.disconnectedCallback();
   });
@@ -787,7 +803,9 @@ describe("Terminal panel lifecycle", () => {
     Reflect.set(panel, "commandRuns", [commandRun("running")]);
 
     const loading = callAsyncPanelMethod(panel, "loadCommandRuns");
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledOnce();
+    });
     panel.disconnectedCallback();
     expect(requestSignal?.aborted).toBe(true);
     pendingRuns.resolve([commandRun("running")]);
@@ -832,7 +850,12 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const channel = { closed: new Promise<never>(() => undefined), send: vi.fn(), close: vi.fn() };
     const openChannel = vi.fn(() => Promise.resolve(channel));
-    const context = terminalContext({ peer: terminalPeer(vi.fn(() => Promise.resolve([])), openChannel) });
+    const context = terminalContext({
+      peer: terminalPeer(
+        vi.fn(() => Promise.resolve([])),
+        openChannel,
+      ),
+    });
     const terminal = { reset: vi.fn(), write: vi.fn(), writeln: vi.fn(), dispose: vi.fn() };
     Reflect.set(panel, "context", context);
     Reflect.set(panel, "visible", true);
@@ -840,12 +863,20 @@ describe("Terminal panel lifecycle", () => {
     Reflect.set(panel, "terminals", [terminalInfo("terminal-1")]);
     Reflect.set(panel, "terminal", terminal);
     Reflect.set(panel, "channelGeneration", 1);
-    Reflect.set(panel, "loadTerminals", vi.fn(() => Promise.resolve()));
+    Reflect.set(
+      panel,
+      "loadTerminals",
+      vi.fn(() => Promise.resolve()),
+    );
 
     callPanelMethod(panel, "handleChannelClosed", 1, "terminal-1", terminal, { code: 1000, reason: "done", wasClean: true });
 
-    await vi.waitFor(() => { expect(openChannel).toHaveBeenCalledOnce(); });
-    await vi.waitFor(() => { expect(terminal.reset).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(openChannel).toHaveBeenCalledOnce();
+    });
+    await vi.waitFor(() => {
+      expect(terminal.reset).toHaveBeenCalledOnce();
+    });
     panel.disconnectedCallback();
   });
 
@@ -862,7 +893,12 @@ describe("Terminal panel lifecycle", () => {
       options.onData({ type: "output", data: "replayed output", replay: true, replayComplete: true });
       return Promise.resolve(channel);
     });
-    const context = terminalContext({ peer: terminalPeer(vi.fn(() => Promise.resolve([])), openChannel) });
+    const context = terminalContext({
+      peer: terminalPeer(
+        vi.fn(() => Promise.resolve([])),
+        openChannel,
+      ),
+    });
     const terminal = { reset: vi.fn(), write: vi.fn(), writeln: vi.fn(), dispose: vi.fn() };
     Reflect.set(panel, "visible", true);
     Reflect.set(panel, "selectedId", "terminal-1");
@@ -880,7 +916,9 @@ describe("Terminal panel lifecycle", () => {
     expect(terminal.reset).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(500);
-    await vi.waitFor(() => { expect(openChannel).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(openChannel).toHaveBeenCalledTimes(2);
+    });
     expect(terminal.reset).toHaveBeenCalledOnce();
     expect(terminal.write).toHaveBeenCalledWith("replayed output", expect.any(Function));
     expect(terminal.reset.mock.invocationCallOrder[0]).toBeLessThan(terminal.write.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY);
@@ -891,7 +929,12 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const channel = { closed: new Promise<never>(() => undefined), send: vi.fn(), close: vi.fn() };
     const openChannel = vi.fn(() => Promise.resolve(channel));
-    const context = terminalContext({ peer: terminalPeer(vi.fn(() => Promise.resolve([])), openChannel) });
+    const context = terminalContext({
+      peer: terminalPeer(
+        vi.fn(() => Promise.resolve([])),
+        openChannel,
+      ),
+    });
     const terminal = { dispose: vi.fn() };
     Reflect.set(panel, "visible", true);
     Reflect.set(panel, "selectedId", "terminal-1");
@@ -899,8 +942,12 @@ describe("Terminal panel lifecycle", () => {
     Reflect.set(panel, "connectionError", "Terminal connection closed: offline");
 
     callPanelMethod(panel, "connectChannel", context, "terminal-1", terminal, undefined);
-    await vi.waitFor(() => { expect(openChannel).toHaveBeenCalledOnce(); });
-    await vi.waitFor(() => { expect(Reflect.get(panel, "connectionError")).toBeUndefined(); });
+    await vi.waitFor(() => {
+      expect(openChannel).toHaveBeenCalledOnce();
+    });
+    await vi.waitFor(() => {
+      expect(Reflect.get(panel, "connectionError")).toBeUndefined();
+    });
     panel.disconnectedCallback();
   });
 
@@ -912,27 +959,52 @@ describe("Terminal panel lifecycle", () => {
     Reflect.set(panel, "selectedId", "terminal-1");
     Reflect.set(panel, "channelGeneration", 7);
     Reflect.set(panel, "channel", { closed: new Promise<never>(() => undefined), send, close: vi.fn() });
-    terminal.onData((data) => { callPanelMethod(panel, "handleTerminalData", terminal, data); });
+    terminal.onData((data) => {
+      callPanelMethod(panel, "handleTerminalData", terminal, data);
+    });
 
     try {
-      callPanelMethod(panel, "handleChannelFrame", 7, {
-        type: "output",
-        data: "first replay chunk",
-        replay: true,
-        replayComplete: false,
-      }, "terminal-1", terminal);
-      callPanelMethod(panel, "handleChannelFrame", 7, {
-        type: "output",
-        data: "\x1b[6n",
-        replay: true,
-        replayComplete: true,
-      }, "terminal-1", terminal);
-      callPanelMethod(panel, "handleChannelFrame", 7, {
-        type: "output",
-        data: "\x1b[6n",
-        replay: false,
-      }, "terminal-1", terminal);
-      await new Promise<void>((resolve) => { terminal.write("", resolve); });
+      callPanelMethod(
+        panel,
+        "handleChannelFrame",
+        7,
+        {
+          type: "output",
+          data: "first replay chunk",
+          replay: true,
+          replayComplete: false,
+        },
+        "terminal-1",
+        terminal,
+      );
+      callPanelMethod(
+        panel,
+        "handleChannelFrame",
+        7,
+        {
+          type: "output",
+          data: "\x1b[6n",
+          replay: true,
+          replayComplete: true,
+        },
+        "terminal-1",
+        terminal,
+      );
+      callPanelMethod(
+        panel,
+        "handleChannelFrame",
+        7,
+        {
+          type: "output",
+          data: "\x1b[6n",
+          replay: false,
+        },
+        "terminal-1",
+        terminal,
+      );
+      await new Promise<void>((resolve) => {
+        terminal.write("", resolve);
+      });
 
       const responseFrames: { type: "input"; data: string }[] = [];
       for (const call of send.mock.calls) {
@@ -956,7 +1028,9 @@ describe("Terminal panel lifecycle", () => {
     const panel = createTerminalPanel();
     const completions: (() => void)[] = [];
     const terminal = {
-      write: vi.fn((_data: string, complete?: () => void) => { if (complete !== undefined) completions.push(complete); }),
+      write: vi.fn((_data: string, complete?: () => void) => {
+        if (complete !== undefined) completions.push(complete);
+      }),
     };
     const send = vi.fn();
     Reflect.set(panel, "selectedId", "terminal-1");
@@ -964,19 +1038,33 @@ describe("Terminal panel lifecycle", () => {
     Reflect.set(panel, "terminal", terminal);
     Reflect.set(panel, "channel", { closed: new Promise<never>(() => undefined), send, close: vi.fn() });
 
-    callPanelMethod(panel, "handleChannelFrame", 1, {
-      type: "output",
-      data: "old replay",
-      replay: true,
-      replayComplete: true,
-    }, "terminal-1", terminal);
+    callPanelMethod(
+      panel,
+      "handleChannelFrame",
+      1,
+      {
+        type: "output",
+        data: "old replay",
+        replay: true,
+        replayComplete: true,
+      },
+      "terminal-1",
+      terminal,
+    );
     Reflect.set(panel, "channelGeneration", 2);
-    callPanelMethod(panel, "handleChannelFrame", 2, {
-      type: "output",
-      data: "replacement replay",
-      replay: true,
-      replayComplete: true,
-    }, "terminal-1", terminal);
+    callPanelMethod(
+      panel,
+      "handleChannelFrame",
+      2,
+      {
+        type: "output",
+        data: "replacement replay",
+        replay: true,
+        replayComplete: true,
+      },
+      "terminal-1",
+      terminal,
+    );
 
     completions[0]?.();
     callPanelMethod(panel, "handleTerminalData", terminal, "blocked while replaying");
@@ -1026,11 +1114,15 @@ describe("Terminal panel lifecycle", () => {
       pasteFrames.push(frame);
     }
     expect(pasteFrames.length).toBeGreaterThan(1);
-    expect(pasteFrames.map((frame) => {
-      if (!isInputFrame(frame)) throw new Error("Expected Terminal input frame");
-      expect(new TextEncoder().encode(JSON.stringify(frame)).byteLength).toBeLessThanOrEqual(TERMINAL_CHANNEL_DATA_JSON_MAX_BYTES);
-      return frame.data;
-    }).join("")).toBe(largePaste);
+    expect(
+      pasteFrames
+        .map((frame) => {
+          if (!isInputFrame(frame)) throw new Error("Expected Terminal input frame");
+          expect(new TextEncoder().encode(JSON.stringify(frame)).byteLength).toBeLessThanOrEqual(TERMINAL_CHANNEL_DATA_JSON_MAX_BYTES);
+          return frame.data;
+        })
+        .join(""),
+    ).toBe(largePaste);
   });
 
   it("filters Xterm focus-reporting bytes without changing ordinary input", () => {
@@ -1071,7 +1163,9 @@ async function mountPalettePanel(integration?: StylesheetIntegrationCapabilityV1
   panel.runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
   document.body.append(panel);
   // Let the public list response and its subsequent Lit updates settle.
-  await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector(".terminal-tabs button.selected")?.textContent).toContain("palette-shell"); });
+  await vi.waitFor(() => {
+    expect(panel.shadowRoot?.querySelector(".terminal-tabs button.selected")?.textContent).toContain("palette-shell");
+  });
   await panel.updateComplete;
   return panel;
 }
@@ -1093,17 +1187,28 @@ function stylesheetFixture(initialBackground: string) {
     registerRoot: (root) => {
       roots.add(root);
       applyPalette(root);
-      return () => { roots.delete(root); };
+      return () => {
+        roots.delete(root);
+      };
     },
     createController: vi.fn(),
     subscribe: vi.fn((listener: () => void) => {
       listeners.add(listener);
-      return () => { unsubscribe(); listeners.delete(listener); };
+      return () => {
+        unsubscribe();
+        listeners.delete(listener);
+      };
     }),
   };
-  const notify = () => { for (const listener of listeners) listener(); };
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
   return {
-    capability, roots, listeners, unsubscribe, notify,
+    capability,
+    roots,
+    listeners,
+    unsubscribe,
+    notify,
     adoptPalette: (nextBackground: string) => {
       background = nextBackground;
       for (const root of roots) applyPalette(root);
@@ -1141,10 +1246,7 @@ function terminalContext(overrides: Partial<WorkspacePanelContext> = {}): Worksp
   };
 }
 
-function terminalPeer(
-  request: NonNullable<PluginPeer["request"]>,
-  openChannel?: NonNullable<PluginPeer["openChannel"]>,
-): PluginPeer {
+function terminalPeer(request: NonNullable<PluginPeer["request"]>, openChannel?: NonNullable<PluginPeer["openChannel"]>): PluginPeer {
   return {
     request,
     ...(openChannel === undefined ? {} : { openChannel }),
@@ -1184,7 +1286,9 @@ function commandRun(status: "running" | "succeeded"): JsonValue & { status: "run
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolvePromise: (value: T) => void = () => undefined;
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
   return { promise, resolve: resolvePromise };
 }
 

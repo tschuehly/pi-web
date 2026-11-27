@@ -13,34 +13,92 @@ import { WORKSTREAM_TINT_PERCENTAGES, setWorkstreamColorOrder, workstreamAccentC
 
 export type WorkstreamWaitingOn = "owner" | "agent" | "external";
 export interface WorkstreamCheckpoint {
-  id: string; whatChanged: string; remains: string; next: string; references?: string[]; recordedAt: string;
+  id: string;
+  whatChanged: string;
+  remains: string;
+  next: string;
+  references?: string[];
+  recordedAt: string;
   /** Who the Workstream waits on after this checkpoint; the newest checkpoint's value is current. */
   waitingOn?: WorkstreamWaitingOn | null;
   /** Legacy continuation prompt; new checkpoints project null and PI WEB never preloads it. */
-  nextSessionPrompt?: string | null;  /** Title (≤ 80 chars) for the checkpointing Chat; PI WEB applies it unless the owner named that Chat. */
+  nextSessionPrompt?: string | null /** Title (≤ 80 chars) for the checkpointing Chat; PI WEB applies it unless the owner named that Chat. */;
   sessionTitle?: string | null;
 }
-export interface WorkstreamSession { id: string; status: string; machineId?: string; projectId?: string; workspaceId?: string; latestCheckpoint: WorkstreamCheckpoint | null }
-export interface WorkstreamOverview { goal: string; doneWhen: string; description: string; history: string[]; recordedAt: string }
+export interface WorkstreamSession {
+  id: string;
+  status: string;
+  machineId?: string;
+  projectId?: string;
+  workspaceId?: string;
+  latestCheckpoint: WorkstreamCheckpoint | null;
+}
+export interface WorkstreamOverview {
+  goal: string;
+  doneWhen: string;
+  description: string;
+  history: string[];
+  recordedAt: string;
+}
 type HumanTaskAnswerKind = "yes-no" | "choice" | "free-text";
 type HumanTaskAnswer = { kind: "yes-no" | "choice"; optionId: string } | { kind: "free-text"; text: string };
-export type WorkstreamSessionAnchor = { machineId: string; projectId: string; workspaceId: string } | { machineId?: never; projectId?: never; workspaceId?: never };
+export type WorkstreamSessionAnchor =
+  | { machineId: string; projectId: string; workspaceId: string }
+  | { machineId?: never; projectId?: never; workspaceId?: never };
 export type WorkstreamAppendRecord =
   | { type: "title.set"; producer: "owner"; sourceSessionId?: string; payload: { title: string } }
   | { type: "short-title.set"; producer: "owner"; sourceSessionId?: string; payload: { shortTitle: string | null } }
-  | { type: "checkpoint.replaced"; producer: "owner"; sourceSessionId: string; payload: { sessionId: string; checkpoint: { id: string; whatChanged: string; remains: string; next: string; waitingOn?: WorkstreamWaitingOn; references?: string[]; sessionTitle?: string } } }
+  | {
+      type: "checkpoint.replaced";
+      producer: "owner";
+      sourceSessionId: string;
+      payload: {
+        sessionId: string;
+        checkpoint: {
+          id: string;
+          whatChanged: string;
+          remains: string;
+          next: string;
+          waitingOn?: WorkstreamWaitingOn;
+          references?: string[];
+          sessionTitle?: string;
+        };
+      };
+    }
   | { type: "human-task.answered"; producer: "owner"; sourceSessionId?: string; payload: { taskId: string; answerId: string; answer: HumanTaskAnswer } }
-  | { type: "session.pending"; producer: "pi-web"; sourceSessionId?: string; payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor }
-  | { type: "session.confirmed"; producer: "pi-web"; sourceSessionId: string; payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor };
-export interface WorkstreamAppendInput { workstreamId: string; expectedRevision: number; idempotencyKey: string; records: WorkstreamAppendRecord[] }
+  | {
+      type: "session.pending";
+      producer: "pi-web";
+      sourceSessionId?: string;
+      payload: { associationKey: string; derivationKind?: "checkpoint" } & WorkstreamSessionAnchor;
+    }
+  | {
+      type: "session.confirmed";
+      producer: "pi-web";
+      sourceSessionId: string;
+      payload: { sessionId: string; associationKey: string } & WorkstreamSessionAnchor;
+    };
+export interface WorkstreamAppendInput {
+  workstreamId: string;
+  expectedRevision: number;
+  idempotencyKey: string;
+  records: WorkstreamAppendRecord[];
+}
 interface WorkstreamHumanTask {
-  id: string; title: string; detail?: string; status: "pending" | "answered" | "resolved";
+  id: string;
+  title: string;
+  detail?: string;
+  status: "pending" | "answered" | "resolved";
   answerKind: HumanTaskAnswerKind | null;
   options: { id: string; label: string }[];
   sourceSessionId: string | null;
 }
 export interface WorkstreamSnapshot {
-  id: string; title: string; revision: number; updatedAt: string; closed: boolean;
+  id: string;
+  title: string;
+  revision: number;
+  updatedAt: string;
+  closed: boolean;
   /** The Workstream's one- or two-word tab name; absent from older Workbench services. */
   shortTitle?: string | null;
   sessions: WorkstreamSession[];
@@ -49,11 +107,21 @@ export interface WorkstreamSnapshot {
   overview: WorkstreamOverview | null;
 }
 export interface WorkstreamSummary {
-  id: string; title: string; group: string | null; createdAt: string; updatedAt: string; lastCheckpointAt: string | null; unresolvedHumanTaskCount: number;
+  id: string;
+  title: string;
+  group: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastCheckpointAt: string | null;
+  unresolvedHumanTaskCount: number;
   /** Newest checkpoint's next move and waiting actor; absent from older Workbench services. */
-  next?: string | null; waitingOn?: WorkstreamWaitingOn | null;
+  next?: string | null;
+  waitingOn?: WorkstreamWaitingOn | null;
 }
-export interface WorkstreamListQuery { includeClosed?: boolean; sessionId?: string }
+export interface WorkstreamListQuery {
+  includeClosed?: boolean;
+  sessionId?: string;
+}
 
 export interface OpenWorkstreamSessionDetail {
   workstreamId: string;
@@ -71,10 +139,20 @@ export interface StartWorkstreamSessionDetail {
   useSelectedWorkspace?: boolean;
 }
 
-export interface WorkstreamServiceContext { machineId: string; projectId: string; workspaceId: string }
+export interface WorkstreamServiceContext {
+  machineId: string;
+  projectId: string;
+  workspaceId: string;
+}
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 export class WorkstreamServiceError extends Error {
-  constructor(message: string, readonly code: string, readonly details?: unknown) { super(message); }
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+  }
 }
 const lifecycleByMachine = new Map<string, { expires: number; promise: ReturnType<typeof pluginsApi.plugins> }>();
 async function service<T>(context: WorkstreamServiceContext, operation: string, input: unknown, check: (value: unknown) => value is T): Promise<T> {
@@ -83,7 +161,9 @@ async function service<T>(context: WorkstreamServiceContext, operation: string, 
     const promise = pluginsApi.plugins(context.machineId);
     cached = { expires: Date.now() + 60_000, promise };
     lifecycleByMachine.set(context.machineId, cached);
-    void promise.catch(() => { if (lifecycleByMachine.get(context.machineId)?.promise === promise) lifecycleByMachine.delete(context.machineId); });
+    void promise.catch(() => {
+      if (lifecycleByMachine.get(context.machineId)?.promise === promise) lifecycleByMachine.delete(context.machineId);
+    });
   }
   const lifecycle = await cached.promise;
   const plugin = lifecycle.plugins.find((candidate) => candidate.id === "pi-workbench");
@@ -94,7 +174,11 @@ async function service<T>(context: WorkstreamServiceContext, operation: string, 
   const encodedInput = JSON.stringify(input);
   let body: unknown;
   try {
-    body = await requestPairedPluginBackend({ pluginId: "pi-workbench", backendRevision: revision, ...context }, operation, parseBoundedPluginBackendJson(encodedInput, `Workstream ${operation} input`));
+    body = await requestPairedPluginBackend(
+      { pluginId: "pi-workbench", backendRevision: revision, ...context },
+      operation,
+      parseBoundedPluginBackendJson(encodedInput, `Workstream ${operation} input`),
+    );
   } catch (error) {
     lifecycleByMachine.delete(context.machineId);
     throw error;
@@ -102,7 +186,11 @@ async function service<T>(context: WorkstreamServiceContext, operation: string, 
   if (!isRecord(body) || typeof body["ok"] !== "boolean") throw new Error(`Workstream service returned an invalid ${operation} response.`);
   if (!body["ok"]) {
     const failure = body["error"];
-    throw new WorkstreamServiceError(isRecord(failure) && typeof failure["message"] === "string" ? failure["message"] : `Workstream ${operation} failed.`, isRecord(failure) && typeof failure["code"] === "string" ? failure["code"] : "UNKNOWN", isRecord(failure) ? failure["details"] : undefined);
+    throw new WorkstreamServiceError(
+      isRecord(failure) && typeof failure["message"] === "string" ? failure["message"] : `Workstream ${operation} failed.`,
+      isRecord(failure) && typeof failure["code"] === "string" ? failure["code"] : "UNKNOWN",
+      isRecord(failure) ? failure["details"] : undefined,
+    );
   }
   const value: unknown = body["value"];
   if (!check(value)) throw new Error(`Workstream service returned an invalid ${operation} response.`);
@@ -111,10 +199,24 @@ async function service<T>(context: WorkstreamServiceContext, operation: string, 
 const isSummaryList = (value: unknown): value is WorkstreamSummary[] => Array.isArray(value);
 const isSnapshot = (value: unknown): value is WorkstreamSnapshot => isRecord(value) && Array.isArray(value["sessions"]) && Array.isArray(value["humanTasks"]);
 const isReceipt = (value: unknown): value is { acceptedRevision: number } => isRecord(value) && Number.isInteger(value["acceptedRevision"]);
-export const listWorkstreams = (context: WorkstreamServiceContext, query: WorkstreamListQuery = {}): Promise<WorkstreamSummary[]> => service(context, "list", query, isSummaryList);
-export const inspectWorkstream = (context: WorkstreamServiceContext, workstreamId: string): Promise<WorkstreamSnapshot> => service(context, "inspect", { workstreamId }, isSnapshot);
-export const watchWorkstreams = (context: WorkstreamServiceContext, afterSequence: number): Promise<{ nextSequence: number }> => service(context, "watch", { afterSequence }, (value): value is { nextSequence: number } => isRecord(value) && Number.isSafeInteger(value["nextSequence"]) && typeof value["nextSequence"] === "number" && value["nextSequence"] >= 0 && (value["mode"] === "snapshot" && Array.isArray(value["snapshots"]) || value["mode"] === "replay" && Array.isArray(value["events"])));
-export const appendWorkstream = (context: WorkstreamServiceContext, input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> => service(context, "append", input, isReceipt);
+export const listWorkstreams = (context: WorkstreamServiceContext, query: WorkstreamListQuery = {}): Promise<WorkstreamSummary[]> =>
+  service(context, "list", query, isSummaryList);
+export const inspectWorkstream = (context: WorkstreamServiceContext, workstreamId: string): Promise<WorkstreamSnapshot> =>
+  service(context, "inspect", { workstreamId }, isSnapshot);
+export const watchWorkstreams = (context: WorkstreamServiceContext, afterSequence: number): Promise<{ nextSequence: number }> =>
+  service(
+    context,
+    "watch",
+    { afterSequence },
+    (value): value is { nextSequence: number } =>
+      isRecord(value)
+      && Number.isSafeInteger(value["nextSequence"])
+      && typeof value["nextSequence"] === "number"
+      && value["nextSequence"] >= 0
+      && ((value["mode"] === "snapshot" && Array.isArray(value["snapshots"])) || (value["mode"] === "replay" && Array.isArray(value["events"]))),
+  );
+export const appendWorkstream = (context: WorkstreamServiceContext, input: WorkstreamAppendInput): Promise<{ acceptedRevision: number }> =>
+  service(context, "append", input, isReceipt);
 export async function workstreamForSession(context: WorkstreamServiceContext, sessionId: string): Promise<WorkstreamSnapshot | null> {
   const matches = await listWorkstreams(context, { sessionId, includeClosed: true });
   if (matches.length === 0) return null;
@@ -130,7 +232,12 @@ export const ago = (value: string, now = Date.now()): string => {
 };
 export const actor = (text: string): string => (/^\s*(Thomas|Rod|Pia)\b/.exec(text) ?? [])[1] ?? (/\bThomas\b/.test(text) ? "Thomas" : "Pia");
 export type WorkstreamAttention = WorkstreamWaitingOn | "dormant";
-const attentionLabels: Record<WorkstreamAttention, string> = { owner: "Waiting on you", agent: "Agent can continue", external: "Waiting on someone else", dormant: "Dormant" };
+const attentionLabels: Record<WorkstreamAttention, string> = {
+  owner: "Waiting on you",
+  agent: "Agent can continue",
+  external: "Waiting on someone else",
+  dormant: "Dormant",
+};
 const DORMANT_MS = 7 * 864e5;
 /** Dormant after 7 idle days; otherwise the recorded waitingOn, or the actor named by a legacy next move. */
 export function attentionOf(summary: WorkstreamSummary, now = Date.now()): WorkstreamAttention | undefined {
@@ -160,10 +267,15 @@ export function sessionActivityTime(session: WorkstreamSession): number {
   const checkpoint = session.latestCheckpoint === null ? 0 : new Date(session.latestCheckpoint.recordedAt).getTime();
   return Math.max(created, Number.isNaN(checkpoint) ? 0 : checkpoint);
 }
-export const sessionsByActivity = (sessions: WorkstreamSession[]): WorkstreamSession[] => [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a));
+export const sessionsByActivity = (sessions: WorkstreamSession[]): WorkstreamSession[] =>
+  [...sessions].sort((a, b) => sessionActivityTime(b) - sessionActivityTime(a));
 const githubUrl = /https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/(pull|issues)\/(\d+)/g;
 const shortReference = /(?<![\w/.@-])([a-z][\w.-]*)#(\d+)\b/g;
-export interface WorkstreamReference { key: string; url: string; kind: "PR" | "Issue" | "PR or issue" }
+export interface WorkstreamReference {
+  key: string;
+  url: string;
+  kind: "PR" | "Issue" | "PR or issue";
+}
 /** GitHub PRs and issues named by checkpoints and links; `repo#N` resolves its owner from a full URL for the same repo. */
 export function referencesOf(snapshot: WorkstreamSnapshot): WorkstreamReference[] {
   const text = [
@@ -175,20 +287,29 @@ export function referencesOf(snapshot: WorkstreamSnapshot): WorkstreamReference[
   for (const [, owner = "", repo = "", kind, number = ""] of text.matchAll(githubUrl)) {
     owners.set(repo, owner);
     const key = `${repo}#${number}`;
-    if (!found.has(key)) found.set(key, { key, url: `https://github.com/${owner}/${repo}/${kind ?? "issues"}/${number}`, kind: kind === "pull" ? "PR" : "Issue" });
+    if (!found.has(key))
+      found.set(key, { key, url: `https://github.com/${owner}/${repo}/${kind ?? "issues"}/${number}`, kind: kind === "pull" ? "PR" : "Issue" });
   }
   for (const [, repo = "", number = ""] of text.replace(githubUrl, "").matchAll(shortReference)) {
     const key = `${repo}#${number}`;
     const owner = owners.get(repo);
     // GitHub redirects /issues/N to /pull/N, so one URL serves both kinds.
-    if (!found.has(key)) found.set(key, { key, url: owner === undefined ? `https://github.com/search?type=issues&q=${encodeURIComponent(key)}` : `https://github.com/${owner}/${repo}/issues/${number}`, kind: "PR or issue" });
+    if (!found.has(key))
+      found.set(key, {
+        key,
+        url:
+          owner === undefined ? `https://github.com/search?type=issues&q=${encodeURIComponent(key)}` : `https://github.com/${owner}/${repo}/issues/${number}`,
+        kind: "PR or issue",
+      });
   }
   return [...found.values()];
 }
 
 export function isTemporaryDirectory(value: string): boolean {
-  return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(value)
-    || /^(?:[A-Za-z]:[\\/])(?:Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Temp|Temp)(?:[\\/]|$)/i.test(value);
+  return (
+    /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/.test(value)
+    || /^(?:[A-Za-z]:[\\/])(?:Users[\\/][^\\/]+[\\/]AppData[\\/]Local[\\/]Temp|Temp)(?:[\\/]|$)/i.test(value)
+  );
 }
 
 export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): string[] {
@@ -202,7 +323,10 @@ export function directoriesOf(checkpoint: WorkstreamCheckpoint | undefined): str
 
 /** The exact row for one Chat in one cwd; an older daemon ignores `sessionId` and returns its whole catalog. */
 const targetedChat = (id: string, cwd: string, machineId: string, signal: AbortSignal): Promise<SessionInfo | undefined> =>
-  sessionsApi.sessions(cwd, machineId, { sessionId: id, signal }).then((rows) => rows.find((row) => row.id === id && row.cwd === cwd), () => undefined);
+  sessionsApi.sessions(cwd, machineId, { sessionId: id, signal }).then(
+    (rows) => rows.find((row) => row.id === id && row.cwd === cwd),
+    () => undefined,
+  );
 
 /**
  * Settles like `start()`, but starts nothing once `signal` has aborted and rejects as soon as it aborts, so an abandoned
@@ -210,10 +334,19 @@ const targetedChat = (id: string, cwd: string, machineId: string, signal: AbortS
  */
 function unlessAborted<T>(start: () => Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const abort = (): void => { reject(new Error("Chat lookup aborted")); };
-    if (signal.aborted) { abort(); return; }
+    const abort = (): void => {
+      reject(new Error("Chat lookup aborted"));
+    };
+    if (signal.aborted) {
+      abort();
+      return;
+    }
     signal.addEventListener("abort", abort, { once: true });
-    void start().then(resolve, reject).finally(() => { signal.removeEventListener("abort", abort); });
+    void start()
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener("abort", abort);
+      });
   });
 }
 
@@ -223,7 +356,12 @@ function unlessAborted<T>(start: () => Promise<T>, signal: AbortSignal): Promise
  * the daemon may still finish read-only work it had already begun. `workspacesOf` requests are shared and owned by
  * the caller.
  */
-async function workstreamChatInfo(session: WorkstreamSession, machineId: string, workspacesOf: (projectId: string) => Promise<readonly Workspace[]>, signal: AbortSignal): Promise<SessionInfo | undefined> {
+async function workstreamChatInfo(
+  session: WorkstreamSession,
+  machineId: string,
+  workspacesOf: (projectId: string) => Promise<readonly Workspace[]>,
+  signal: AbortSignal,
+): Promise<SessionInfo | undefined> {
   const step = <T>(start: () => Promise<T>): Promise<T> => unlessAborted(start, signal);
   const { projectId, workspaceId } = session;
   let anchoredCwd: string | undefined;
@@ -234,12 +372,18 @@ async function workstreamChatInfo(session: WorkstreamSession, machineId: string,
     if (row !== undefined) return row;
     anchoredCwd = cwd;
   }
-  const cwd = await step(() => sessionsApi.locate(session.id, machineId, { signal }).then((located) => located.cwd, () => undefined));
+  const cwd = await step(() =>
+    sessionsApi.locate(session.id, machineId, { signal }).then(
+      (located) => located.cwd,
+      () => undefined,
+    ),
+  );
   return cwd === undefined || cwd === anchoredCwd ? undefined : step(() => targetedChat(session.id, cwd, machineId, signal));
 }
 
 /** A Chat record's lookup identity: its id and recorded anchors, so an anchor repair never reuses another record's row. */
-const chatKey = (session: WorkstreamSession): string => JSON.stringify([session.id, session.machineId ?? null, session.projectId ?? null, session.workspaceId ?? null]);
+const chatKey = (session: WorkstreamSession): string =>
+  JSON.stringify([session.id, session.machineId ?? null, session.projectId ?? null, session.workspaceId ?? null]);
 /** Chats shown before the "older Chats" fold; older ones are looked up only once the fold opens. */
 const VISIBLE_CHATS = 5;
 /**
@@ -247,12 +391,22 @@ const VISIBLE_CHATS = 5;
  * retained workspace request no running lookup waits on holds a slot of its own.
  */
 const CHAT_LOOKUP_LIMIT = 8;
-interface ChatLookup { session: WorkstreamSession; machineId: string; controller: AbortController; running: boolean }
+interface ChatLookup {
+  session: WorkstreamSession;
+  machineId: string;
+  controller: AbortController;
+  running: boolean;
+}
 /**
  * One project's workspace request, shared by lookups and aborted once no queued or running lookup needs it. `waiting`
  * counts running lookups that joined it and have not finished.
  */
-interface ProjectWorkspaces { promise: Promise<readonly Workspace[]>; controller: AbortController; settled: boolean; waiting: number }
+interface ProjectWorkspaces {
+  promise: Promise<readonly Workspace[]>;
+  controller: AbortController;
+  settled: boolean;
+  waiting: number;
+}
 
 @customElement("workstream-chooser")
 export class WorkstreamChooser extends LitElement {
@@ -357,26 +511,36 @@ export class WorkstreamChooser extends LitElement {
     if (key === this.liveSessionKey) return;
     this.liveSessionKey = key;
     const epoch = this.machineEpoch;
-    const workstreamIds = await Promise.all(sessionIds.map((sessionId) => {
-      const cached = this.workstreamBySession.get(sessionId);
-      if (cached !== undefined) return cached;
-      // A failed or unmatched lookup is forgotten so a later render can retry it; a match is kept.
-      const context = this.serviceContext;
-      if (context === undefined) return Promise.resolve(undefined);
-      const lookup = listWorkstreams(context, { sessionId, includeClosed: true })
-        .then((matches) => matches.length === 1 ? matches[0]?.id : undefined)
-        .catch(() => undefined)
-        .then((id) => { if (id === undefined && this.workstreamBySession.get(sessionId) === lookup) this.workstreamBySession.delete(sessionId); return id; });
-      this.workstreamBySession.set(sessionId, lookup);
-      return lookup;
-    }));
-    if (key === this.liveSessionKey && epoch === this.machineEpoch) this.liveWorkstreamIds = new Set(workstreamIds.filter((id): id is string => id !== undefined));
+    const workstreamIds = await Promise.all(
+      sessionIds.map((sessionId) => {
+        const cached = this.workstreamBySession.get(sessionId);
+        if (cached !== undefined) return cached;
+        // A failed or unmatched lookup is forgotten so a later render can retry it; a match is kept.
+        const context = this.serviceContext;
+        if (context === undefined) return Promise.resolve(undefined);
+        const lookup = listWorkstreams(context, { sessionId, includeClosed: true })
+          .then((matches) => (matches.length === 1 ? matches[0]?.id : undefined))
+          .catch(() => undefined)
+          .then((id) => {
+            if (id === undefined && this.workstreamBySession.get(sessionId) === lookup) this.workstreamBySession.delete(sessionId);
+            return id;
+          });
+        this.workstreamBySession.set(sessionId, lookup);
+        return lookup;
+      }),
+    );
+    if (key === this.liveSessionKey && epoch === this.machineEpoch)
+      this.liveWorkstreamIds = new Set(workstreamIds.filter((id): id is string => id !== undefined));
   }
 
   private async select(id: string): Promise<void> {
     this.notice = "";
     const selection = ++this.selection;
-    if (this.selected?.id === id) { this.selected = undefined; this.wantChats([]); return; }
+    if (this.selected?.id === id) {
+      this.selected = undefined;
+      this.wantChats([]);
+      return;
+    }
     try {
       const context = this.serviceContext;
       if (context === undefined) throw new Error("Choose a workspace before opening a Workstream.");
@@ -428,7 +592,8 @@ export class WorkstreamChooser extends LitElement {
       lookup.controller.abort();
     }
     for (const [key, session] of wanted) {
-      if (!this.chatLookups.has(key)) this.chatLookups.set(key, { session, machineId: this.serviceMachineId, controller: new AbortController(), running: false });
+      if (!this.chatLookups.has(key))
+        this.chatLookups.set(key, { session, machineId: this.serviceMachineId, controller: new AbortController(), running: false });
     }
     const projects = new Set([...this.chatLookups.values()].map((lookup) => lookup.session.projectId));
     for (const [projectId, shared] of this.cardWorkspaces) {
@@ -459,7 +624,10 @@ export class WorkstreamChooser extends LitElement {
       const { projectId, workspaceId } = lookup.session;
       const joinsUnowned = projectId !== undefined && workspaceId !== undefined && this.unowned(this.cardWorkspaces.get(projectId));
       const held = [...this.cardWorkspaces.values()].filter((shared) => this.unowned(shared)).length;
-      if (!joinsUnowned && this.runningLookups + held >= CHAT_LOOKUP_LIMIT) { this.chatQueue.push(key); continue; }
+      if (!joinsUnowned && this.runningLookups + held >= CHAT_LOOKUP_LIMIT) {
+        this.chatQueue.push(key);
+        continue;
+      }
       lookup.running = true;
       this.runningLookups++;
       let joined: ProjectWorkspaces | undefined;
@@ -467,9 +635,17 @@ export class WorkstreamChooser extends LitElement {
         let shared = this.cardWorkspaces.get(projectId);
         if (shared === undefined) {
           const controller = new AbortController();
-          const request: ProjectWorkspaces = { promise: workspacesApi.workspaces(projectId, lookup.machineId, { signal: controller.signal }), controller, settled: false, waiting: 0 };
+          const request: ProjectWorkspaces = {
+            promise: workspacesApi.workspaces(projectId, lookup.machineId, { signal: controller.signal }),
+            controller,
+            settled: false,
+            waiting: 0,
+          };
           // A settled unowned request frees its slot.
-          const settle = (): void => { request.settled = true; this.pumpChatLookups(); };
+          const settle = (): void => {
+            request.settled = true;
+            this.pumpChatLookups();
+          };
           void request.promise.then(settle, settle);
           shared = request;
           this.cardWorkspaces.set(projectId, shared);
@@ -487,7 +663,11 @@ export class WorkstreamChooser extends LitElement {
           if (row === undefined) this.chatMisses = new Set(this.chatMisses).add(key);
           else this.chatInfo = new Map(this.chatInfo).set(key, row);
         })
-        .finally(() => { if (joined !== undefined) joined.waiting--; this.runningLookups--; this.pumpChatLookups(); });
+        .finally(() => {
+          if (joined !== undefined) joined.waiting--;
+          this.runningLookups--;
+          this.pumpChatLookups();
+        });
     }
   }
 
@@ -507,7 +687,9 @@ export class WorkstreamChooser extends LitElement {
     const modified = this.chatInfo.get(chatKey(session))?.modified;
     const when = Math.max(sessionActivityTime(session), modified === undefined ? 0 : new Date(modified).getTime() || 0);
     return html`
-      <button class="session-row ${live ? "live" : ""}" data-session-id=${session.id} @click=${() => { this.open(snapshot, session); }}>
+      <button class="session-row ${live ? "live" : ""}" data-session-id=${session.id} @click=${() => {
+        this.open(snapshot, session);
+      }}>
         <span class="session-title">${this.chatTitle(session)}</span>
         <span class="session-meta">
           ${live ? renderActivityIndicator("session", doing ?? "Session active") : nothing}
@@ -555,7 +737,9 @@ export class WorkstreamChooser extends LitElement {
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
     const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-    const mine = sorted.filter(([group]) => groupMatchesProject(group, this.project) && !this.excludeProjects.some((project) => groupMatchesProject(group, project)));
+    const mine = sorted.filter(
+      ([group]) => groupMatchesProject(group, this.project) && !this.excludeProjects.some((project) => groupMatchesProject(group, project)),
+    );
     const renderGroup = ([group, items]: [string, WorkstreamSummary[]]) => html`
       <section class="group" aria-label=${group}>
         <h3>${group} <small>${String(items.length)}</small></h3>
@@ -576,7 +760,9 @@ export class WorkstreamChooser extends LitElement {
     const attention = attentionOf(item);
     return html`
       <div role="listitem" class="workstream ${open ? "open" : ""} ${attention ?? ""}" style=${`--workstream-color:${workstreamAccentColor(item.id)}`}>
-        <button class="row" aria-expanded=${open} @click=${() => { void this.select(item.id); }}>
+        <button class="row" aria-expanded=${open} @click=${() => {
+          void this.select(item.id);
+        }}>
           <span class="row-title"><span class="identity-mark" aria-hidden="true">${workstreamMonogram(item.title)}</span><strong>${item.title}</strong>${this.liveWorkstreamIds.has(item.id) ? renderActivityIndicator("session", "Session active") : nothing}<span class="age">${item.lastCheckpointAt === null ? `started ${ago(item.createdAt)}` : ago(item.lastCheckpointAt)}</span></span>
           <span class="next">${attention === undefined ? nothing : html`<span class="badge ${attention}">${attentionLabels[attention]}</span>`}${item.next ?? (item.lastCheckpointAt === null ? "No checkpoint yet." : "")}</span>
         </button>
@@ -595,50 +781,93 @@ export class WorkstreamChooser extends LitElement {
     const references = referencesOf(snapshot);
     const blocksFirstChat = snapshot.sessions.some((session) => session.status !== "failed");
     const day = (value: string) => new Date(value).toLocaleDateString(undefined, { day: "numeric", month: "short" });
-    const historyParts = [overview === null ? "" : "overview", checkpoints.length === 0 ? "" : `${String(checkpoints.length)} checkpoint${checkpoints.length > 1 ? "s" : ""}`].filter((part) => part !== "");
+    const historyParts = [
+      overview === null ? "" : "overview",
+      checkpoints.length === 0 ? "" : `${String(checkpoints.length)} checkpoint${checkpoints.length > 1 ? "s" : ""}`,
+    ].filter((part) => part !== "");
     const olderChats = sessions.length - VISIBLE_CHATS;
-    const loadOlder = (event: Event): void => { if (event.currentTarget instanceof HTMLDetailsElement && event.currentTarget.open) this.wantChats(sessions); };
+    const loadOlder = (event: Event): void => {
+      if (event.currentTarget instanceof HTMLDetailsElement && event.currentTarget.open) this.wantChats(sessions);
+    };
     return html`
       <div class="card" aria-label=${`Re-entry card for ${snapshot.title}`}>
         <h4>Goal</h4>
-        ${overview === null
-          ? html`<p class="missing">No overview stored yet. Ask Pi: “write the overview for ${snapshot.id}”.</p>`
-          : html`<p class="goal">${overview.goal}</p><p class="done"><b>Done when</b> ${overview.doneWhen}</p>`}
-        ${references.length === 0 ? nothing : html`
+        ${
+          overview === null
+            ? html`<p class="missing">No overview stored yet. Ask Pi: “write the overview for ${snapshot.id}”.</p>`
+            : html`<p class="goal">${overview.goal}</p><p class="done"><b>Done when</b> ${overview.doneWhen}</p>`
+        }
+        ${
+          references.length === 0
+            ? nothing
+            : html`
           <h4>PRs and issues</h4>
           <ul class="refs">${references.map((ref) => html`<li><span class="kind">${ref.kind}</span><a href=${ref.url} target="_blank" rel="noreferrer">${ref.key}</a></li>`)}</ul>
-        `}
+        `
+        }
         <h4>Chats</h4>
-        ${sessions.length === 0 ? html`<p class="missing">No Chats yet.</p>` : html`
+        ${
+          sessions.length === 0
+            ? html`<p class="missing">No Chats yet.</p>`
+            : html`
           <div class="session-list">${sessions.slice(0, VISIBLE_CHATS).map((session) => this.renderSessionRow(snapshot, session))}</div>
           ${olderChats > 0 ? html`<details class="older" @toggle=${loadOlder}><summary>${String(olderChats)} older Chat${olderChats > 1 ? "s" : ""}</summary><div class="session-list">${sessions.slice(VISIBLE_CHATS).map((session) => this.renderSessionRow(snapshot, session))}</div></details>` : nothing}
-        `}
-        ${historyParts.length === 0 ? nothing : html`
+        `
+        }
+        ${
+          historyParts.length === 0
+            ? nothing
+            : html`
           <details class="history"><summary>History · ${historyParts.join(" and ")}</summary><div>
             ${overview === null ? nothing : html`<p>${overview.description}</p>${overview.history.length === 0 ? nothing : html`<ol>${overview.history.map((event) => html`<li>${event}</li>`)}</ol>`}`}
             ${checkpoints.map(({ latestCheckpoint }) => html`<p><span class="date">${day(latestCheckpoint.recordedAt)}</span> ${latestCheckpoint.whatChanged}</p>`)}
           </div></details>
-        `}
+        `
+        }
         <div class="actions">
-          ${latest !== undefined
-            ? html`<button class="primary" @click=${() => { this.open(snapshot, latest); }}>Open session</button>`
-            : blocksFirstChat
-              ? snapshot.sessions.some((session) => session.status === "pending")
-                ? html`<p class="missing">Session launch pending reconciliation. Ask Pia to reconcile it before starting another Chat.</p>`
-                : html`<p class="missing">No session has checkpointed yet.</p>`
-              : this.project === undefined
-                ? html`<p class="missing">This Workstream has no matching PI WEB project tab. Set its group to a registered project before starting it.</p>`
-                : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => { this.startEmpty(snapshot); }}>Start Workstream Chat</button>`}
-          ${latest === undefined ? nothing : html`
-            ${directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true ? html`<button @click=${() => { this.start(snapshot, latest); }}>New session</button>` : nothing}
-            ${cp?.references?.some(isTemporaryDirectory) === true ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => { this.start(snapshot, latest, true); }}>New session in selected workspace</button>` : nothing}
-          `}
+          ${
+            latest !== undefined
+              ? html`<button class="primary" @click=${() => {
+                  this.open(snapshot, latest);
+                }}>Open session</button>`
+              : blocksFirstChat
+                ? snapshot.sessions.some((session) => session.status === "pending")
+                  ? html`<p class="missing">Session launch pending reconciliation. Ask Pia to reconcile it before starting another Chat.</p>`
+                  : html`<p class="missing">No session has checkpointed yet.</p>`
+                : this.project === undefined
+                  ? html`<p class="missing">This Workstream has no matching PI WEB project tab. Set its group to a registered project before starting it.</p>`
+                  : html`<button class="primary" title=${this.canStartEmpty ? "Start Workstream Chat" : "Choose a workspace first"} ?disabled=${!this.canStartEmpty} @click=${() => {
+                      this.startEmpty(snapshot);
+                    }}>Start Workstream Chat</button>`
+          }
+          ${
+            latest === undefined
+              ? nothing
+              : html`
+            ${
+              directories.length > 0 || cp?.references?.some(isTemporaryDirectory) !== true
+                ? html`<button @click=${() => {
+                    this.start(snapshot, latest);
+                  }}>New session</button>`
+                : nothing
+            }
+            ${
+              cp?.references?.some(isTemporaryDirectory) === true
+                ? html`<button ?disabled=${!this.canStartEmpty} title="Choose a persistent workspace first" @click=${() => {
+                    this.start(snapshot, latest, true);
+                  }}>New session in selected workspace</button>`
+                : nothing
+            }
+          `
+          }
         </div>
       </div>
     `;
   }
 
-  static override styles = [listStyles, css`
+  static override styles = [
+    listStyles,
+    css`
     :host { display: grid; gap: 10px; min-width: 0; max-width: 100%; }
     * { box-sizing: border-box; min-width: 0; }
     .card p, .card li { overflow-wrap: anywhere; }
@@ -712,5 +941,6 @@ export class WorkstreamChooser extends LitElement {
       .identity-mark { border-color: ButtonText; background: Canvas; color: CanvasText; }
       .row .activity-indicator, .session-row .activity-indicator { border: 1px solid CanvasText; background: Highlight; box-shadow: none; }
     }
-  `];
+  `,
+  ];
 }

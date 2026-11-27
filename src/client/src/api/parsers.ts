@@ -1,6 +1,160 @@
-import { isChatCapability, type ChatCapability, PI_WEB_PLUGIN_LIFECYCLE_VERSION, ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH, ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_KINDS, ASK_USER_QUESTION_LIMIT, ASK_USER_RECORD_QUESTION_LIMIT, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, EXTENSION_DIALOG_OPTION_LIMIT, EXTENSION_DIALOG_TEXT_MAX_LENGTH, EXTENSION_STATUS_KEY_MAX_LENGTH, EXTENSION_STATUS_LIMIT, EXTENSION_STATUS_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_COMPLETED_AT_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_LIMIT, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type ArchiveSessionsResponse, type AskUserCloseReason, type AskUserCloseResponse, type AskUserOutcome, type AskUserOutcomeImage, type AskUserQuestion, type AskUserQuestionKind, type AskUserQuestionOption, type AskUserQuestionRecord, type PendingAskUser, type PendingExtensionDialog, type AuthProviderOption, type AuthProviderStatus, type AuthProvidersResponse, type AuthStatusSource, type AuthType, type CommandOption, type CommandResult, type DeleteWorkspaceFileResponse, type ExtensionDialogAnswer, type ExtensionDialogCloseReason, type ExtensionDialogCloseResponse, type ExtensionDialogKind, type ExtensionDialogOutcome, type FileContentResponse, type FileSuggestion, type FileTreeEntry, type FileTreeResponse, type GlobalSessionEvent, type Machine, type MachineHealth, type MachineKind, type MachineRuntime, type MachineStatus, type MessagePage, type McpAuthServersResponse, type ModelSelectionResponse, type MoveWorkspaceFileResponse, type OAuthFlowState, type PiWebCapability, type PiWebComponentStatus, type PiWebConfigEnvOverrides, type PiWebConfigResponse, type PiWebConfigValues, type PiWebDeprecatedAgentInput, type PiWebInstallationInfo, type PiWebPluginConfigMap, type PiWebPluginInfo, type PiWebPluginsResponse, type PiWebPluginScope, type PiWebReleaseStatus, type PiWebRuntimeComponent, type PiWebRuntimeResponse, type PiWebServiceComponent, type PiWebShortcutConfig, type PiWebStatusMessage, type PiWebStatusResponse, type PiWebStatusSeverity, type Project, type QueuedSessionMessage, type SavedPromptAttachment, type SessionBulkArchiveResponse, type SessionBulkDeleteArchivedResponse, type SessionBulkFailure, type SessionCleanupExecuteResponse, type SessionCleanupPreviewResponse, type SessionCleanupProjectSummary, type SessionCleanupThresholds, type SessionCleanupTotals, type SessionInfo, type SessionModel, type SessionModelCatalogEntry, type SessionModelCatalogResponse, type SessionNotification, type SessionNotificationClearReason, type SessionNotificationDismissThrough, type SessionNotificationInboxDelta, type SessionNotificationInboxEvent, type SessionNotificationInboxSnapshot, type SessionNotificationSeverity, type SessionNotificationSummary, type ServerNotice, type ServerNoticeEvent, type ServerNoticeSeverity, type ServerNoticeSnapshot, type SessionStatus, type SessionStreamSnapshot, type SessionTranscriptSnapshot, type SessionUiEvent, type SessionUnreadCatalogSnapshot, type SessionUnreadEvent, type SessionUnreadSummary, type SessionAttentionEvent, type SessionOpenAsks, type SessionWarning, type SessionWarningSeverity, type SlashCommand, type ThinkingLevelsResponse, type WriteWorkspaceFileResponse, type Workspace, type WorkspaceEffectiveConfig, type WorkspaceTrustResponse } from "../../../shared/apiTypes";
+import {
+  isChatCapability,
+  type ChatCapability,
+  PI_WEB_PLUGIN_LIFECYCLE_VERSION,
+  ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH,
+  ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH,
+  ACTIVE_TOOL_EXECUTION_LIMIT,
+  ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH,
+  ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH,
+  ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_DETAIL_MAX_LENGTH,
+  ASK_USER_ID_MAX_LENGTH,
+  ASK_USER_OPTION_LIMIT,
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
+  ASK_USER_QUESTION_KINDS,
+  ASK_USER_QUESTION_LIMIT,
+  ASK_USER_RECORD_QUESTION_LIMIT,
+  ASK_USER_TEXT_MAX_LENGTH,
+  EXTENSION_DIALOG_ID_MAX_LENGTH,
+  EXTENSION_DIALOG_INPUT_MAX_LENGTH,
+  EXTENSION_DIALOG_OPTION_LIMIT,
+  EXTENSION_DIALOG_TEXT_MAX_LENGTH,
+  EXTENSION_STATUS_KEY_MAX_LENGTH,
+  EXTENSION_STATUS_LIMIT,
+  EXTENSION_STATUS_TEXT_MAX_LENGTH,
+  SESSION_NOTIFICATION_LIMIT,
+  SESSION_NOTIFICATION_MESSAGE_BYTES,
+  SESSION_UNREAD_CATALOG_ID_MAX_LENGTH,
+  SESSION_UNREAD_COMPLETED_AT_MAX_LENGTH,
+  SESSION_UNREAD_CWD_MAX_LENGTH,
+  SESSION_UNREAD_LIMIT,
+  SESSION_UNREAD_SESSION_ID_MAX_LENGTH,
+  type ArchiveSessionsResponse,
+  type AskUserCloseReason,
+  type AskUserCloseResponse,
+  type AskUserOutcome,
+  type AskUserOutcomeImage,
+  type AskUserQuestion,
+  type AskUserQuestionKind,
+  type AskUserQuestionOption,
+  type AskUserQuestionRecord,
+  type PendingAskUser,
+  type PendingExtensionDialog,
+  type AuthProviderOption,
+  type AuthProviderStatus,
+  type AuthProvidersResponse,
+  type AuthStatusSource,
+  type AuthType,
+  type CommandOption,
+  type CommandResult,
+  type DeleteWorkspaceFileResponse,
+  type ExtensionDialogAnswer,
+  type ExtensionDialogCloseReason,
+  type ExtensionDialogCloseResponse,
+  type ExtensionDialogKind,
+  type ExtensionDialogOutcome,
+  type FileContentResponse,
+  type FileSuggestion,
+  type FileTreeEntry,
+  type FileTreeResponse,
+  type GlobalSessionEvent,
+  type Machine,
+  type MachineHealth,
+  type MachineKind,
+  type MachineRuntime,
+  type MachineStatus,
+  type MessagePage,
+  type McpAuthServersResponse,
+  type ModelSelectionResponse,
+  type MoveWorkspaceFileResponse,
+  type OAuthFlowState,
+  type PiWebCapability,
+  type PiWebComponentStatus,
+  type PiWebConfigEnvOverrides,
+  type PiWebConfigResponse,
+  type PiWebConfigValues,
+  type PiWebDeprecatedAgentInput,
+  type PiWebInstallationInfo,
+  type PiWebPluginConfigMap,
+  type PiWebPluginInfo,
+  type PiWebPluginsResponse,
+  type PiWebPluginScope,
+  type PiWebReleaseStatus,
+  type PiWebRuntimeComponent,
+  type PiWebRuntimeResponse,
+  type PiWebServiceComponent,
+  type PiWebShortcutConfig,
+  type PiWebStatusMessage,
+  type PiWebStatusResponse,
+  type PiWebStatusSeverity,
+  type Project,
+  type QueuedSessionMessage,
+  type SavedPromptAttachment,
+  type SessionBulkArchiveResponse,
+  type SessionBulkDeleteArchivedResponse,
+  type SessionBulkFailure,
+  type SessionCleanupExecuteResponse,
+  type SessionCleanupPreviewResponse,
+  type SessionCleanupProjectSummary,
+  type SessionCleanupThresholds,
+  type SessionCleanupTotals,
+  type SessionInfo,
+  type SessionModel,
+  type SessionModelCatalogEntry,
+  type SessionModelCatalogResponse,
+  type SessionNotification,
+  type SessionNotificationClearReason,
+  type SessionNotificationDismissThrough,
+  type SessionNotificationInboxDelta,
+  type SessionNotificationInboxEvent,
+  type SessionNotificationInboxSnapshot,
+  type SessionNotificationSeverity,
+  type SessionNotificationSummary,
+  type ServerNotice,
+  type ServerNoticeEvent,
+  type ServerNoticeSeverity,
+  type ServerNoticeSnapshot,
+  type SessionStatus,
+  type SessionStreamSnapshot,
+  type SessionTranscriptSnapshot,
+  type SessionUiEvent,
+  type SessionUnreadCatalogSnapshot,
+  type SessionUnreadEvent,
+  type SessionUnreadSummary,
+  type SessionAttentionEvent,
+  type SessionOpenAsks,
+  type SessionWarning,
+  type SessionWarningSeverity,
+  type SlashCommand,
+  type ThinkingLevelsResponse,
+  type WriteWorkspaceFileResponse,
+  type Workspace,
+  type WorkspaceEffectiveConfig,
+  type WorkspaceTrustResponse,
+} from "../../../shared/apiTypes";
 import { parseMachineStatusSnapshot, type MachineStatusSnapshot, type MachineStatusUiEvent } from "../../../shared/machineStatus";
-import type { JsonValue, PiPackageInfo, PiPackageInstallableSuggestion, PiPackageMutationAction, PiPackageMutationResponse, PiPackageScope, PiPackagesResponse, SessionActivity, SessionStartupProgressEvent, SessionTreeForkResult, SessionTreeNavigateResult, SessionTreeNode, SessionTreeNodeKind, SessionTreeSnapshot, WorkspaceProviderDiagnostic, WorkspaceProviderDiagnosticCode, WorkspaceProviderResolution, WorkspaceProviderResolutionStatus, WorkspaceProviderTier } from "../../../shared/apiTypes";
+import type {
+  JsonValue,
+  PiPackageInfo,
+  PiPackageInstallableSuggestion,
+  PiPackageMutationAction,
+  PiPackageMutationResponse,
+  PiPackageScope,
+  PiPackagesResponse,
+  SessionActivity,
+  SessionStartupProgressEvent,
+  SessionTreeForkResult,
+  SessionTreeNavigateResult,
+  SessionTreeNode,
+  SessionTreeNodeKind,
+  SessionTreeSnapshot,
+  WorkspaceProviderDiagnostic,
+  WorkspaceProviderDiagnosticCode,
+  WorkspaceProviderResolution,
+  WorkspaceProviderResolutionStatus,
+  WorkspaceProviderTier,
+} from "../../../shared/apiTypes";
 
 import { parseKnownPiWebCapabilities } from "../../../shared/capabilities";
 import { isSupportedImageMimeType, MAX_PROMPT_ATTACHMENTS } from "../../../shared/promptAttachments";
@@ -57,8 +211,7 @@ function parseTranscriptMessages(value: unknown): unknown[] {
   if (!Array.isArray(value)) throw new Error("Expected array response");
   return value.map((message: unknown) => {
     // SDK payloads remain opaque, but durable identity is part of our API contract.
-    if (typeof message === "object" && message !== null && "entryId" in message
-      && message.entryId !== undefined && typeof message.entryId !== "string") {
+    if (typeof message === "object" && message !== null && "entryId" in message && message.entryId !== undefined && typeof message.entryId !== "string") {
       throw new Error("Expected string field: entryId");
     }
     return message;
@@ -154,7 +307,12 @@ function optionalMachineStatus(record: Record<string, unknown>, key: string): Ma
 
 export function parseProject(value: unknown): Project {
   const record = requireRecord(value);
-  return { id: requireString(record, "id"), name: requireString(record, "name"), path: requireString(record, "path"), createdAt: requireString(record, "createdAt") };
+  return {
+    id: requireString(record, "id"),
+    name: requireString(record, "name"),
+    path: requireString(record, "path"),
+    createdAt: requireString(record, "createdAt"),
+  };
 }
 
 export function parseWorkspace(value: unknown): Workspace {
@@ -201,9 +359,7 @@ function parseWorkspaceProviderResolutionStatus(value: unknown): WorkspaceProvid
 function parseWorkspaceProviderDiagnostic(value: unknown): WorkspaceProviderDiagnostic {
   const record = requireRecord(value);
   const pluginId = optionalString(record, "pluginId");
-  const pluginIds = record["pluginIds"] === undefined
-    ? undefined
-    : arrayOfString(record["pluginIds"], "pluginIds");
+  const pluginIds = record["pluginIds"] === undefined ? undefined : arrayOfString(record["pluginIds"], "pluginIds");
   return Object.freeze({
     code: parseWorkspaceProviderDiagnosticCode(record["code"]),
     message: requireString(record, "message"),
@@ -250,9 +406,7 @@ function optionalWorkspaceRemovalPresentation(value: unknown): Workspace["remova
 
 function parseJsonObject(value: unknown, field: string): NonNullable<NonNullable<Workspace["provider"]>["metadata"]> {
   if (!isRecord(value) || Array.isArray(value)) throw new Error(`Invalid ${field} field`);
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, parseJsonValue(item, field)]),
-  ));
+  return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, parseJsonValue(item, field)])));
 }
 
 function parseJsonValue(value: unknown, field: string): JsonValue {
@@ -279,9 +433,7 @@ export function parseLocatedSession(value: unknown): { cwd: string } {
 
 function parseSessionUiMetadata(value: unknown): NonNullable<SessionInfo["metadata"]> {
   if (!isRecord(value) || Array.isArray(value)) throw new Error("Invalid session metadata field");
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([namespace, data]) => [namespace, parseJsonObject(data, "session metadata namespace")]),
-  ));
+  return Object.freeze(Object.fromEntries(Object.entries(value).map(([namespace, data]) => [namespace, parseJsonObject(data, "session metadata namespace")])));
 }
 
 export function parseSessionInfo(value: unknown): SessionInfo {
@@ -345,9 +497,11 @@ function parseSessionWarning(value: unknown): SessionWarning {
 
 /** Rolling compatibility for daemons that encoded this status fact as a warning. */
 function isLegacyOtherInstanceActivityWarning(warning: SessionWarning): boolean {
-  return warning.severity === "info"
+  return (
+    warning.severity === "info"
     && warning.source === "PI-WEB"
-    && warning.message === "Recently active in another PI-WEB instance. Avoid working on this session in both instances at once.";
+    && warning.message === "Recently active in another PI-WEB instance. Avoid working on this session in both instances at once."
+  );
 }
 
 function parseAskUserQuestionOption(value: unknown): AskUserQuestionOption {
@@ -363,7 +517,10 @@ function parseAskUserQuestionOption(value: unknown): AskUserQuestionOption {
 function parseAskUserQuestion(value: unknown): AskUserQuestion {
   const record = requireRecord(value);
   const options = boundedArrayOf(record["options"], parseAskUserQuestionOption, ASK_USER_OPTION_LIMIT, "options");
-  assertUniqueStrings(options.map((option) => option.value), "ask option value");
+  assertUniqueStrings(
+    options.map((option) => option.value),
+    "ask option value",
+  );
   const multiple = parseOptionalBoolean(record["multiple"], "multiple");
   const showIf = record["showIf"] === undefined ? undefined : requireRecord(record["showIf"]);
   return {
@@ -372,12 +529,14 @@ function parseAskUserQuestion(value: unknown): AskUserQuestion {
     ...optionalField("detail", optionalBoundedNonEmptyString(record, "detail", ASK_USER_DETAIL_MAX_LENGTH)),
     options,
     ...(multiple === undefined ? {} : { multiple }),
-    ...(showIf === undefined ? {} : {
-      showIf: {
-        question: requireBoundedNonEmptyString(showIf, "question", ASK_USER_ID_MAX_LENGTH),
-        values: boundedArrayOf(showIf["values"], parseNonEmptyString, ASK_USER_OPTION_LIMIT, "showIf values"),
-      },
-    }),
+    ...(showIf === undefined
+      ? {}
+      : {
+          showIf: {
+            question: requireBoundedNonEmptyString(showIf, "question", ASK_USER_ID_MAX_LENGTH),
+            values: boundedArrayOf(showIf["values"], parseNonEmptyString, ASK_USER_OPTION_LIMIT, "showIf values"),
+          },
+        }),
     ...parseAskTypedFields(record),
   };
 }
@@ -388,11 +547,13 @@ function parseAskTypedFields(record: Record<string, unknown>): Partial<AskUserQu
   if (kind === undefined) return {};
   if (!ASK_USER_QUESTION_KINDS.some((known) => known === kind)) throw new Error("Invalid ask question kind");
   const fallback = record["default"];
-  if (fallback !== undefined && typeof fallback !== "boolean" && typeof fallback !== "number" && typeof fallback !== "string") throw new Error("Invalid ask question default");
+  if (fallback !== undefined && typeof fallback !== "boolean" && typeof fallback !== "number" && typeof fallback !== "string")
+    throw new Error("Invalid ask question default");
   const multiline = parseOptionalBoolean(record["multiline"], "multiline");
   const integer = parseOptionalBoolean(record["integer"], "integer");
   const labels = record["labels"];
-  if (labels !== undefined && !(Array.isArray(labels) && labels.length === 2 && labels.every((label) => typeof label === "string"))) throw new Error("Invalid ask question labels");
+  if (labels !== undefined && !(Array.isArray(labels) && labels.length === 2 && labels.every((label) => typeof label === "string")))
+    throw new Error("Invalid ask question labels");
   return {
     // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- checked against ASK_USER_QUESTION_KINDS above.
     kind: kind as AskUserQuestionKind,
@@ -416,9 +577,15 @@ function parseAskTypedFields(record: Record<string, unknown>): Partial<AskUserQu
 function parsePendingAskUser(value: unknown): PendingAskUser {
   const record = requireRecord(value);
   // Only an approval set may be the context alone, and may then omit its questions.
-  const questions = record["questions"] === undefined && record["approval"] === true ? [] : boundedArrayOf(record["questions"], parseAskUserQuestion, ASK_USER_QUESTION_LIMIT, "questions");
+  const questions =
+    record["questions"] === undefined && record["approval"] === true
+      ? []
+      : boundedArrayOf(record["questions"], parseAskUserQuestion, ASK_USER_QUESTION_LIMIT, "questions");
   if (questions.length === 0 && record["approval"] !== true) throw new Error("Pending ask has no questions");
-  assertUniqueStrings(questions.map((question) => question.id), "ask question id");
+  assertUniqueStrings(
+    questions.map((question) => question.id),
+    "ask question id",
+  );
   const askedAt = requireNonEmptyString(record, "askedAt");
   // A daemon older than the Questions pane sends neither staleness field.
   const turnsSinceUpdate = optionalNumber(record, "turnsSinceUpdate");
@@ -445,7 +612,12 @@ function optionalPendingAsks(pendingAsks: unknown, legacyPendingAsk: unknown): P
 export function parseOpenAsks(value: unknown): SessionOpenAsks {
   const record = requireRecord(value);
   const workingMode = optionalString(record, "workingMode");
-  return { pendingAsks: arrayOf(parsePendingAskUser)(record["pendingAsks"]), ...optionalAttentionRequest(record["attentionRequest"]), ...(workingMode === undefined ? {} : { workingMode }), ...optionalField("workingModeVersion", optionalNumber(record, "workingModeVersion")) };
+  return {
+    pendingAsks: arrayOf(parsePendingAskUser)(record["pendingAsks"]),
+    ...optionalAttentionRequest(record["attentionRequest"]),
+    ...(workingMode === undefined ? {} : { workingMode }),
+    ...optionalField("workingModeVersion", optionalNumber(record, "workingModeVersion")),
+  };
 }
 
 export function parseSessionAskOpenedEvent(value: unknown): { type: "ask.opened"; ask: PendingAskUser } {
@@ -484,7 +656,15 @@ function parseAskUserQuestionRecord(value: unknown): AskUserQuestionRecord {
   if (answered !== (values.length > 0 || otherText !== undefined || typed !== undefined)) throw new Error("Ask answer contradicts its answered flag");
   const skipped = record["skipped"] === true;
   if (skipped && answered) throw new Error("Ask answer is both skipped and answered");
-  return { question, answered, values, ...(otherText === undefined ? {} : { otherText }), ...(typed === undefined ? {} : { value: typed }), ...(skipped ? { skipped: true as const } : {}), ...optionalField("revision", optionalBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH)) };
+  return {
+    question,
+    answered,
+    values,
+    ...(otherText === undefined ? {} : { otherText }),
+    ...(typed === undefined ? {} : { value: typed }),
+    ...(skipped ? { skipped: true as const } : {}),
+    ...optionalField("revision", optionalBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH)),
+  };
 }
 
 function parseAskUserOutcomeImage(value: unknown): AskUserOutcomeImage {
@@ -496,7 +676,13 @@ function parseAskUserOutcomeImage(value: unknown): AskUserOutcomeImage {
   const target = askUserImageTarget(record["target"]);
   if (target === undefined) throw new Error("Invalid ask image target");
   const name = record["name"];
-  return { target, reference, mimeType, ...(typeof name === "string" && name !== "" ? { name } : {}), ...optionalField("revision", optionalBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH)) };
+  return {
+    target,
+    reference,
+    mimeType,
+    ...(typeof name === "string" && name !== "" ? { name } : {}),
+    ...optionalField("revision", optionalBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH)),
+  };
 }
 
 export function parseAskUserOutcome(value: unknown): AskUserOutcome {
@@ -516,12 +702,17 @@ export function parseAskUserOutcome(value: unknown): AskUserOutcome {
     closedAt: requireNonEmptyString(record, "closedAt"),
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
     // "" records that the user cleared the context.
-    ...optionalField("editedContext", record["editedContext"] === "" ? "" : optionalBoundedNonEmptyString(record, "editedContext", ASK_USER_CONTEXT_MAX_LENGTH)),
+    ...optionalField(
+      "editedContext",
+      record["editedContext"] === "" ? "" : optionalBoundedNonEmptyString(record, "editedContext", ASK_USER_CONTEXT_MAX_LENGTH),
+    ),
     ...(record["approved"] === true ? { approved: true as const } : {}),
     questions,
     ...optionalField("note", optionalBoundedNonEmptyString(record, "note", ASK_USER_OTHER_TEXT_MAX_LENGTH)),
     // A whole-set record gathers every kept row's send plus a final note-only send, each at most MAX_PROMPT_ATTACHMENTS.
-    ...(record["images"] === undefined ? {} : { images: boundedArrayOf(record["images"], parseAskUserOutcomeImage, (ASK_USER_RECORD_QUESTION_LIMIT + 1) * MAX_PROMPT_ATTACHMENTS, "images") }),
+    ...(record["images"] === undefined
+      ? {}
+      : { images: boundedArrayOf(record["images"], parseAskUserOutcomeImage, (ASK_USER_RECORD_QUESTION_LIMIT + 1) * MAX_PROMPT_ATTACHMENTS, "images") }),
     answeredCount,
     unansweredIds,
     summary: requireNonEmptyString(record, "summary"),
@@ -596,9 +787,8 @@ function parseExtensionDialogOption(value: unknown): string {
 function parsePendingExtensionDialog(value: unknown): PendingExtensionDialog {
   const record = requireRecord(value);
   const kind = parseExtensionDialogKind(record["kind"]);
-  const options = record["options"] === undefined
-    ? undefined
-    : boundedArrayOf(record["options"], parseExtensionDialogOption, EXTENSION_DIALOG_OPTION_LIMIT, "options");
+  const options =
+    record["options"] === undefined ? undefined : boundedArrayOf(record["options"], parseExtensionDialogOption, EXTENSION_DIALOG_OPTION_LIMIT, "options");
   if (options !== undefined) assertUniqueStrings(options, "dialog option");
   if (kind === "select" && (options === undefined || options.length === 0)) throw new Error("Select dialog has no options");
   return {
@@ -617,7 +807,12 @@ function parsePendingExtensionDialog(value: unknown): PendingExtensionDialog {
 function optionalAttentionRequest(value: unknown): Pick<SessionStatus, "attentionRequest"> | object {
   if (value === undefined) return {};
   const record = requireRecord(value);
-  return { attentionRequest: { id: requireBoundedNonEmptyString(record, "id", ASK_USER_ID_MAX_LENGTH), reason: requireBoundedNonEmptyString(record, "reason", ASK_USER_TEXT_MAX_LENGTH) } };
+  return {
+    attentionRequest: {
+      id: requireBoundedNonEmptyString(record, "id", ASK_USER_ID_MAX_LENGTH),
+      reason: requireBoundedNonEmptyString(record, "reason", ASK_USER_TEXT_MAX_LENGTH),
+    },
+  };
 }
 
 function optionalDurableHostPin(value: unknown): Pick<SessionStatus, "durableHostPin"> | object {
@@ -626,9 +821,17 @@ function optionalDurableHostPin(value: unknown): Pick<SessionStatus, "durableHos
   const repeats = record["repeats"];
   return {
     durableHostPin: {
-      revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH), current: requireBoundedNonEmptyString(record, "current", ASK_USER_ID_MAX_LENGTH),
+      revision: requireBoundedNonEmptyString(record, "revision", ASK_USER_ID_MAX_LENGTH),
+      current: requireBoundedNonEmptyString(record, "current", ASK_USER_ID_MAX_LENGTH),
       ...(record["pending"] === true ? { pending: true } : {}),
-      ...(Array.isArray(repeats) ? { repeats: repeats.filter((item): item is string => typeof item === "string").slice(0, 8).map((item) => item.slice(0, ASK_USER_TEXT_MAX_LENGTH)) } : {}),
+      ...(Array.isArray(repeats)
+        ? {
+            repeats: repeats
+              .filter((item): item is string => typeof item === "string")
+              .slice(0, 8)
+              .map((item) => item.slice(0, ASK_USER_TEXT_MAX_LENGTH)),
+          }
+        : {}),
     },
   };
 }
@@ -649,7 +852,10 @@ function optionalUnresolvedEffects(value: unknown): Pick<SessionStatus, "unresol
 function optionalPendingDialogs(value: unknown): Pick<SessionStatus, "pendingDialogs"> | object {
   if (value === undefined) return {};
   const dialogs = arrayOf(parsePendingExtensionDialog)(value);
-  assertUniqueStrings(dialogs.map((dialog) => dialog.dialogId), "dialog id");
+  assertUniqueStrings(
+    dialogs.map((dialog) => dialog.dialogId),
+    "dialog id",
+  );
   return { pendingDialogs: dialogs };
 }
 
@@ -659,7 +865,12 @@ export function parseSessionDialogOpenedEvent(value: unknown): { type: "dialog.o
   return { type: "dialog.opened", dialog: parsePendingExtensionDialog(record["dialog"]) };
 }
 
-export function parseSessionDialogClosedEvent(value: unknown): { type: "dialog.closed"; dialogId: string; reason: ExtensionDialogCloseReason; answer?: ExtensionDialogAnswer } {
+export function parseSessionDialogClosedEvent(value: unknown): {
+  type: "dialog.closed";
+  dialogId: string;
+  reason: ExtensionDialogCloseReason;
+  answer?: ExtensionDialogAnswer;
+} {
   const record = requireRecord(value);
   if (record["type"] !== "dialog.closed") throw new Error("Invalid dialog closed event type");
   const reason = parseExtensionDialogCloseReason(record["reason"]);
@@ -726,9 +937,8 @@ function parseActiveToolExecution(value: unknown): NonNullable<SessionStatus["ac
   const id = requireBoundedNonEmptyString(record, "id", ACTIVE_TOOL_EXECUTION_ID_MAX_LENGTH);
   const toolName = requireBoundedNonEmptyString(record, "toolName", ACTIVE_TOOL_EXECUTION_TOOL_NAME_MAX_LENGTH);
   const label = requireBoundedNonEmptyString(record, "label", ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH);
-  const startedAt = record["startedAt"] === undefined
-    ? undefined
-    : requireBoundedNonEmptyString(record, "startedAt", ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH);
+  const startedAt =
+    record["startedAt"] === undefined ? undefined : requireBoundedNonEmptyString(record, "startedAt", ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH);
   if (startedAt !== undefined && !Number.isFinite(Date.parse(startedAt))) throw new Error("Invalid active tool execution start time");
   return { id, kind, toolName, label, ...(startedAt === undefined ? {} : { startedAt }) };
 }
@@ -754,7 +964,10 @@ export function parseSessionStatus(value: unknown): SessionStatus {
     ...optionalModel(record["model"]),
     ...optionalContextUsage(record["contextUsage"]),
     ...optionalField("thinkingLevel", optionalString(record, "thinkingLevel")),
-    ...optionalField("warnings", warnings?.filter((warning) => !isLegacyOtherInstanceActivityWarning(warning))),
+    ...optionalField(
+      "warnings",
+      warnings?.filter((warning) => !isLegacyOtherInstanceActivityWarning(warning)),
+    ),
     ...optionalPendingAsks(record["pendingAsks"], record["pendingAsk"]),
     ...optionalPendingDialogs(record["pendingDialogs"]),
     ...optionalAttentionRequest(record["attentionRequest"]),
@@ -992,7 +1205,10 @@ export function parseSessionStreamEvent(value: unknown): SessionUiEvent {
 }
 
 type RealtimeStreamEvent =
-  | Extract<GlobalSessionEvent, { type: "status.update" | "activity.update" | "session.name" | "session.created" | "models.changed" | "workspaces.changed" | "notices.updated" }>
+  | Extract<
+      GlobalSessionEvent,
+      { type: "status.update" | "activity.update" | "session.name" | "session.created" | "models.changed" | "workspaces.changed" | "notices.updated" }
+    >
   | MachineStatusUiEvent;
 
 export function parseRealtimeStreamEvent(value: unknown): RealtimeStreamEvent {
@@ -1095,11 +1311,7 @@ function parseServerNoticeSeverity(value: unknown): ServerNoticeSeverity {
 
 function parseSessionUnreadSummary(value: unknown): SessionUnreadSummary {
   const record = requireRecord(value);
-  const completedAt = requireBoundedNonEmptyString(
-    record,
-    "completedAt",
-    SESSION_UNREAD_COMPLETED_AT_MAX_LENGTH,
-  );
+  const completedAt = requireBoundedNonEmptyString(record, "completedAt", SESSION_UNREAD_COMPLETED_AT_MAX_LENGTH);
   const completedDate = new Date(completedAt);
   if (!Number.isFinite(completedDate.getTime()) || completedDate.toISOString() !== completedAt) {
     throw new Error("Invalid canonical session unread completion time");
@@ -1334,7 +1546,8 @@ function highestNotificationSeverity(notifications: readonly SessionNotification
 
 export function parseSessionCleanupPreviewResponse(value: unknown): SessionCleanupPreviewResponse {
   const record = requireRecord(value);
-  const skippedBusySessionIds = record["skippedBusySessionIds"] === undefined ? undefined : arrayOfString(record["skippedBusySessionIds"], "skippedBusySessionIds");
+  const skippedBusySessionIds =
+    record["skippedBusySessionIds"] === undefined ? undefined : arrayOfString(record["skippedBusySessionIds"], "skippedBusySessionIds");
   return {
     generatedAt: requireString(record, "generatedAt"),
     thresholds: parseSessionCleanupThresholds(record["thresholds"]),
@@ -1410,7 +1623,8 @@ function parseQueuedSessionMessage(value: unknown): QueuedSessionMessage {
   const kind = requireString(record, "kind");
   if (kind !== "steer" && kind !== "followUp") throw new Error("Invalid queued message kind");
   return {
-    kind, text: requireString(record, "text"),
+    kind,
+    text: requireString(record, "text"),
     ...optionalField("hasAttachments", optionalBoolean(record, "hasAttachments")),
     ...optionalField("attachmentCount", record["attachmentCount"] === undefined ? undefined : requireNonNegativeSafeInteger(record, "attachmentCount")),
   };
@@ -1429,7 +1643,13 @@ function parseTokens(value: unknown): SessionStatus["tokens"] {
 
 function parseSessionModel(value: unknown): SessionModel {
   const record = requireRecord(value);
-  return { ...optionalField("provider", optionalString(record, "provider")), ...optionalField("id", optionalString(record, "id")), ...optionalField("name", optionalString(record, "name")), ...optionalField("contextWindow", optionalNumber(record, "contextWindow")), ...optionalField("reasoning", record["reasoning"]) };
+  return {
+    ...optionalField("provider", optionalString(record, "provider")),
+    ...optionalField("id", optionalString(record, "id")),
+    ...optionalField("name", optionalString(record, "name")),
+    ...optionalField("contextWindow", optionalNumber(record, "contextWindow")),
+    ...optionalField("reasoning", record["reasoning"]),
+  };
 }
 
 function optionalModel(value: unknown): Pick<SessionStatus, "model"> | object {
@@ -1479,7 +1699,15 @@ function parseAuthType(value: unknown): AuthType {
 }
 
 function parseAuthStatusSource(value: unknown): AuthStatusSource {
-  if (value !== "stored" && value !== "runtime" && value !== "environment" && value !== "fallback" && value !== "models_json_key" && value !== "models_json_command") throw new Error("Invalid auth status source");
+  if (
+    value !== "stored"
+    && value !== "runtime"
+    && value !== "environment"
+    && value !== "fallback"
+    && value !== "models_json_key"
+    && value !== "models_json_command"
+  )
+    throw new Error("Invalid auth status source");
   return value;
 }
 
@@ -1509,10 +1737,12 @@ export function parseAuthProvidersResponse(value: unknown): AuthProvidersRespons
 
 export function parseMcpAuthServersResponse(value: unknown): McpAuthServersResponse {
   const record = requireRecord(value);
-  return { servers: arrayOf((item) => {
-    const server = requireRecord(item);
-    return { name: requireString(server, "name"), ...optionalField("description", optionalString(server, "description")) };
-  })(record["servers"]) };
+  return {
+    servers: arrayOf((item) => {
+      const server = requireRecord(item);
+      return { name: requireString(server, "name"), ...optionalField("description", optionalString(server, "description")) };
+    })(record["servers"]),
+  };
 }
 
 export function parseOAuthFlowState(value: unknown): OAuthFlowState {
@@ -1609,7 +1839,9 @@ function parseOAuthInfoLink(value: unknown): NonNullable<NonNullable<OAuthFlowSt
 function optionalContextUsage(value: unknown): Pick<SessionStatus, "contextUsage"> | object {
   if (value === undefined) return {};
   const record = requireRecord(value);
-  return { contextUsage: { tokens: numberOrNull(record, "tokens"), contextWindow: requireNumber(record, "contextWindow"), percent: numberOrNull(record, "percent") } };
+  return {
+    contextUsage: { tokens: numberOrNull(record, "tokens"), contextWindow: requireNumber(record, "contextWindow"), percent: numberOrNull(record, "percent") },
+  };
 }
 
 export function parseSlashCommand(value: unknown): SlashCommand {
@@ -1633,21 +1865,44 @@ export function parseFileSuggestion(value: unknown): FileSuggestion {
 
 export function parseFileTreeResponse(value: unknown): FileTreeResponse {
   const record = requireRecord(value);
-  return { path: requireString(record, "path"), entries: arrayOf(parseFileTreeEntry)(record["entries"]), scannedAt: requireString(record, "scannedAt"), truncated: requireBoolean(record, "truncated") };
+  return {
+    path: requireString(record, "path"),
+    entries: arrayOf(parseFileTreeEntry)(record["entries"]),
+    scannedAt: requireString(record, "scannedAt"),
+    truncated: requireBoolean(record, "truncated"),
+  };
 }
 
 function parseFileTreeEntry(value: unknown): FileTreeEntry {
   const record = requireRecord(value);
   const type = requireString(record, "type");
   if (type !== "file" && type !== "directory" && type !== "symlink") throw new Error("Invalid file tree entry type");
-  return { name: requireString(record, "name"), path: requireString(record, "path"), type, ...optionalField("size", optionalNumber(record, "size")), ...optionalField("modifiedAt", optionalString(record, "modifiedAt")) };
+  return {
+    name: requireString(record, "name"),
+    path: requireString(record, "path"),
+    type,
+    ...optionalField("size", optionalNumber(record, "size")),
+    ...optionalField("modifiedAt", optionalString(record, "modifiedAt")),
+  };
 }
 
 export function parseFileContentResponse(value: unknown): FileContentResponse {
   const record = requireRecord(value);
   const encoding = requireString(record, "encoding");
   if (encoding !== "utf8") throw new Error("Invalid file encoding");
-  return { path: requireString(record, "path"), ...optionalField("language", optionalString(record, "language")), ...optionalField("mediaType", optionalFileMediaType(record["mediaType"])), ...optionalField("mimeType", optionalString(record, "mimeType")), encoding, size: requireNumber(record, "size"), modifiedAt: requireString(record, "modifiedAt"), ...optionalField("version", optionalString(record, "version")), content: requireString(record, "content"), truncated: requireBoolean(record, "truncated"), binary: requireBoolean(record, "binary") };
+  return {
+    path: requireString(record, "path"),
+    ...optionalField("language", optionalString(record, "language")),
+    ...optionalField("mediaType", optionalFileMediaType(record["mediaType"])),
+    ...optionalField("mimeType", optionalString(record, "mimeType")),
+    encoding,
+    size: requireNumber(record, "size"),
+    modifiedAt: requireString(record, "modifiedAt"),
+    ...optionalField("version", optionalString(record, "version")),
+    content: requireString(record, "content"),
+    truncated: requireBoolean(record, "truncated"),
+    binary: requireBoolean(record, "binary"),
+  };
 }
 
 export function parseWriteWorkspaceFileResponse(value: unknown): WriteWorkspaceFileResponse {
@@ -1721,7 +1976,10 @@ function parsePiWebConfigValues(value: unknown): PiWebConfigValues {
     ...optionalField("allowedHosts", optionalAllowedHosts(record["allowedHosts"])),
     ...optionalField("shortcuts", optionalShortcuts(record["shortcuts"])),
     ...optionalField("defaultTheme", record["defaultTheme"] === undefined ? undefined : requireDefaultThemePreference(record["defaultTheme"], "response")),
-    ...optionalField("defaultStreamingBehavior", record["defaultStreamingBehavior"] === undefined ? undefined : requireDefaultStreamingBehavior(record["defaultStreamingBehavior"], "response")),
+    ...optionalField(
+      "defaultStreamingBehavior",
+      record["defaultStreamingBehavior"] === undefined ? undefined : requireDefaultStreamingBehavior(record["defaultStreamingBehavior"], "response"),
+    ),
     ...optionalField("plugins", optionalPlugins(record["plugins"])),
     ...optionalField("pathAccess", optionalPathAccess(record["pathAccess"])),
     ...optionalField("uploads", optionalUploads(record["uploads"])),
@@ -1752,7 +2010,8 @@ function optionalSessionNaming(value: unknown): PiWebConfigValues["sessionNaming
   if (model !== undefined && !/^[^/\s]+\/[^\s]+$/.test(model)) throw new Error("Invalid PI WEB sessionNaming.model field");
   if (maxTokens !== undefined && (!Number.isSafeInteger(maxTokens) || maxTokens <= 0)) throw new Error("Invalid PI WEB sessionNaming.maxTokens field");
   if (thinkingLevel !== undefined && !isKnownThinkingLevel(thinkingLevel)) throw new Error("Invalid PI WEB sessionNaming.thinkingLevel field");
-  if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647)) throw new Error("Invalid PI WEB sessionNaming.timeoutMs field");
+  if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647))
+    throw new Error("Invalid PI WEB sessionNaming.timeoutMs field");
   return {
     ...optionalField("model", model),
     ...optionalField("maxTokens", maxTokens),
@@ -1819,23 +2078,27 @@ function isNonEmptyStringArray(value: unknown): value is string[] {
 function optionalShortcuts(value: unknown): PiWebShortcutConfig | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || Array.isArray(value)) throw new Error("Invalid PI WEB shortcuts field");
-  return Object.fromEntries(Object.entries(value).map(([actionId, shortcut]) => {
-    if (shortcut !== null && (typeof shortcut !== "string" || shortcut === "")) throw new Error("Invalid PI WEB shortcut field");
-    return [actionId, shortcut];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([actionId, shortcut]) => {
+      if (shortcut !== null && (typeof shortcut !== "string" || shortcut === "")) throw new Error("Invalid PI WEB shortcut field");
+      return [actionId, shortcut];
+    }),
+  );
 }
 
 function optionalPlugins(value: unknown): PiWebPluginConfigMap | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || Array.isArray(value)) throw new Error("Invalid PI WEB plugins field");
-  return Object.fromEntries(Object.entries(value).map(([pluginId, config]) => {
-    if (!isRecord(config) || Array.isArray(config)) throw new Error("Invalid PI WEB plugin config field");
-    const enabled = config["enabled"];
-    if (enabled !== undefined && typeof enabled !== "boolean") throw new Error("Invalid PI WEB plugin enabled field");
-    const settings = config["settings"];
-    if (settings !== undefined && (!isRecord(settings) || Array.isArray(settings))) throw new Error("Invalid PI WEB plugin settings field");
-    return [pluginId, config];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([pluginId, config]) => {
+      if (!isRecord(config) || Array.isArray(config)) throw new Error("Invalid PI WEB plugin config field");
+      const enabled = config["enabled"];
+      if (enabled !== undefined && typeof enabled !== "boolean") throw new Error("Invalid PI WEB plugin enabled field");
+      const settings = config["settings"];
+      if (settings !== undefined && (!isRecord(settings) || Array.isArray(settings))) throw new Error("Invalid PI WEB plugin settings field");
+      return [pluginId, config];
+    }),
+  );
 }
 
 function parsePiWebConfigEnvOverrides(value: unknown): PiWebConfigEnvOverrides {
@@ -1960,7 +2223,15 @@ function parsePiWebPluginServerInfo(value: unknown, pluginId: string): NonNullab
   if (state !== "active" && state !== "failed" && state !== "incompatible" && state !== "disabled" && state !== "missing" && state !== "unknown") {
     throw new Error("Invalid PI WEB server plugin state");
   }
-  if (phase !== undefined && phase !== "import" && phase !== "activate" && phase !== "validate" && phase !== "start" && phase !== "health" && phase !== "dispose") {
+  if (
+    phase !== undefined
+    && phase !== "import"
+    && phase !== "activate"
+    && phase !== "validate"
+    && phase !== "start"
+    && phase !== "health"
+    && phase !== "dispose"
+  ) {
     throw new Error("Invalid PI WEB server plugin phase");
   }
   const health = record["health"] === undefined ? undefined : parsePiWebPluginHealth(record["health"]);
@@ -2038,10 +2309,12 @@ function parsePiWebPluginRecoveryCommands(value: unknown): PiWebPluginsResponse[
     noServerPlugins: requireString(record, "noServerPlugins"),
     clearSafeStart: requireString(record, "clearSafeStart"),
   };
-  if (commands.showSafeStart !== PI_WEB_PLUGIN_RECOVERY_COMMANDS.showSafeStart
+  if (
+    commands.showSafeStart !== PI_WEB_PLUGIN_RECOVERY_COMMANDS.showSafeStart
     || commands.bundledOnly !== PI_WEB_PLUGIN_RECOVERY_COMMANDS.bundledOnly
     || commands.noServerPlugins !== PI_WEB_PLUGIN_RECOVERY_COMMANDS.noServerPlugins
-    || commands.clearSafeStart !== PI_WEB_PLUGIN_RECOVERY_COMMANDS.clearSafeStart) {
+    || commands.clearSafeStart !== PI_WEB_PLUGIN_RECOVERY_COMMANDS.clearSafeStart
+  ) {
     throw new Error("Invalid PI WEB server plugin recovery commands");
   }
   return commands;
@@ -2126,7 +2399,8 @@ function optionalPiWebInstallationInfo(value: unknown): PiWebInstallationInfo | 
   if (value === undefined) return undefined;
   const record = requireRecord(value);
   const kind = requireString(record, "kind");
-  if (kind !== "pi-package" && kind !== "npm-global" && kind !== "local" && kind !== "docker" && kind !== "unknown") throw new Error("Invalid PI WEB installation kind");
+  if (kind !== "pi-package" && kind !== "npm-global" && kind !== "local" && kind !== "docker" && kind !== "unknown")
+    throw new Error("Invalid PI WEB installation kind");
   const scope = record["scope"];
   if (scope !== undefined && scope !== "user" && scope !== "project") throw new Error("Invalid PI WEB installation scope");
   const dockerMode = record["dockerMode"];
@@ -2195,9 +2469,21 @@ export function parseCommandResult(value: unknown): CommandResult {
   const record = requireRecord(value);
   const type = requireString(record, "type");
   if (type === "unsupported") return { type, message: requireString(record, "message") };
-  if (type === "select") return { type, requestId: requireString(record, "requestId"), title: requireString(record, "title"), options: arrayOf(parseCommandOption)(record["options"]) };
+  if (type === "select")
+    return {
+      type,
+      requestId: requireString(record, "requestId"),
+      title: requireString(record, "title"),
+      options: arrayOf(parseCommandOption)(record["options"]),
+    };
   if (type === "tree") return { type, tree: parseSessionTreeSnapshot(record["tree"]) };
-  if (type === "done") return { type, ...optionalField("message", optionalString(record, "message")), ...optionalSession(record["session"]), ...optionalField("promptDraft", optionalString(record, "promptDraft")) };
+  if (type === "done")
+    return {
+      type,
+      ...optionalField("message", optionalString(record, "message")),
+      ...optionalSession(record["session"]),
+      ...optionalField("promptDraft", optionalString(record, "promptDraft")),
+    };
   throw new Error("Invalid command result type");
 }
 
@@ -2302,7 +2588,11 @@ function arrayOfNonBlankString(value: unknown, key: string): string[] {
 
 function parseCommandOption(value: unknown): CommandOption {
   const record = requireRecord(value);
-  return { value: requireString(record, "value"), label: requireString(record, "label"), ...optionalField("description", optionalString(record, "description")) };
+  return {
+    value: requireString(record, "value"),
+    label: requireString(record, "label"),
+    ...optionalField("description", optionalString(record, "description")),
+  };
 }
 
 function optionalSession(value: unknown): Pick<Extract<CommandResult, { type: "done" }>, "session"> | object {
@@ -2322,7 +2612,12 @@ export function parseSavedAttachments(value: unknown): SavedPromptAttachment[] {
 
 function parseSavedAttachment(value: unknown): SavedPromptAttachment {
   const record = requireRecord(value);
-  return { path: requireString(record, "path"), mimeType: requireString(record, "mimeType"), size: requireNumber(record, "size"), ...optionalField("reference", optionalString(record, "reference")) };
+  return {
+    path: requireString(record, "path"),
+    mimeType: requireString(record, "mimeType"),
+    size: requireNumber(record, "size"),
+    ...optionalField("reference", optionalString(record, "reference")),
+  };
 }
 
 export function parseClosed(value: unknown): { closed: true } {

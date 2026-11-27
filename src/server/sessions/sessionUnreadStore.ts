@@ -107,9 +107,7 @@ export class SessionUnreadStore {
     return {
       catalogId: this.catalogId,
       catalogRevision: this.catalogRevision,
-      sessions: [...this.unreadByIdentity.values()]
-        .sort((left, right) => right.completionOrder - left.completionOrder)
-        .map((summary) => ({ ...summary })),
+      sessions: [...this.unreadByIdentity.values()].sort((left, right) => right.completionOrder - left.completionOrder).map((summary) => ({ ...summary })),
     };
   }
 
@@ -222,11 +220,8 @@ export class SessionUnreadStore {
   /** Retain exact canonical workspace members without changing session identity spelling. */
   reconcileWorkspaces(cwds: Iterable<string>): SessionUnreadMutation[] {
     this.requireLoaded();
-    const retained = new Set([...cwds].map((cwd) => resolve(
-      requireBoundedNonEmptyString(cwd, "cwd", SESSION_UNREAD_CWD_MAX_LENGTH),
-    )));
-    const removed = [...this.unreadByIdentity.entries()]
-      .filter(([, summary]) => !retained.has(resolve(summary.cwd)));
+    const retained = new Set([...cwds].map((cwd) => resolve(requireBoundedNonEmptyString(cwd, "cwd", SESSION_UNREAD_CWD_MAX_LENGTH))));
+    const removed = [...this.unreadByIdentity.entries()].filter(([, summary]) => !retained.has(resolve(summary.cwd)));
     this.assertRevisionCapacity(removed.length);
 
     for (const [key, identity] of this.activeByIdentity) {
@@ -246,8 +241,7 @@ export class SessionUnreadStore {
     this.requireLoaded();
     const boundedCwd = requireBoundedNonEmptyString(cwd, "cwd", SESSION_UNREAD_CWD_MAX_LENGTH);
     const retained = new Set(sessionIds);
-    const removed = [...this.unreadByIdentity.entries()]
-      .filter(([, summary]) => summary.cwd === boundedCwd && !retained.has(summary.sessionId));
+    const removed = [...this.unreadByIdentity.entries()].filter(([, summary]) => summary.cwd === boundedCwd && !retained.has(summary.sessionId));
     this.assertRevisionCapacity(removed.length);
 
     for (const [key, identity] of this.activeByIdentity) {
@@ -270,8 +264,7 @@ export class SessionUnreadStore {
   async flush(): Promise<void> {
     this.requireLoaded();
     await this.waitForPersistenceWorker();
-    if (this.persistenceFailure === undefined
-      && this.persistenceGeneration === this.durablePersistenceGeneration) return;
+    if (this.persistenceFailure === undefined && this.persistenceGeneration === this.durablePersistenceGeneration) return;
 
     // Retry the latest complete snapshot once. Failed/intermediate snapshots
     // are coalesced because completion orders and revisions are cumulative.
@@ -551,21 +544,13 @@ function parsePersistedState(value: unknown): SessionUnreadPersistedState {
 
 function parseSummary(value: unknown): SessionUnreadSummary {
   const record = requireRecord(value, "Session unread summary must be an object");
-  const completedAt = requireBoundedNonEmptyString(
-    record["completedAt"],
-    "completedAt",
-    SESSION_UNREAD_COMPLETED_AT_MAX_LENGTH,
-  );
+  const completedAt = requireBoundedNonEmptyString(record["completedAt"], "completedAt", SESSION_UNREAD_COMPLETED_AT_MAX_LENGTH);
   const completedDate = new Date(completedAt);
   if (!Number.isFinite(completedDate.getTime()) || completedDate.toISOString() !== completedAt) {
     throw new Error("Session unread completedAt must be a canonical ISO timestamp");
   }
   return {
-    sessionId: requireBoundedNonEmptyString(
-      record["sessionId"],
-      "sessionId",
-      SESSION_UNREAD_SESSION_ID_MAX_LENGTH,
-    ),
+    sessionId: requireBoundedNonEmptyString(record["sessionId"], "sessionId", SESSION_UNREAD_SESSION_ID_MAX_LENGTH),
     cwd: requireBoundedNonEmptyString(record["cwd"], "cwd", SESSION_UNREAD_CWD_MAX_LENGTH),
     completionOrder: requirePositiveSafeInteger(record["completionOrder"], "completionOrder"),
     completedAt,

@@ -13,14 +13,17 @@ beforeEach(async () => {
   await mkdir(packet, { recursive: true });
   await Promise.all(["charter.md", "status.md", "log.md"].map((file) => writeFile(join(packet, file), `# ${file}\nSaved packet content`)));
 });
-afterEach(async () => { await rm(cwd, { recursive: true, force: true }); });
+afterEach(async () => {
+  await rm(cwd, { recursive: true, force: true });
+});
 
 describe("saved Relay dispatch", () => {
   it("generates handover pointers and explicit identity from the packet, without embedding an alternate baton", async () => {
     await writeFile(join(packet, "status.md"), "# Active\nThe actual baton is only saved here.");
     const prepared = await prepareRelayDispatch(cwd, { packet: ".pi-web/relays/workflow", leg: "3" });
     expect(prepared).toMatchObject({
-      cwd, name: "Leg 3 – Relay workflow",
+      cwd,
+      name: "Leg 3 – Relay workflow",
       identity: { version: 1, packetPath: ".pi-web/relays/workflow", relayName: "workflow", leg: "3" },
     });
     expect(prepared.metadata[RELAY_METADATA_NAMESPACE]).toEqual(prepared.identity);
@@ -48,10 +51,13 @@ describe("saved Relay dispatch", () => {
     await expect(prepareRelayDispatch(cwd, { packet, leg: "1" })).rejects.toThrow("ENOENT");
   });
 
-  it.each(["", " \n\t", "binary\0data", Buffer.from([0xff]), "x".repeat(256 * 1024 + 1)])("refuses empty, binary or oversized saved documents", async (text) => {
-    await writeFile(join(packet, "status.md"), text);
-    await expect(prepareRelayDispatch(cwd, { packet, leg: "1" })).rejects.toThrow(/Relay status.md/);
-  });
+  it.each(["", " \n\t", "binary\0data", Buffer.from([0xff]), "x".repeat(256 * 1024 + 1)])(
+    "refuses empty, binary or oversized saved documents",
+    async (text) => {
+      await writeFile(join(packet, "status.md"), text);
+      await expect(prepareRelayDispatch(cwd, { packet, leg: "1" })).rejects.toThrow(/Relay status.md/);
+    },
+  );
 
   it("refuses a directory masquerading as a saved document", async () => {
     await rm(join(packet, "status.md"));
@@ -68,15 +74,21 @@ describe("saved Relay dispatch", () => {
     await expect(prepareRelayDispatch(cwd, { packet, leg: "1" })).rejects.toThrow("must stay inside the packet");
   });
 
-  it.each([0, 1, -1, 1.5, true, false, null, undefined, "", "../1", "two words", "x".repeat(33)])("refuses an invalid or non-string leg identity (%s)", async (leg) => {
-    // Deliberately exercise the untyped request boundary rather than cast input.
-    const prepared: unknown = Reflect.apply(prepareRelayDispatch, undefined, [cwd, { packet, leg }]);
-    await expect(prepared).rejects.toThrow("Relay leg");
-  });
+  it.each([0, 1, -1, 1.5, true, false, null, undefined, "", "../1", "two words", "x".repeat(33)])(
+    "refuses an invalid or non-string leg identity (%s)",
+    async (leg) => {
+      // Deliberately exercise the untyped request boundary rather than cast input.
+      const prepared: unknown = Reflect.apply(prepareRelayDispatch, undefined, [cwd, { packet, leg }]);
+      await expect(prepared).rejects.toThrow("Relay leg");
+    },
+  );
 });
 
 describe("Relay metadata interpretation", () => {
-  it.each([undefined, {}, { [RELAY_METADATA_NAMESPACE]: { version: 2 } },
+  it.each([
+    undefined,
+    {},
+    { [RELAY_METADATA_NAMESPACE]: { version: 2 } },
     { [RELAY_METADATA_NAMESPACE]: { version: 1, packetPath: "../outside", relayName: "outside", leg: "2" } },
     { [RELAY_METADATA_NAMESPACE]: { version: 1, packetPath: ".pi-web/relays/a", relayName: "b", leg: "2" } },
     { [RELAY_METADATA_NAMESPACE]: { version: 1, packetPath: ".pi-web/relays/a", relayName: "a", leg: "invalid leg" } },

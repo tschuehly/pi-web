@@ -18,10 +18,7 @@ import type { ChatLine } from "./shared";
 
 describe("chatQueuedMessageSections", () => {
   it("labels client-side pending-start sends separately from server queued messages", () => {
-    const sections = chatQueuedMessageSections(
-      [{ kind: "followUp", text: "queued before start" }],
-      [{ kind: "steer", text: "server queued" }],
-    );
+    const sections = chatQueuedMessageSections([{ kind: "followUp", text: "queued before start" }], [{ kind: "steer", text: "server queued" }]);
 
     expect(sections).toEqual([
       {
@@ -83,24 +80,42 @@ describe("chatSessionWarningRows", () => {
   // from rendered `TemplateResult` markup, per the testing-guide rule that
   // TemplateResult inspection is not for general content assertions.
   it("derives one severity-tagged row per warning with optional path and source", () => {
-    const rows = chatSessionWarningRows(warningStatus([
-      { severity: "error", message: "skill failed to load", source: "skill", path: "/skills/a.md" },
-      { severity: "warning", message: "subscription auth is active" },
-      { severity: "info", message: "heads up", source: "runtime" },
-    ]));
+    const rows = chatSessionWarningRows(
+      warningStatus([
+        { severity: "error", message: "skill failed to load", source: "skill", path: "/skills/a.md" },
+        { severity: "warning", message: "subscription auth is active" },
+        { severity: "info", message: "heads up", source: "runtime" },
+      ]),
+    );
 
     expect(rows).toEqual([
-      { severity: "error", severityClass: "session-warning error", message: "skill failed to load", source: "skill", path: "/skills/a.md", dismissId: undefined },
-      { severity: "warning", severityClass: "session-warning warning", message: "subscription auth is active", source: undefined, path: undefined, dismissId: undefined },
+      {
+        severity: "error",
+        severityClass: "session-warning error",
+        message: "skill failed to load",
+        source: "skill",
+        path: "/skills/a.md",
+        dismissId: undefined,
+      },
+      {
+        severity: "warning",
+        severityClass: "session-warning warning",
+        message: "subscription auth is active",
+        source: undefined,
+        path: undefined,
+        dismissId: undefined,
+      },
       { severity: "info", severityClass: "session-warning info", message: "heads up", source: "runtime", path: undefined, dismissId: undefined },
     ]);
   });
 
   it("exposes a dismiss id only for warnings carrying a dismiss capability", () => {
-    const rows = chatSessionWarningRows(warningStatus([
-      { severity: "error", message: "skill failed to load", source: "skill" },
-      { severity: "warning", message: "subscription auth is active", source: "anthropic", dismiss: { id: "anthropicExtraUsage" } },
-    ]));
+    const rows = chatSessionWarningRows(
+      warningStatus([
+        { severity: "error", message: "skill failed to load", source: "skill" },
+        { severity: "warning", message: "subscription auth is active", source: "anthropic", dismiss: { id: "anthropicExtraUsage" } },
+      ]),
+    );
 
     expect(rows.map((row) => row.dismissId)).toEqual([undefined, "anthropicExtraUsage"]);
   });
@@ -120,9 +135,7 @@ describe("ChatView session-warning dismiss wiring", () => {
     const view = new ChatView();
     const onDismissWarning = vi.fn();
     view.onDismissWarning = onDismissWarning;
-    view.status = warningStatus([
-      { severity: "warning", message: "subscription auth is active", source: "anthropic", dismiss: { id: "anthropicExtraUsage" } },
-    ]);
+    view.status = warningStatus([{ severity: "warning", message: "subscription auth is active", source: "anthropic", dismiss: { id: "anthropicExtraUsage" } }]);
 
     const rendered = renderWarnings(view);
     if (rendered === null) throw new Error("expected a warnings banner");
@@ -136,9 +149,7 @@ describe("ChatView session-warning dismiss wiring", () => {
   // The chevron is wired to the unified onToggleWarnings (toggle ≡ collapse in
   // the expanded state), so this also proves the single visibility mutation.
   it("invokes onToggleWarnings from the visible warning area", () => {
-    const view = withStatus(new ChatView(), warningStatus([
-      { severity: "warning", message: "subscription auth is active" },
-    ]));
+    const view = withStatus(new ChatView(), warningStatus([{ severity: "warning", message: "subscription auth is active" }]));
     const onToggleWarnings = vi.fn();
     view.onToggleWarnings = onToggleWarnings;
 
@@ -150,9 +161,7 @@ describe("ChatView session-warning dismiss wiring", () => {
   });
 
   it("removes the warning area while presentation is collapsed or there are no warnings", () => {
-    const view = withStatus(new ChatView(), warningStatus([
-      { severity: "warning", message: "subscription auth is active" },
-    ]));
+    const view = withStatus(new ChatView(), warningStatus([{ severity: "warning", message: "subscription auth is active" }]));
     view.warningsVisible = false;
 
     expect(renderWarnings(view)).toBeNull();
@@ -165,22 +174,26 @@ describe("chatMessageMetadataLabel", () => {
     const timestamp = "2026-07-10T19:15:30.000Z";
     const formattedTimestamp = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(timestamp));
 
-    expect(chatMessageMetadataLabel({
-      role: "assistant",
-      parts: [],
-      meta: { timestamp, model: { provider: "provider", id: "model" } },
-    })).toBe(`${formattedTimestamp} · provider/model`);
+    expect(
+      chatMessageMetadataLabel({
+        role: "assistant",
+        parts: [],
+        meta: { timestamp, model: { provider: "provider", id: "model" } },
+      }),
+    ).toBe(`${formattedTimestamp} · provider/model`);
   });
 
   it("appends the thinking level after the model when present", () => {
     const timestamp = "2026-07-10T19:15:30.000Z";
     const formattedTimestamp = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(timestamp));
 
-    expect(chatMessageMetadataLabel({
-      role: "assistant",
-      parts: [],
-      meta: { timestamp, model: { provider: "provider", id: "model" }, thinkingLevel: "high" },
-    })).toBe(`${formattedTimestamp} · provider/model · high`);
+    expect(
+      chatMessageMetadataLabel({
+        role: "assistant",
+        parts: [],
+        meta: { timestamp, model: { provider: "provider", id: "model" }, thinkingLevel: "high" },
+      }),
+    ).toBe(`${formattedTimestamp} · provider/model · high`);
   });
 });
 

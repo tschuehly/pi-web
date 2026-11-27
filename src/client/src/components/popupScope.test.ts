@@ -34,7 +34,9 @@ describe("transient popup modality scope", () => {
     const close = vi.fn();
     cleanups.push(registerTransientPopup(trigger, close));
     container.setAttribute(attribute, "");
-    await vi.waitFor(() => { expect(close).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(close).toHaveBeenCalledOnce();
+    });
     expect(canOpenTransientPopup(trigger)).toBe(false);
   });
 

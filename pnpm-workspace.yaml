@@ -1,7 +1,7 @@
 # Install scripts run only where a package needs them: node-pty compiles its native module on Linux (it ships
 # prebuilds only for macOS and Windows). The others work without theirs, so they stay off.
 allowBuilds:
-  '@google/genai': false
+  "@google/genai": false
   esbuild: false
   node-pty: true
   protobufjs: false

@@ -77,9 +77,7 @@ export class ServerNoticeStore {
       ...(scope === undefined ? {} : { scope }),
       ...(context === undefined ? {} : { context }),
     });
-    const evictions = isPluginServerNoticeSource(notice.source)
-      ? this.pluginEvictions(notice.source)
-      : [];
+    const evictions = isPluginServerNoticeSource(notice.source) ? this.pluginEvictions(notice.source) : [];
 
     for (const noticeId of evictions) this.notices.delete(noticeId);
     this.notices.set(notice.id, notice);
@@ -106,8 +104,7 @@ export class ServerNoticeStore {
   }
 
   private pluginEvictions(source: `plugin:${string}`): string[] {
-    const pluginNotices = [...this.notices.values()]
-      .filter((notice) => isPluginServerNoticeSource(notice.source));
+    const pluginNotices = [...this.notices.values()].filter((notice) => isPluginServerNoticeSource(notice.source));
     const sameSource = pluginNotices.filter((notice) => notice.source === source);
     const evictions = new Set<string>();
 
@@ -138,9 +135,7 @@ function copyNotice(notice: ServerNotice): ServerNotice {
 }
 
 function copyJsonObject(value: JsonObject): JsonObject {
-  return Object.freeze(Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [key, copyJsonValue(item)]),
-  ));
+  return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, copyJsonValue(item)])));
 }
 
 function copyJsonValue(value: JsonValue): JsonValue {

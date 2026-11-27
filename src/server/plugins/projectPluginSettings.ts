@@ -8,9 +8,7 @@ interface ProjectPluginSettingsSnapshotOptions {
   readonly loadConfig?: (projectPath: string, signal: AbortSignal) => Promise<LoadedProjectPiWebConfig>;
 }
 
-type ScopeSnapshot =
-  | { readonly settings: Readonly<Record<string, JsonObject>> }
-  | { readonly error: unknown };
+type ScopeSnapshot = { readonly settings: Readonly<Record<string, JsonObject>> } | { readonly error: unknown };
 
 /**
  * Daemon-lifetime project overrides, including absent files and scope errors.
@@ -32,18 +30,15 @@ export class ProjectPluginSettingsSnapshots {
 
   /** Optional startup preload. Bad or timed-out scopes are retained without rejecting startup. */
   async initialize(projects: readonly ProjectInput[]): Promise<void> {
-    await Promise.all(projects.map(async ({ id }) => {
-      const registered = await this.requireProject(id);
-      await this.scopeSnapshot(registered);
-    }));
+    await Promise.all(
+      projects.map(async ({ id }) => {
+        const registered = await this.requireProject(id);
+        await this.scopeSnapshot(registered);
+      }),
+    );
   }
 
-  async resolve(
-    pluginId: string,
-    globalSettings: JsonObject,
-    project: ProjectInput,
-    signal: AbortSignal,
-  ): Promise<JsonObject> {
+  async resolve(pluginId: string, globalSettings: JsonObject, project: ProjectInput, signal: AbortSignal): Promise<JsonObject> {
     signal.throwIfAborted();
     // Capture before yielding: callers cannot change the base during project I/O.
     const base = snapshotPluginSettings(globalSettings, `Global settings for server plugin ${pluginId}`);
@@ -94,21 +89,20 @@ export class ProjectPluginSettingsSnapshots {
     try {
       // Race as well as abort: stat/open and an uncooperative reader may not
       // settle on cancellation. A late result must never replace this snapshot.
-      const loaded = await Promise.race([
-        Promise.resolve().then(() => this.loadConfig(project.path, controller.signal)),
-        deadline,
-      ]);
-      const settings = Object.freeze(Object.fromEntries(Object.entries(loaded.config.plugins ?? {})
-        .flatMap(([pluginId, config]) => config.settings === undefined ? [] : [[pluginId, config.settings]])));
+      const loaded = await Promise.race([Promise.resolve().then(() => this.loadConfig(project.path, controller.signal)), deadline]);
+      const settings = Object.freeze(
+        Object.fromEntries(
+          Object.entries(loaded.config.plugins ?? {}).flatMap(([pluginId, config]) => (config.settings === undefined ? [] : [[pluginId, config.settings]])),
+        ),
+      );
       return Object.freeze({ settings });
     } catch (error) {
       // Fulfilled error snapshots avoid unhandled preload rejections and fail only
       // consumers of this project. They must not fall back to global settings.
       const message = error instanceof Error ? error.message : String(error);
-      return Object.freeze({ error: new Error(
-        `PI WEB plugin settings for project ${project.id} (${project.path}) could not be loaded: ${message}`,
-        { cause: error },
-      ) });
+      return Object.freeze({
+        error: new Error(`PI WEB plugin settings for project ${project.id} (${project.path}) could not be loaded: ${message}`, { cause: error }),
+      });
     } finally {
       clearTimeout(timeout);
     }

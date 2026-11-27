@@ -25,7 +25,7 @@ async function previewText(body: Buffer | Readable): Promise<string> {
 describe("readWorkspaceFilePreview", () => {
   it("previews only supported types within the preview size limit", async () => {
     const root = await createTempWorkspace();
-    await writeFile(join(root, "diagram.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>");
+    await writeFile(join(root, "diagram.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     await writeFile(join(root, "note.txt"), "hello");
     await writeFile(join(root, "README.md"), "# Read me\n");
     await writeFile(join(root, "huge.png"), "");
@@ -238,7 +238,13 @@ describe("parseByteRange", () => {
     expect(parseByteRange(header, 1000)).toBeUndefined();
   });
 
-  it.each([["bytes=1000-", 1000], ["bytes=1000-1001", 1000], ["bytes=-0", 1000], ["bytes=0-", 0], ["bytes=-1", 0]])("rejects unsatisfiable %s of a %d-byte file", (header, size) => {
+  it.each([
+    ["bytes=1000-", 1000],
+    ["bytes=1000-1001", 1000],
+    ["bytes=-0", 1000],
+    ["bytes=0-", 0],
+    ["bytes=-1", 0],
+  ])("rejects unsatisfiable %s of a %d-byte file", (header, size) => {
     expect(() => parseByteRange(header, size)).toThrow(RangeNotSatisfiableError);
   });
 });

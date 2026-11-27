@@ -14,10 +14,7 @@ const snapshotWire = (overrides: Record<string, unknown> = {}): Record<string, u
 
 describe("rollUpStatusFlags", () => {
   it("sets a parent flag when any child has it and omits unset flags", () => {
-    const rolled = rollUpStatusFlags([
-      { [CORE_STATUS_FLAGS.working]: false, [CORE_STATUS_FLAGS.unread]: true },
-      { [CORE_STATUS_FLAGS.working]: true },
-    ]);
+    const rolled = rollUpStatusFlags([{ [CORE_STATUS_FLAGS.working]: false, [CORE_STATUS_FLAGS.unread]: true }, { [CORE_STATUS_FLAGS.working]: true }]);
 
     expect(rolled).toEqual({ [CORE_STATUS_FLAGS.working]: true, [CORE_STATUS_FLAGS.unread]: true });
   });
@@ -50,9 +47,13 @@ describe("parseMachineStatusSnapshot", () => {
   it("preserves absence for older daemons and accepts complete session maps", () => {
     expect(parseMachineStatusSnapshot(snapshotWire())).not.toHaveProperty("sessions");
     expect(parseMachineStatusSnapshot(snapshotWire({ sessions: {} }))?.sessions).toEqual({});
-    expect(parseMachineStatusSnapshot(snapshotWire({
-      sessions: { "child-1": { [CORE_STATUS_FLAGS.working]: true, "core:future": false } },
-    }))?.sessions).toEqual({ "child-1": { [CORE_STATUS_FLAGS.working]: true, "core:future": false } });
+    expect(
+      parseMachineStatusSnapshot(
+        snapshotWire({
+          sessions: { "child-1": { [CORE_STATUS_FLAGS.working]: true, "core:future": false } },
+        }),
+      )?.sessions,
+    ).toEqual({ "child-1": { [CORE_STATUS_FLAGS.working]: true, "core:future": false } });
   });
 
   it.each([undefined, null, [], "busy", 3, { "child-1": null }, { "child-1": [] }, { "child-1": "busy" }])(
@@ -63,9 +64,13 @@ describe("parseMachineStatusSnapshot", () => {
   );
 
   it("tolerates unknown and non-boolean session flags without dropping session nodes", () => {
-    expect(parseMachineStatusSnapshot(snapshotWire({
-      sessions: { "child-1": { "core:future": true, invalid: "busy" } },
-    }))?.sessions).toEqual({ "child-1": { "core:future": true } });
+    expect(
+      parseMachineStatusSnapshot(
+        snapshotWire({
+          sessions: { "child-1": { "core:future": true, invalid: "busy" } },
+        }),
+      )?.sessions,
+    ).toEqual({ "child-1": { "core:future": true } });
   });
 
   it("treats prototype-shaped session ids as ordinary own properties", () => {
@@ -88,20 +93,24 @@ describe("parseMachineStatusSnapshot", () => {
   });
 
   it("keeps an unknown flag id alongside known ones instead of failing the payload", () => {
-    const parsed = parseMachineStatusSnapshot(snapshotWire({
-      machine: { [CORE_STATUS_FLAGS.working]: true, "core:future": true },
-      projects: { "project-1": { "core:future": true } },
-    }));
+    const parsed = parseMachineStatusSnapshot(
+      snapshotWire({
+        machine: { [CORE_STATUS_FLAGS.working]: true, "core:future": true },
+        projects: { "project-1": { "core:future": true } },
+      }),
+    );
 
     expect(parsed?.machine).toEqual({ [CORE_STATUS_FLAGS.working]: true, "core:future": true });
     expect(parsed?.projects["project-1"]).toEqual({ "core:future": true });
   });
 
   it("drops flag entries that are not booleans and nodes that carry no flag map", () => {
-    const parsed = parseMachineStatusSnapshot(snapshotWire({
-      machine: { [CORE_STATUS_FLAGS.working]: true, "core:future": { level: 2 } },
-      workspaces: { "workspace-1": { [CORE_STATUS_FLAGS.unread]: true }, "workspace-2": "busy" },
-    }));
+    const parsed = parseMachineStatusSnapshot(
+      snapshotWire({
+        machine: { [CORE_STATUS_FLAGS.working]: true, "core:future": { level: 2 } },
+        workspaces: { "workspace-1": { [CORE_STATUS_FLAGS.unread]: true }, "workspace-2": "busy" },
+      }),
+    );
 
     expect(parsed?.machine).toEqual({ [CORE_STATUS_FLAGS.working]: true });
     expect(parsed?.workspaces).toEqual({ "workspace-1": { [CORE_STATUS_FLAGS.unread]: true } });

@@ -48,27 +48,14 @@ const fixtureEnv = {
 for (const name of Object.keys(process.env)) delete process.env[name];
 Object.assign(process.env, fixtureEnv);
 try {
-  await Promise.all([fixtureEnv.HOME, fixtureEnv.XDG_CONFIG_HOME, fixtureEnv.XDG_RUNTIME_DIR]
-    .map((path) => mkdir(path, { recursive: true })));
+  await Promise.all([fixtureEnv.HOME, fixtureEnv.XDG_CONFIG_HOME, fixtureEnv.XDG_RUNTIME_DIR].map((path) => mkdir(path, { recursive: true })));
   const packDir = join(root, "pack");
   const npmToolDir = join(root, "npm-tool");
   const globalPrefix = join(root, "global");
-  await Promise.all([
-    mkdir(packDir, { recursive: true }),
-    mkdir(join(globalPrefix, "lib"), { recursive: true }),
-    mkdir(npmToolDir, { recursive: true }),
-  ]);
+  await Promise.all([mkdir(packDir, { recursive: true }), mkdir(join(globalPrefix, "lib"), { recursive: true }), mkdir(npmToolDir, { recursive: true })]);
   await writeFile(join(npmToolDir, "package.json"), '{"private":true}\n');
 
-  await runNpm(npmExecPath, [
-    "install",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-    "--no-package-lock",
-    "--no-save",
-    `npm@${NPM_VERSION}`,
-  ], npmToolDir);
+  await runNpm(npmExecPath, ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--no-package-lock", "--no-save", `npm@${NPM_VERSION}`], npmToolDir);
   const npm12ExecPath = join(npmToolDir, "node_modules", "npm", "bin", "npm-cli.js");
   // Use npm 12 for packing too: npm 10 can run prepare despite --ignore-scripts.
   const packOutput = await runNpm(npm12ExecPath, ["pack", "--ignore-scripts", "--json", "--pack-destination", packDir], repoRoot);
@@ -77,24 +64,12 @@ try {
   const hosts = [];
   for (const version of HOST_PI_VERSIONS) {
     const prefix = join(root, `pi-host-${version}`);
-    await runNpm(npm12ExecPath, [
-      "install", "--global", `@earendil-works/pi-coding-agent@${version}`,
-      "--prefix", prefix, "--no-audit", "--no-fund",
-    ], root);
+    await runNpm(npm12ExecPath, ["install", "--global", `@earendil-works/pi-coding-agent@${version}`, "--prefix", prefix, "--no-audit", "--no-fund"], root);
     const hostRoot = join(prefix, "lib", "node_modules", "@earendil-works", "pi-coding-agent");
     hosts.push({ hostRoot, prefix, version });
   }
 
-  await runNpm(npm12ExecPath, [
-    "install",
-    "--global",
-    tarballPath,
-    "--prefix",
-    globalPrefix,
-    "--allow-scripts=node-pty",
-    "--no-audit",
-    "--no-fund",
-  ], root);
+  await runNpm(npm12ExecPath, ["install", "--global", tarballPath, "--prefix", globalPrefix, "--allow-scripts=node-pty", "--no-audit", "--no-fund"], root);
 
   const packageRoot = join(globalPrefix, "lib", "node_modules", "@jmfederico", "pi-web");
   await assertHostPeersOnly(packageRoot);
@@ -111,39 +86,34 @@ try {
   const managedRoot = join(root, "managed");
   await mkdir(managedRoot);
   await writeFile(join(managedRoot, "package.json"), '{"name":"pi-extensions","private":true,"allowScripts":{"node-pty":true}}\n');
-  await runNpm(npm12ExecPath, [
-    "install", tarballPath, "--prefix", managedRoot, "--legacy-peer-deps",
-    "--no-audit", "--no-fund",
-  ], managedRoot);
+  await runNpm(npm12ExecPath, ["install", tarballPath, "--prefix", managedRoot, "--legacy-peer-deps", "--no-audit", "--no-fund"], managedRoot);
   const managedPackageRoot = join(managedRoot, "node_modules", "@jmfederico", "pi-web");
   await assertHostPeersOnly(managedPackageRoot);
   await smokeInstalledPiSdk(managedPackageRoot, host);
   await smokeInstalledTypebox(managedPackageRoot, host);
   await smokePiPackageExtension(managedPackageRoot, host);
   await smokeInstalledSessionDaemon(managedPackageRoot, host, "managed-legacy", {
-    entrypoint: join(managedPackageRoot, "dist", "server", "sessiond.js"), discoverOnPath: true,
+    entrypoint: join(managedPackageRoot, "dist", "server", "sessiond.js"),
+    discoverOnPath: true,
   });
   // Ordinary npm peers win over PATH, while an explicit host still wins over peers.
   const localRoot = join(root, "local-peers");
   await mkdir(localRoot);
   await writeFile(join(localRoot, "package.json"), '{"private":true,"allowScripts":{"node-pty":true}}\n');
-  await runNpm(npm12ExecPath, [
-    "install", `@earendil-works/pi-coding-agent@${hosts[1].version}`,
-    "--no-audit", "--no-fund",
-  ], localRoot);
-  await runNpm(npm12ExecPath, [
-    "install", tarballPath, "--no-audit", "--no-fund",
-  ], localRoot);
+  await runNpm(npm12ExecPath, ["install", `@earendil-works/pi-coding-agent@${hosts[1].version}`, "--no-audit", "--no-fund"], localRoot);
+  await runNpm(npm12ExecPath, ["install", tarballPath, "--no-audit", "--no-fund"], localRoot);
   const localPackageRoot = join(localRoot, "node_modules", "@jmfederico", "pi-web");
   const localHost = {
     hostRoot: join(localRoot, "node_modules", "@earendil-works", "pi-coding-agent"),
-    prefix: localRoot, version: hosts[1].version,
+    prefix: localRoot,
+    version: hosts[1].version,
   };
   await assertHostPeersOnly(localPackageRoot, { localPeers: true });
   await smokeInstalledPiSdk(localPackageRoot, localHost, { localPeers: true, pathHost: host });
   await smokeInstalledPiSdk(localPackageRoot, host, { explicitOnly: true });
   await smokeInstalledSessionDaemon(localPackageRoot, localHost, "local-peers", {
-    localPeers: true, pathHost: host,
+    localPeers: true,
+    pathHost: host,
   });
   await smokeInstalledSessionDaemon(packageRoot, hosts[1], "development-source", {
     entrypoint: join(repoRoot, "src", "server", "sessiond.ts"),
@@ -151,15 +121,18 @@ try {
   });
   // Replace the same host installation only after all 1.3 checks have finished.
   // Fresh processes must see the replacement, not the earlier process's SDK cache.
-  await runNpm(npm12ExecPath, [
-    "install", "--global", `@earendil-works/pi-coding-agent@${hosts[1].version}`,
-    "--prefix", host.prefix, "--no-audit", "--no-fund",
-  ], root);
+  await runNpm(
+    npm12ExecPath,
+    ["install", "--global", `@earendil-works/pi-coding-agent@${hosts[1].version}`, "--prefix", host.prefix, "--no-audit", "--no-fund"],
+    root,
+  );
   const updatedHost = { ...host, version: hosts[1].version };
   await smokeInstalledPiSdk(packageRoot, updatedHost);
   await smokeInstalledSessionDaemon(packageRoot, updatedHost, "host-updated");
   await smokeInstalledSessionDaemon(packageRoot, updatedHost, "host-updated-path", { discoverOnPath: true });
-  console.log(`Installed-package host-selected Pi SDKs, local npm peers, in-place host update/restart, CLI/session daemon (global/managed), server TypeBox, extension command, plugin API, and PTY smoke tests passed with npm ${NPM_VERSION}.`);
+  console.log(
+    `Installed-package host-selected Pi SDKs, local npm peers, in-place host update/restart, CLI/session daemon (global/managed), server TypeBox, extension command, plugin API, and PTY smoke tests passed with npm ${NPM_VERSION}.`,
+  );
 } finally {
   for (const name of Object.keys(process.env)) delete process.env[name];
   Object.assign(process.env, originalEnv);
@@ -201,8 +174,11 @@ async function assertHostPeersOnly(packageRoot, { localPeers = false } = {}) {
     }
     assert.equal(manifest.dependencies?.[specifier], undefined, `${specifier} must not be a runtime dependency`);
     if (!localPeers) {
-      assert.throws(() => createRequire(join(packageRoot, "package.json")).resolve(specifier),
-        { code: "MODULE_NOT_FOUND" }, `Fixture must not install its own ${specifier}`);
+      assert.throws(
+        () => createRequire(join(packageRoot, "package.json")).resolve(specifier),
+        { code: "MODULE_NOT_FOUND" },
+        `Fixture must not install its own ${specifier}`,
+      );
     }
   }
 }
@@ -213,14 +189,18 @@ function runtimeImportSource(packageRoot) {
 
 async function runFixture(runtimePath, packageRoot, host, extraEnv = {}) {
   return execFileAsync(process.execPath, [runtimePath], {
-    cwd: packageRoot, encoding: "utf8", timeout: 60_000,
+    cwd: packageRoot,
+    encoding: "utf8",
+    timeout: 60_000,
     env: { ...process.env, PI_WEB_PI_PACKAGE_DIR: host.hostRoot, ...extraEnv },
   });
 }
 
 async function smokeInstalledPiSdk(packageRoot, host, options = {}) {
   const runtimePath = join(packageRoot, "pi-sdk-smoke.mjs");
-  await writeFile(runtimePath, `
+  await writeFile(
+    runtimePath,
+    `
     import assert from "node:assert/strict";
     ${runtimeImportSource(packageRoot)}
     const sdk = await loadPiSdk();
@@ -241,48 +221,59 @@ async function smokeInstalledPiSdk(packageRoot, host, options = {}) {
     }
     const { getBuiltinExtensionFactories } = await import("./dist/server/sessions/builtinExtensionFactories.js");
     assert.equal((await getBuiltinExtensionFactories()).length, 3);
-  `);
-  const selectionEnv = options.localPeers ? {
-    PI_WEB_PI_PACKAGE_DIR: undefined, PATH: join(options.pathHost.prefix, "bin"),
-  } : {};
+  `,
+  );
+  const selectionEnv = options.localPeers
+    ? {
+        PI_WEB_PI_PACKAGE_DIR: undefined,
+        PATH: join(options.pathHost.prefix, "bin"),
+      }
+    : {};
   await runFixture(runtimePath, packageRoot, host, selectionEnv);
   const manifest = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
   const cliPath = join(packageRoot, manifest.bin["pi-web"]);
   for (const args of [["--version"], ["--help"]]) {
     const { stdout } = await execFileAsync(process.execPath, [cliPath, ...args], {
-      cwd: root, env: { ...process.env, PI_WEB_PI_PACKAGE_DIR: host.hostRoot, ...selectionEnv },
-      encoding: "utf8", timeout: 30_000,
+      cwd: root,
+      env: { ...process.env, PI_WEB_PI_PACKAGE_DIR: host.hostRoot, ...selectionEnv },
+      encoding: "utf8",
+      timeout: 30_000,
     });
     assert.ok(stdout.includes(args[0] === "--version" ? manifest.version : "pi-web"));
   }
   if (!options.localPeers && !options.explicitOnly) {
     // No override or local peers: discover the existing npm Pi on PATH.
     await runFixture(runtimePath, packageRoot, host, {
-      PI_WEB_PI_PACKAGE_DIR: undefined, PATH: join(host.prefix, "bin"),
+      PI_WEB_PI_PACKAGE_DIR: undefined,
+      PATH: join(host.prefix, "bin"),
     });
   }
 }
 
 async function smokeInstalledTypebox(packageRoot, host) {
   const runtimePath = join(packageRoot, "server-typebox-smoke.mjs");
-  await writeFile(runtimePath, [
-    'import assert from "node:assert/strict";',
-    runtimeImportSource(packageRoot),
-    'const { Type } = await import("pi-web-typebox");',
-    'const { Check } = await import("pi-web-typebox/value");',
-    'const schema = Type.Object({ value: Type.String() });',
-    'assert.equal(Check(schema, { value: "standalone" }), true);',
-    'assert.equal(Check(schema, { value: 42 }), false);',
-    ...["spawnSessionTool", "spawnSubsessionTool", "askUserTool"]
-      .map((name) => `await import("./dist/server/sessions/${name}.js");`),
-  ].join("\n"));
+  await writeFile(
+    runtimePath,
+    [
+      'import assert from "node:assert/strict";',
+      runtimeImportSource(packageRoot),
+      'const { Type } = await import("pi-web-typebox");',
+      'const { Check } = await import("pi-web-typebox/value");',
+      "const schema = Type.Object({ value: Type.String() });",
+      'assert.equal(Check(schema, { value: "standalone" }), true);',
+      "assert.equal(Check(schema, { value: 42 }), false);",
+      ...["spawnSessionTool", "spawnSubsessionTool", "askUserTool"].map((name) => `await import("./dist/server/sessions/${name}.js");`),
+    ].join("\n"),
+  );
   await runFixture(runtimePath, packageRoot, host);
 }
 
 async function smokePiPackageExtension(packageRoot, host) {
   const agentDir = await mkdtemp(join(root, "extension-"));
   const runtimePath = join(packageRoot, "extension-smoke.mjs");
-  await writeFile(runtimePath, `
+  await writeFile(
+    runtimePath,
+    `
     import assert from "node:assert/strict";
     ${runtimeImportSource(packageRoot)}
     const { DefaultResourceLoader, SettingsManager } = await loadPiSdk();
@@ -302,11 +293,13 @@ async function smokePiPackageExtension(packageRoot, host) {
     assert.equal(notifications.length, 1);
     assert.equal(notifications[0].type, "info", notifications[0].message);
     assert.ok(notifications[0].message.includes("PI WEB version"), notifications[0].message);
-  `);
+  `,
+  );
   // No systemctl/launchctl on PATH, no live D-Bus, socket or HTTP endpoint.
   // Invalid port makes version reporting explain unavailable config, not probe localhost.
   await runFixture(runtimePath, packageRoot, host, {
-    PATH: join(host.prefix, "bin"), DBUS_SESSION_BUS_ADDRESS: "unix:path=" + join(root, "no-bus"),
+    PATH: join(host.prefix, "bin"),
+    DBUS_SESSION_BUS_ADDRESS: "unix:path=" + join(root, "no-bus"),
     PI_WEB_PORT: "not-a-port",
   });
 }
@@ -320,23 +313,33 @@ async function smokeInstalledSessionDaemon(packageRoot, host, layout, options = 
     env: {
       ...process.env,
       PI_WEB_PI_PACKAGE_DIR: options.discoverOnPath || options.localPeers ? undefined : host.hostRoot,
-      PATH: options.localPeers ? join(options.pathHost.prefix, "bin")
-        : options.discoverOnPath ? join(host.prefix, "bin") : process.env["PATH"],
-      PI_WEB_DATA_DIR: stateDir, PI_WEB_SESSIOND_SOCKET: socketPath,
+      PATH: options.localPeers ? join(options.pathHost.prefix, "bin") : options.discoverOnPath ? join(host.prefix, "bin") : process.env["PATH"],
+      PI_WEB_DATA_DIR: stateDir,
+      PI_WEB_SESSIOND_SOCKET: socketPath,
       PI_CODING_AGENT_DIR: join(stateDir, "agent"),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
   for (const stream of [child.stdout, child.stderr]) {
-    stream.on("data", (chunk) => { output = (output + chunk.toString()).slice(-16_000); });
+    stream.on("data", (chunk) => {
+      output = (output + chunk.toString()).slice(-16_000);
+    });
   }
   let exited = false;
   let exitCode;
   let startupError;
   const closed = new Promise((resolve) => {
-    child.once("error", (error) => { startupError = error; exited = true; resolve(); });
-    child.once("close", (code) => { exitCode = code; exited = true; resolve(); });
+    child.once("error", (error) => {
+      startupError = error;
+      exited = true;
+      resolve();
+    });
+    child.once("close", (code) => {
+      exitCode = code;
+      exited = true;
+      resolve();
+    });
   });
   try {
     const deadline = Date.now() + 15_000;
@@ -348,7 +351,9 @@ async function smokeInstalledSessionDaemon(packageRoot, host, layout, options = 
           const req = request({ socketPath, path: "/runtime" }, (response) => {
             let body = "";
             response.setEncoding("utf8");
-            response.on("data", (chunk) => { body += chunk; });
+            response.on("data", (chunk) => {
+              body += chunk;
+            });
             response.on("end", () => resolve({ status: response.statusCode, body }));
             response.on("error", reject);
           });
@@ -404,7 +409,9 @@ async function smokeInstalledTerminalService(packageRoot) {
       const timeout = setTimeout(() => reject(new Error(`Timed out waiting for installed node-pty output: ${JSON.stringify(output)}`)), 10_000);
       try {
         detach = service.attach({ projectId: "package-smoke", workspaceId: "package-smoke", cwd: packageRoot }, run.terminalId, {
-          output: (data) => { output += data; },
+          output: (data) => {
+            output += data;
+          },
           exit: (code) => {
             clearTimeout(timeout);
             resolvePromise(code);

@@ -5,35 +5,50 @@ import { ChatMessageActionController, type ChatMessageActionContext } from "./Ch
 import type { ChatLine } from "./shared";
 
 const entry: RegisteredMessageAction = {
-  id: "test:entry", title: "Entry", run: () => undefined,
+  id: "test:entry",
+  title: "Entry",
+  run: () => undefined,
   binding: { registrationPluginId: "test", sourcePluginId: "test" },
 };
 const display: RegisteredMessageAction = {
-  id: "test:display", target: "display", title: "Display", run: () => undefined, binding: entry.binding,
+  id: "test:display",
+  target: "display",
+  title: "Display",
+  run: () => undefined,
+  binding: entry.binding,
 };
 const message: ChatLine = { role: "user", entryId: "entry", parts: [{ type: "text", text: "Hello" }] };
 
 function deferred() {
   let resolve!: (value: MessageActionResult) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<MessageActionResult>((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise<MessageActionResult>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return { promise, resolve, reject };
 }
 
 function fixture() {
   const context: ChatMessageActionContext = {
-    machineId: "local", sessionId: "session", connected: true, actions: [entry, display],
+    machineId: "local",
+    sessionId: "session",
+    connected: true,
+    actions: [entry, display],
     availability: {
       machine: { id: "local", name: "Local", kind: "local" },
       session: { id: "session", cwd: "/repo", archived: false, pending: false, busy: false },
     },
-    onEntry: vi.fn(() => Promise.resolve()), onDisplay: vi.fn(() => Promise.resolve()),
+    onEntry: vi.fn(() => Promise.resolve()),
+    onDisplay: vi.fn(() => Promise.resolve()),
   };
   const changed = vi.fn();
   return { context, changed, controller: new ChatMessageActionController(() => context, changed) };
 }
 
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("ChatMessageActionController", () => {
   it("serializes entry workflows globally but scopes display pending to each action and header", async () => {

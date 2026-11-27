@@ -5,7 +5,11 @@ import { marked } from "marked";
  * whose info string is exactly ```pi-run cwd="/abs/dir"``` (output returns to the agent) or
  * ```pi-run terminal cwd="/abs/dir"``` (opens in Terminal, for password, Touch ID and hidden prompts).
  */
-export interface OwnerRunProposal { mode: "run" | "terminal"; cwd: string; command: string }
+export interface OwnerRunProposal {
+  mode: "run" | "terminal";
+  cwd: string;
+  command: string;
+}
 
 export const OWNER_RUN_MAX_COMMAND_BYTES = 8 * 1024;
 // Markdown unescapes backslashes in an info string, so the folder is quoted literally: no quote or backslash inside.
@@ -50,7 +54,8 @@ export function ownerRunFromJson(value: unknown): OwnerRunProposal | { error: st
   const mode: unknown = Reflect.get(value, "mode");
   const cwd: unknown = Reflect.get(value, "cwd");
   const command: unknown = Reflect.get(value, "command");
-  if ((mode !== "run" && mode !== "terminal") || typeof cwd !== "string" || typeof command !== "string") return { error: "proposal must name mode, cwd and command" };
+  if ((mode !== "run" && mode !== "terminal") || typeof cwd !== "string" || typeof command !== "string")
+    return { error: "proposal must name mode, cwd and command" };
   return ownerRunProposal(`pi-run${mode === "terminal" ? " terminal" : ""} cwd="${cwd}"`, command);
 }
 

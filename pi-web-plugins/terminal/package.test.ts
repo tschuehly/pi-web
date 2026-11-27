@@ -24,20 +24,23 @@ describe("bundled Terminal package", () => {
       private: true,
       type: "module",
       piWeb: {
-        plugins: [{
-          id: "pi-web.terminal",
-          browserRoot: "browser",
-          module: "browser/pi-web-plugin.js",
-          serverModule: "server-plugin.js",
-          machineSpecific: true,
-        }],
+        plugins: [
+          {
+            id: "pi-web.terminal",
+            browserRoot: "browser",
+            module: "browser/pi-web-plugin.js",
+            serverModule: "server-plugin.js",
+            machineSpecific: true,
+          },
+        ],
       },
     });
   });
 
   it("keeps Terminal server and browser product implementation out of core production code", async () => {
-    const productionFiles = (await readdir("src", { recursive: true, withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") && !entry.name.endsWith(".testSupport.ts"));
+    const productionFiles = (await readdir("src", { recursive: true, withFileTypes: true })).filter(
+      (entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") && !entry.name.endsWith(".testSupport.ts"),
+    );
     const violations: string[] = [];
     const forbidden = [
       'from "node-pty"',
@@ -75,12 +78,7 @@ describe("bundled Terminal package", () => {
       .filter((entry) => entry.isFile())
       .map((entry) => relative(packageRoot, join(entry.parentPath, entry.name)).split(sep).join("/"))
       .sort();
-    expect(files).toEqual([
-      "browser/pi-web-plugin.js",
-      "package.json",
-      "server-plugin.js",
-      "terminalService.js",
-    ]);
+    expect(files).toEqual(["browser/pi-web-plugin.js", "package.json", "server-plugin.js", "terminalService.js"]);
     const browserSource = await readFile(join(packageRoot, "browser", "pi-web-plugin.js"), "utf8");
     expect(browserSource).not.toMatch(/(?:from\s*["']|import\s*\()[^"']*(?:@jmfederico\/pi-web|src\/)/u);
     expect(browserSource).not.toMatch(/sourceMappingURL/u);
@@ -111,12 +109,7 @@ describe("bundled Terminal package", () => {
     });
     try {
       const health = await runtime.inspectHealth();
-      const snapshot = createWorkspaceProviderRuntimeSnapshot(
-        runtime.healthRecords(),
-        health,
-        runtime.safeStartLevel(),
-        runtime.catalogDiagnostics(),
-      );
+      const snapshot = createWorkspaceProviderRuntimeSnapshot(runtime.healthRecords(), health, runtime.safeStartLevel(), runtime.catalogDiagnostics());
       const service = new PiWebPluginService({
         catalog,
         runtimeProvider: { providerRuntime: () => Promise.resolve(snapshot) },
@@ -127,14 +120,16 @@ describe("bundled Terminal package", () => {
       expect(manifest).toMatchObject({
         lifecycleVersion: 2,
         terminalMode: "required",
-        plugins: [{
-          id: "pi-web.terminal",
-          pairedRequestVersion: 1,
-          pairedChannelVersion: 1,
-          source: "bundled",
-          scope: "bundled",
-          machineSpecific: true,
-        }],
+        plugins: [
+          {
+            id: "pi-web.terminal",
+            pairedRequestVersion: 1,
+            pairedChannelVersion: 1,
+            source: "bundled",
+            scope: "bundled",
+            machineSpecific: true,
+          },
+        ],
       });
       expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/pi-web\.terminal\/browser\/pi-web-plugin\.js\?v=sha256%3A[a-f\d]{64}$/u);
       const serverModule = (await catalog.snapshot()).plugins[0]?.serverModule;

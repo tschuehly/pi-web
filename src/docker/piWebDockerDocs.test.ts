@@ -32,10 +32,7 @@ describe("pi-web-docker documentation", () => {
   });
 
   it("keeps the Docker command matrix aligned with the canonical user command surface", async () => {
-    const [dockerReadme, dockerEntrypoint] = await Promise.all([
-      readRepoFile("docker/README.md"),
-      readRepoFile("docker/pi-web-docker"),
-    ]);
+    const [dockerReadme, dockerEntrypoint] = await Promise.all([readRepoFile("docker/README.md"), readRepoFile("docker/pi-web-docker")]);
 
     const documentedCommands = readDockerCommandMatrix(dockerReadme);
     expect(new Set(documentedCommands)).toEqual(readEntrypointCommandCases(dockerEntrypoint));

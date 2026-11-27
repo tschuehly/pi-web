@@ -3,7 +3,7 @@ import type { AppAction } from "./actions";
 export const shortcutSequenceTimeoutMs = 1200;
 
 const modifierOrder = ["mod", "alt", "shift"] as const;
-type ShortcutModifier = typeof modifierOrder[number];
+type ShortcutModifier = (typeof modifierOrder)[number];
 
 export type ShortcutPreferenceConfig = Record<string, string | null>;
 export type ShortcutBindingSource = "default" | "custom";
@@ -19,9 +19,7 @@ export interface ShortcutKeyEvent {
   composedPath?(): EventTarget[];
 }
 
-export type ShortcutParseResult =
-  | { ok: true; shortcut: string; tokens: string[] }
-  | { ok: false; message: string };
+export type ShortcutParseResult = { ok: true; shortcut: string; tokens: string[] } | { ok: false; message: string };
 
 export interface ShortcutBindingSummary {
   action: AppAction;
@@ -116,7 +114,11 @@ export class KeyboardShortcutDispatcher {
   }
 }
 
-export function resolveShortcutBindings(actions: AppAction[], shortcuts?: ShortcutPreferenceConfig, options: { enabledOnly?: boolean } = {}): ShortcutBindingResolution[] {
+export function resolveShortcutBindings(
+  actions: AppAction[],
+  shortcuts?: ShortcutPreferenceConfig,
+  options: { enabledOnly?: boolean } = {},
+): ShortcutBindingResolution[] {
   const bindings = actions.flatMap((action, order) => {
     if (options.enabledOnly === true && action.enabled === false) return [];
     const binding = shortcutBindingForAction(action, shortcuts, order);
@@ -144,18 +146,20 @@ export function resolveShortcutBindings(actions: AppAction[], shortcuts?: Shortc
     if (binding !== winner) shadowsByWinner.set(winner, [...(shadowsByWinner.get(winner) ?? []), binding]);
   }
 
-  return bindings.map((binding) => {
-    const winner = winnerByBinding.get(binding);
-    const active = winner === binding;
-    const shadowedBy = winner === undefined || active ? undefined : shortcutBindingSummary(winner);
-    const shadows = active ? [...(shadowsByWinner.get(binding) ?? [])].sort(compareShortcutBindings).map(shortcutBindingSummary) : [];
-    return {
-      ...binding,
-      active,
-      shadows,
-      ...(shadowedBy === undefined ? {} : { shadowedBy }),
-    };
-  }).sort((left, right) => left.order - right.order);
+  return bindings
+    .map((binding) => {
+      const winner = winnerByBinding.get(binding);
+      const active = winner === binding;
+      const shadowedBy = winner === undefined || active ? undefined : shortcutBindingSummary(winner);
+      const shadows = active ? [...(shadowsByWinner.get(binding) ?? [])].sort(compareShortcutBindings).map(shortcutBindingSummary) : [];
+      return {
+        ...binding,
+        active,
+        shadows,
+        ...(shadowedBy === undefined ? {} : { shadowedBy }),
+      };
+    })
+    .sort((left, right) => left.order - right.order);
 }
 
 export function parseShortcutInput(shortcut: string): ShortcutParseResult {
@@ -169,10 +173,7 @@ export function normalizeShortcut(shortcut: string): string[] {
 
 export function formatShortcut(shortcut: string): string {
   return normalizeShortcut(shortcut)
-    .map((token) => token
-      .split("+")
-      .map(formatShortcutPart)
-      .join("+"))
+    .map((token) => token.split("+").map(formatShortcutPart).join("+"))
     .join(" ");
 }
 
@@ -216,7 +217,10 @@ function shortcutBindingForAction(action: AppAction, shortcuts: ShortcutPreferen
   };
 }
 
-export function shortcutPreferenceForAction(action: Pick<AppAction, "id" | "shortcutAliases">, shortcuts: ShortcutPreferenceConfig | undefined): string | null | undefined {
+export function shortcutPreferenceForAction(
+  action: Pick<AppAction, "id" | "shortcutAliases">,
+  shortcuts: ShortcutPreferenceConfig | undefined,
+): string | null | undefined {
   if (shortcuts === undefined) return undefined;
   for (const actionId of [action.id, ...(action.shortcutAliases ?? [])]) {
     if (Object.hasOwn(shortcuts, actionId)) return shortcuts[actionId];
@@ -233,10 +237,12 @@ function shortcutBindingSummary(binding: ShortcutBinding): ShortcutBindingSummar
 }
 
 function compareShortcutBindings(left: ShortcutBinding, right: ShortcutBinding): number {
-  return shortcutSourceRank(left.source) - shortcutSourceRank(right.source)
+  return (
+    shortcutSourceRank(left.source) - shortcutSourceRank(right.source)
     || compareStrings(left.action.id, right.action.id)
     || compareStrings(left.action.title, right.action.title)
-    || left.order - right.order;
+    || left.order - right.order
+  );
 }
 
 function compareShortcutPrefixCandidates(left: ShortcutBinding, right: ShortcutBinding): number {
@@ -244,13 +250,17 @@ function compareShortcutPrefixCandidates(left: ShortcutBinding, right: ShortcutB
 }
 
 function prefixWinnerFor(binding: ShortcutBinding, exactWinners: ShortcutBinding[]): ShortcutBinding | undefined {
-  return exactWinners.find((candidate) => candidate !== binding && candidate.tokens.length < binding.tokens.length && startsWithTokens(binding.tokens, candidate.tokens));
+  return exactWinners.find(
+    (candidate) => candidate !== binding && candidate.tokens.length < binding.tokens.length && startsWithTokens(binding.tokens, candidate.tokens),
+  );
 }
 
 function shortcutSourceRank(source: ShortcutBindingSource): number {
   switch (source) {
-    case "custom": return 0;
-    case "default": return 1;
+    case "custom":
+      return 0;
+    case "default":
+      return 1;
   }
 }
 
@@ -261,7 +271,10 @@ function compareStrings(left: string, right: string): number {
 }
 
 function parseShortcut(shortcut: string): ShortcutParseResult {
-  const cleaned = shortcut.trim().toLowerCase().replace(/\s*\+\s*/gu, "+");
+  const cleaned = shortcut
+    .trim()
+    .toLowerCase()
+    .replace(/\s*\+\s*/gu, "+");
   if (cleaned === "") return { ok: false, message: "Enter a shortcut, choose None, or reset to the default." };
 
   const tokens: string[] = [];
@@ -275,9 +288,7 @@ function parseShortcut(shortcut: string): ShortcutParseResult {
   return { ok: true, shortcut: tokens.join(" "), tokens };
 }
 
-type ShortcutChordParseResult =
-  | { ok: true; token: string }
-  | { ok: false; message: string };
+type ShortcutChordParseResult = { ok: true; token: string } | { ok: false; message: string };
 
 function parseShortcutChord(chord: string): ShortcutChordParseResult {
   const parts = chord.split("+").filter((part) => part !== "");

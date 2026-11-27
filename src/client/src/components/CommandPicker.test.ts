@@ -5,7 +5,16 @@ installNativeDialogFake();
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommandOption } from "../api";
 import { CommandPicker } from "./CommandPicker";
-import { deepActiveElement, dialogSection, dialogSurface, pressKey, pressNativeButtonEnter, requiredElement, settleRenderedDialog, surfaceBackdrop } from "./modalSurfaceTestSupport";
+import {
+  deepActiveElement,
+  dialogSection,
+  dialogSurface,
+  pressKey,
+  pressNativeButtonEnter,
+  requiredElement,
+  settleRenderedDialog,
+  surfaceBackdrop,
+} from "./modalSurfaceTestSupport";
 
 afterEach(() => {
   document.body.replaceChildren();

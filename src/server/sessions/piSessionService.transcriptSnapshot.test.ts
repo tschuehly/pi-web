@@ -1,11 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import { PiSessionService } from "./piSessionService.js";
-import { fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -41,16 +51,23 @@ describe("PiSessionService.transcriptSnapshot", () => {
       fake.session.isStreaming = true;
       fake.emit({ type: "message_start", message: partial });
       const snapshot = await service.transcriptSnapshot(ref);
-      expect(snapshot.page).toEqual({ start: 0, total: 2, messages: [
-        { role: "assistant", content: [{ type: "text", text: "answer", displayText: "[answer]" }] },
-        { role: "user", content: "hello", displayText: "[hello]" },
-      ] });
+      expect(snapshot.page).toEqual({
+        start: 0,
+        total: 2,
+        messages: [
+          { role: "assistant", content: [{ type: "text", text: "answer", displayText: "[answer]" }] },
+          { role: "user", content: "hello", displayText: "[hello]" },
+        ],
+      });
       expect(snapshot.partial).toEqual({ ...partial, streamId: streamIdMatcher });
       expect(snapshot.seq).toBe(events.currentSeq(ref.id));
       expect(assistant.content[0]).toEqual({ type: "text", text: "answer" });
       // Pending echoes remain original internally, so repeated reads do not re-transform display text.
       expect((await service.transcriptSnapshot(ref)).page).toEqual(snapshot.page);
-    } finally { prompt.resolve(undefined); await service.dispose(); }
+    } finally {
+      prompt.resolve(undefined);
+      await service.dispose();
+    }
   });
 
   it("uses an unchanged idle disk branch for both history and status", async () => {
@@ -61,13 +78,18 @@ describe("PiSessionService.transcriptSnapshot", () => {
       expect(snapshot.status).toMatchObject({ messageCount: 1, isStreaming: false });
       expect(snapshot.seq).toBe(events.currentSeq(ref.id));
       expect(snapshot.partial).toBeNull();
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it.each([false, true])("discards an idle disk read overlapping events (still active: %s)", async (stillActive) => {
     const disk = deferred<unknown[]>();
     const reading = deferred<undefined>();
-    const { service, fake, branch, events } = fixture(() => { reading.resolve(undefined); return disk.promise; });
+    const { service, fake, branch, events } = fixture(() => {
+      reading.resolve(undefined);
+      return disk.promise;
+    });
     try {
       const result = service.transcriptSnapshot(ref);
       await reading.promise;
@@ -80,11 +102,15 @@ describe("PiSessionService.transcriptSnapshot", () => {
       expect(snapshot.status).toMatchObject({ messageCount: 1, isStreaming: stillActive });
       expect(snapshot.seq).toBe(events.currentSeq(ref.id));
       expect(snapshot.partial).toBeNull();
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("uses the active runtime branch and projects the current partial with a paged shape", async () => {
-    const { service, fake, branch, events, state } = fixture(() => { throw new Error("must not read active disk"); });
+    const { service, fake, branch, events, state } = fixture(() => {
+      throw new Error("must not read active disk");
+    });
     fake.session.isStreaming = true;
     fake.session.thinkingLevel = "high";
     state.streamingMessage = { role: "assistant", content: [{ type: "thinking", thinking: "working", thinkingSignature: "secret" }] };
@@ -94,10 +120,17 @@ describe("PiSessionService.transcriptSnapshot", () => {
       fake.emit({ type: "message_start", message: state.streamingMessage });
       const snapshot = await service.transcriptSnapshot(ref, { limit: 1 });
       expect(snapshot.page).toEqual({ start: 0, total: 1, messages: [user] });
-      expect(snapshot.partial).toEqual({ role: "assistant", content: [{ type: "thinking", thinking: "working" }], thinkingLevel: "high", streamId: streamIdMatcher });
+      expect(snapshot.partial).toEqual({
+        role: "assistant",
+        content: [{ type: "thinking", thinking: "working" }],
+        thinkingLevel: "high",
+        streamId: streamIdMatcher,
+      });
       expect(snapshot.status).toMatchObject({ messageCount: 1, isStreaming: true });
       expect(snapshot.seq).toBe(events.currentSeq(ref.id));
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("keeps active status and status events aligned with transcript history after compaction", async () => {
@@ -119,7 +152,10 @@ describe("PiSessionService.transcriptSnapshot", () => {
       fake.emit({ type: "message_update", message: oldAssistant });
       const statusEvents = publish.mock.calls.map(([event]) => event).filter((event) => event.type === "status.update");
       expect(statusEvents.at(-1)?.status.messageCount).toBe(3);
-    } finally { publish.mockRestore(); await service.dispose(); }
+    } finally {
+      publish.mockRestore();
+      await service.dispose();
+    }
   });
 
   it("increments completed messages without scanning and reconciles drift only at settlement", async () => {
@@ -152,13 +188,23 @@ describe("PiSessionService.transcriptSnapshot", () => {
         fake.emit({ type: "agent_settled" });
         expect((await service.status(ref)).messageCount).toBe(4);
         expect(getBranch).toHaveBeenCalled();
-      } finally { getBranch.mockRestore(); }
-    } finally { await service.dispose(); }
+      } finally {
+        getBranch.mockRestore();
+      }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("reuses the idle disk snapshot count until external history changes, without overwriting runtime state", async () => {
     let entryReads = 0;
-    const entry = { get type() { entryReads += 1; return "message"; }, message: user };
+    const entry = {
+      get type() {
+        entryReads += 1;
+        return "message";
+      },
+      message: user,
+    };
     let diskBranch: unknown[] = [entry];
     const { service, fake } = fixture(() => Promise.resolve(diskBranch));
     try {
@@ -173,7 +219,9 @@ describe("PiSessionService.transcriptSnapshot", () => {
       fake.session.isStreaming = true;
       // External disk history must not replace the runtime's own branch count.
       expect((await service.status(ref)).messageCount).toBe(0);
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("recounts when the runtime selects a different branch", async () => {
@@ -185,7 +233,9 @@ describe("PiSessionService.transcriptSnapshot", () => {
       branch.pop();
       fake.emit({ type: "session_tree" });
       expect((await service.status(ref)).messageCount).toBe(1);
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("keeps the published partial and seq stable during async update and end extension hooks", async () => {
@@ -211,7 +261,8 @@ describe("PiSessionService.transcriptSnapshot", () => {
       tool.arguments.path = "next";
       const updating = updateHook.promise.then(() => {
         fake.emit({
-          type: "message_update", message: assistant,
+          type: "message_update",
+          message: assistant,
           assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: " next", partial: assistant },
         });
       });
@@ -263,7 +314,9 @@ describe("PiSessionService.transcriptSnapshot", () => {
       fake.emit({ type: "message_end", message: user });
       fake.emit({ type: "message_start", message: assistant });
       expect((await service.transcriptSnapshot(ref)).partial).toEqual({ ...assistant, streamId: streamIdMatcher });
-    } finally { await service.dispose(); }
+    } finally {
+      await service.dispose();
+    }
   });
 
   it("includes a published prompt echo during SDK awaits, without duplicating its later append", async () => {
@@ -284,6 +337,9 @@ describe("PiSessionService.transcriptSnapshot", () => {
       expect((await service.transcriptSnapshot(ref)).page.messages).toEqual([user]);
       prompt.resolve(undefined);
       expect((await service.transcriptSnapshot(ref)).page.messages).toEqual([user]);
-    } finally { prompt.resolve(undefined); await service.dispose(); }
+    } finally {
+      prompt.resolve(undefined);
+      await service.dispose();
+    }
   });
 });

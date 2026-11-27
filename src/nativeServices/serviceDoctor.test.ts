@@ -48,21 +48,19 @@ function productionInput(configured = false): ProductionNativeServicePlanInput {
 
 function probeWithStatus(status: "satisfied" | "unsatisfied"): NativeServiceAuthoritativeProbe {
   return {
-    run: (request) => Promise.resolve({
-      kind: "completed",
-      outcomes: request.prerequisites.map((prerequisite) => ({
-        prerequisiteId: prerequisite.id,
-        status,
-        detail: status === "satisfied" ? null : `${prerequisite.id} missing in manager context`,
-      })),
-    }),
+    run: (request) =>
+      Promise.resolve({
+        kind: "completed",
+        outcomes: request.prerequisites.map((prerequisite) => ({
+          prerequisiteId: prerequisite.id,
+          status,
+          detail: status === "satisfied" ? null : `${prerequisite.id} missing in manager context`,
+        })),
+      }),
   };
 }
 
-function developmentPlan(
-  kind: "systemd" | "launchd",
-  configPath: string | null = "/home/user/config & dev.json",
-): NativeServicePlan {
+function developmentPlan(kind: "systemd" | "launchd", configPath: string | null = "/home/user/config & dev.json"): NativeServicePlan {
   return createDevelopmentNativeServicePlan({
     backend: { kind, label: kind },
     shell,
@@ -87,9 +85,7 @@ async function productionPlan(kind: "systemd" | "launchd"): Promise<NativeServic
 function renderedDefinitions(plan: NativeServicePlan): InstalledNativeServiceDefinition[] {
   return plan.services.map((service) => ({
     id: service.id,
-    contents: plan.backend.kind === "systemd"
-      ? renderSystemdUnit(plan, service)
-      : renderLaunchdPlist(plan, service, "/tmp/logs"),
+    contents: plan.backend.kind === "systemd" ? renderSystemdUnit(plan, service) : renderLaunchdPlist(plan, service, "/tmp/logs"),
   }));
 }
 
@@ -222,11 +218,7 @@ describe("installed native-service mode and definition inspection", () => {
     const second = renderedDefinitions(developmentPlan(kind, "/config/two.json"))[1];
     if (first === undefined || second === undefined) throw new Error("Expected two rendered definitions");
 
-    const selection = selectManagedNativeServiceConfig(
-      { kind, label: kind },
-      [first, second],
-      undefined,
-    );
+    const selection = selectManagedNativeServiceConfig({ kind, label: kind }, [first, second], undefined);
 
     expect(selection.ok).toBe(false);
     if (selection.ok) throw new Error("Expected inconsistent definitions to fail selection");
@@ -234,22 +226,14 @@ describe("installed native-service mode and definition inspection", () => {
   });
 
   it.each(["systemd", "launchd"] as const)("rejects malformed %s definitions when no caller override exists", (kind) => {
-    const selection = selectManagedNativeServiceConfig(
-      { kind, label: kind },
-      [{ id: "web", contents: "not a service definition" }],
-      undefined,
-    );
+    const selection = selectManagedNativeServiceConfig({ kind, label: kind }, [{ id: "web", contents: "not a service definition" }], undefined);
 
     expect(selection.ok).toBe(false);
   });
 
   it("rejects systemd physical-line continuation before selecting its apparent environment", () => {
     const contents = `[Service]\nType=simple\\\nEnvironment="PI_WEB_CONFIG=/foreign.json"\nExecStart=/usr/bin/env "/bin/zsh" -lc "exec pi-web-sessiond"\nRestart=no\n`;
-    const selection = selectManagedNativeServiceConfig(
-      { kind: "systemd", label: "systemd" },
-      [{ id: "sessiond", contents }],
-      undefined,
-    );
+    const selection = selectManagedNativeServiceConfig({ kind: "systemd", label: "systemd" }, [{ id: "sessiond", contents }], undefined);
 
     expect(selection.ok).toBe(false);
     if (selection.ok) throw new Error("Expected continued systemd definition selection to fail");
@@ -258,16 +242,9 @@ describe("installed native-service mode and definition inspection", () => {
 
   it.each([
     ["bare regex-shaped fragment", launchdManagedConfigEntries("com.pi-web.sessiond")],
-    [
-      "truncated plist",
-      `<plist version="1.0">\n<dict>\n${launchdManagedConfigEntries("com.pi-web.sessiond")}`,
-    ],
+    ["truncated plist", `<plist version="1.0">\n<dict>\n${launchdManagedConfigEntries("com.pi-web.sessiond")}`],
   ])("rejects a %s before it can supply managed config", (_name, contents) => {
-    const selection = selectManagedNativeServiceConfig(
-      { kind: "launchd", label: "launchd" },
-      [{ id: "sessiond", contents }],
-      undefined,
-    );
+    const selection = selectManagedNativeServiceConfig({ kind: "launchd", label: "launchd" }, [{ id: "sessiond", contents }], undefined);
 
     expect(selection.ok).toBe(false);
     if (selection.ok) throw new Error("Expected malformed LaunchAgent selection to fail");
@@ -290,10 +267,7 @@ describe("installed native-service mode and definition inspection", () => {
   });
 
   it("rejects duplicate LaunchAgent ProgramArguments keys", () => {
-    const entries = launchdManagedConfigEntries(
-      "com.pi-web.sessiond",
-      `${launchdProgramArgumentsEntry}${launchdProgramArgumentsEntry}`,
-    );
+    const entries = launchdManagedConfigEntries("com.pi-web.sessiond", `${launchdProgramArgumentsEntry}${launchdProgramArgumentsEntry}`);
     const selection = selectManagedNativeServiceConfig(
       { kind: "launchd", label: "launchd" },
       [{ id: "sessiond", contents: launchdPlistDocument(entries) }],
@@ -309,8 +283,7 @@ describe("installed native-service mode and definition inspection", () => {
     ["NUL", "\u0000"],
     ["U+0001", "\u0001"],
   ])("rejects XML-illegal %s content in a LaunchAgent", (_name, control) => {
-    const entries = launchdManagedConfigEntries("com.pi-web.sessiond")
-      .replace("/foreign.json", `/foreign${control}.json`);
+    const entries = launchdManagedConfigEntries("com.pi-web.sessiond").replace("/foreign.json", `/foreign${control}.json`);
     const selection = selectManagedNativeServiceConfig(
       { kind: "launchd", label: "launchd" },
       [{ id: "sessiond", contents: launchdPlistDocument(entries) }],
@@ -357,17 +330,10 @@ describe("installed native-service mode and definition inspection", () => {
 
   it("rejects a truncated quoted systemd environment within bounded parser time", () => {
     // This finite payload took seconds with the ambiguous escaped/raw regex alternatives.
-    const contents = [
-      "[Service]",
-      `Environment="${"\\".repeat(40)}`,
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n");
+    const contents = ["[Service]", `Environment="${"\\".repeat(40)}`, 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n");
 
     const startedAt = performance.now();
-    const inspection = inspectInstalledNativeServiceDefinitionEnvironment(
-      { kind: "systemd", label: "systemd" },
-      { id: "web", contents },
-    );
+    const inspection = inspectInstalledNativeServiceDefinitionEnvironment({ kind: "systemd", label: "systemd" }, { id: "web", contents });
     const elapsedMs = performance.now() - startedAt;
 
     expect(inspection.ok).toBe(false);
@@ -474,11 +440,7 @@ describe("installed native-service mode and definition inspection", () => {
       { kind: "systemd", label: "systemd" },
       {
         id: "web",
-        contents: [
-          "[Service]",
-          'Environment="__proto__=installed"',
-          'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-        ].join("\n"),
+        contents: ["[Service]", 'Environment="__proto__=installed"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n"),
       },
     );
 
@@ -497,12 +459,9 @@ describe("installed native-service mode and definition inspection", () => {
       { kind: "systemd", label: "systemd" },
       {
         id: "web",
-        contents: [
-          "[Service]",
-          'Environment="__proto__=first"',
-          'Environment="__proto__=second"',
-          'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-        ].join("\n"),
+        contents: ["[Service]", 'Environment="__proto__=first"', 'Environment="__proto__=second"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join(
+          "\n",
+        ),
       },
     );
 
@@ -512,33 +471,17 @@ describe("installed native-service mode and definition inspection", () => {
   });
 
   it("decodes systemd hexadecimal escapes as UTF-8 bytes", () => {
-    const contents = [
-      "[Service]",
-      'Environment="PI_WEB_CONFIG=/tmp/\\xC3\\xA9.json"',
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n");
+    const contents = ["[Service]", 'Environment="PI_WEB_CONFIG=/tmp/\\xC3\\xA9.json"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n");
 
-    expect(selectManagedNativeServiceConfig(
-      { kind: "systemd", label: "systemd" },
-      [{ id: "web", contents }],
-      undefined,
-    )).toEqual({
+    expect(selectManagedNativeServiceConfig({ kind: "systemd", label: "systemd" }, [{ id: "web", contents }], undefined)).toEqual({
       ok: true,
       value: { source: "installed", configPath: "/tmp/é.json" },
     });
   });
 
   it("rejects systemd hexadecimal escapes that do not form valid UTF-8", () => {
-    const contents = [
-      "[Service]",
-      'Environment="PI_WEB_CONFIG=/tmp/\\xC3\\x28.json"',
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n");
-    const selection = selectManagedNativeServiceConfig(
-      { kind: "systemd", label: "systemd" },
-      [{ id: "web", contents }],
-      undefined,
-    );
+    const contents = ["[Service]", 'Environment="PI_WEB_CONFIG=/tmp/\\xC3\\x28.json"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n");
+    const selection = selectManagedNativeServiceConfig({ kind: "systemd", label: "systemd" }, [{ id: "web", contents }], undefined);
 
     expect(selection.ok).toBe(false);
     if (selection.ok) throw new Error("Expected invalid escaped UTF-8 to fail");
@@ -546,16 +489,8 @@ describe("installed native-service mode and definition inspection", () => {
   });
 
   it("preserves an escaped UTF-8 BOM so it cannot turn into the PI_WEB_CONFIG key", () => {
-    const contents = [
-      "[Service]",
-      'Environment="\\xEF\\xBB\\xBFPI_WEB_CONFIG=/foreign.json"',
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n");
-    const selection = selectManagedNativeServiceConfig(
-      { kind: "systemd", label: "systemd" },
-      [{ id: "web", contents }],
-      undefined,
-    );
+    const contents = ["[Service]", 'Environment="\\xEF\\xBB\\xBFPI_WEB_CONFIG=/foreign.json"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n");
+    const selection = selectManagedNativeServiceConfig({ kind: "systemd", label: "systemd" }, [{ id: "web", contents }], undefined);
 
     expect(selection.ok).toBe(false);
     if (selection.ok) throw new Error("Expected a BOM-prefixed environment key to fail");
@@ -563,23 +498,14 @@ describe("installed native-service mode and definition inspection", () => {
   });
 
   it("uses systemd ASCII whitespace rules before service directives", () => {
-    const asciiIndented = [
-      "[Service]",
-      '\tEnvironment="PI_WEB_CONFIG=/managed.json"',
-      '\tExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n");
-    expect(selectManagedNativeServiceConfig(
-      { kind: "systemd", label: "systemd" },
-      [{ id: "web", contents: asciiIndented }],
-      undefined,
-    )).toEqual({ ok: true, value: { source: "installed", configPath: "/managed.json" } });
+    const asciiIndented = ["[Service]", '\tEnvironment="PI_WEB_CONFIG=/managed.json"', '\tExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n");
+    expect(selectManagedNativeServiceConfig({ kind: "systemd", label: "systemd" }, [{ id: "web", contents: asciiIndented }], undefined)).toEqual({
+      ok: true,
+      value: { source: "installed", configPath: "/managed.json" },
+    });
 
     const unicodeIndented = asciiIndented.replace("\tEnvironment", "\u00a0Environment");
-    const selection = selectManagedNativeServiceConfig(
-      { kind: "systemd", label: "systemd" },
-      [{ id: "web", contents: unicodeIndented }],
-      undefined,
-    );
+    const selection = selectManagedNativeServiceConfig({ kind: "systemd", label: "systemd" }, [{ id: "web", contents: unicodeIndented }], undefined);
 
     expect(selection.ok).toBe(false);
     if (selection.ok) throw new Error("Expected Unicode-indented directive to fail");
@@ -635,11 +561,7 @@ describe("installed native-service mode and definition inspection", () => {
       { kind: "systemd", label: "systemd" },
       {
         id: "web",
-        contents: [
-          "[Service]",
-          'Environment="PI_WEB_CONFIG=/managed.json"',
-          "ExecStart=/usr/bin/env /bin/zsh -lc 'exec true'",
-        ].join("\n"),
+        contents: ["[Service]", 'Environment="PI_WEB_CONFIG=/managed.json"', "ExecStart=/usr/bin/env /bin/zsh -lc 'exec true'"].join("\n"),
       },
     );
 
@@ -649,33 +571,27 @@ describe("installed native-service mode and definition inspection", () => {
     });
   });
 
-  it.each(["bash", "zsh", "fish"] as const)(
-    "accepts raw dollars emitted by the pre-hardening %s systemd renderer",
-    (shellName) => {
-      const inspection = inspectInstalledNativeServiceDefinitionEnvironment(
-        { kind: "systemd", label: "systemd" },
-        {
-          id: "web",
-          contents: [
-            "[Service]",
-            'Environment="PI_WEB_CONFIG=/managed.json"',
-            `ExecStart=/usr/bin/env /bin/${shellName} -lc 'exec echo $HOME %%h'`,
-          ].join("\n"),
-        },
-      );
+  it.each(["bash", "zsh", "fish"] as const)("accepts raw dollars emitted by the pre-hardening %s systemd renderer", (shellName) => {
+    const inspection = inspectInstalledNativeServiceDefinitionEnvironment(
+      { kind: "systemd", label: "systemd" },
+      {
+        id: "web",
+        contents: ["[Service]", 'Environment="PI_WEB_CONFIG=/managed.json"', `ExecStart=/usr/bin/env /bin/${shellName} -lc 'exec echo $HOME %%h'`].join("\n"),
+      },
+    );
 
-      expect(inspection).toEqual({
-        ok: true,
-        value: { PI_WEB_CONFIG: "/managed.json" },
-      });
-    },
-  );
+    expect(inspection).toEqual({
+      ok: true,
+      value: { PI_WEB_CONFIG: "/managed.json" },
+    });
+  });
 
   it("continues to require doubled dollars in current double-quoted systemd commands", () => {
-    const inspectCommand = (command: string) => inspectInstalledNativeServiceDefinitionEnvironment(
-      { kind: "systemd", label: "systemd" },
-      { id: "web", contents: ["[Service]", `ExecStart=/usr/bin/env "/bin/zsh" -lc ${command}`].join("\n") },
-    );
+    const inspectCommand = (command: string) =>
+      inspectInstalledNativeServiceDefinitionEnvironment(
+        { kind: "systemd", label: "systemd" },
+        { id: "web", contents: ["[Service]", `ExecStart=/usr/bin/env "/bin/zsh" -lc ${command}`].join("\n") },
+      );
 
     expect(inspectCommand('"exec echo $$HOME"')).toEqual({ ok: true, value: {} });
     const rawDollar = inspectCommand('"exec echo $HOME"');
@@ -685,31 +601,11 @@ describe("installed native-service mode and definition inspection", () => {
   });
 
   it.each([
-    [
-      "unterminated command quote",
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true',
-      "unrecognized shell command",
-    ],
-    [
-      "trailing argument",
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true" trailing',
-      "unrecognized shell command",
-    ],
-    [
-      "concatenated command syntax",
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true""ignored"',
-      "unrecognized shell command",
-    ],
-    [
-      "noncanonical legacy command syntax",
-      "ExecStart=/usr/bin/env /bin/zsh -lc 'exec true''ignored'",
-      "unrecognized shell command",
-    ],
-    [
-      "trailing syntax after a legacy raw-dollar command",
-      "ExecStart=/usr/bin/env /bin/zsh -lc 'exec echo $HOME' trailing",
-      "unrecognized shell command",
-    ],
+    ["unterminated command quote", 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true', "unrecognized shell command"],
+    ["trailing argument", 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true" trailing', "unrecognized shell command"],
+    ["concatenated command syntax", 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true""ignored"', "unrecognized shell command"],
+    ["noncanonical legacy command syntax", "ExecStart=/usr/bin/env /bin/zsh -lc 'exec true''ignored'", "unrecognized shell command"],
+    ["trailing syntax after a legacy raw-dollar command", "ExecStart=/usr/bin/env /bin/zsh -lc 'exec echo $HOME' trailing", "unrecognized shell command"],
   ])("rejects %s in a systemd ExecStart", (_label, execStart, expectedMessage) => {
     const inspection = inspectInstalledNativeServiceDefinitionEnvironment(
       { kind: "systemd", label: "systemd" },
@@ -725,10 +621,7 @@ describe("installed native-service mode and definition inspection", () => {
     const plan = developmentPlan("systemd");
     const definitions = renderedDefinitions(plan).map((definition) => ({
       ...definition,
-      contents: definition.contents.replace(
-        "WorkingDirectory=/checkout\\x20with\\x20space",
-        'WorkingDirectory="/checkout with space"',
-      ),
+      contents: definition.contents.replace("WorkingDirectory=/checkout\\x20with\\x20space", 'WorkingDirectory="/checkout with space"'),
     }));
 
     const inspection = inspectInstalledDevelopmentServiceInput(plan.backend, definitions);
@@ -750,27 +643,24 @@ describe("installed native-service mode and definition inspection", () => {
     expect(inspection.message).toContain("environment entry");
   });
 
-  it.each([
-    'Environment="PI_WEB_CONFIG=/config" "PATH=/broken"',
-    "EnvironmentFile=/tmp/pi-web.env",
-  ])("rejects noncanonical systemd environment context: %s", (directive) => {
-    const plan = developmentPlan("systemd");
-    const definitions = renderedDefinitions(plan).map((definition) => ({
-      ...definition,
-      contents: definition.contents.replace("[Service]\n", `[Service]\n${directive}\n`),
-    }));
+  it.each(['Environment="PI_WEB_CONFIG=/config" "PATH=/broken"', "EnvironmentFile=/tmp/pi-web.env"])(
+    "rejects noncanonical systemd environment context: %s",
+    (directive) => {
+      const plan = developmentPlan("systemd");
+      const definitions = renderedDefinitions(plan).map((definition) => ({
+        ...definition,
+        contents: definition.contents.replace("[Service]\n", `[Service]\n${directive}\n`),
+      }));
 
-    expect(inspectInstalledDevelopmentServiceInput(plan.backend, definitions).ok).toBe(false);
-  });
+      expect(inspectInstalledDevelopmentServiceInput(plan.backend, definitions).ok).toBe(false);
+    },
+  );
 
   it("rejects duplicate systemd ExecStart directives", () => {
     const plan = developmentPlan("systemd");
     const definitions = renderedDefinitions(plan).map((definition) => ({
       ...definition,
-      contents: definition.contents.replace(
-        "Restart=no",
-        'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"\nRestart=no',
-      ),
+      contents: definition.contents.replace("Restart=no", 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"\nRestart=no'),
     }));
 
     const inspection = inspectInstalledDevelopmentServiceInput(plan.backend, definitions);
@@ -817,10 +707,12 @@ describe("installed native-service mode and definition inspection", () => {
     if (firstService === undefined) throw new Error("Expected a development service");
     const productionService = { ...firstService, workingDirectory: null };
     const productionPlan: NativeServicePlan = { ...plan, mode: "production", services: [productionService] };
-    const productionLike = [{
-      id: "sessiond" as const,
-      contents: renderLaunchdPlist(productionPlan, productionService, "/tmp/logs"),
-    }];
+    const productionLike = [
+      {
+        id: "sessiond" as const,
+        contents: renderLaunchdPlist(productionPlan, productionService, "/tmp/logs"),
+      },
+    ];
     expect(inspectInstalledProductionServiceContext(plan.backend, productionLike)).toEqual({
       ok: true,
       value: {
@@ -858,14 +750,15 @@ describe("native-service doctor planning and reporting", () => {
       { kind: "installed-development", input: inspected.value },
       {
         probe: {
-          run: (request) => Promise.resolve({
-            kind: "completed",
-            outcomes: request.prerequisites.map((prerequisite) => ({
-              prerequisiteId: prerequisite.id,
-              status: prerequisite.kind === "package-scripts" ? "unsatisfied" as const : "satisfied" as const,
-              detail: prerequisite.kind === "package-scripts" ? "scripts missing" : null,
-            })),
-          }),
+          run: (request) =>
+            Promise.resolve({
+              kind: "completed",
+              outcomes: request.prerequisites.map((prerequisite) => ({
+                prerequisiteId: prerequisite.id,
+                status: prerequisite.kind === "package-scripts" ? ("unsatisfied" as const) : ("satisfied" as const),
+                detail: prerequisite.kind === "package-scripts" ? "scripts missing" : null,
+              })),
+            }),
         },
         fileExists: () => true,
       },
@@ -891,10 +784,9 @@ describe("native-service doctor planning and reporting", () => {
     expect(report.failureKind).toBe("requirements");
     expect(report.lines[0]).toContain("Prospective production native-service plan");
     expect(report.lines.join("\n")).toContain("Native service requirement failed");
-    expect(report.failedPrerequisites).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "node-version" }),
-      expect.objectContaining({ kind: "readable-file" }),
-    ]));
+    expect(report.failedPrerequisites).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "node-version" }), expect.objectContaining({ kind: "readable-file" })]),
+    );
   });
 
   it("retains the installed production shell when resolution fails before a plan exists", async () => {
@@ -918,7 +810,12 @@ describe("native-service doctor planning and reporting", () => {
     const result = await runNativeServiceDoctor(
       { kind: "prospective-production", input: productionInput(true), reason: "current configured overrides" },
       {
-        probe: { run: () => { calls += 1; return Promise.resolve({ kind: "completed", outcomes: [] }); } },
+        probe: {
+          run: () => {
+            calls += 1;
+            return Promise.resolve({ kind: "completed", outcomes: [] });
+          },
+        },
         fileExists: () => false,
       },
     );

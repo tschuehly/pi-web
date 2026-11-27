@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "../api";
 import type { KeyValueStorage } from "./sessionStorageMemory";
-import { InMemorySessionSelectionMemory, markSessionArchived, markSessionsArchived, selectPreferredSession, selectionAfterArchivingSession, selectionAfterArchivingSessions, SessionStorageSessionSelectionMemory, shouldDeselectAfterArchivedCollapse } from "./sessionSelection";
+import {
+  InMemorySessionSelectionMemory,
+  markSessionArchived,
+  markSessionsArchived,
+  selectPreferredSession,
+  selectionAfterArchivingSession,
+  selectionAfterArchivingSessions,
+  SessionStorageSessionSelectionMemory,
+  shouldDeselectAfterArchivedCollapse,
+} from "./sessionSelection";
 
 describe("selectPreferredSession", () => {
   it("prefers an explicit target session by id", () => {
@@ -137,7 +146,10 @@ describe("selectionAfterArchivingSession", () => {
   it("skips archived sessions when choosing the next selected session", () => {
     const s3 = testSession("s3");
 
-    expect(selectionAfterArchivingSession([testSession("s1"), { ...testSession("s2"), archived: true }, s3], "s1", "s1")).toEqual({ type: "select", session: s3 });
+    expect(selectionAfterArchivingSession([testSession("s1"), { ...testSession("s2"), archived: true }, s3], "s1", "s1")).toEqual({
+      type: "select",
+      session: s3,
+    });
   });
 
   it("clears selection when no active session remains", () => {
@@ -157,7 +169,11 @@ function memoryStorage(seed: Record<string, string> = {}): KeyValueStorage {
   const values = new Map(Object.entries(seed));
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
-    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
   };
 }

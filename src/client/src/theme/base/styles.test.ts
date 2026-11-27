@@ -15,21 +15,34 @@ import { sidebarListStyles } from "./sidebarListStyles";
 import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
 import { sessionNotificationTrayStyles } from "./sessionNotificationTrayStyles";
-import {
-  appStyles, workspacePanelStyles, listStyles, statusBarStyles,
-  autocompleteStyles, promptEditorStyles, promptEditorLayoutStyles,
-} from "./shellStyles";
+import { appStyles, workspacePanelStyles, listStyles, statusBarStyles, autocompleteStyles, promptEditorStyles, promptEditorLayoutStyles } from "./shellStyles";
 import { baseThemeStyles } from "./styles";
 
 describe("base theme cascade boundary", () => {
   // This protects override precedence, not rendered geometry: one accidentally
   // unlayered default would outrank selected theme rules in participating roots.
   const styles = {
-    ...controls, ...dialogs, uiFormStyles, uiFileListStyles, uiSettingsStyles,
-    uiNoticeStyles, uiTranscriptStyles, uiTranscriptCardStyles, chatStyles, conversationLayoutStyles,
-    chatNavigationStyles, sidebarListStyles, formattedTextStyles,
-    codeBlockFrameStyles, sessionNotificationTrayStyles, appStyles, workspacePanelStyles, listStyles, statusBarStyles,
-    autocompleteStyles, promptEditorLayoutStyles,
+    ...controls,
+    ...dialogs,
+    uiFormStyles,
+    uiFileListStyles,
+    uiSettingsStyles,
+    uiNoticeStyles,
+    uiTranscriptStyles,
+    uiTranscriptCardStyles,
+    chatStyles,
+    conversationLayoutStyles,
+    chatNavigationStyles,
+    sidebarListStyles,
+    formattedTextStyles,
+    codeBlockFrameStyles,
+    sessionNotificationTrayStyles,
+    appStyles,
+    workspacePanelStyles,
+    listStyles,
+    statusBarStyles,
+    autocompleteStyles,
+    promptEditorLayoutStyles,
   };
 
   it.each(Object.entries(styles))("keeps %s defaults in a single base layer", (_name, style) => {

@@ -17,11 +17,7 @@ const COMPLETION_ERROR_MAX_BYTES = 4 * 1024;
 
 interface HostPiSessionService {
   createHostedSession(cwd: string, signal: AbortSignal): Promise<{ readonly id: string }>;
-  startOneShotRun(
-    cwd: string,
-    prompt: string,
-    signal: AbortSignal,
-  ): Promise<{ readonly id: string; readonly completion: Promise<void> }>;
+  startOneShotRun(cwd: string, prompt: string, signal: AbortSignal): Promise<{ readonly id: string; readonly completion: Promise<void> }>;
 }
 
 export interface CreateServerPluginPiSessionsCapabilityOptions {
@@ -41,11 +37,7 @@ interface RunAdmission {
 export function createServerPluginPiSessionsCapabilityFactory(
   options: CreateServerPluginPiSessionsCapabilityOptions,
 ): ServerPluginHostCapabilityFactory<PiWebHostPiSessionsV1> {
-  const maxConcurrentRuns = positiveInteger(
-    options.maxConcurrentRunsPerPlugin,
-    DEFAULT_MAX_CONCURRENT_RUNS_PER_PLUGIN,
-    "maxConcurrentRunsPerPlugin",
-  );
+  const maxConcurrentRuns = positiveInteger(options.maxConcurrentRunsPerPlugin, DEFAULT_MAX_CONCURRENT_RUNS_PER_PLUGIN, "maxConcurrentRunsPerPlugin");
   const workspaceFactory = createServerPluginWorkspacesCapabilityFactory(options);
 
   return Object.freeze({
@@ -64,7 +56,9 @@ export function createServerPluginPiSessionsCapabilityFactory(
         startupLifetime.abort(context.lifetimeSignal.reason);
       };
 
-      const lifetimeAbort = (): void => { revoke(); };
+      const lifetimeAbort = (): void => {
+        revoke();
+      };
       if (context.lifetimeSignal.aborted) revoke();
       else context.lifetimeSignal.addEventListener("abort", lifetimeAbort, { once: true });
 
@@ -98,10 +92,7 @@ export function createServerPluginPiSessionsCapabilityFactory(
         run: async (input: PiWebHostPiSessionRunInput): Promise<PiWebHostPiSessionRun> => {
           assertActive(context, revoked);
           if (admissions.size >= maxConcurrentRuns) {
-            throw capabilityError(
-              context.pluginId,
-              `reached its limit of ${String(maxConcurrentRuns)} concurrent runs`,
-            );
+            throw capabilityError(context.pluginId, `reached its limit of ${String(maxConcurrentRuns)} concurrent runs`);
           }
 
           const admission = createAdmission();
@@ -116,11 +107,7 @@ export function createServerPluginPiSessionsCapabilityFactory(
 
             let started: { readonly id: string; readonly completion: Promise<void> };
             try {
-              started = await options.sessions.startOneShotRun(
-                authority.workspace.path,
-                input.prompt,
-                startupLifetime.signal,
-              );
+              started = await options.sessions.startOneShotRun(authority.workspace.path, input.prompt, startupLifetime.signal);
             } catch (error) {
               if (revoked || context.lifetimeSignal.aborted) {
                 throw revokedError(context, error);
@@ -129,8 +116,9 @@ export function createServerPluginPiSessionsCapabilityFactory(
             }
             // Always consume the outcome, even if revocation wins this await.
             // A returned session is already published and must not be reclaimed.
-            const completion = completeRun(started.completion)
-              .finally(() => { admissions.delete(admission); });
+            const completion = completeRun(started.completion).finally(() => {
+              admissions.delete(admission);
+            });
             handedOffCompletion = true;
             assertActive(context, revoked);
             return Object.freeze({ sessionId: started.id, completion });
@@ -146,7 +134,10 @@ export function createServerPluginPiSessionsCapabilityFactory(
         async dispose(signal: AbortSignal): Promise<void> {
           revoke();
           context.lifetimeSignal.removeEventListener("abort", lifetimeAbort);
-          await waitForSettled([...admissions].map(({ settled }) => settled), signal);
+          await waitForSettled(
+            [...admissions].map(({ settled }) => settled),
+            signal,
+          );
         },
       });
     },
@@ -158,15 +149,15 @@ async function completeRun(runCompletion: Promise<void>): Promise<PiWebHostPiSes
     await runCompletion;
     return Object.freeze({ status: "completed" });
   } catch (error) {
-    return error instanceof Error && error.name === "AbortError"
-      ? Object.freeze({ status: "cancelled" })
-      : failedCompletion(error);
+    return error instanceof Error && error.name === "AbortError" ? Object.freeze({ status: "cancelled" }) : failedCompletion(error);
   }
 }
 
 function createAdmission(): RunAdmission {
   let settle!: () => void;
-  const settled = new Promise<void>((resolve) => { settle = resolve; });
+  const settled = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
   return { settled, settle };
 }
 
@@ -188,10 +179,7 @@ function revokedError(context: ServerPluginHostCapabilityContext, cause: unknown
 }
 
 function capabilityError(pluginId: string, message: string, cause?: unknown): Error {
-  return new Error(
-    `PI WEB host PI session authority for server plugin ${pluginId} ${message}`,
-    cause === undefined ? {} : { cause },
-  );
+  return new Error(`PI WEB host PI session authority for server plugin ${pluginId} ${message}`, cause === undefined ? {} : { cause });
 }
 
 async function waitForSettled(operations: readonly Promise<void>[], signal: AbortSignal): Promise<void> {
@@ -199,7 +187,9 @@ async function waitForSettled(operations: readonly Promise<void>[], signal: Abor
   if (signal.aborted) throw abortError(signal);
   let onAbort: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
-    onAbort = () => { reject(abortError(signal)); };
+    onAbort = () => {
+      reject(abortError(signal));
+    };
     signal.addEventListener("abort", onAbort, { once: true });
   });
   try {
@@ -210,9 +200,7 @@ async function waitForSettled(operations: readonly Promise<void>[], signal: Abor
 }
 
 function abortError(signal: AbortSignal): Error {
-  return signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException("PI WEB host PI session cleanup was aborted", "AbortError");
+  return signal.reason instanceof Error ? signal.reason : new DOMException("PI WEB host PI session cleanup was aborted", "AbortError");
 }
 
 function positiveInteger(value: number | undefined, fallback: number, label: string): number {

@@ -10,7 +10,8 @@ afterEach(() => {
 
 describe("workspace Markdown sanitizer", () => {
   it("keeps only the generated element and attribute allowlists", () => {
-    const root = parseHtml(sanitizeWorkspaceMarkdownHtml(`
+    const root = parseHtml(
+      sanitizeWorkspaceMarkdownHtml(`
       <section><strong>removed with its unknown container</strong></section>
       <p id="clobber" class="attacker" onclick="alert(1)">
         <strong data-extra="no">kept</strong>
@@ -20,7 +21,8 @@ describe("workspace Markdown sanitizer", () => {
       <table style="background:url(https://attacker.test/x)"><tbody><tr><td align="center" colspan="3">cell</td></tr></tbody></table>
       <svg onload="alert(1)"><a href="https://attacker.test">svg link</a></svg>
       <iframe src="https://attacker.test/frame"></iframe>
-    `));
+    `),
+    );
 
     expect(root.querySelector("section, svg, iframe")).toBeNull();
     expect(root.textContent).not.toContain("removed with its unknown container");
@@ -45,7 +47,8 @@ describe("workspace Markdown sanitizer", () => {
   });
 
   it("allows only explicit link protocols and gives every usable link a safe opener", () => {
-    const root = parseHtml(sanitizeWorkspaceMarkdownHtml(`
+    const root = parseHtml(
+      sanitizeWorkspaceMarkdownHtml(`
       <p>
         <a href="https://example.test">https</a>
         <a href="HTTP://example.test">http</a>
@@ -56,7 +59,8 @@ describe("workspace Markdown sanitizer", () => {
         <a href="/workspace/path">relative</a>
         <a href="#fragment">fragment</a>
       </p>
-    `));
+    `),
+    );
 
     for (const text of ["https", "http", "mail"]) {
       const link = linkWithText(root, text);
@@ -93,8 +97,8 @@ describe("workspace Markdown sanitizer", () => {
     expect(root.querySelector("h1")?.textContent).toBe("Safe heading");
     expect(root.querySelector("img, script, iframe, object, embed, svg, input, audio, video, source")).toBeNull();
     expect(root.querySelector("[src], [srcset], [poster], [style]")).toBeNull();
-    expect(root.textContent).toContain("<img src=\"https://attacker.test/raw.png\" onerror=\"alert(1)\">");
-    expect(root.textContent).toContain("<script>alert(\"raw\")</script>");
+    expect(root.textContent).toContain('<img src="https://attacker.test/raw.png" onerror="alert(1)">');
+    expect(root.textContent).toContain('<script>alert("raw")</script>');
     expect(root.textContent).toContain("[x] completed without a form control");
     expect(root.textContent).toContain("[Image omitted: tracking pixel]");
     const link = linkWithText(root, "click");
@@ -103,7 +107,8 @@ describe("workspace Markdown sanitizer", () => {
   });
 
   it("strips parser-generated classes and wraps tables with trusted accessibility attributes", () => {
-    const root = parseHtml(renderWorkspaceMarkdownHtml(`
+    const root = parseHtml(
+      renderWorkspaceMarkdownHtml(`
 \`\`\`javascript
 alert("shown as code")
 \`\`\`
@@ -111,7 +116,8 @@ alert("shown as code")
 | left | centered |
 | :--- | :------: |
 | one  | two      |
-`));
+`),
+    );
 
     const code = requiredElement(root.querySelector("pre code"), "code block");
     expect(code.getAttributeNames()).toEqual([]);

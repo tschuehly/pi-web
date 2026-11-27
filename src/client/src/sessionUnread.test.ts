@@ -21,10 +21,7 @@ describe("SessionUnreadController", () => {
 
   it("refreshes the projection again on reconnect", async () => {
     const api = fakeApi({
-      snapshots: [
-        snapshot("catalog-a", 1, [summary("session-1", 1)]),
-        snapshot("catalog-a", 2, [summary("session-2", 2), summary("session-1", 1)]),
-      ],
+      snapshots: [snapshot("catalog-a", 1, [summary("session-1", 1)]), snapshot("catalog-a", 2, [summary("session-2", 2), summary("session-1", 1)])],
     });
     const controller = new SessionUnreadController({ api });
 
@@ -56,7 +53,8 @@ describe("SessionUnreadController", () => {
 
   it("drains reconnect refreshes that overlap an active request", async () => {
     const firstResponse = deferred<SessionUnreadCatalogSnapshot>();
-    const unreadCatalog = vi.fn()
+    const unreadCatalog = vi
+      .fn()
       .mockImplementationOnce(() => firstResponse.promise)
       .mockResolvedValueOnce(snapshot("catalog-a", 2, [summary("session-2", 2)]));
     const controller = new SessionUnreadController({ api: fakeApi({ unreadCatalog }) });
@@ -78,7 +76,8 @@ describe("SessionUnreadController", () => {
 
   it("retries a queued gap refresh after the active snapshot request fails", async () => {
     const firstResponse = deferred<SessionUnreadCatalogSnapshot>();
-    const unreadCatalog = vi.fn()
+    const unreadCatalog = vi
+      .fn()
       .mockImplementationOnce(() => firstResponse.promise)
       .mockResolvedValueOnce(snapshot("catalog-a", 3, [summary("session-3", 3), summary("session-1", 1)]));
     const onBackgroundError = vi.fn();
@@ -97,7 +96,8 @@ describe("SessionUnreadController", () => {
   });
 
   it("resnapshots revision gaps and replaces state on a new catalog epoch", async () => {
-    const unreadCatalog = vi.fn()
+    const unreadCatalog = vi
+      .fn()
       .mockResolvedValueOnce(snapshot("catalog-a", 3, [summary("session-3", 3), summary("session-1", 1)]))
       .mockResolvedValueOnce(snapshot("catalog-b", 1, [summary("new-epoch", 1)]));
     const controller = new SessionUnreadController({ api: fakeApi({ unreadCatalog }) });
@@ -225,7 +225,10 @@ describe("SessionUnreadController", () => {
   it("preserves unread state when acknowledgement fails so a later visible check can retry", async () => {
     const error = new Error("offline");
     const onBackgroundError = vi.fn();
-    const acknowledgeUnread = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(snapshot("catalog-a", 2, []));
+    const acknowledgeUnread = vi
+      .fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(snapshot("catalog-a", 2, []));
     const controller = new SessionUnreadController({ api: fakeApi({ acknowledgeUnread }), onBackgroundError });
     const session = ref("session-1");
     controller.applyEvent("local", unreadEvent("catalog-a", 1, summary(session.id, 1)));
@@ -249,15 +252,13 @@ interface FakeApiOptions {
 function fakeApi(options: FakeApiOptions = {}): SessionUnreadApi {
   const snapshots = [...(options.snapshots ?? [])];
   return {
-    unreadCatalog: options.unreadCatalog ?? (() => {
-      const next = snapshots.shift();
-      return next === undefined
-        ? Promise.reject(new Error("Unexpected unread snapshot request"))
-        : Promise.resolve(next);
-    }),
-    acknowledgeUnread: options.acknowledgeUnread ?? (() => (
-      Promise.reject(new Error("Unexpected unread acknowledgement"))
-    )),
+    unreadCatalog:
+      options.unreadCatalog
+      ?? (() => {
+        const next = snapshots.shift();
+        return next === undefined ? Promise.reject(new Error("Unexpected unread snapshot request")) : Promise.resolve(next);
+      }),
+    acknowledgeUnread: options.acknowledgeUnread ?? (() => Promise.reject(new Error("Unexpected unread acknowledgement"))),
   };
 }
 

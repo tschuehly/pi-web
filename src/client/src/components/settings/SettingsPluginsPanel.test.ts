@@ -153,7 +153,9 @@ describe("settings-plugins-panel layout", () => {
     response.serverRuntime.safeStart = "none";
     response.serverRuntime.desiredSafeStart = "off";
     response.serverRuntime.restartRequired = true;
-    response.diagnostics = [{ kind: "conflict", snapshot: "active", source: "fixture", message: "Duplicate PI WEB plugin id: broken-provider", pluginId: "broken-provider" }];
+    response.diagnostics = [
+      { kind: "conflict", snapshot: "active", source: "fixture", message: "Duplicate PI WEB plugin id: broken-provider", pluginId: "broken-provider" },
+    ];
     panel.pluginsResponse = response;
     panel.configResponse = configResponse({ plugins: { "broken-provider": { enabled: true } } });
 
@@ -177,7 +179,8 @@ describe("settings-plugins-panel layout", () => {
       "pi-web plugins safe-start set none --restart",
       "pi-web plugins safe-start clear --restart",
       "They never include machine credentials.",
-    ]) expect(rendered).toContain(label);
+    ])
+      expect(rendered).toContain(label);
   });
 
   it("uses saved config as desired truth and keeps configured-only ids editable when lifecycle data is unavailable", () => {

@@ -44,7 +44,10 @@ import type { NormalizedSessionCleanupRequest } from "./sessionCleanup.js";
 import type { SessionMedia } from "./sessionMediaIndex.js";
 
 /** A Chat's `working-mode` status with its version: a reader keeps the value with the highest. */
-export interface SessionWorkingMode { workingMode: string; workingModeVersion: number }
+export interface SessionWorkingMode {
+  workingMode: string;
+  workingModeVersion: number;
+}
 
 export type SessionRouteRef = ClientSessionRef;
 
@@ -87,8 +90,14 @@ export interface SessionRouteService {
   locate(sessionId: string): Promise<{ cwd: string } | undefined>;
   acknowledgeUnread(sessionId: string, request: SessionUnreadAcknowledgeRequest): Promise<SessionUnreadCatalogSnapshot>;
   notificationInbox(ref: SessionRouteRef): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
-  dismissNotification(ref: SessionRouteRef, request: Omit<SessionNotificationDismissRequest, "cwd">): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
-  dismissAllNotifications(ref: SessionRouteRef, request: Omit<SessionNotificationDismissAllRequest, "cwd">): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
+  dismissNotification(
+    ref: SessionRouteRef,
+    request: Omit<SessionNotificationDismissRequest, "cwd">,
+  ): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
+  dismissAllNotifications(
+    ref: SessionRouteRef,
+    request: Omit<SessionNotificationDismissAllRequest, "cwd">,
+  ): SessionNotificationInboxSnapshot | Promise<SessionNotificationInboxSnapshot>;
   promoteQueuedMessage(ref: SessionRouteRef, target: { kind: "steer" | "followUp"; text: string }): Promise<ClientSessionStatus>;
   promoteAllQueuedMessages(ref: SessionRouteRef): Promise<ClientSessionStatus>;
   clearQueue(ref: SessionRouteRef): Promise<ClientSessionStatus>;

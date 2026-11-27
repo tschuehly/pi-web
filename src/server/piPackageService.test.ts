@@ -25,12 +25,13 @@ function deferred<T = void>() {
 
 describe("ActiveProfilePiPackageService", () => {
   it("uses the daemon profile active when each package operation begins", async () => {
-    const getActiveAgentProfile = vi.fn<ActiveAgentProfileProvider["getActiveAgentProfile"]>()
+    const getActiveAgentProfile = vi
+      .fn<ActiveAgentProfileProvider["getActiveAgentProfile"]>()
       .mockResolvedValueOnce(availableProfile("/state/first"))
       .mockResolvedValueOnce(availableProfile("/state/second"));
     const firstService = fakePiPackageService("first");
     const secondService = fakePiPackageService("second");
-    const serviceForAgentDir = vi.fn((agentDir: string): PiPackageService => agentDir === "/state/first" ? firstService : secondService);
+    const serviceForAgentDir = vi.fn((agentDir: string): PiPackageService => (agentDir === "/state/first" ? firstService : secondService));
     const service = new ActiveProfilePiPackageService({ getActiveAgentProfile }, serviceForAgentDir, undefined, undefined, []);
 
     await expect(service.list()).resolves.toEqual({ packages: [{ source: "first", scope: "user", filtered: false }] });
@@ -66,17 +67,14 @@ describe("ActiveProfilePiPackageService", () => {
     const underlyingService = {
       list: vi.fn(() => Promise.resolve({ packages })),
       install: vi.fn(),
-      remove: vi.fn(() => Promise.resolve({ action: "remove" as const, source: "/opt/pi-packages/relays", scope: "user" as const, removed: true, packages: [] })),
+      remove: vi.fn(() =>
+        Promise.resolve({ action: "remove" as const, source: "/opt/pi-packages/relays", scope: "user" as const, removed: true, packages: [] }),
+      ),
       update: vi.fn(),
     } satisfies PiPackageService;
     const dismiss = vi.fn(() => Promise.resolve());
     const resolveDeclaredName = vi.fn(() => Promise.resolve("@jmfederico/pi-relay"));
-    const service = new ActiveProfilePiPackageService(
-      { getActiveAgentProfile },
-      () => underlyingService,
-      { dismiss },
-      { resolveDeclaredName },
-    );
+    const service = new ActiveProfilePiPackageService({ getActiveAgentProfile }, () => underlyingService, { dismiss }, { resolveDeclaredName });
 
     const response = await service.remove("/opt/pi-packages/relays");
 
@@ -96,12 +94,7 @@ describe("ActiveProfilePiPackageService", () => {
     } satisfies PiPackageService;
     const dismiss = vi.fn(() => Promise.resolve());
     const resolveDeclaredName = vi.fn(() => Promise.resolve("@acme/tools"));
-    const service = new ActiveProfilePiPackageService(
-      { getActiveAgentProfile },
-      () => underlyingService,
-      { dismiss },
-      { resolveDeclaredName },
-    );
+    const service = new ActiveProfilePiPackageService({ getActiveAgentProfile }, () => underlyingService, { dismiss }, { resolveDeclaredName });
 
     await service.remove("npm:@acme/tools");
 
@@ -119,12 +112,7 @@ describe("ActiveProfilePiPackageService", () => {
     } satisfies PiPackageService;
     const dismiss = vi.fn(() => Promise.resolve());
     const resolveDeclaredName = vi.fn(() => Promise.resolve("@jmfederico/pi-relay"));
-    const service = new ActiveProfilePiPackageService(
-      { getActiveAgentProfile },
-      () => underlyingService,
-      { dismiss },
-      { resolveDeclaredName },
-    );
+    const service = new ActiveProfilePiPackageService({ getActiveAgentProfile }, () => underlyingService, { dismiss }, { resolveDeclaredName });
 
     await service.remove("/opt/pi-packages/relays");
 
@@ -141,12 +129,7 @@ describe("ActiveProfilePiPackageService", () => {
     } satisfies PiPackageService;
     const dismiss = vi.fn(() => Promise.resolve());
     const resolveDeclaredName = vi.fn(() => Promise.resolve("@jmfederico/pi-relay"));
-    const service = new ActiveProfilePiPackageService(
-      { getActiveAgentProfile },
-      () => underlyingService,
-      { dismiss },
-      { resolveDeclaredName },
-    );
+    const service = new ActiveProfilePiPackageService({ getActiveAgentProfile }, () => underlyingService, { dismiss }, { resolveDeclaredName });
 
     await service.remove("npm:@acme/gone");
 
@@ -177,7 +160,9 @@ describe("ActiveProfilePiPackageService", () => {
 
     await expect(service.list()).resolves.toEqual({
       packages: [{ source: "npm:@acme/tools", scope: "user", filtered: false }],
-      installableKnownPackages: [{ id: "@acme/known", label: "Known package", description: "A known package.", source: join("/pi-web", "dist", "pi-packages", "known") }],
+      installableKnownPackages: [
+        { id: "@acme/known", label: "Known package", description: "A known package.", source: join("/pi-web", "dist", "pi-packages", "known") },
+      ],
     });
   });
 
@@ -209,7 +194,12 @@ describe("ActiveProfilePiPackageService", () => {
 
   it("reflects a package installed through the one-click suggestion in the same install response", async () => {
     const getActiveAgentProfile = vi.fn<ActiveAgentProfileProvider["getActiveAgentProfile"]>(() => Promise.resolve(availableProfile("/state/profile")));
-    const installedPackage = { source: "/pi-web/dist/pi-packages/known", scope: "user" as const, filtered: false, installedPath: "/pi-web/dist/pi-packages/known" };
+    const installedPackage = {
+      source: "/pi-web/dist/pi-packages/known",
+      scope: "user" as const,
+      filtered: false,
+      installedPath: "/pi-web/dist/pi-packages/known",
+    };
     const underlyingService = {
       list: vi.fn(),
       install: vi.fn(() => Promise.resolve({ action: "install" as const, source: installedPackage.source, packages: [installedPackage] })),
@@ -404,12 +394,7 @@ describe("DefaultPiPackageService", () => {
       source: "npm:@acme/tools",
       packages: [{ source: "npm:@acme/tools", scope: "user", filtered: false }],
     });
-    expect(events).toEqual([
-      "install:start:npm:@acme/fails",
-      "update:start:npm:@acme/tools",
-      "flush",
-      "list",
-    ]);
+    expect(events).toEqual(["install:start:npm:@acme/fails", "update:start:npm:@acme/tools", "flush", "list"]);
   });
 });
 
@@ -428,7 +413,11 @@ function fakePiPackageService(source: string) {
   return {
     list: vi.fn(() => Promise.resolve({ packages })),
     install: vi.fn((installedSource: string) => Promise.resolve({ action: "install" as const, source: installedSource, packages })),
-    remove: vi.fn((removedSource: string, scope: "user" | "project" = "user") => Promise.resolve({ action: "remove" as const, source: removedSource, scope, removed: true, packages })),
-    update: vi.fn((updatedSource?: string) => Promise.resolve({ action: "update" as const, ...(updatedSource === undefined ? {} : { source: updatedSource }), packages })),
+    remove: vi.fn((removedSource: string, scope: "user" | "project" = "user") =>
+      Promise.resolve({ action: "remove" as const, source: removedSource, scope, removed: true, packages }),
+    ),
+    update: vi.fn((updatedSource?: string) =>
+      Promise.resolve({ action: "update" as const, ...(updatedSource === undefined ? {} : { source: updatedSource }), packages }),
+    ),
   } satisfies PiPackageService;
 }

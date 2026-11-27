@@ -44,9 +44,7 @@ export type ExtensionDialogCancelReason = Exclude<ExtensionDialogCloseReason, "a
  * gone with its session runtime), which is an ordinary race a browser can
  * lose — not an error.
  */
-export type PendingExtensionDialogCloseResult =
-  | { status: "closed"; outcome: ExtensionDialogOutcome }
-  | { status: "stale" };
+export type PendingExtensionDialogCloseResult = { status: "closed"; outcome: ExtensionDialogOutcome } | { status: "stale" };
 
 /** Rejected input: the dialog is malformed, or an answer does not fit its kind. */
 export class PendingExtensionDialogValidationError extends Error {
@@ -176,10 +174,7 @@ function validateAnswer(dialog: PendingExtensionDialog, value: ExtensionDialogAn
 }
 
 /** Kind-specific fields of a validated record; irrelevant fields are dropped rather than rejected. */
-function kindFields(
-  kind: ExtensionDialogKind,
-  input: PendingExtensionDialogOpenInput,
-): Pick<PendingExtensionDialog, "message" | "options" | "placeholder"> {
+function kindFields(kind: ExtensionDialogKind, input: PendingExtensionDialogOpenInput): Pick<PendingExtensionDialog, "message" | "options" | "placeholder"> {
   switch (kind) {
     case "confirm": {
       const message = optionalText(input.message, "dialog message");

@@ -116,22 +116,34 @@ describe("PiWebPluginService", () => {
     const pluginsRoot = join(tempDir, "plugins");
     const intermediateRoot = join(pluginsRoot, "intermediate-root-cycle");
     await writePlugin(intermediateRoot, {
-      packageJson: { piWeb: { plugins: [{
-        id: "intermediate-root-cycle",
-        browserRoot: "assets/public/dist",
-        module: "assets/public/dist/browser.js",
-      }] } },
+      packageJson: {
+        piWeb: {
+          plugins: [
+            {
+              id: "intermediate-root-cycle",
+              browserRoot: "assets/public/dist",
+              module: "assets/public/dist/browser.js",
+            },
+          ],
+        },
+      },
       files: { "assets/dist/browser.js": "export default {};" },
     });
     await symlink(join(intermediateRoot, "assets"), join(intermediateRoot, "assets", "public"), process.platform === "win32" ? "junction" : "dir");
 
     const narrowModuleRoot = join(pluginsRoot, "narrow-module-cycle");
     await writePlugin(narrowModuleRoot, {
-      packageJson: { piWeb: { plugins: [{
-        id: "narrow-module-cycle",
-        browserRoot: "public",
-        module: "public/alias/browser.js",
-      }] } },
+      packageJson: {
+        piWeb: {
+          plugins: [
+            {
+              id: "narrow-module-cycle",
+              browserRoot: "public",
+              module: "public/alias/browser.js",
+            },
+          ],
+        },
+      },
       files: { "public/browser.js": "export default {};" },
     });
     await symlink(join(narrowModuleRoot, "public"), join(narrowModuleRoot, "public", "alias"), process.platform === "win32" ? "junction" : "dir");
@@ -253,9 +265,14 @@ describe("PiWebPluginService", () => {
     const pluginId = "excluded-metadata-pairing";
     const pluginDir = join(tempDir, "plugins", pluginId);
     const metadataPath = join(pluginDir, ".git", "package.json");
-    const metadataFor = (serverModule: string) => `${JSON.stringify({
-      piWeb: { plugins: [{ id: pluginId, browserRoot: ".", module: "browser.js", serverModule }] },
-    }, null, 2)}\n`;
+    const metadataFor = (serverModule: string) =>
+      `${JSON.stringify(
+        {
+          piWeb: { plugins: [{ id: pluginId, browserRoot: ".", module: "browser.js", serverModule }] },
+        },
+        null,
+        2,
+      )}\n`;
     await mkdir(join(pluginDir, ".git"), { recursive: true });
     await writeFile(join(pluginDir, "browser.js"), "export default {};\n");
     await writeFile(join(pluginDir, "server-a.js"), "export default { name: 'A' };\n");
@@ -276,19 +293,21 @@ describe("PiWebPluginService", () => {
     });
     const activeRuntime = {
       ...createWorkspaceProviderRuntimeSnapshot(
-      [{
-        pluginId,
-        source: "test",
-        scope: "local",
-        moduleRevision: activeRevision,
-        browserRevision: activeRevision,
-        settingsRevision: `sha256:${createHash("sha256").update("{}").digest("hex")}`,
-        machineSpecific: true,
-        state: "active",
-        name: pluginId,
-      }],
-      [{ pluginId, health: { status: "healthy" } }],
-    ),
+        [
+          {
+            pluginId,
+            source: "test",
+            scope: "local",
+            moduleRevision: activeRevision,
+            browserRevision: activeRevision,
+            settingsRevision: `sha256:${createHash("sha256").update("{}").digest("hex")}`,
+            machineSpecific: true,
+            state: "active",
+            name: pluginId,
+          },
+        ],
+        [{ pluginId, health: { status: "healthy" } }],
+      ),
       terminalMode: "recovery-disabled" as const,
     };
     const service = new PiWebPluginService({
@@ -299,22 +318,26 @@ describe("PiWebPluginService", () => {
     await expect(service.manifest()).resolves.toEqual({ lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [] });
     const lifecycle = await service.plugins();
     expect(lifecycle).toMatchObject({
-      plugins: [{
-        id: pluginId,
-        discovered: false,
-        enabled: false,
-        server: {
-          state: "active",
-          activeRevision,
-          staleRevision: false,
-          restartRequired: true,
+      plugins: [
+        {
+          id: pluginId,
+          discovered: false,
+          enabled: false,
+          server: {
+            state: "active",
+            activeRevision,
+            staleRevision: false,
+            restartRequired: true,
+          },
         },
-      }],
-      diagnostics: [{
-        kind: "discovery",
-        snapshot: "desired",
-        source: pluginDir,
-      }],
+      ],
+      diagnostics: [
+        {
+          kind: "discovery",
+          snapshot: "desired",
+          source: pluginDir,
+        },
+      ],
       serverRuntime: { status: "available", restartRequired: true },
     });
     expect(lifecycle.diagnostics[0]?.message).toContain("package metadata resolves inside excluded .git directory");
@@ -368,9 +391,7 @@ describe("PiWebPluginService", () => {
       },
     });
 
-    await expect(service.manifest()).rejects.toThrow(
-      "Required Terminal plugin runtime is incompatible: unsupported provider runtime protocol",
-    );
+    await expect(service.manifest()).rejects.toThrow("Required Terminal plugin runtime is incompatible: unsupported provider runtime protocol");
     await expect(service.plugins()).resolves.toMatchObject({
       plugins: [{ id: "dual", server: { state: "unknown" } }],
       serverRuntime: { status: "incompatible", terminalMode: "required", message: "unsupported provider runtime protocol" },
@@ -387,9 +408,7 @@ describe("PiWebPluginService", () => {
       packageProvider: false,
     });
 
-    await expect(service.manifest()).rejects.toThrow(
-      "Required Terminal plugin runtime is unavailable: Session daemon server-plugin runtime is unavailable",
-    );
+    await expect(service.manifest()).rejects.toThrow("Required Terminal plugin runtime is unavailable: Session daemon server-plugin runtime is unavailable");
     await expect(service.plugins()).resolves.toMatchObject({
       serverRuntime: { status: "unavailable", terminalMode: "required" },
     });
@@ -478,9 +497,12 @@ describe("PiWebPluginService", () => {
     await expect(service.readAsset("refreshing", "browser.js", oldRevision)).resolves.toBeUndefined();
     await expect(service.readAsset("refreshing", "browser.js", "sha256:nonexistent")).resolves.toBeUndefined();
 
-    await writeFile(join(pluginDir, "package.json"), JSON.stringify({
-      piWeb: { plugins: [{ id: "refreshing", browserRoot: ".", module: "renamed.js" }] },
-    }));
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({
+        piWeb: { plugins: [{ id: "refreshing", browserRoot: ".", module: "renamed.js" }] },
+      }),
+    );
     await rm(join(pluginDir, "browser.js"));
     await writeFile(join(pluginDir, "renamed.js"), "export default { version: 3 };");
     const renamedModule = (await service.plugins()).plugins.find(({ id }) => id === "refreshing")?.module;
@@ -613,7 +635,9 @@ describe("PiWebPluginService", () => {
     const profileError = new ActiveAgentProfileAccessError({ status: "invalid", error: "missing descriptor" });
     const service = new PiWebPluginService({
       roots: [{ path: join(tempDir, "plugins"), source: "test", scope: "local" }],
-      agentDirProvider: () => { throw profileError; },
+      agentDirProvider: () => {
+        throw profileError;
+      },
     });
 
     await expect(service.manifest()).rejects.toBe(profileError);
@@ -654,9 +678,7 @@ describe("PiWebPluginService", () => {
     const service = new PiWebPluginService({ cwd: tempDir, packageProvider: false });
 
     const manifest = await service.manifest();
-    expect(manifest.plugins).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "source-dev", source: "dev", scope: "local" }),
-    ]));
+    expect(manifest.plugins).toEqual(expect.arrayContaining([expect.objectContaining({ id: "source-dev", source: "dev", scope: "local" })]));
     await expect(service.readAsset("source-dev", "dist/pi-web-plugin.js")).resolves.toBeDefined();
   });
 
@@ -725,9 +747,7 @@ describe("PiWebPluginService", () => {
     });
 
     const manifest = await service.manifest();
-    expect(manifest.plugins).toEqual([
-      expect.objectContaining({ id: "duplicate", source: "first", machineSpecific: false }),
-    ]);
+    expect(manifest.plugins).toEqual([expect.objectContaining({ id: "duplicate", source: "first", machineSpecific: false })]);
     expect(manifest.plugins[0]?.module).toMatch(/^\/pi-web-plugins\/duplicate\/first\.js\?v=sha256%3A[a-f\d]{64}$/u);
   });
 
@@ -743,8 +763,12 @@ describe("PiWebPluginService", () => {
       files: { "pi-web-plugin.js": "export default {};" },
     });
 
-    await expect(new PiWebPluginService({ roots: [{ path: legacyRoot, source: "test", scope: "local" }], packageProvider: false }).manifest()).resolves.toEqual({ lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [] });
-    await expect(new PiWebPluginService({ roots: [{ path: unsafeRoot, source: "test", scope: "local" }], packageProvider: false }).manifest()).resolves.toEqual({ lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [] });
+    await expect(new PiWebPluginService({ roots: [{ path: legacyRoot, source: "test", scope: "local" }], packageProvider: false }).manifest()).resolves.toEqual(
+      { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [] },
+    );
+    await expect(new PiWebPluginService({ roots: [{ path: unsafeRoot, source: "test", scope: "local" }], packageProvider: false }).manifest()).resolves.toEqual(
+      { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [] },
+    );
   });
 
   it("continues discovering valid plugins when another local plugin is invalid", async () => {
@@ -804,24 +828,30 @@ function activeRuntimeProvider(
   pairedChannelPluginIds: readonly string[] = [],
 ): WorkspaceProviderRuntimeReader {
   const activeSnapshot = catalog.snapshot().then((snapshot) => {
-    const records = snapshot.plugins.flatMap((plugin) => plugin.serverModule === undefined ? [] : [{
-      pluginId: plugin.id,
-      source: plugin.source,
-      scope: plugin.scope,
-      moduleRevision: plugin.serverModule.revision,
-      ...(plugin.browserModule === undefined ? {} : { browserRevision: plugin.browserModule.revision }),
-      settingsRevision: plugin.settingsRevision,
-      machineSpecific: plugin.machineSpecific,
-      ...(pairedRequestPluginIds.includes(plugin.id) ? { pairedRequestVersion: 1 as const } : {}),
-      ...(pairedChannelPluginIds.includes(plugin.id) ? { pairedChannelVersion: 1 as const } : {}),
-      state: plugin.enabled ? "active" as const : "disabled" as const,
-      ...(plugin.enabled ? { name: plugin.id } : { message: "disabled in PI WEB config" }),
-    }]);
+    const records = snapshot.plugins.flatMap((plugin) =>
+      plugin.serverModule === undefined
+        ? []
+        : [
+            {
+              pluginId: plugin.id,
+              source: plugin.source,
+              scope: plugin.scope,
+              moduleRevision: plugin.serverModule.revision,
+              ...(plugin.browserModule === undefined ? {} : { browserRevision: plugin.browserModule.revision }),
+              settingsRevision: plugin.settingsRevision,
+              machineSpecific: plugin.machineSpecific,
+              ...(pairedRequestPluginIds.includes(plugin.id) ? { pairedRequestVersion: 1 as const } : {}),
+              ...(pairedChannelPluginIds.includes(plugin.id) ? { pairedChannelVersion: 1 as const } : {}),
+              state: plugin.enabled ? ("active" as const) : ("disabled" as const),
+              ...(plugin.enabled ? { name: plugin.id } : { message: "disabled in PI WEB config" }),
+            },
+          ],
+    );
     return {
       protocolVersion: 2 as const,
       terminalMode: "recovery-disabled" as const,
       records,
-      health: records.flatMap((record) => record.state === "active" ? [{ pluginId: record.pluginId, health: { status: "healthy" as const } }] : []),
+      health: records.flatMap((record) => (record.state === "active" ? [{ pluginId: record.pluginId, health: { status: "healthy" as const } }] : [])),
       diagnostics: snapshot.diagnostics,
     };
   });

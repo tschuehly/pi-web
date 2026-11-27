@@ -1,7 +1,13 @@
 import { stylesheetIntegrationCapability } from "../../plugins/styles";
 import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, DEFAULT_WORKSPACE_UPLOADS_FOLDER, type PiWebConfigEnvOverrides, type PiWebConfigResponse, type PiWebConfigValues } from "../../api";
+import {
+  DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER,
+  DEFAULT_WORKSPACE_UPLOADS_FOLDER,
+  type PiWebConfigEnvOverrides,
+  type PiWebConfigResponse,
+  type PiWebConfigValues,
+} from "../../api";
 import { uiButtonStyles } from "../ui/controlStyles";
 import { uiFormStyles } from "../ui/formStyles";
 import { uiSettingsStyles } from "../ui/settingsStyles";
@@ -98,7 +104,9 @@ export class SettingsGeneralPanel extends LitElement {
         actionLabel="Refresh settings"
         .actionDisabled=${this.loading || this.machineLoading || this.saving}
         .notices=${this.panelNotices()}
-        .onAction=${() => { this.reloadAll(); }}
+        .onAction=${() => {
+          this.reloadAll();
+        }}
       >
         <div class="settings-sections ui-settings-list">
           <slot name="appearance"></slot>
@@ -117,19 +125,28 @@ export class SettingsGeneralPanel extends LitElement {
           <h3>Gateway server</h3>
           <p>Save host, port, and allowed hosts on this gateway. Restart the web service to apply host or port changes.</p>
         </div>
-        ${config === undefined ? html`<div class="loading-card">${this.loading ? "Loading gateway configuration…" : "Gateway settings are unavailable. Choose Refresh settings to try again."}</div>` : html`
+        ${
+          config === undefined
+            ? html`<div class="loading-card">${this.loading ? "Loading gateway configuration…" : "Gateway settings are unavailable. Choose Refresh settings to try again."}</div>`
+            : html`
           <div class="config-path-card ui-settings-path">
             <span>Gateway config file</span>
             <code>${config.path}</code>
             <small>${config.exists ? "Existing file" : "This file will be created on save"}</small>
           </div>
-          <form class="config-form ui-settings-fields" @submit=${(event: Event) => { void this.saveGatewayConfig(event); }}>
+          <form class="config-form ui-settings-fields" @submit=${(event: Event) => {
+            void this.saveGatewayConfig(event);
+          }}>
             <label class="field ui-form-field">
               <span class="field-heading">
                 <span>Host</span>
                 ${this.renderOverrideBadge("host")}
               </span>
-              <input class="ui-input" .value=${this.gatewayDraft.host} placeholder="127.0.0.1" autocomplete="off" spellcheck="false" @input=${(event: Event) => { this.updateGatewayDraft({ host: inputValue(event) }); }}>
+              <input class="ui-input" .value=${this.gatewayDraft.host} placeholder="127.0.0.1" autocomplete="off" spellcheck="false" @input=${(
+                event: Event,
+              ) => {
+                this.updateGatewayDraft({ host: inputValue(event) });
+              }}>
               <small>Address the web server should bind to. Leave empty to use PI WEB's default.</small>
             </label>
 
@@ -138,7 +155,11 @@ export class SettingsGeneralPanel extends LitElement {
                 <span>Port</span>
                 ${this.renderOverrideBadge("port")}
               </span>
-              <input class="ui-input" .value=${this.gatewayDraft.port} inputmode="numeric" pattern="[0-9]*" placeholder="8504" autocomplete="off" @input=${(event: Event) => { this.updateGatewayDraft({ port: inputValue(event) }); }}>
+              <input class="ui-input" .value=${this.gatewayDraft.port} inputmode="numeric" pattern="[0-9]*" placeholder="8504" autocomplete="off" @input=${(
+                event: Event,
+              ) => {
+                this.updateGatewayDraft({ port: inputValue(event) });
+              }}>
               <small>TCP port from 1 to 65535. Leave empty to use PI WEB's default.</small>
             </label>
 
@@ -147,12 +168,20 @@ export class SettingsGeneralPanel extends LitElement {
                 <label for="allowed-hosts-mode">Allowed hosts</label>
                 ${this.renderOverrideBadge("allowedHosts")}
               </span>
-              <select class="ui-input" id="allowed-hosts-mode" aria-describedby="allowed-hosts-help" .value=${this.gatewayDraft.allowedHostsMode} @change=${(event: Event) => { this.updateGatewayDraft({ allowedHostsMode: selectValue(event) === "all" ? "all" : "list" }); }}>
+              <select class="ui-input" id="allowed-hosts-mode" aria-describedby="allowed-hosts-help" .value=${this.gatewayDraft.allowedHostsMode} @change=${(
+                event: Event,
+              ) => {
+                this.updateGatewayDraft({ allowedHostsMode: selectValue(event) === "all" ? "all" : "list" });
+              }}>
                 <option value="list">Only listed hosts</option>
                 <option value="all">Allow every host</option>
               </select>
               <label for="allowed-hosts-list">Host list</label>
-              <textarea class="ui-input" id="allowed-hosts-list" aria-describedby="allowed-hosts-help" .value=${this.gatewayDraft.allowedHostsText} ?disabled=${this.gatewayDraft.allowedHostsMode === "all"} rows="4" placeholder="example.local&#10;192.168.1.20" spellcheck="false" @input=${(event: Event) => { this.updateGatewayDraft({ allowedHostsText: textAreaValue(event) }); }}></textarea>
+              <textarea class="ui-input" id="allowed-hosts-list" aria-describedby="allowed-hosts-help" .value=${this.gatewayDraft.allowedHostsText} ?disabled=${this.gatewayDraft.allowedHostsMode === "all"} rows="4" placeholder="example.local&#10;192.168.1.20" spellcheck="false" @input=${(
+                event: Event,
+              ) => {
+                this.updateGatewayDraft({ allowedHostsText: textAreaValue(event) });
+              }}></textarea>
               <small id="allowed-hosts-help">Enter one host per line. “Allow every host” disables the host restriction.</small>
             </div>
 
@@ -163,7 +192,8 @@ export class SettingsGeneralPanel extends LitElement {
               <button class="primary ui-button ui-button--action ui-button--primary" ?disabled=${this.loading || this.saving}>${this.saving ? "Saving…" : "Save gateway server config"}</button>
             </footer>
           </form>
-        `}
+        `
+        }
       </section>
     `;
   }
@@ -177,18 +207,27 @@ export class SettingsGeneralPanel extends LitElement {
           <p>Save file access and upload defaults on ${this.targetLabel}.</p>
         </div>
         ${this.renderMachineMessages()}
-        ${config === undefined ? html`<div class="loading-card">${this.machineLoading ? "Loading selected-machine file access config…" : "File access settings are unavailable. Choose Refresh settings to try again."}</div>` : html`
+        ${
+          config === undefined
+            ? html`<div class="loading-card">${this.machineLoading ? "Loading selected-machine file access config…" : "File access settings are unavailable. Choose Refresh settings to try again."}</div>`
+            : html`
           <div class="config-path-card ui-settings-path">
             <span>Selected machine config file</span>
             <code>${config.path}</code>
             <small>${config.exists ? "Existing file" : "This file will be created on save"}</small>
           </div>
-          <form class="config-form ui-settings-fields" @submit=${(event: Event) => { void this.saveMachineAccessConfig(event); }}>
+          <form class="config-form ui-settings-fields" @submit=${(event: Event) => {
+            void this.saveMachineAccessConfig(event);
+          }}>
             <label class="field ui-form-field">
               <span class="field-heading">
                 <span>External filesystem roots</span>
               </span>
-              <textarea class="ui-input" .value=${this.machineDraft.allowedPathsText} rows="4" placeholder="~/SDKs&#10;/opt/reference" spellcheck="false" @input=${(event: Event) => { this.updateMachineDraft({ allowedPathsText: textAreaValue(event) }); }}></textarea>
+              <textarea class="ui-input" .value=${this.machineDraft.allowedPathsText} rows="4" placeholder="~/SDKs&#10;/opt/reference" spellcheck="false" @input=${(
+                event: Event,
+              ) => {
+                this.updateMachineDraft({ allowedPathsText: textAreaValue(event) });
+              }}></textarea>
               <small>Allowlist for absolute <code>@</code> completions and file explorer reads outside a workspace on ${this.targetLabel}. Enter one absolute path, Windows absolute path, or <code>~</code>-prefixed path per line. Leave empty to deny external paths by default.</small>
             </label>
 
@@ -196,7 +235,11 @@ export class SettingsGeneralPanel extends LitElement {
               <span class="field-heading">
                 <span>Default upload folder</span>
               </span>
-              <input class="ui-input" .value=${this.machineDraft.uploadDefaultFolder} placeholder=${DEFAULT_WORKSPACE_UPLOADS_FOLDER} autocomplete="off" spellcheck="false" @input=${(event: Event) => { this.updateMachineDraft({ uploadDefaultFolder: inputValue(event) }); }}>
+              <input class="ui-input" .value=${this.machineDraft.uploadDefaultFolder} placeholder=${DEFAULT_WORKSPACE_UPLOADS_FOLDER} autocomplete="off" spellcheck="false" @input=${(
+                event: Event,
+              ) => {
+                this.updateMachineDraft({ uploadDefaultFolder: inputValue(event) });
+              }}>
               <small>Workspace-relative folder for manual file uploads on ${this.targetLabel}. Leave empty to use PI WEB's default <code>${DEFAULT_WORKSPACE_UPLOADS_FOLDER}</code>.</small>
             </label>
 
@@ -204,7 +247,11 @@ export class SettingsGeneralPanel extends LitElement {
               <span class="field-heading">
                 <span>Default attachments folder</span>
               </span>
-              <input class="ui-input" .value=${this.machineDraft.attachmentDefaultFolder} placeholder=${DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER} autocomplete="off" spellcheck="false" @input=${(event: Event) => { this.updateMachineDraft({ attachmentDefaultFolder: inputValue(event) }); }}>
+              <input class="ui-input" .value=${this.machineDraft.attachmentDefaultFolder} placeholder=${DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER} autocomplete="off" spellcheck="false" @input=${(
+                event: Event,
+              ) => {
+                this.updateMachineDraft({ attachmentDefaultFolder: inputValue(event) });
+              }}>
               <small>Workspace-relative folder for prompt attachments saved into the workspace on ${this.targetLabel}. Leave empty to use PI WEB's default <code>${DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER}</code>.</small>
             </label>
 
@@ -215,7 +262,8 @@ export class SettingsGeneralPanel extends LitElement {
               <button class="primary ui-button ui-button--action ui-button--primary" ?disabled=${this.machineLoading || this.saving}>${this.saving ? "Saving…" : "Save file/upload config"}</button>
             </footer>
           </form>
-        `}
+        `
+        }
       </section>
     `;
   }
@@ -322,7 +370,11 @@ export class SettingsGeneralPanel extends LitElement {
     this.machineLocalError = "";
   }
 
-  static override styles = [uiButtonStyles, uiFormStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiFormStyles,
+    uiSettingsStyles,
+    css`
     @layer pi-web-base {
     :host { display: block; }
     h3, p { margin: 0; }
@@ -346,7 +398,8 @@ export class SettingsGeneralPanel extends LitElement {
       .effective-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
     }
     }
-  `];
+  `,
+  ];
 }
 
 function formatAllowedHosts(value: PiWebConfigValues["allowedHosts"]): string | TemplateResult {

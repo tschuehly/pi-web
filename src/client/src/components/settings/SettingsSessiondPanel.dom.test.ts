@@ -138,7 +138,9 @@ describe("SettingsSessiondPanel DOM", () => {
     const summary = panel.shadowRoot?.querySelector("section[aria-labelledby='naming-summary-heading']");
     expect(summary?.getAttribute("aria-describedby")).toBe("naming-summary-help");
     expect(summary?.querySelector("h3")?.textContent).toBe("For the next naming request");
-    expect(summary?.querySelector("small")?.textContent).toBe("Saved naming settings apply without a restart. Existing names and in-progress naming requests are unchanged.");
+    expect(summary?.querySelector("small")?.textContent).toBe(
+      "Saved naming settings apply without a restart. Existing names and in-progress naming requests are unchanged.",
+    );
     expect(Array.from(summary?.querySelectorAll("dd") ?? [], (item) => item.textContent)).toEqual(["provider/naming", "64", "30.5 seconds", "off"]);
     panel.configResponse = configResponse();
     await panel.updateComplete;
@@ -242,7 +244,11 @@ describe("SettingsSessiondPanel DOM", () => {
       return input.value !== "" && Math.abs(milliseconds - Math.round(milliseconds)) > 0.000001;
     });
     expect(help(panel, input)).toContain("Total timeout includes model loading. Increase it for cold local engines.");
-    for (const [seconds, timeoutMs] of [["0.001", 1], ["1.001", 1001], ["2147483.647", 2147483647]] as const) {
+    for (const [seconds, timeoutMs] of [
+      ["0.001", 1],
+      ["1.001", 1001],
+      ["2147483.647", 2147483647],
+    ] as const) {
       input.value = seconds;
       input.dispatchEvent(new Event("change"));
       expect(onSave).toHaveBeenLastCalledWith({ sessionNaming: { model: "provider/naming", maxTokens: 48, thinkingLevel: "off", timeoutMs } });

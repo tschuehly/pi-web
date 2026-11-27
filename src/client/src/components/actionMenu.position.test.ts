@@ -17,21 +17,34 @@ const resizeCallbacks = new Set<() => void>();
 beforeEach(() => {
   viewport = Object.assign(new EventTarget(), { offsetLeft: 0, offsetTop: 0, width: window.innerWidth, height: window.innerHeight });
   vi.stubGlobal("visualViewport", viewport);
-  vi.stubGlobal("ResizeObserver", class implements ResizeObserver {
-    private readonly notify: () => void;
-    constructor(callback: ResizeObserverCallback) {
-      this.notify = () => { callback([], this); };
-      resizeCallbacks.add(this.notify);
-    }
-    observe(): void { /* Layout is supplied by the test. */ }
-    unobserve(): void { /* No per-element subscriptions needed in this fake. */ }
-    disconnect(): void { resizeCallbacks.delete(this.notify); }
-  });
+  vi.stubGlobal(
+    "ResizeObserver",
+    class implements ResizeObserver {
+      private readonly notify: () => void;
+      constructor(callback: ResizeObserverCallback) {
+        this.notify = () => {
+          callback([], this);
+        };
+        resizeCallbacks.add(this.notify);
+      }
+      observe(): void {
+        /* Layout is supplied by the test. */
+      }
+      unobserve(): void {
+        /* No per-element subscriptions needed in this fake. */
+      }
+      disconnect(): void {
+        resizeCallbacks.delete(this.notify);
+      }
+    },
+  );
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     frames.set(++nextFrame, callback);
     return nextFrame;
   });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => { frames.delete(id); });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames.delete(id);
+  });
   vi.spyOn(trustApi, "workspaceTrust").mockResolvedValue({ path: "/repo/a", decision: true, trusted: true });
 });
 
@@ -54,19 +67,34 @@ function makeList(kind: string): ProjectList | WorkspaceList | SessionList {
   if (kind === "project") {
     const list = new ProjectList();
     list.projects = ["a", "b"].map((id) => ({ id, name: id, path: `/repo/${id}`, createdAt: "2026-06-04" }));
-    list.onMove = () => { list.projects = [...list.projects].reverse(); };
+    list.onMove = () => {
+      list.projects = [...list.projects].reverse();
+    };
     return list;
   }
   if (kind === "workspace") {
     const list = new WorkspaceList();
     list.workspaces = ["a", "b"].map((id) => ({ id, projectId: "project", path: `/repo/${id}`, label: id, isMain: true, effectiveConfig: {} }));
-    list.onMove = () => { list.workspaces = [...list.workspaces].reverse(); };
+    list.onMove = () => {
+      list.workspaces = [...list.workspaces].reverse();
+    };
     return list;
   }
   const list = new SessionList();
-  list.sessions = ["a", "b"].map((id) => ({ id, path: `/sessions/${id}.jsonl`, cwd: "/repo", created: "2026-06-04", modified: "2026-06-04", messageCount: 1, firstMessage: id, persisted: true }));
+  list.sessions = ["a", "b"].map((id) => ({
+    id,
+    path: `/sessions/${id}.jsonl`,
+    cwd: "/repo",
+    created: "2026-06-04",
+    modified: "2026-06-04",
+    messageCount: 1,
+    firstMessage: id,
+    persisted: true,
+  }));
   list.pinnedRootIds = ["a", "b"];
-  list.onMovePin = () => { list.pinnedRootIds = [...list.pinnedRootIds].reverse(); };
+  list.onMovePin = () => {
+    list.pinnedRootIds = [...list.pinnedRootIds].reverse();
+  };
   return list;
 }
 

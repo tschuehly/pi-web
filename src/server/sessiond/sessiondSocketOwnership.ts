@@ -15,12 +15,15 @@ import { connect } from "node:net";
 import { dirname } from "node:path";
 
 export class SessiondSocketOwnershipError extends Error {
-  constructor(readonly socketPath: string, detail: string) {
+  constructor(
+    readonly socketPath: string,
+    detail: string,
+  ) {
     super(
-      `cannot claim the session daemon socket ${socketPath}: ${detail}\n\n` +
-        `Another pi-web session daemon may own this endpoint. Stop it, or give this instance its own ` +
-        `PI_WEB_SESSIOND_SOCKET (or PI_WEB_SESSIOND_PORT / PI_WEB_SESSIOND_HOST). ` +
-        `If nothing owns the path, remove it and start again.`,
+      `cannot claim the session daemon socket ${socketPath}: ${detail}\n\n`
+        + `Another pi-web session daemon may own this endpoint. Stop it, or give this instance its own `
+        + `PI_WEB_SESSIOND_SOCKET (or PI_WEB_SESSIOND_PORT / PI_WEB_SESSIOND_HOST). `
+        + `If nothing owns the path, remove it and start again.`,
     );
     this.name = "SessiondSocketOwnershipError";
   }

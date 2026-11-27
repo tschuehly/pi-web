@@ -5,7 +5,14 @@ import { startupLogger } from "./startupLogger.js";
 it("suppresses Fastify listening logs without suppressing requests, warnings, or errors", async () => {
   const messages: string[] = [];
   const app = Fastify({
-    logger: { ...startupLogger, stream: { write: (message) => { messages.push(message); } } },
+    logger: {
+      ...startupLogger,
+      stream: {
+        write: (message) => {
+          messages.push(message);
+        },
+      },
+    },
   });
   app.get("/", () => ({ ok: true }));
   try {

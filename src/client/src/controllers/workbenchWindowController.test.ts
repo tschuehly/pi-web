@@ -2,16 +2,38 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeChats, emptyWindow, moveChats, openChat, parseWindowStore, toggleLayout, toggleMaximized, type WindowStore } from "../workbenchWindows";
 import { loadDraft, moveDraft, saveDraft } from "../promptDraftStorage";
 import { FakeLocks } from "./webLocks.testSupport";
-import { WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK, WorkbenchWindowController, newWindowId, type WindowLocks, type WindowRequest, type WorkbenchWindowEnvironment } from "./workbenchWindowController";
+import {
+  WINDOW_HEARTBEAT_KEY,
+  WINDOW_ID_LOCK_PREFIX,
+  WINDOW_STORE_KEY,
+  WINDOW_STORE_LOCK,
+  WorkbenchWindowController,
+  newWindowId,
+  type WindowLocks,
+  type WindowRequest,
+  type WorkbenchWindowEnvironment,
+} from "./workbenchWindowController";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
-  get length(): number { return this.values.size; }
-  clear(): void { this.values.clear(); }
-  getItem(key: string): string | null { return this.values.get(key) ?? null; }
-  key(index: number): string | null { return [...this.values.keys()][index] ?? null; }
-  removeItem(key: string): void { this.values.delete(key); }
-  setItem(key: string, value: string): void { this.values.set(key, value); }
+  get length(): number {
+    return this.values.size;
+  }
+  clear(): void {
+    this.values.clear();
+  }
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+  key(index: number): string | null {
+    return [...this.values.keys()][index] ?? null;
+  }
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
 }
 
 interface FakeWindow {
@@ -24,7 +46,14 @@ interface FakeWindow {
 /** One test's BroadcastChannel: every page hears every post, after the posting task, as in a browser. */
 type Bus = Set<(message: unknown) => void>;
 
-function fakeWindow(storage: Storage, href: string, newId = "fresh", locks?: WindowLocks, tabStorage: Storage = new MemoryStorage(), bus: Bus = new Set()): FakeWindow {
+function fakeWindow(
+  storage: Storage,
+  href: string,
+  newId = "fresh",
+  locks?: WindowLocks,
+  tabStorage: Storage = new MemoryStorage(),
+  bus: Bus = new Set(),
+): FakeWindow {
   const fake: FakeWindow = {
     url: new URL(href),
     storageListeners: [],
@@ -35,13 +64,35 @@ function fakeWindow(storage: Storage, href: string, newId = "fresh", locks?: Win
       tabStorage,
       locks,
       url: () => new URL(fake.url),
-      replaceUrl: (url) => { fake.url = url; },
+      replaceUrl: (url) => {
+        fake.url = url;
+      },
       now: () => Date.now(),
       newId: () => newId,
-      onStorage: (listener) => { fake.storageListeners.push(listener); return () => { fake.storageListeners = fake.storageListeners.filter((candidate) => candidate !== listener); }; },
-      onPageHide: (listener) => { fake.pageHide.push(listener); return () => { fake.pageHide = []; }; },
-      post: (message) => { for (const listener of bus) void Promise.resolve().then(() => { listener(message); }); },
-      onMessage: (listener) => { bus.add(listener); return () => { bus.delete(listener); }; },
+      onStorage: (listener) => {
+        fake.storageListeners.push(listener);
+        return () => {
+          fake.storageListeners = fake.storageListeners.filter((candidate) => candidate !== listener);
+        };
+      },
+      onPageHide: (listener) => {
+        fake.pageHide.push(listener);
+        return () => {
+          fake.pageHide = [];
+        };
+      },
+      post: (message) => {
+        for (const listener of bus)
+          void Promise.resolve().then(() => {
+            listener(message);
+          });
+      },
+      onMessage: (listener) => {
+        bus.add(listener);
+        return () => {
+          bus.delete(listener);
+        };
+      },
     },
   };
   return fake;
@@ -55,7 +106,9 @@ beforeEach(() => {
   vi.useFakeTimers({ now: 1_000_000 });
   storage = new MemoryStorage();
 });
-afterEach(() => { vi.useRealTimers(); });
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("window identity", () => {
   it("keeps the window id from the URL, so a restored native window gets its Chats back", async () => {
@@ -70,11 +123,14 @@ describe("window identity", () => {
   });
 
   it("starts a window without an id empty, keeping closed windows' Chats for their own id, and writes the id into the URL", async () => {
-    storage.setItem(WINDOW_STORE_KEY, storeWith({
-      open: openChat({ open: emptyWindow("Window 1") }, "open", chat("a"))["open"] ?? emptyWindow("x"),
-      closed: openChat({ closed: emptyWindow("Window 2") }, "closed", chat("b"))["closed"] ?? emptyWindow("x"),
-      empty: emptyWindow("Window 3"),
-    }));
+    storage.setItem(
+      WINDOW_STORE_KEY,
+      storeWith({
+        open: openChat({ open: emptyWindow("Window 1") }, "open", chat("a"))["open"] ?? emptyWindow("x"),
+        closed: openChat({ closed: emptyWindow("Window 2") }, "closed", chat("b"))["closed"] ?? emptyWindow("x"),
+        empty: emptyWindow("Window 3"),
+      }),
+    );
     storage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ open: Date.now() }));
     const fake = fakeWindow(storage, "http://pi.test/app/");
     const controller = new WorkbenchWindowController(() => undefined, fake.environment);
@@ -97,7 +153,13 @@ describe("window identity", () => {
     await reopened.update((store, id) => openChat(store, id, chat("b")));
     reopened.dispose();
     // An older record without a close time starts its 7 days at the next claim.
-    storage.setItem(WINDOW_STORE_KEY, storeWith({ ...parseWindowStore(storage.getItem(WINDOW_STORE_KEY)), legacy: openChat({ legacy: emptyWindow("Window 9") }, "legacy", chat("c"))["legacy"] ?? emptyWindow("x") }));
+    storage.setItem(
+      WINDOW_STORE_KEY,
+      storeWith({
+        ...parseWindowStore(storage.getItem(WINDOW_STORE_KEY)),
+        legacy: openChat({ legacy: emptyWindow("Window 9") }, "legacy", chat("c"))["legacy"] ?? emptyWindow("x"),
+      }),
+    );
     vi.advanceTimersByTime(3 * day);
     const restored = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=back").environment);
     await restored.start();
@@ -274,7 +336,9 @@ describe("draft ownership", () => {
 
   it("r6: a failed migration never erases the only stored draft", () => {
     saveDraft("local:creating:one", "first prompt", storage);
-    vi.spyOn(storage, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    vi.spyOn(storage, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
     moveDraft("local:creating:one", "local:real", storage);
     expect(loadDraft("local:creating:one", storage)).toBe("first prompt");
   });
@@ -291,7 +355,9 @@ describe("Web Locks", () => {
     // Window 2 reads the store and writes it back with its Chat, holding the store lock in between.
     const other = locks.request(WINDOW_STORE_LOCK, {}, async () => {
       const read = parseWindowStore(storage.getItem(WINDOW_STORE_KEY));
-      await new Promise<void>((resolve) => { write = resolve; });
+      await new Promise<void>((resolve) => {
+        write = resolve;
+      });
       storage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(read, "w2", chat("b"))));
     });
 
@@ -327,10 +393,13 @@ describe("Web Locks", () => {
 
   it("keeps a tab's window id when the tab loads a Chat URL without one, as the macOS app opens notifications", async () => {
     const locks = new FakeLocks();
-    storage.setItem(WINDOW_STORE_KEY, storeWith({
-      w1: openChat({ w1: emptyWindow("Window 1") }, "w1", chat("a"))["w1"] ?? emptyWindow("x"),
-      w2: openChat({ w2: emptyWindow("Window 2") }, "w2", chat("b"))["w2"] ?? emptyWindow("x"),
-    }));
+    storage.setItem(
+      WINDOW_STORE_KEY,
+      storeWith({
+        w1: openChat({ w1: emptyWindow("Window 1") }, "w1", chat("a"))["w1"] ?? emptyWindow("x"),
+        w2: openChat({ w2: emptyWindow("Window 2") }, "w2", chat("b"))["w2"] ?? emptyWindow("x"),
+      }),
+    );
     const tab = new MemoryStorage();
     const first = new WorkbenchWindowController(() => undefined, fakeWindow(storage, "http://pi.test/?win=w2", "unused", locks, tab).environment);
     await first.start();
@@ -355,7 +424,11 @@ describe("asking the window holding a Chat", () => {
   let locks: FakeLocks;
   let bus: Bus;
   const page = (windowId: string, onRequest?: (request: WindowRequest) => boolean | Promise<boolean>) =>
-    new WorkbenchWindowController(noop, fakeWindow(storage, `http://pi.test/?win=${windowId}`, windowId, locks, new MemoryStorage(), bus).environment, onRequest);
+    new WorkbenchWindowController(
+      noop,
+      fakeWindow(storage, `http://pi.test/?win=${windowId}`, windowId, locks, new MemoryStorage(), bus).environment,
+      onRequest,
+    );
   beforeEach(() => {
     locks = new FakeLocks();
     bus = new Set();
@@ -363,7 +436,10 @@ describe("asking the window holding a Chat", () => {
   });
 
   it("asks a holder that reloads again, until it answers", async () => {
-    const holder = page("w1", () => { holder.dispose(); return new Promise<boolean>(noop); });
+    const holder = page("w1", () => {
+      holder.dispose();
+      return new Promise<boolean>(noop);
+    });
     await holder.start();
     const asker = page("w2");
     await asker.start();
@@ -371,7 +447,10 @@ describe("asking the window holding a Chat", () => {
     const outcome = asker.showInOwner("a", "entry:e1");
     await vi.advanceTimersByTimeAsync(600);
     const shown: WindowRequest[] = [];
-    const reloaded = page("w1", (request) => { shown.push(request); return true; });
+    const reloaded = page("w1", (request) => {
+      shown.push(request);
+      return true;
+    });
     await reloaded.start();
     await vi.advanceTimersByTimeAsync(1_000);
 
@@ -422,7 +501,9 @@ describe("asking the window holding a Chat", () => {
     await first.start();
     const second = page("w3");
     await second.start();
-    const setItem = vi.spyOn(storage, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+    const setItem = vi.spyOn(storage, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
 
     await expect(first.claim(chat("b"))).rejects.toThrow("storage is full");
     await expect(second.claim(chat("b"))).rejects.toThrow("storage is full");
@@ -430,7 +511,9 @@ describe("asking the window holding a Chat", () => {
     setItem.mockRestore();
     expect(await first.claim(chat("b"))).toBe(true);
 
-    vi.spyOn(storage, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+    vi.spyOn(storage, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
     await expect(first.update((store, id) => closeChats(store, id, ["b"]))).rejects.toThrow("storage is full");
     expect(first.window?.chats.map((candidate) => candidate.sessionId)).toEqual(["b"]);
     expect(await second.claim(chat("b"))).toBe(false);
@@ -447,7 +530,9 @@ describe("asking the window holding a Chat", () => {
 });
 
 describe("newWindowId", () => {
-  afterEach(() => { vi.unstubAllGlobals(); });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   it("works without crypto.randomUUID, as on a plain-http LAN origin", () => {
     const real = globalThis.crypto;

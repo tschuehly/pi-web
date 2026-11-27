@@ -1,7 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configApi, type PiWebConfigResponse } from "../api";
 import { activeSettingsPanelTag, SettingsDialog } from "./SettingsDialog";
-import { callDialogPromise, callDialogUpdated, configResponse, deferred, getDialogProperty, remoteMachine, secondRemoteMachine, setDialogProperty, stubWindowTimers } from "./SettingsDialog.testSupport";
+import {
+  callDialogPromise,
+  callDialogUpdated,
+  configResponse,
+  deferred,
+  getDialogProperty,
+  remoteMachine,
+  secondRemoteMachine,
+  setDialogProperty,
+  stubWindowTimers,
+} from "./SettingsDialog.testSupport";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -156,7 +166,10 @@ describe("settings-dialog general settings machine targeting", () => {
     const dialog = new SettingsDialog();
     dialog.machine = remoteMachine;
 
-    const savePromise = callDialogPromise(dialog, "saveMachineAccessConfig", { pathAccess: { allowedPaths: ["/mnt/share"] }, uploads: { defaultFolder: "manual" } });
+    const savePromise = callDialogPromise(dialog, "saveMachineAccessConfig", {
+      pathAccess: { allowedPaths: ["/mnt/share"] },
+      uploads: { defaultFolder: "manual" },
+    });
     expect(getDialogProperty(dialog, "saving")).toBe(true);
 
     dialog.machine = secondRemoteMachine;
@@ -176,7 +189,9 @@ describe("settings-dialog general settings machine targeting", () => {
 
     await callDialogPromise(dialog, "loadAccessConfigForTarget");
 
-    expect(getDialogProperty(dialog, "accessError")).toBe("Failed to load file access/upload config from Lab Mac (remote machine): Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again.");
+    expect(getDialogProperty(dialog, "accessError")).toBe(
+      "Failed to load file access/upload config from Lab Mac (remote machine): Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again.",
+    );
     expect(getDialogProperty(dialog, "accessLoading")).toBe(false);
   });
 });

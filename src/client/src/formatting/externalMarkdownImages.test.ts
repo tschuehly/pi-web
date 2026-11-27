@@ -18,8 +18,7 @@ function nativeImage(reference: string | undefined): HTMLImageElement {
 }
 
 /** happy-dom does not decode images; stub only browser load metadata, never layout. */
-function setLoadMetadata(image: HTMLImageElement, dimensions: ImageDimensions = actual,
-  metadata: { complete?: boolean; currentSrc?: string } = {}): void {
+function setLoadMetadata(image: HTMLImageElement, dimensions: ImageDimensions = actual, metadata: { complete?: boolean; currentSrc?: string } = {}): void {
   Object.defineProperties(image, {
     complete: { configurable: true, value: metadata.complete ?? true },
     currentSrc: { configurable: true, value: metadata.currentSrc ?? image.src },
@@ -113,9 +112,7 @@ describe("external Markdown image dimension hints", () => {
     link.append(image);
     root.append(link);
     document.body.append(root);
-    const otherAttributes = () => [...image.attributes]
-      .filter(({ name }) => name !== "width" && name !== "height")
-      .map(({ name, value }) => [name, value]);
+    const otherAttributes = () => [...image.attributes].filter(({ name }) => name !== "width" && name !== "height").map(({ name, value }) => [name, value]);
     const before = otherAttributes();
     const srcAssignment = vi.spyOn(image, "src", "set");
     const mutations = vi.spyOn(image, "setAttribute");
@@ -173,7 +170,9 @@ describe("external Markdown image dimension hints", () => {
     rememberMarkdownImageDimensions(`${source}&v=2`, actual);
     const snapshot = localStorage.getItem(storageKey);
     const storage = localStorage;
-    const write = vi.fn((key: string, value: string) => { storage.setItem(key, value); });
+    const write = vi.fn((key: string, value: string) => {
+      storage.setItem(key, value);
+    });
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.getItem(key),
       setItem: write,
@@ -221,7 +220,8 @@ describe("external Markdown image dimension hints", () => {
   });
 
   it.each(["", "https://images.example/old.png", `${source}&candidate=2`, "//images.example/cat.png?v=1"])(
-    "ignores stale loads and srcset candidates unless currentSrc equals resolved src: %s", (currentSrc) => {
+    "ignores stale loads and srcset candidates unless currentSrc equals resolved src: %s",
+    (currentSrc) => {
       rememberMarkdownImageDimensions(source, hint);
       const snapshot = localStorage.getItem(storageKey);
       const image = nativeImage("//images.example/cat.png?v=1");
@@ -256,7 +256,8 @@ describe("external Markdown image dimension hints", () => {
   });
 
   it.each(["data:image/png;base64,AA==", "blob:https://images.example/id", "file:///cat.png", "ftp://images.example/cat.png", "about:blank"])(
-    "does not use or remember hints for non-HTTP sources: %s", (reference) => {
+    "does not use or remember hints for non-HTTP sources: %s",
+    (reference) => {
       const image = nativeImage(reference);
       rememberMarkdownImageDimensions(image.src, hint);
       const snapshot = localStorage.getItem(storageKey);
@@ -274,7 +275,8 @@ describe("external Markdown image dimension hints", () => {
   );
 
   it.each([
-    "{bad json", "{}",
+    "{bad json",
+    "{}",
     JSON.stringify([{ source, width: 0, height: 480 }]),
     JSON.stringify([{ source, width: 640 }]),
     JSON.stringify([{ source, width: "640", height: 480 }]),
@@ -299,16 +301,22 @@ describe("external Markdown image dimension hints", () => {
     if (mode === "blocked getter") {
       Object.defineProperty(globalThis, "localStorage", {
         configurable: true,
-        get() { throw new Error("storage disabled"); },
+        get() {
+          throw new Error("storage disabled");
+        },
       });
     }
     const root = document.createElement("div");
     const image = nativeImage(source);
     root.append(image);
-    expect(() => { restoreExternalMarkdownImageDimensions(root); }).not.toThrow();
+    expect(() => {
+      restoreExternalMarkdownImageDimensions(root);
+    }).not.toThrow();
     expectNoDimensions(image);
     setLoadMetadata(image);
-    expect(() => { rememberExternalMarkdownImageDimensions(image); }).not.toThrow();
+    expect(() => {
+      rememberExternalMarkdownImageDimensions(image);
+    }).not.toThrow();
     expectDimensions(image, actual);
 
     const fresh = nativeImage(source);
@@ -322,16 +330,24 @@ describe("external Markdown image dimension hints", () => {
   it("tolerates blocked storage reads and lets a successful load repair the cache", () => {
     const storage = localStorage;
     vi.stubGlobal("localStorage", {
-      getItem() { throw new Error("read blocked"); },
-      setItem: (key: string, value: string) => { storage.setItem(key, value); },
+      getItem() {
+        throw new Error("read blocked");
+      },
+      setItem: (key: string, value: string) => {
+        storage.setItem(key, value);
+      },
     });
     const root = document.createElement("div");
     const image = nativeImage(source);
     root.append(image);
-    expect(() => { restoreExternalMarkdownImageDimensions(root); }).not.toThrow();
+    expect(() => {
+      restoreExternalMarkdownImageDimensions(root);
+    }).not.toThrow();
     expectNoDimensions(image);
     setLoadMetadata(image);
-    expect(() => { rememberExternalMarkdownImageDimensions(image); }).not.toThrow();
+    expect(() => {
+      rememberExternalMarkdownImageDimensions(image);
+    }).not.toThrow();
     expectDimensions(image, actual);
 
     vi.unstubAllGlobals();
@@ -344,12 +360,16 @@ describe("external Markdown image dimension hints", () => {
     const storage = localStorage;
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => storage.getItem(key),
-      setItem() { throw new Error("quota exceeded"); },
+      setItem() {
+        throw new Error("quota exceeded");
+      },
     });
     const image = nativeImage(source);
     setLoadMetadata(image);
 
-    expect(() => { rememberExternalMarkdownImageDimensions(image); }).not.toThrow();
+    expect(() => {
+      rememberExternalMarkdownImageDimensions(image);
+    }).not.toThrow();
     expectDimensions(image, actual);
     expect(localStorage.getItem(storageKey)).toBe(snapshot);
     const root = document.createElement("div");
@@ -370,9 +390,12 @@ describe("external Markdown image dimension hints", () => {
     rememberExternalMarkdownImageDimensions(image);
     expect(readMarkdownImageDimensions(filesystemSource)).toEqual(hint);
     expect(readMarkdownImageDimensions(source)).toEqual(actual);
-    expect(localStorage.getItem(storageKey)).toBe(JSON.stringify([
-      { source: filesystemSource, ...hint }, { source, ...actual },
-    ]));
+    expect(localStorage.getItem(storageKey)).toBe(
+      JSON.stringify([
+        { source: filesystemSource, ...hint },
+        { source, ...actual },
+      ]),
+    );
 
     for (let index = 0; index < 126; index++) {
       rememberMarkdownImageDimensions(`${filesystemSource}&v=${String(index)}`, hint);

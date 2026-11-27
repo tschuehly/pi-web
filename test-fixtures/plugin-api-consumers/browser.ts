@@ -101,7 +101,12 @@ export function checkPluginNavigation(
   void context.navigate(destination, { mode: "patch", history: "push" });
 
   const patch: PluginNavigationPatchDestination = {
-    machineId: null, projectId: null, workspaceId: null, sessionId: null, view: null, tool: null,
+    machineId: null,
+    projectId: null,
+    workspaceId: null,
+    sessionId: null,
+    view: null,
+    tool: null,
     query: { file: null, line: 7, tags: ["one", true] },
   };
   void context.navigate(patch, { mode: "patch" });
@@ -149,7 +154,9 @@ const publishedCapability: PluginCapability<FixtureIdentityCapabilityV1, 1> = Ob
 });
 
 const stylesheetIntegration: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse(value): StylesheetIntegrationCapabilityV1 {
     if (!isStylesheetIntegration(value)) throw new Error("Stylesheet integration unavailable");
     return value;
@@ -157,10 +164,16 @@ const stylesheetIntegration: PluginCapability<StylesheetIntegrationCapabilityV1,
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "subscribe" in value && typeof value.subscribe === "function"
-    && "createController" in value && typeof value.createController === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+  );
 }
 
 export function applySharedUi(styles: StylesheetIntegrationCapabilityV1, root: ShadowRoot): () => void {
@@ -183,52 +196,67 @@ const plugin: PiWebPlugin = {
       if (signal.aborted) return;
     },
     contributions: {
-      messageActions: [{
-        id: "history",
-        title: "Fork from entry",
-        run: async ({ message, history }) => {
-          // Existing entry callbacks keep their durable identity and void return.
-          const entryId: string = message.entryId;
-          if (entryId !== "") await history.fork();
+      messageActions: [
+        {
+          id: "history",
+          title: "Fork from entry",
+          run: async ({ message, history }) => {
+            // Existing entry callbacks keep their durable identity and void return.
+            const entryId: string = message.entryId;
+            if (entryId !== "") await history.fork();
+          },
         },
-      }, {
-        target: "display",
-        id: "copy",
-        title: "Copy displayed text",
-        ariaLabel: ({ message }) => `Copy ${message.role} message`,
-        visible: ({ message }) => message.text !== "",
-        run: async (input) => {
-          const entryId: string | undefined = input.message.entryId;
-          // @ts-expect-error Display actions cannot mutate history.
-          input.history;
-          await navigator.clipboard.writeText(input.message.text);
-          return {
-            title: entryId === undefined ? "Copied streaming text" : "Copied",
-            ariaLabel: `Copied ${input.message.role} message`,
-            icon: context.html`<span aria-hidden="true">✓</span>`,
-          };
+        {
+          target: "display",
+          id: "copy",
+          title: "Copy displayed text",
+          ariaLabel: ({ message }) => `Copy ${message.role} message`,
+          visible: ({ message }) => message.text !== "",
+          run: async (input) => {
+            const entryId: string | undefined = input.message.entryId;
+            // @ts-expect-error Display actions cannot mutate history.
+            input.history;
+            await navigator.clipboard.writeText(input.message.text);
+            return {
+              title: entryId === undefined ? "Copied streaming text" : "Copied",
+              ariaLabel: `Copied ${input.message.role} message`,
+              icon: context.html`<span aria-hidden="true">✓</span>`,
+            };
+          },
         },
-      }],
-      actions: [{
-        id: "identity",
-        title: context.pluginId,
-        enabled: ({ state }) => {
-          const session = state.selectedSession;
-          return session !== undefined && session.id !== "" && session.cwd !== ""
-            && (session.name === undefined || typeof session.name === "string") && !session.archived && !session.pending;
+      ],
+      actions: [
+        {
+          id: "identity",
+          title: context.pluginId,
+          enabled: ({ state }) => {
+            const session = state.selectedSession;
+            return (
+              session !== undefined
+              && session.id !== ""
+              && session.cwd !== ""
+              && (session.name === undefined || typeof session.name === "string")
+              && !session.archived
+              && !session.pending
+            );
+          },
+          run: ({ selectWorkspaceTool }) => {
+            selectWorkspaceTool(`${context.runtimePluginId}:workspace.fixture`);
+          },
         },
-        run: ({ selectWorkspaceTool }) => {
-          selectWorkspaceTool(`${context.runtimePluginId}:workspace.fixture`);
-        },
-      }],
+      ],
     },
   }),
 };
 
 // Keep common browser-v2 adapter and fake patterns compiling against the
 // installed declaration, not only against this repository's source graph.
-interface ExtendedWorkspaceFiles extends WorkspaceFiles { readonly adapterName?: string; }
-interface ExtendedWorkspacePanelFiles extends WorkspacePanelFiles { readonly panelName?: string; }
+interface ExtendedWorkspaceFiles extends WorkspaceFiles {
+  readonly adapterName?: string;
+}
+interface ExtendedWorkspacePanelFiles extends WorkspacePanelFiles {
+  readonly panelName?: string;
+}
 declare class ImplementedWorkspaceFiles implements WorkspaceFiles {
   readFile: WorkspaceFiles["readFile"];
   listFiles: WorkspaceFiles["listFiles"];
@@ -262,13 +290,7 @@ function openPeerChannel(context: WorkspacePanelContext): void {
 
 const echoJson = (value: JsonValue): JsonValue => value;
 export { capabilityV1, echoJson, identityCapability, openPeerChannel, plugin, publishedCapability, requestPeer };
-export type {
-  BrowserWorkspace,
-  ExtendedWorkspaceFiles,
-  ExtendedWorkspacePanelFiles,
-  ImplementedWorkspaceFiles,
-  ImplementedWorkspacePanelFiles,
-};
+export type { BrowserWorkspace, ExtendedWorkspaceFiles, ExtendedWorkspacePanelFiles, ImplementedWorkspaceFiles, ImplementedWorkspacePanelFiles };
 type BrowserWorkspace = Workspace;
 
 // Legacy source contracts stay usable, including imports of ThemeTokens.
@@ -277,9 +299,14 @@ export const legacyTheme: ThemeContribution = { id: "legacy", name: "Legacy", co
 export const legacyContributions: PluginContributions = { themes: [legacyTheme] };
 export const modernTheme: ThemeContributionV5 = { id: "modern", name: "Modern", colorScheme: "dark", stylesheets: [] };
 export const modernContributions: PluginContributionsV5 = { themes: [modernTheme], stylesheets: [], syntaxHighlighters: [] };
-export function checkVersionBoundaries(legacy: PluginContributions, modern: PluginContributionsV5,
-  renderer: ContentRendererContribution, modernRenderer: ContentRendererContributionV5,
-  availability: MessageActionAvailabilityContext, modernAvailability: MessageActionAvailabilityContextV5): void {
+export function checkVersionBoundaries(
+  legacy: PluginContributions,
+  modern: PluginContributionsV5,
+  renderer: ContentRendererContribution,
+  modernRenderer: ContentRendererContributionV5,
+  availability: MessageActionAvailabilityContext,
+  modernAvailability: MessageActionAvailabilityContextV5,
+): void {
   // @ts-expect-error New contribution kinds belong to v5.
   legacy.stylesheets;
   // @ts-expect-error New contribution kinds belong to v5.
@@ -307,20 +334,22 @@ export const pluginV5: PiWebPlugin = {
     const version: 5 = apiVersion;
     return {
       contributions: {
-        actions: [{
-          id: "discover",
-          title: "Discover",
-          async run(context) {
-            const projects = await context.catalog.projects.list();
-            const project = projects[0];
-            if (project === undefined) return;
-            const workspaces = await context.catalog.workspaces.list(project.id);
-            const workspace = workspaces[0];
-            if (workspace === undefined) return;
-            await context.catalog.sessions.list({ projectId: project.id, workspaceId: workspace.id });
-            await context.backend?.forScope({ kind: "machine" }).request?.("fixture.summary", null);
+        actions: [
+          {
+            id: "discover",
+            title: "Discover",
+            async run(context) {
+              const projects = await context.catalog.projects.list();
+              const project = projects[0];
+              if (project === undefined) return;
+              const workspaces = await context.catalog.workspaces.list(project.id);
+              const workspace = workspaces[0];
+              if (workspace === undefined) return;
+              await context.catalog.sessions.list({ projectId: project.id, workspaceId: workspace.id });
+              await context.backend?.forScope({ kind: "machine" }).request?.("fixture.summary", null);
+            },
           },
-        }],
+        ],
         applicationPanels: [{ id: "catalog", title: "Catalog", render: (context) => html`${version}: ${context.catalog.machineId}` }],
       },
     };

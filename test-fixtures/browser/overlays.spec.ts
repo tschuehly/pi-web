@@ -32,7 +32,7 @@ for (const pending of [true, false]) {
     await expect(disclosure).toHaveAttribute("open", "");
     await expect(banner.getByText("Repeats: running turn; running children", { exact: false })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath("host-upgrade-expanded.png") });
-    const modes = pending ? ["quiet", "now", "cancel"] as const : ["quiet", "now"] as const;
+    const modes = pending ? (["quiet", "now", "cancel"] as const) : (["quiet", "now"] as const);
     for (const mode of modes) {
       await page.keyboard.press("Tab");
       const label = { quiet: "Upgrade host", now: "Upgrade now", cancel: "Cancel" }[mode];
@@ -100,7 +100,10 @@ test("nested anchored menus escape transformed clipping and Escape closes only t
   await trigger.click();
   const panel = switcher.locator(".machine-switcher-menu");
   await expect(panel).toBeVisible();
-  await panel.getByRole("button", { name: /Remote/ }).first().click({ trial: true });
+  await panel
+    .getByRole("button", { name: /Remote/ })
+    .first()
+    .click({ trial: true });
   const actions = panel.getByRole("button", { name: /actions.*Remote|Remote.*actions/i });
   await actions.click();
   const child = switcher.locator(".machine-option-actions-panel");
@@ -122,13 +125,17 @@ test("popups follow shadow-root scrolling and stay within a resized viewport", a
   await expect(panel).toBeVisible();
   const before = await panel.boundingBox();
   if (before === null) throw new Error("Missing popup geometry");
-  await page.locator(".scroll").evaluate((element) => { element.scrollTop = 10; });
+  await page.locator(".scroll").evaluate((element) => {
+    element.scrollTop = 10;
+  });
   await expect.poll(async () => (await panel.boundingBox())?.y).toBeCloseTo(before.y - 10, 0);
   await page.setViewportSize({ width: 390, height: 600 });
-  await expect.poll(async () => {
-    const box = await panel.boundingBox();
-    return box !== null && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.y + box.height <= 600;
-  }).toBe(true);
+  await expect
+    .poll(async () => {
+      const box = await panel.boundingBox();
+      return box !== null && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.y + box.height <= 600;
+    })
+    .toBe(true);
 });
 
 test("message actions share top-layer placement and restore their trigger", async ({ page }) => {
@@ -157,7 +164,10 @@ test("modal ownership dismisses background suggestions, allows owned menus, and 
   await dialog.getByRole("button", { name: /Switch machine/ }).click();
   const menu = dialog.locator(".machine-switcher-menu");
   await expect(menu).toBeVisible();
-  await menu.getByRole("button", { name: /Remote/ }).first().click({ trial: true });
+  await menu
+    .getByRole("button", { name: /Remote/ })
+    .first()
+    .click({ trial: true });
   await page.keyboard.press("Escape");
   await expect(menu).not.toBeVisible();
   await expect(dialog.locator("dialog")).toBeVisible();
@@ -175,10 +185,15 @@ test("modal ownership dismisses background suggestions, allows owned menus, and 
 test("unmanaged plugin dialogs share the modality boundary", async ({ page }) => {
   await typeComposerText(page.locator("prompt-editor .cm-content"), "/");
   await expect(page.locator("autocomplete-menu button")).toBeVisible();
-  await page.evaluate(() => { window.overlayFixture.openPluginModal(); });
+  await page.evaluate(() => {
+    window.overlayFixture.openPluginModal();
+  });
   await expect(page.getByRole("textbox", { name: "Plugin input" })).toBeFocused();
   await expect(page.locator("autocomplete-menu [popover]:popover-open")).toHaveCount(0);
-  await page.locator("dialog").getByRole("button", { name: /Switch machine/ }).click();
+  await page
+    .locator("dialog")
+    .getByRole("button", { name: /Switch machine/ })
+    .click();
   await expect(page.locator("dialog .machine-switcher-menu")).toBeVisible();
 });
 
@@ -196,7 +211,11 @@ test("attachment sources stay hidden until requested and activate their native i
     await expect(panel).toBeHidden();
     return;
   }
-  for (const [name, input] of [["Photos", "attachment-image-input"], ["Camera", "attachment-camera-input"], ["Files", "attachment-input"]] as const) {
+  for (const [name, input] of [
+    ["Photos", "attachment-image-input"],
+    ["Camera", "attachment-camera-input"],
+    ["Files", "attachment-input"],
+  ] as const) {
     await attach.tap();
     await expect(panel).toBeVisible();
     const box = await panel.boundingBox();
@@ -222,6 +241,8 @@ test("attachment sources stay hidden until requested and activate their native i
 test("hiding the conversation closes its suggestions", async ({ page }) => {
   await typeComposerText(page.locator("prompt-editor .cm-content"), "/");
   await expect(page.locator("autocomplete-menu button")).toBeVisible();
-  await page.evaluate(() => { window.overlayFixture.hideConversation(); });
+  await page.evaluate(() => {
+    window.overlayFixture.hideConversation();
+  });
   await expect(page.locator("autocomplete-menu [popover]:popover-open")).toHaveCount(0);
 });

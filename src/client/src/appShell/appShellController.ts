@@ -22,7 +22,10 @@ export class AppShellController implements ReactiveController {
   isMobileNavigationLayout: boolean;
   isPwaDisplayMode: boolean;
 
-  constructor(private readonly host: ReactiveControllerHost, options: AppShellControllerOptions = {}) {
+  constructor(
+    private readonly host: ReactiveControllerHost,
+    options: AppShellControllerOptions = {},
+  ) {
     host.addController(this);
     this.desktopSideBySideMedia = options.desktopSideBySideMedia ?? createLayoutMedia(DESKTOP_SIDE_BY_SIDE_MEDIA_QUERY);
     this.isDesktopSideBySideLayout = this.desktopSideBySideMedia?.matches ?? true;

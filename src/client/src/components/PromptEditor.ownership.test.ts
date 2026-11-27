@@ -18,7 +18,12 @@ it("r6: preserves a delayed image read and composition transactions across a Cha
   class DeferredReader {
     result: string | null = null;
     onload: (() => void) | null = null;
-    readAsDataURL() { finish = () => { this.result = "data:image/png;base64,UE5H"; this.onload?.(); }; }
+    readAsDataURL() {
+      finish = () => {
+        this.result = "data:image/png;base64,UE5H";
+        this.onload?.();
+      };
+    }
   }
   vi.stubGlobal("FileReader", DeferredReader);
   const editor = new PromptEditor();
@@ -35,7 +40,9 @@ it("r6: preserves a delayed image read and composition transactions across a Cha
   await editor.updateComplete;
   if (finish === undefined) throw new Error("Image read did not start");
   finish();
-  await vi.waitFor(() => { expect(loadStagedAttachmentDraft(key).attachments).toHaveLength(1); });
+  await vi.waitFor(() => {
+    expect(loadStagedAttachmentDraft(key).attachments).toHaveLength(1);
+  });
   editor.sessionId = "r6-paste";
   await editor.updateComplete;
   expect(editor.view?.state.doc.toString()).toContain("[PIC_1]");

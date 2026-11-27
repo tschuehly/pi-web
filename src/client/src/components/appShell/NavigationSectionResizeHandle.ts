@@ -1,7 +1,11 @@
 import { stylesheetIntegrationCapability } from "../../plugins/styles";
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import { NAVIGATION_SECTION_MIN_HEIGHT, navigationSectionHeightFromDrag, navigationSectionHeightFromKeyboard } from "../../appShell/navigationSectionResizeController";
+import {
+  NAVIGATION_SECTION_MIN_HEIGHT,
+  navigationSectionHeightFromDrag,
+  navigationSectionHeightFromKeyboard,
+} from "../../appShell/navigationSectionResizeController";
 
 export interface NavigationSectionMeasurement {
   height: number;
@@ -106,13 +110,28 @@ export class NavigationSectionResizeHandle extends LitElement {
       aria-controls=${this.controls}
       aria-valuemin="44" aria-valuemax=${String(Math.round(this.measurement.maxHeight))}
       aria-valuenow=${String(Math.round(this.measurement.height))}
-      @pointerdown=${(event: PointerEvent) => { this.pointerDown(event); }}
-      @pointermove=${(event: PointerEvent) => { this.pointerMove(event); }}
-      @pointerup=${(event: PointerEvent) => { this.pointerUp(event); }}
-      @pointercancel=${() => { this.finishResize(); }}
-      @lostpointercapture=${() => { this.finishResize(); }}
-      @keydown=${(event: KeyboardEvent) => { this.keyDown(event); }}
-      @dblclick=${() => { this.finishResize(); this.onReset?.(); }}
+      @pointerdown=${(event: PointerEvent) => {
+        this.pointerDown(event);
+      }}
+      @pointermove=${(event: PointerEvent) => {
+        this.pointerMove(event);
+      }}
+      @pointerup=${(event: PointerEvent) => {
+        this.pointerUp(event);
+      }}
+      @pointercancel=${() => {
+        this.finishResize();
+      }}
+      @lostpointercapture=${() => {
+        this.finishResize();
+      }}
+      @keydown=${(event: KeyboardEvent) => {
+        this.keyDown(event);
+      }}
+      @dblclick=${() => {
+        this.finishResize();
+        this.onReset?.();
+      }}
     ></div>`;
   }
 

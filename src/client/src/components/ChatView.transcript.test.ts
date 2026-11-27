@@ -5,7 +5,6 @@ import { normalizeMessages } from "../chatMessages";
 import { ChatView } from "./ChatView";
 import type { FormattedText } from "./FormattedText";
 
-
 import type { BashLogButton } from "./BashLogButton";
 import { api } from "../api";
 import { hasRenderedModal } from "./modalLayerRegistry";
@@ -104,10 +103,22 @@ describe("ChatView transcript density", () => {
   it("renders separate collapsed background bash cards with output and a copyable log path", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
-    view.messages = normalizeMessages([0, 1].map((index) => ({ role: "custom", customType: "background-bash",
-      content: `Background bash job-${String(index)} complete (exit 0).\nFull output (available until session shutdown): /tmp/job-${String(index)}.log\nresult ${String(index)}`,
-      details: { id: `job-${String(index)}`, command: `npm test ${String(index)}`, state: "complete", exitCode: 0, elapsedSeconds: 9, bytes: 8, logPath: `/tmp/job-${String(index)}.log` },
-    })));
+    view.messages = normalizeMessages(
+      [0, 1].map((index) => ({
+        role: "custom",
+        customType: "background-bash",
+        content: `Background bash job-${String(index)} complete (exit 0).\nFull output (available until session shutdown): /tmp/job-${String(index)}.log\nresult ${String(index)}`,
+        details: {
+          id: `job-${String(index)}`,
+          command: `npm test ${String(index)}`,
+          state: "complete",
+          exitCode: 0,
+          elapsedSeconds: 9,
+          bytes: 8,
+          logPath: `/tmp/job-${String(index)}.log`,
+        },
+      })),
+    );
     document.body.append(view);
     await view.updateComplete;
     const cards = view.shadowRoot?.querySelectorAll<HTMLDetailsElement>("details.background-bash-card");
@@ -125,7 +136,9 @@ describe("ChatView transcript density", () => {
       cards?.[0]?.querySelector("summary")?.click();
       expect(cards?.[0]?.open).toBe(true);
       cards?.[0]?.querySelector<HTMLButtonElement>('button[aria-label="Copy log path"]')?.click();
-      await vi.waitFor(() => { expect(copy).toHaveBeenCalledWith("/tmp/job-0.log"); });
+      await vi.waitFor(() => {
+        expect(copy).toHaveBeenCalledWith("/tmp/job-0.log");
+      });
     } finally {
       if (secure === undefined) Reflect.deleteProperty(window, "isSecureContext");
       else Object.defineProperty(window, "isSecureContext", secure);
@@ -134,13 +147,34 @@ describe("ChatView transcript density", () => {
 
   it("shows a background bash description instead of its command and opens the full log in a modal", async () => {
     const logPath = "/Users/me/.pi-workbench/background-bash/jobs/job-3/output.log";
-    const read = vi.spyOn(api, "workspaceFile").mockResolvedValue({ path: "output.log", encoding: "utf8", size: 12, modifiedAt: "2026-09-01T00:00:00.000Z", content: "line 1\nline 2", truncated: false, binary: false });
+    const read = vi.spyOn(api, "workspaceFile").mockResolvedValue({
+      path: "output.log",
+      encoding: "utf8",
+      size: 12,
+      modifiedAt: "2026-09-01T00:00:00.000Z",
+      content: "line 1\nline 2",
+      truncated: false,
+      binary: false,
+    });
     const view = new ChatView();
     view.sessionId = "session-1";
-    view.messages = normalizeMessages([{ role: "custom", customType: "background-bash",
-      content: `Background bash job-3 complete (exit 0).\nFull output: ${logPath}\nok`,
-      details: { id: "job-3", command: "npm run build -- --mode production", description: "Build the production bundle", state: "complete", exitCode: 0, elapsedSeconds: 3, bytes: 2, logPath },
-    }]);
+    view.messages = normalizeMessages([
+      {
+        role: "custom",
+        customType: "background-bash",
+        content: `Background bash job-3 complete (exit 0).\nFull output: ${logPath}\nok`,
+        details: {
+          id: "job-3",
+          command: "npm run build -- --mode production",
+          description: "Build the production bundle",
+          state: "complete",
+          exitCode: 0,
+          elapsedSeconds: 3,
+          bytes: 2,
+          logPath,
+        },
+      },
+    ]);
     document.body.append(view);
     await view.updateComplete;
     const card = view.shadowRoot?.querySelector<HTMLDetailsElement>("details.background-bash-card");
@@ -156,7 +190,9 @@ describe("ChatView transcript density", () => {
     inspect?.click();
     expect(card?.open).toBe(false);
     expect(read).toHaveBeenCalledWith("folder", "folder:/Users/me/.pi-workbench/background-bash/jobs/job-3", "output.log", "local");
-    await vi.waitFor(() => { expect(button?.shadowRoot?.querySelector("pre")?.textContent).toBe("line 1\nline 2"); });
+    await vi.waitFor(() => {
+      expect(button?.shadowRoot?.querySelector("pre")?.textContent).toBe("line 1\nline 2");
+    });
     const dialog = button?.shadowRoot?.querySelector("dialog");
     expect(dialog?.open).toBe(true);
     expect(hasRenderedModal(document)).toBe(true);
@@ -171,7 +207,11 @@ describe("ChatView transcript density", () => {
   it("renders each Working Mode block as one collapsed line of what changed, with the full guidance on expand", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
-    view.messages = normalizeMessages([{ role: "custom", customType: "working-mode", content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
+    view.messages = normalizeMessages([
+      {
+        role: "custom",
+        customType: "working-mode",
+        content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
 This is behavior guidance, not permission; explicit owner direction and repository instructions still apply.
 
 Alignment — Align: Check shared understanding.
@@ -181,10 +221,23 @@ Attention — Switching: Batch questions.
 Orchestration — Workers: Use a scope-owning worker.
 
 This block replaces every earlier <working-mode> block.
-</working-mode>`, details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } } },
-    { role: "user", content: "next" },
-    { role: "custom", customType: "working-mode", content: "<working-mode seq=\"2\">\nAttention — Focused: Stay here.\n\nChecking — Exercise: Run it.\n</working-mode>", details: { schemaVersion: 2, seq: 2, selection: { alignment: "Align", attention: "Focused", checking: "Exercise", orchestration: "Workers" } } },
-    { role: "custom", customType: "working-mode", content: "<working-mode seq=\"3\">\n</working-mode>", details: { schemaVersion: 2, seq: 3, selection: { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" } } }]);
+</working-mode>`,
+        details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } },
+      },
+      { role: "user", content: "next" },
+      {
+        role: "custom",
+        customType: "working-mode",
+        content: '<working-mode seq="2">\nAttention — Focused: Stay here.\n\nChecking — Exercise: Run it.\n</working-mode>',
+        details: { schemaVersion: 2, seq: 2, selection: { alignment: "Align", attention: "Focused", checking: "Exercise", orchestration: "Workers" } },
+      },
+      {
+        role: "custom",
+        customType: "working-mode",
+        content: '<working-mode seq="3">\n</working-mode>',
+        details: { schemaVersion: 2, seq: 3, selection: { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" } },
+      },
+    ]);
     document.body.append(view);
     await view.updateComplete;
 
@@ -207,9 +260,21 @@ This block replaces every earlier <working-mode> block.
   it("renders a validated Goal lifecycle as one collapsed accessible card without model-only text", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
-    view.messages = normalizeMessages([{ role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details: {
-      schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked", reason: "Owner approval required", summary: "Checked twice",
-    } }]);
+    view.messages = normalizeMessages([
+      {
+        role: "custom",
+        customType: "pi-goal.lifecycle",
+        content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.",
+        details: {
+          schemaVersion: 1,
+          goalId: "goal-1",
+          transition: "block",
+          state: "blocked",
+          reason: "Owner approval required",
+          summary: "Checked twice",
+        },
+      },
+    ]);
     document.body.append(view);
     await view.updateComplete;
 
@@ -230,9 +295,12 @@ This block replaces every earlier <working-mode> block.
     const view = new ChatView();
     view.sessionId = "session-1";
     view.messages = [{ role: "tool", parts: [{ type: "text", text: "tool" }] }];
-    view.messageStart = 40; view.messageTotal = 41; view.hasMore = true;
+    view.messageStart = 40;
+    view.messageTotal = 41;
+    view.hasMore = true;
     view.onLoadMore = vi.fn();
-    document.body.append(view); await view.updateComplete;
+    document.body.append(view);
+    await view.updateComplete;
     const root = requireShadowRoot(view);
     await selectFilter(view, "Human only");
     expect(root.querySelector(".filter-empty")?.textContent).toContain("No messages matching Human only in loaded history. Load earlier messages");
@@ -246,34 +314,44 @@ This block replaces every earlier <working-mode> block.
     view.messages = [{ role: "user", parts: [{ type: "text", text: "latest" }] }];
     view.hasMore = true;
     view.onLoadMore = vi.fn();
-    document.body.append(view); await view.updateComplete;
+    document.body.append(view);
+    await view.updateComplete;
     await selectFilter(view, "Human only");
     Reflect.set(view, "pendingScrollRestoreSessionId", view.sessionId);
     Reflect.set(view, "pendingScrollRestorePosition", { mode: "anchor", anchorId: "e:0", offset: 5 });
-    view.messages = [...view.messages]; await view.updateComplete;
+    view.messages = [...view.messages];
+    await view.updateComplete;
     expect(view.onLoadMore).not.toHaveBeenCalled();
   });
 
   it("exposes three keyboard-operable non-default choices and a way back to Everything", async () => {
     const view = new ChatView();
     view.sessionId = "session-1";
-    document.body.append(view); await view.updateComplete;
+    document.body.append(view);
+    await view.updateComplete;
     const root = requireShadowRoot(view);
     const toggle = root.querySelector<HTMLButtonElement>(".filter-toggle");
     toggle?.focus();
     expect(root.activeElement).toBe(toggle);
-    toggle?.click(); await view.updateComplete;
+    toggle?.click();
+    await view.updateComplete;
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
     expect(toggle?.getAttribute("aria-controls")).toBe("transcript-filter-options");
-    expect(Array.from(root.querySelectorAll(".filter-options button"), (button) => button.textContent.trim())).toEqual(["Human only", "Assistant only", "Human + Assistant"]);
+    expect(Array.from(root.querySelectorAll(".filter-options button"), (button) => button.textContent.trim())).toEqual([
+      "Human only",
+      "Assistant only",
+      "Human + Assistant",
+    ]);
     await selectFilter(view, "Assistant only");
     expect(toggle?.getAttribute("data-filter-active")).toBe("true");
     expect(toggle?.hasAttribute("aria-pressed")).toBe(false);
     expect(styleText(ChatView.styles)).toMatch(/\.filter-toggle\[data-filter-active="true"\]\s*\{[^}]*border-color:\s*var\(--pi-accent\)/);
     expect(root.activeElement).toBe(toggle);
-    toggle?.click(); await view.updateComplete;
+    toggle?.click();
+    await view.updateComplete;
     expect(root.querySelector('.filter-options button[aria-pressed="true"]')?.textContent).toBe("Assistant only");
-    root.querySelector<HTMLButtonElement>(".filter-options button")?.click(); await view.updateComplete;
+    root.querySelector<HTMLButtonElement>(".filter-options button")?.click();
+    await view.updateComplete;
     expect(toggle?.getAttribute("aria-label")).toBe("Filter transcript: Everything");
   });
 
@@ -300,12 +378,15 @@ This block replaces every earlier <working-mode> block.
 async function selectFilter(view: ChatView, label: string): Promise<void> {
   const root = requireShadowRoot(view);
   const toggle = root.querySelector<HTMLButtonElement>(".filter-toggle");
-  if (toggle?.getAttribute("aria-expanded") !== "true") { toggle?.click(); await view.updateComplete; }
+  if (toggle?.getAttribute("aria-expanded") !== "true") {
+    toggle?.click();
+    await view.updateComplete;
+  }
   const option = Array.from(root.querySelectorAll<HTMLButtonElement>(".filter-options button")).find((button) => button.textContent.trim() === label);
   if (!option) throw new Error(`Missing transcript filter option: ${label}`);
-  option.click(); await view.updateComplete;
+  option.click();
+  await view.updateComplete;
 }
-
 
 function requireShadowRoot(view: ChatView): ShadowRoot {
   const root = view.shadowRoot;

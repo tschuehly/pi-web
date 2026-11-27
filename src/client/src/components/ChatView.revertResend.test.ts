@@ -17,7 +17,11 @@ describe("ChatView revert-to-here and edit-and-resend actions (Workbench message
       { role: "assistant", parts: [{ type: "text", text: "hello" }], entryId: "entry-2" },
       { role: "user", parts: [{ type: "text", text: "no id yet" }] },
     ];
-    const view = await renderView(messages, false, vi.fn(() => Promise.resolve()));
+    const view = await renderView(
+      messages,
+      false,
+      vi.fn(() => Promise.resolve()),
+    );
 
     expect(view.shadowRoot?.querySelectorAll('[aria-label="Revert to here"]')).toHaveLength(2);
     expect(view.shadowRoot?.querySelectorAll('[aria-label="Edit and resend"]')).toHaveLength(1);
@@ -26,8 +30,23 @@ describe("ChatView revert-to-here and edit-and-resend actions (Workbench message
 
   it("offers Revert and Edit & resend on a Durable Chat only once its host reports tree navigation", async () => {
     const messages: ChatLine[] = [{ role: "user", parts: [{ type: "text", text: "hi" }], entryId: "entry-1" }];
-    const view = await renderView(messages, false, vi.fn(() => Promise.resolve()));
-    const status = { sessionId: "session-1", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 1, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    const view = await renderView(
+      messages,
+      false,
+      vi.fn(() => Promise.resolve()),
+    );
+    const status = {
+      sessionId: "session-1",
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      messageCount: 1,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    };
     view.status = { ...status, capabilities: [] };
     await view.updateComplete;
     expect(view.shadowRoot?.querySelectorAll('[aria-label="Revert to here"], [aria-label="Edit and resend"]')).toHaveLength(0);
@@ -47,10 +66,16 @@ describe("ChatView revert-to-here and edit-and-resend actions (Workbench message
     view.messageActionContext = context(false);
     await view.updateComplete;
     view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Revert to here"]')?.click();
-    await vi.waitFor(() => { expect(actOnMessage).toHaveBeenCalledTimes(1); });
-    await vi.waitFor(() => { expect(view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Edit and resend"]')?.disabled).toBe(false); });
+    await vi.waitFor(() => {
+      expect(actOnMessage).toHaveBeenCalledTimes(1);
+    });
+    await vi.waitFor(() => {
+      expect(view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Edit and resend"]')?.disabled).toBe(false);
+    });
     view.shadowRoot?.querySelector<HTMLButtonElement>('[aria-label="Edit and resend"]')?.click();
-    await vi.waitFor(() => { expect(actOnMessage).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(actOnMessage).toHaveBeenCalledTimes(2);
+    });
     expect(actOnMessage).toHaveBeenNthCalledWith(1, "entry-1", "back");
     expect(actOnMessage).toHaveBeenNthCalledWith(2, "entry-1", "back");
   });

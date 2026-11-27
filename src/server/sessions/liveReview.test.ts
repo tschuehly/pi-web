@@ -14,7 +14,8 @@ describe("parsePairCommand", () => {
   });
 
   it("refuses an unknown knob value, a bad model and a stray word with the usage", () => {
-    for (const args of ["--trigger often", "--brief loud", "--trigger", "sol", "a/b c/d", "--fast"]) expect(() => parsePairCommand(args)).toThrow(/^Usage: \/pair /);
+    for (const args of ["--trigger often", "--brief loud", "--trigger", "sol", "a/b c/d", "--fast"])
+      expect(() => parsePairCommand(args)).toThrow(/^Usage: \/pair /);
   });
 });
 
@@ -60,25 +61,33 @@ describe("LiveReviewCollector", () => {
   it("the digest holds owner and assistant text, reasoning, tool calls with their arguments, error text and the files touched; no tool output", async () => {
     const review = new LiveReviewCollector("turn");
     await review.add({ type: "message.end", message: { role: "user", content: [{ type: "text", text: "Sum the list" }] } }, same);
-    await review.add(assistant(
-      { type: "thinking", thinking: "The loop should run to n." },
-      { type: "text", text: "Fixing the loop." },
-      { type: "toolCall", id: "c1", name: "edit", arguments: { path: "src/sum.ts", edits: [{ oldText: "i <= n", newText: "i < n - 1" }] } },
-      { type: "toolCall", id: "c2", name: "write", arguments: { path: "notes.md", content: "x" } },
-    ), same);
+    await review.add(
+      assistant(
+        { type: "thinking", thinking: "The loop should run to n." },
+        { type: "text", text: "Fixing the loop." },
+        { type: "toolCall", id: "c1", name: "edit", arguments: { path: "src/sum.ts", edits: [{ oldText: "i <= n", newText: "i < n - 1" }] } },
+        { type: "toolCall", id: "c2", name: "write", arguments: { path: "notes.md", content: "x" } },
+      ),
+      same,
+    );
     await review.add(toolEnd("edit", false, "Successfully replaced text in src/sum.ts. SECRET-OUTPUT"), same);
     await review.add({ type: "message.end", message: { role: "toolResult", toolName: "edit", content: [{ type: "text", text: "SECRET-OUTPUT" }] } }, same);
     await review.add(toolEnd("bash", true, "npm test: 1 failing"), same);
-    await review.add({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · from the reviewer" } }, same);
-    expect(review.take()?.text).toBe([
-      "Owner: Sum the list",
-      "Reasoning: The loop should run to n.",
-      "Assistant: Fixing the loop.",
-      'Tool call edit {"path":"src/sum.ts","edits":[{"oldText":"i <= n","newText":"i < n - 1"}]}',
-      'Tool call write {"path":"notes.md","content":"x"}',
-      "Tool error bash: npm test: 1 failing",
-      "Files touched: notes.md, src/sum.ts",
-    ].join("\n"));
+    await review.add(
+      { type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · from the reviewer" } },
+      same,
+    );
+    expect(review.take()?.text).toBe(
+      [
+        "Owner: Sum the list",
+        "Reasoning: The loop should run to n.",
+        "Assistant: Fixing the loop.",
+        'Tool call edit {"path":"src/sum.ts","edits":[{"oldText":"i <= n","newText":"i < n - 1"}]}',
+        'Tool call write {"path":"notes.md","content":"x"}',
+        "Tool error bash: npm test: 1 failing",
+        "Files touched: notes.md, src/sum.ts",
+      ].join("\n"),
+    );
     expect(review.take()).toBeUndefined();
   });
 
@@ -109,7 +118,15 @@ describe("LiveReviewCollector", () => {
     expect(digest).toMatch(/… \(cut\)\nFiles touched: big\.txt$/);
   });
 
-  const reviewerMessage = (delivery: string) => ({ type: "message.end", message: { role: "custom", customType: "workbench:chat-message", content: "Chat message · live reviewer", details: { delivery, liveReview: { kind: "reviewer" } } } });
+  const reviewerMessage = (delivery: string) => ({
+    type: "message.end",
+    message: {
+      role: "custom",
+      customType: "workbench:chat-message",
+      content: "Chat message · live reviewer",
+      details: { delivery, liveReview: { kind: "reviewer" } },
+    },
+  });
   const owner = (text: string) => ({ type: "message.end", message: { role: "user", content: [{ type: "text", text }] } });
 
   it("a turn the reviewer's message started produces no digest at any trigger; it is kept for the next owner digest", async () => {
@@ -166,7 +183,16 @@ describe("LiveReviewCollector", () => {
 
   it("the buffer and each digest stay under 60,000 characters: the newest work and every touched file stay, omissions are marked", async () => {
     const review = new LiveReviewCollector("turn");
-    for (let i = 0; i < 200; i++) await review.add(assistant({ type: "toolCall", id: `c${String(i)}`, name: "write", arguments: { path: `src/f${String(i)}.ts`, content: `// file ${String(i)}\n${"x".repeat(15_000)}` } }), same);
+    for (let i = 0; i < 200; i++)
+      await review.add(
+        assistant({
+          type: "toolCall",
+          id: `c${String(i)}`,
+          name: "write",
+          arguments: { path: `src/f${String(i)}.ts`, content: `// file ${String(i)}\n${"x".repeat(15_000)}` },
+        }),
+        same,
+      );
     const taken = review.take();
     const text = taken?.text ?? "";
     expect(text.length).toBeLessThanOrEqual(60_000);
@@ -178,7 +204,16 @@ describe("LiveReviewCollector", () => {
     expect(Number(omitted?.[1]) + calls).toBe(200);
     expect(text.endsWith(`Files touched: ${Array.from({ length: 200 }, (_, i) => `src/f${String(199 - i)}.ts`).join(", ")}`)).toBe(true);
     // Put back behind newer work, the merged digest is capped again and counts every omission.
-    for (let i = 0; i < 5; i++) await review.add(assistant({ type: "toolCall", id: `n${String(i)}`, name: "edit", arguments: { path: "src/new.ts", edits: [{ oldText: "a", newText: "y".repeat(15_000) }] } }), same);
+    for (let i = 0; i < 5; i++)
+      await review.add(
+        assistant({
+          type: "toolCall",
+          id: `n${String(i)}`,
+          name: "edit",
+          arguments: { path: "src/new.ts", edits: [{ oldText: "a", newText: "y".repeat(15_000) }] },
+        }),
+        same,
+      );
     if (taken !== undefined) review.putBack(taken);
     const merged = review.take()?.text ?? "";
     expect(merged.length).toBeLessThanOrEqual(60_000);
@@ -193,36 +228,64 @@ describe("LiveReviewCollector", () => {
     const pem = `${pemEdge("BEGIN")}\n${"QUJD".repeat(10_000)}\n${pemEdge("END")}`;
     const secret = "tok\\en-s3cr3t";
     const keySecret = "k\\ey-s3cr3t";
-    const redact = (text: string) => Promise.resolve(text.replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]").replaceAll(secret, "[REDACTED:token]").replaceAll(keySecret, "[REDACTED:key]"));
+    const redact = (text: string) =>
+      Promise.resolve(
+        text
+          .replace(new RegExp(`${pemEdge("BEGIN")}[\\s\\S]*?${pemEdge("END")}`, "gu"), "[REDACTED:private-key]")
+          .replaceAll(secret, "[REDACTED:token]")
+          .replaceAll(keySecret, "[REDACTED:key]"),
+      );
     const review = new LiveReviewCollector("turn");
-    await review.add(assistant(
-      { type: "thinking", thinking: `The key is ${secret}` },
-      { type: "text", text: `Writing ${pem}` },
-      { type: "toolCall", id: "c", name: "write", arguments: { path: "id_rsa", content: pem, env: { TOKEN: secret, [keySecret]: "1" } } },
-    ), redact);
+    await review.add(
+      assistant(
+        { type: "thinking", thinking: `The key is ${secret}` },
+        { type: "text", text: `Writing ${pem}` },
+        { type: "toolCall", id: "c", name: "write", arguments: { path: "id_rsa", content: pem, env: { TOKEN: secret, [keySecret]: "1" } } },
+      ),
+      redact,
+    );
     const text = review.take()?.text ?? "";
     expect(text).not.toContain("QUJD");
     expect(text).not.toContain("BEGIN PRIVATE KEY");
     expect(text).not.toContain("s3cr3t");
-    expect(text).toBe([
-      "Reasoning: The key is [REDACTED:token]",
-      "Assistant: Writing [REDACTED:private-key]",
-      'Tool call write {"path":"id_rsa","content":"[REDACTED:private-key]","env":{"TOKEN":"[REDACTED:token]","[REDACTED:key]":"1"}}',
-      "Files touched: id_rsa",
-    ].join("\n"));
+    expect(text).toBe(
+      [
+        "Reasoning: The key is [REDACTED:token]",
+        "Assistant: Writing [REDACTED:private-key]",
+        'Tool call write {"path":"id_rsa","content":"[REDACTED:private-key]","env":{"TOKEN":"[REDACTED:token]","[REDACTED:key]":"1"}}',
+        "Files touched: id_rsa",
+      ].join("\n"),
+    );
     const blind = new LiveReviewCollector("turn");
-    await blind.add(assistant({ type: "text", text: "secret" }, { type: "toolCall", id: "c", name: "edit", arguments: { path: "a.ts", edits: [{ oldText: "x", newText: "y" }] } }), () => Promise.reject(new Error("no redact method")));
+    await blind.add(
+      assistant(
+        { type: "text", text: "secret" },
+        { type: "toolCall", id: "c", name: "edit", arguments: { path: "a.ts", edits: [{ oldText: "x", newText: "y" }] } },
+      ),
+      () => Promise.reject(new Error("no redact method")),
+    );
     await blind.add(toolEnd("bash", true, "failed with tok"), () => Promise.reject(new Error("no redact method")));
-    expect(blind.take()?.text).toBe([
-      "Assistant: [redaction unavailable: omitted]",
-      'Tool call edit {"[redaction unavailable: omitted]":[{"[redaction unavailable: omitted]":"[redaction unavailable: omitted]"}]}',
-      "Tool error bash: [redaction unavailable: omitted]",
-    ].join("\n"));
+    expect(blind.take()?.text).toBe(
+      [
+        "Assistant: [redaction unavailable: omitted]",
+        'Tool call edit {"[redaction unavailable: omitted]":[{"[redaction unavailable: omitted]":"[redaction unavailable: omitted]"}]}',
+        "Tool error bash: [redaction unavailable: omitted]",
+      ].join("\n"),
+    );
   });
 
   it("the file list stays inside the cap: newest paths first, the rest counted; dropped text lines count in the marker", async () => {
     const review = new LiveReviewCollector("turn");
-    for (let i = 0; i < 1000; i++) await review.add(assistant({ type: "toolCall", id: `c${String(i)}`, name: "edit", arguments: { path: `src/some/deep/module/path/file-number-${String(i)}.ts`, edits: [] } }), same);
+    for (let i = 0; i < 1000; i++)
+      await review.add(
+        assistant({
+          type: "toolCall",
+          id: `c${String(i)}`,
+          name: "edit",
+          arguments: { path: `src/some/deep/module/path/file-number-${String(i)}.ts`, edits: [] },
+        }),
+        same,
+      );
     for (let i = 0; i < 100; i++) await review.add(assistant({ type: "text", text: `note ${String(i)} ${"z".repeat(1_000)}` }), same);
     const text = review.take()?.text ?? "";
     expect(text.length).toBeLessThanOrEqual(60_000);

@@ -2,7 +2,9 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { AppPanelEdgeControl } from "./AppPanelEdgeControl";
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 it("keeps keyboard resizing and reset on the separator without a collapse button", async () => {
   const edge = new AppPanelEdgeControl();

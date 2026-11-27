@@ -1,8 +1,4 @@
-export const PWA_DISPLAY_MODE_QUERIES = [
-  "(display-mode: standalone)",
-  "(display-mode: fullscreen)",
-  "(display-mode: minimal-ui)",
-] as const;
+export const PWA_DISPLAY_MODE_QUERIES = ["(display-mode: standalone)", "(display-mode: fullscreen)", "(display-mode: minimal-ui)"] as const;
 
 export interface DisplayModeMediaState {
   readonly matches: boolean;

@@ -11,7 +11,13 @@ import { adHocFolderWorkspaceId } from "../../../shared/workspaceFiles";
 import { initialAppState, type AppState } from "../appState";
 import { BrowserResumeController } from "../appShell/browserResumeController";
 import { clampPanelWidth, panelWidthFromDrag, panelWidthFromKeyboard, type PanelResizeConstraints } from "../appShell/panelResizeController";
-import { desktopNotifications, DesktopNotificationController, NATIVE_NOTIFICATION_HOLDS_EVENT, NATIVE_NOTIFICATION_OPEN_EVENT, NOTIFICATION_ANCHOR } from "../controllers/desktopNotificationController";
+import {
+  desktopNotifications,
+  DesktopNotificationController,
+  NATIVE_NOTIFICATION_HOLDS_EVENT,
+  NATIVE_NOTIFICATION_OPEN_EVENT,
+  NOTIFICATION_ANCHOR,
+} from "../controllers/desktopNotificationController";
 import type { PromptEditorTextReplacement, SessionController, SessionSelectionOptions } from "../controllers/sessionController";
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { selectedMachineId } from "../controllers/types";
@@ -37,7 +43,27 @@ import { sessionPersistenceState } from "../sessionPersistence";
 import { RealtimeSocket, type BrowserRealtimeEvent } from "../sessionSocket";
 import { pluginStyles, PluginStyleRuntime } from "../plugins/styles";
 import { applyPiWebTheme, readStoredThemePreference, resolveThemePreference, writeStoredThemePreference, type ThemePreference } from "../theme";
-import { closeChats, focusChat, GRID_MIN_TILE, gridRatio, gridRatioBounds, gridRatioFromDrag, gridRatioFromKeyboard, gridTiles, moveChats, orderedChats, resizeGrid, toggleLayout, toggleMaximized, updateChat, windowChatSummary, type GridAxis, type GridTile, type WindowChat, type WindowStore } from "../workbenchWindows";
+import {
+  closeChats,
+  focusChat,
+  GRID_MIN_TILE,
+  gridRatio,
+  gridRatioBounds,
+  gridRatioFromDrag,
+  gridRatioFromKeyboard,
+  gridTiles,
+  moveChats,
+  orderedChats,
+  resizeGrid,
+  toggleLayout,
+  toggleMaximized,
+  updateChat,
+  windowChatSummary,
+  type GridAxis,
+  type GridTile,
+  type WindowChat,
+  type WindowStore,
+} from "../workbenchWindows";
 import { runningWork } from "../../../shared/closeBusy";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import type { ChatRevealTarget } from "./ChatView";
@@ -54,10 +80,36 @@ import "./WorkbenchFilesPane";
 import { openQuestionCount } from "./WorkbenchQuestionChips";
 import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_STATUS_KEY } from "../extensionStatusSnapshots";
 import { workingModeIcon } from "./WorkingModeControls";
-import { carriesChats, chatStatusDotStyles, chatTabStatus, droppedChats, endedOutside, renderChatStatusDot, startChatDrag, type ChatTabCloseDetail, type ChatTabMenuDetail, type ChatTabSelectDetail, type ChatTabStatus, type DraggedChats, type TabRenameDetail } from "./WorkbenchWindowTabs";
+import {
+  carriesChats,
+  chatStatusDotStyles,
+  chatTabStatus,
+  droppedChats,
+  endedOutside,
+  renderChatStatusDot,
+  startChatDrag,
+  type ChatTabCloseDetail,
+  type ChatTabMenuDetail,
+  type ChatTabSelectDetail,
+  type ChatTabStatus,
+  type DraggedChats,
+  type TabRenameDetail,
+} from "./WorkbenchWindowTabs";
 import type { WorkbenchChatPane } from "./WorkbenchChatPane";
 import "./WorkbenchChatPane";
-import { appendWorkstream, inspectWorkstream, isTemporaryDirectory, watchWorkstreams, workstreamForSession, type OpenWorkstreamSessionDetail, type StartWorkstreamSessionDetail, type WorkstreamAppendRecord, type WorkstreamServiceContext, type WorkstreamSessionAnchor, type WorkstreamSnapshot } from "./WorkstreamChooser";
+import {
+  appendWorkstream,
+  inspectWorkstream,
+  isTemporaryDirectory,
+  watchWorkstreams,
+  workstreamForSession,
+  type OpenWorkstreamSessionDetail,
+  type StartWorkstreamSessionDetail,
+  type WorkstreamAppendRecord,
+  type WorkstreamServiceContext,
+  type WorkstreamSessionAnchor,
+  type WorkstreamSnapshot,
+} from "./WorkstreamChooser";
 import { renderBuiltinTabIcon } from "./tabIcons";
 import { randomHex } from "../randomHex";
 
@@ -80,32 +132,49 @@ export function folderPanelError(error: unknown): string {
  * when the Chat opened, says whether it is written yet.
  */
 export function sessionInfoText(session: SessionInfo, status?: SessionStatus): string {
-  const transcript = session.path === "" ? "not known yet"
-    : sessionPersistenceState(session, status) === "transient" ? `${session.path} (written after the first reply)` : session.path;
+  const transcript =
+    session.path === ""
+      ? "not known yet"
+      : sessionPersistenceState(session, status) === "transient"
+        ? `${session.path} (written after the first reply)`
+        : session.path;
   return `Session: ${session.id}\nFolder: ${session.cwd}\nTranscript: ${transcript}`;
 }
 
 /** Which workspace Files shows, on which machine: the scope Files resets for. */
-const filesKey = ({ machineId, workspace }: { machineId: string; workspace: Workspace | undefined }): string => `${machineId}:${workspace?.projectId ?? ""}:${workspace?.id ?? ""}`;
+const filesKey = ({ machineId, workspace }: { machineId: string; workspace: Workspace | undefined }): string =>
+  `${machineId}:${workspace?.projectId ?? ""}:${workspace?.id ?? ""}`;
 
-export const adHocWorkspace = (path: string): Workspace => ({ id: adHocFolderWorkspaceId(path), projectId: "", path, label: path.split("/").filter(Boolean).at(-1) ?? path, isMain: false, effectiveConfig: {} });
+export const adHocWorkspace = (path: string): Workspace => ({
+  id: adHocFolderWorkspaceId(path),
+  projectId: "",
+  path,
+  label: path.split("/").filter(Boolean).at(-1) ?? path,
+  isMain: false,
+  effectiveConfig: {},
+});
 
 /** A project inside another registered project, or its sibling `<project>-<suffix>` repository, belongs to that project's tab. */
 export function rootProjectOf(project: Project, projects: readonly Project[]): Project {
-  const belongsTo = (candidate: Project): boolean => project.path.startsWith(`${candidate.path}/`)
-    || project.path.startsWith(`${candidate.path}-`) && !project.path.slice(candidate.path.length).includes("/");
+  const belongsTo = (candidate: Project): boolean =>
+    project.path.startsWith(`${candidate.path}/`)
+    || (project.path.startsWith(`${candidate.path}-`) && !project.path.slice(candidate.path.length).includes("/"));
   const parent = projects.find((candidate) => candidate.id !== project.id && belongsTo(candidate));
   return parent === undefined ? project : rootProjectOf(parent, projects);
 }
 export const rootProjects = (projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === project.id);
 const subprojectsOf = (root: Project, projects: readonly Project[]): Project[] => projects.filter((project) => rootProjectOf(project, projects).id === root.id);
 /** Never-saved blank or pending Chats in this folder: no listing returns them yet, so opening another Chat from its row keeps them. */
-const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: string): SessionInfo[] => rows.filter((row) => row.persisted === false && row.cwd === cwd && row.id !== openedId);
+const unsavedChatsIn = (rows: readonly SessionInfo[], cwd: string, openedId: string): SessionInfo[] =>
+  rows.filter((row) => row.persisted === false && row.cwd === cwd && row.id !== openedId);
 /** A window asked to hand over dropped Chats may first ask its owner about unsaved file edits. */
 const MOVE_REPLY_MS = 60_000;
 
 /** A closed Durable Chat to end. */
-interface DurableChatEnd { session: SessionInfo; machineId: string }
+interface DurableChatEnd {
+  session: SessionInfo;
+  machineId: string;
+}
 
 /** Closing waits this long for the server to answer (5 s), and longer for a host to end in order. */
 const CLOSE_DEADLINE_MS = 5000;
@@ -118,7 +187,16 @@ export const NATIVE_WINDOW_CLOSE_EVENT = "pi-web:window-close";
 /** Rejects when `work` has not settled within `ms`, so a stalled request fails visibly instead of pending forever. */
 function withDeadline<T>(work: Promise<T>, ms = CLOSE_DEADLINE_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  return Promise.race([work, new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error(`The server did not answer within ${String(ms / 1000)} s.`)); }, ms); })]).finally(() => { clearTimeout(timer); });
+  return Promise.race([
+    work,
+    new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`The server did not answer within ${String(ms / 1000)} s.`));
+      }, ms);
+    }),
+  ]).finally(() => {
+    clearTimeout(timer);
+  });
 }
 
 @customElement("pi-workbench-app")
@@ -151,15 +229,33 @@ export class WorkbenchApp extends LitElement {
    * A Grid divider being dragged: its share reaches the window store on release (`released`). Not reactive: a move writes
    * the Grid's template straight to the page once a frame (`frame`), since a render per move would re-render every tile.
    */
-  private gridDrag: { axis: GridAxis; pointerId: number; start: number; startRatio: number; size: number; ratio: number; handle: HTMLElement; released: boolean; frame: number | undefined } | undefined;
+  private gridDrag:
+    | {
+        axis: GridAxis;
+        pointerId: number;
+        start: number;
+        startRatio: number;
+        size: number;
+        ratio: number;
+        handle: HTMLElement;
+        released: boolean;
+        frame: number | undefined;
+      }
+    | undefined;
   /** All window-wide consumers resolve through this pointer; each tile keeps its own state and controller. */
-  private readonly focused = new WorkbenchSessionFocus((patch) => { this.setApp(patch, false); });
+  private readonly focused = new WorkbenchSessionFocus((patch) => {
+    this.setApp(patch, false);
+  });
   private readonly chats = new Set<WorkbenchChatSession>();
   /** A suspended window's socket frames would replay one by one on return; one snapshot per retained Chat supersedes them. */
   private readonly browserResume = new BrowserResumeController({
     onResumeSignal: () => undefined,
-    refreshAfterResume: async () => { await Promise.all([...this.chats].map((chat) => chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true }))); },
-    onRefreshError: (error) => { console.warn("Chat refresh after resume failed", error); },
+    refreshAfterResume: async () => {
+      await Promise.all([...this.chats].map((chat) => chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true })));
+    },
+    onRefreshError: (error) => {
+      console.warn("Chat refresh after resume failed", error);
+    },
   });
   private readonly retiringChats = new Set<string>();
   /** Chats whose close is still asking the server or ending them. */
@@ -171,19 +267,27 @@ export class WorkbenchApp extends LitElement {
   @state() private windowError = "";
   private tileFocusOnClick: string | undefined;
   private get focusedPane(): WorkbenchChatPane | undefined {
-    return [...this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? []].find((pane) => pane.runtime === this.focused.current);
+    return [...(this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? [])].find((pane) => pane.runtime === this.focused.current);
   }
-  private get promptEditor(): PromptEditor | undefined { return this.focusedPane?.promptEditor; }
+  private get promptEditor(): PromptEditor | undefined {
+    return this.focusedPane?.promptEditor;
+  }
   private get sessions(): SessionController {
     if (this.focused.current !== undefined) return this.focused.current.sessions;
-    const launcher = this.launcher ??= this.createChatSession(this.app);
+    const launcher = (this.launcher ??= this.createChatSession(this.app));
     launcher.patch(this.app, false);
     return launcher.sessions;
   }
   private readonly realtime = new RealtimeSocket();
   private realtimeMachineId: string | undefined;
   /** This window's open Chats, shared with the other windows through localStorage. */
-  private readonly windows = new WorkbenchWindowController(() => { this.followWindowChange(); }, undefined, (request, from, expires) => this.answerWindow(request, from, expires));
+  private readonly windows = new WorkbenchWindowController(
+    () => {
+      this.followWindowChange();
+    },
+    undefined,
+    (request, from, expires) => this.answerWindow(request, from, expires),
+  );
   /** Open Chats that finished working while another Chat was on screen. */
   private readonly unreadChats = new Set<string>();
   /** Right-click menu of a tab, Workstream tab or tile, in CSS pixels. */
@@ -194,14 +298,23 @@ export class WorkbenchApp extends LitElement {
     track: () => {
       const window = this.windows.window;
       const current = this.app.selectedSession?.id;
-      if (window === undefined || current === undefined || window.layout === "grid" && !window.maximized || !window.chats.some((chat) => chat.sessionId === current)) return undefined;
+      if (
+        window === undefined
+        || current === undefined
+        || (window.layout === "grid" && !window.maximized)
+        || !window.chats.some((chat) => chat.sessionId === current)
+      )
+        return undefined;
       return { order: orderedChats(window).map((chat) => chat.sessionId), current };
     },
     surfaces: () => {
       const current = this.shadowRoot?.querySelector<HTMLElement>('.grid[data-single] > .tile[data-focused="true"]');
       return current === null || current === undefined ? undefined : { current, peek: this.shadowRoot?.querySelector<HTMLElement>(".swipe-peek") ?? null };
     },
-    peek: (sessionId) => { this.swipePeek = sessionId; return this.updateComplete; },
+    peek: (sessionId) => {
+      this.swipePeek = sessionId;
+      return this.updateComplete;
+    },
     commit: (sessionId) => this.showWindowChat(sessionId),
   });
   /** One generation for every navigation, New Chat and selection included: only the newest may commit. */
@@ -226,8 +339,11 @@ export class WorkbenchApp extends LitElement {
   /** The configured send behavior while a reply streams (upstream's defaultStreamingBehavior setting). */
   @state() private defaultStreamingBehavior: "steer" | "followUp" = "steer";
   @state() private themePreference: ThemePreference = readStoredThemePreference() ?? { themeId: "themes:github-dark", auto: true };
-  private readonly systemLightThemeMedia = typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
-  private readonly onSystemLightThemeChange = (): void => { this.applyPreferredTheme(); };
+  private readonly systemLightThemeMedia =
+    typeof window !== "undefined" && "matchMedia" in window ? window.matchMedia("(prefers-color-scheme: light)") : undefined;
+  private readonly onSystemLightThemeChange = (): void => {
+    this.applyPreferredTheme();
+  };
 
   /** Bundled themes are stylesheets: publish the active one to the document and every integrated shadow root. */
   private readonly stylesheetRuntime = new PluginStyleRuntime(pluginStyles, (error) => {
@@ -255,9 +371,13 @@ export class WorkbenchApp extends LitElement {
   private readonly workstreamChats = new Set<string>();
   private readonly desktopNotifications = new DesktopNotificationController(
     desktopNotifications(),
-    () => { this.requestUpdate(); },
+    () => {
+      this.requestUpdate();
+    },
     () => this.currentWorkstream?.title,
-    (machineId, sessionId, anchor) => { this.openNotificationChat(machineId, sessionId, anchor); },
+    (machineId, sessionId, anchor) => {
+      this.openNotificationChat(machineId, sessionId, anchor);
+    },
   );
 
   @state() private revealTarget: ChatRevealTarget | undefined;
@@ -281,10 +401,12 @@ export class WorkbenchApp extends LitElement {
     if (navigation !== this.loadSequence) return true;
     if (outcome === "unanswered") this.setApp({ error: "This Chat is open in another window, which does not respond. Try again in a moment." });
     // Only a fresh navigation frees a closed holder; a refused delayed claim never takes a moved Chat back.
-    if (outcome === "here" && release) await this.windows.releaseClosed(sessionId).catch((error: unknown) => { this.setApp({ error: error instanceof Error ? error.message : String(error) }); });
+    if (outcome === "here" && release)
+      await this.windows.releaseClosed(sessionId).catch((error: unknown) => {
+        this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      });
     return outcome !== "here";
   }
-
 
   private async claimChat(session: SessionInfo, context: Partial<AppState>, focus = true): Promise<boolean> {
     let claimed: boolean;
@@ -303,7 +425,15 @@ export class WorkbenchApp extends LitElement {
   /** A Chat as this window records it, in the workspace it shows it in. */
   private windowChat(session: SessionInfo, workspace: Workspace | undefined, machineId = selectedMachineId(this.app)): WindowChat {
     const registered = workspace !== undefined && workspace.projectId !== "";
-    return { sessionId: session.id, startupToken: session.startupToken, title: sessionTitle(session), shortName: session.shortName, machineId, projectId: registered ? workspace.projectId : undefined, workspaceId: registered ? workspace.id : undefined };
+    return {
+      sessionId: session.id,
+      startupToken: session.startupToken,
+      title: sessionTitle(session),
+      shortName: session.shortName,
+      machineId,
+      projectId: registered ? workspace.projectId : undefined,
+      workspaceId: registered ? workspace.id : undefined,
+    };
   }
 
   /** Another window asks this one to show one of its Chats, or to hand Chats dropped there over to it. */
@@ -312,7 +442,7 @@ export class WorkbenchApp extends LitElement {
     if (request.kind === "move") {
       const { sessionIds } = request;
       const holds = () => this.windows.window?.chats.some((chat) => sessionIds.includes(chat.sessionId)) === true;
-      return holds() ? this.moveWindowChats(sessionIds, from, expires, true)?.then(() => !holds()) ?? false : false;
+      return holds() ? (this.moveWindowChats(sessionIds, from, expires, true)?.then(() => !holds()) ?? false) : false;
     }
     const chat = chats.find((candidate) => candidate.sessionId === request.sessionId);
     if (chat === undefined) return false;
@@ -328,7 +458,10 @@ export class WorkbenchApp extends LitElement {
     await this.load(route);
   }
 
-  private readonly onPageAttention = (): void => { this.desktopNotifications.clearVisible(this.app); this.acknowledgeSeenAttention(); };
+  private readonly onPageAttention = (): void => {
+    this.desktopNotifications.clearVisible(this.app);
+    this.acknowledgeSeenAttention();
+  };
 
   /** Attention request ids this window already acknowledged, so a request is sent once. */
   private readonly acknowledgedAttention = new Set<string>();
@@ -340,7 +473,9 @@ export class WorkbenchApp extends LitElement {
     if (session === undefined || request === undefined || document.hidden || !document.hasFocus() || this.acknowledgedAttention.has(request.id)) return;
     this.acknowledgedAttention.add(request.id);
     // ponytail: ids stay in the set for the window's lifetime; one short id per request.
-    api.acknowledgeAttention({ id: session.id, cwd: session.cwd }, request.id, selectedMachineId(this.app)).catch(() => { this.acknowledgedAttention.delete(request.id); });
+    api.acknowledgeAttention({ id: session.id, cwd: session.cwd }, request.id, selectedMachineId(this.app)).catch(() => {
+      this.acknowledgedAttention.delete(request.id);
+    });
   }
 
   /** The macOS app reveals a message in the Chat this window already shows without reloading it. */
@@ -375,50 +510,83 @@ export class WorkbenchApp extends LitElement {
     Reflect.set(detail, "closing", ids.length === 0 ? Promise.resolve(true) : this.closeWindowChats(ids));
   };
 
-  private beginNavigation(): number { this.selectingChat = undefined; return ++this.navigationSequence; }
+  private beginNavigation(): number {
+    this.selectingChat = undefined;
+    return ++this.navigationSequence;
+  }
 
   private readonly transcriptWindowSizes = new Map<string, number>();
 
   private createChatSession(context: AppState): WorkbenchChatSession {
-    const chat: WorkbenchChatSession = new WorkbenchChatSession(context, (runtime, patch, previous) => {
-      const session = runtime.state.selectedSession;
-      if (session !== undefined && this.focused.current !== runtime) {
-        if (previous.status?.isStreaming === true && runtime.state.status?.isStreaming === false) this.unreadChats.add(session.id);
-        if (previous.selectedSession?.id === session.id && previous.selectedSession !== session && this.windows.window?.chats.some((row) => row.sessionId === session.id && (row.title !== sessionTitle(session) || row.shortName !== session.shortName)) === true) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title: sessionTitle(session), shortName: session.shortName }));
-      }
-      this.focused.changed(runtime, patch);
-      if (session !== undefined && previous.selectedSession?.id !== session.id && runtime === this.focused.current && this.windows.window?.layout === "grid") void this.preparePage(session.id);
-      if (runtime === this.launcher && this.focused.current === undefined) this.setApp(patch, false);
-      this.requestUpdate();
-    }, {
-      windowSizes: this.transcriptWindowSizes,
-      draftStorage: () => this.windows.draftStorage,
-      claimSession: (session, patch, focus) => this.claimChat(session, { selectedMachine: chat.state.selectedMachine, selectedWorkspace: chat.state.selectedWorkspace, ...patch }, focus !== false && this.focused.current === chat),
-      replacePromptEditorText: (replacement) => this.replacePromptEditorText(replacement),
-      onSelectedSessionReady: () => {
-        if (this.focused.current === chat) {
-          this.desktopNotifications.activate(this.app);
-          void this.loadCurrentWorkstream();
+    const chat: WorkbenchChatSession = new WorkbenchChatSession(
+      context,
+      (runtime, patch, previous) => {
+        const session = runtime.state.selectedSession;
+        if (session !== undefined && this.focused.current !== runtime) {
+          if (previous.status?.isStreaming === true && runtime.state.status?.isStreaming === false) this.unreadChats.add(session.id);
+          if (
+            previous.selectedSession?.id === session.id
+            && previous.selectedSession !== session
+            && this.windows.window?.chats.some(
+              (row) => row.sessionId === session.id && (row.title !== sessionTitle(session) || row.shortName !== session.shortName),
+            ) === true
+          )
+            void this.updateWindow((store, id) => updateChat(store, id, session.id, { title: sessionTitle(session), shortName: session.shortName }));
         }
+        this.focused.changed(runtime, patch);
+        if (session !== undefined && previous.selectedSession?.id !== session.id && runtime === this.focused.current && this.windows.window?.layout === "grid")
+          void this.preparePage(session.id);
+        if (runtime === this.launcher && this.focused.current === undefined) this.setApp(patch, false);
+        this.requestUpdate();
       },
-      onSessionError: (message, eventId) => { if (this.focused.current === chat) this.desktopNotifications.sessionError(chat.state, message, eventId); },
-      navigateToSession: async (session, options) => {
-        if (session === undefined) { if (this.focused.current === chat) this.goHome(); return true; }
-        if (options?.creationHandoff === true) {
-          // Creation resolves inside its own runtime even while another Chat or the chooser owns window focus.
-          await chat.sessions.selectSession(session, { updateUrl: false });
-          return chat.state.selectedSession?.id === session.id;
-        }
-        chat.patch({ treeDialog: undefined, commandDialog: undefined });
-        const context = { selectedMachine: chat.state.selectedMachine, selectedProject: chat.state.selectedProject, selectedWorkspace: chat.state.selectedWorkspace, workspaces: chat.state.workspaces };
-        const original = chat.state.selectedSession;
-        if (this.focused.current !== chat) await this.prepareChat(session, context);
-        else await this.selectSession(session, { context });
-        // A fork moves the daemon runtime to its new identity. The retained original Chat rejoins its untouched file.
-        if (original !== undefined && original.id !== session.id) await chat.sessions.selectSession(original, { updateUrl: false });
-        return this.app.selectedSession?.id === session.id;
+      {
+        windowSizes: this.transcriptWindowSizes,
+        draftStorage: () => this.windows.draftStorage,
+        claimSession: (session, patch, focus) =>
+          this.claimChat(
+            session,
+            { selectedMachine: chat.state.selectedMachine, selectedWorkspace: chat.state.selectedWorkspace, ...patch },
+            focus !== false && this.focused.current === chat,
+          ),
+        replacePromptEditorText: (replacement) => this.replacePromptEditorText(replacement),
+        onSelectedSessionReady: () => {
+          if (this.focused.current === chat) {
+            this.desktopNotifications.activate(this.app);
+            void this.loadCurrentWorkstream();
+          }
+        },
+        onSessionError: (message, eventId) => {
+          if (this.focused.current === chat) this.desktopNotifications.sessionError(chat.state, message, eventId);
+        },
+        navigateToSession: async (session, options) => {
+          if (session === undefined) {
+            if (this.focused.current === chat) this.goHome();
+            return true;
+          }
+          if (options?.creationHandoff === true) {
+            // Creation resolves inside its own runtime even while another Chat or the chooser owns window focus.
+            await chat.sessions.selectSession(session, { updateUrl: false });
+            return chat.state.selectedSession?.id === session.id;
+          }
+          chat.patch({ treeDialog: undefined, commandDialog: undefined });
+          const context = {
+            selectedMachine: chat.state.selectedMachine,
+            selectedProject: chat.state.selectedProject,
+            selectedWorkspace: chat.state.selectedWorkspace,
+            workspaces: chat.state.workspaces,
+          };
+          const original = chat.state.selectedSession;
+          if (this.focused.current !== chat) await this.prepareChat(session, context);
+          else await this.selectSession(session, { context });
+          // A fork moves the daemon runtime to its new identity. The retained original Chat rejoins its untouched file.
+          if (original !== undefined && original.id !== session.id) await chat.sessions.selectSession(original, { updateUrl: false });
+          return this.app.selectedSession?.id === session.id;
+        },
       },
-    }, (options) => { if (this.focused.current === chat) this.updateUrl(options); });
+      (options) => {
+        if (this.focused.current === chat) this.updateUrl(options);
+      },
+    );
     this.chats.add(chat);
     return chat;
   }
@@ -426,7 +594,10 @@ export class WorkbenchApp extends LitElement {
   private focusRuntime(chat: WorkbenchChatSession, refocus = false, refreshCatalog = refocus): void {
     // Its next stream update must merge into the window's current aggregates, not its old background snapshot.
     chat.patch({ sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities }, false);
-    const catalog = refreshCatalog && selectedMachineId(this.app) === selectedMachineId(chat.state) && this.app.selectedWorkspace?.id === chat.state.selectedWorkspace?.id ? this.app.sessions : chat.state.sessions;
+    const catalog =
+      refreshCatalog && selectedMachineId(this.app) === selectedMachineId(chat.state) && this.app.selectedWorkspace?.id === chat.state.selectedWorkspace?.id
+        ? this.app.sessions
+        : chat.state.sessions;
     this.windowError = "";
     this.focused.focus(chat);
     // A retained Chat may have missed or queued frames while off screen: catch it up from one snapshot.
@@ -436,11 +607,16 @@ export class WorkbenchApp extends LitElement {
     this.desktopNotifications.activate(this.app);
     void this.loadCurrentWorkstream();
     const { selectedSession: session, selectedWorkspace: workspace } = this.app;
-    if (refreshCatalog && session !== undefined && workspace !== undefined && !isCreatingSessionId(session.id)) void this.loadCatalogBehind(session.id, workspace, selectedMachineId(this.app), this.loadSequence);
+    if (refreshCatalog && session !== undefined && workspace !== undefined && !isCreatingSessionId(session.id))
+      void this.loadCatalogBehind(session.id, workspace, selectedMachineId(this.app), this.loadSequence);
   }
 
   private runtimeFor(sessionId: string, machineId: string): WorkbenchChatSession | undefined {
-    return [...this.chats].find((chat) => selectedMachineId(chat.state) === machineId && (chat.state.selectedSession?.id === sessionId || chat.sessions.pendingSession(sessionId, undefined, true) !== undefined));
+    return [...this.chats].find(
+      (chat) =>
+        selectedMachineId(chat.state) === machineId
+        && (chat.state.selectedSession?.id === sessionId || chat.sessions.pendingSession(sessionId, undefined, true) !== undefined),
+    );
   }
 
   private pendingSession(sessionId: string, startupToken?: string, includeCompleting = false): SessionInfo | undefined {
@@ -453,7 +629,9 @@ export class WorkbenchApp extends LitElement {
 
   private async replacePromptEditorText(replacement: PromptEditorTextReplacement): Promise<void> {
     await this.updateComplete;
-    const pane = [...this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? []].find((candidate) => candidate.app?.selectedSession?.id === replacement.sessionId && selectedMachineId(candidate.app) === replacement.machineId);
+    const pane = [...(this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? [])].find(
+      (candidate) => candidate.app?.selectedSession?.id === replacement.sessionId && selectedMachineId(candidate.app) === replacement.machineId,
+    );
     await pane?.replacePromptEditorText(replacement);
   }
 
@@ -461,37 +639,86 @@ export class WorkbenchApp extends LitElement {
   private clearActiveSession(): void {
     this.focused.clear();
     const empty = initialAppState();
-    this.setApp({ selectedSession: undefined, messages: [], status: undefined, activity: undefined, pendingAsks: [], pendingDialogs: [], closedDialogs: [], availableThinkingLevels: [], treeDialog: undefined, selectedNotificationInbox: undefined, commandDialog: undefined, authDialog: undefined, messagePageStart: empty.messagePageStart, messagePageEnd: empty.messagePageEnd, messagePageTotal: empty.messagePageTotal }, false);
+    this.setApp(
+      {
+        selectedSession: undefined,
+        messages: [],
+        status: undefined,
+        activity: undefined,
+        pendingAsks: [],
+        pendingDialogs: [],
+        closedDialogs: [],
+        availableThinkingLevels: [],
+        treeDialog: undefined,
+        selectedNotificationInbox: undefined,
+        commandDialog: undefined,
+        authDialog: undefined,
+        messagePageStart: empty.messagePageStart,
+        messagePageEnd: empty.messagePageEnd,
+        messagePageTotal: empty.messagePageTotal,
+      },
+      false,
+    );
   }
 
   private async prepareChat(session: SessionInfo, context: Partial<AppState>): Promise<WorkbenchChatSession> {
     const machineId = context.selectedMachine?.id ?? selectedMachineId(this.app);
     const existing = this.runtimeFor(session.id, machineId);
-    if (existing !== undefined) { await existing.loading; return existing; }
-    const chat = this.createChatSession({ ...initialAppState(), machines: this.app.machines, projects: this.app.projects, sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities, selectedMachine: this.app.machines.find((machine) => machine.id === machineId), ...context });
+    if (existing !== undefined) {
+      await existing.loading;
+      return existing;
+    }
+    const chat = this.createChatSession({
+      ...initialAppState(),
+      machines: this.app.machines,
+      projects: this.app.projects,
+      sessionStatuses: this.app.sessionStatuses,
+      sessionActivities: this.app.sessionActivities,
+      selectedMachine: this.app.machines.find((machine) => machine.id === machineId),
+      ...context,
+    });
     await chat.prepare(session);
-    if (!this.windows.holds(machineId, session.id) && !chat.pending) { chat.dispose(); this.chats.delete(chat); }
+    if (!this.windows.holds(machineId, session.id) && !chat.pending) {
+      chat.dispose();
+      this.chats.delete(chat);
+    }
     this.releaseOffPageChats();
     return chat;
   }
 
   private async prepareWindowChat(chat: WindowChat): Promise<WorkbenchChatSession> {
     const existing = this.runtimeFor(chat.sessionId, chat.machineId);
-    if (existing !== undefined) { await existing.loading; return existing; }
+    if (existing !== undefined) {
+      await existing.loading;
+      return existing;
+    }
     const { project, projects, workspace, workspaces } = await this.windowChatWorkspace(chat);
-    const session = this.pendingSession(chat.sessionId, chat.startupToken) ?? await this.knownSession(chat.sessionId, workspace.path, chat.machineId);
+    const session = this.pendingSession(chat.sessionId, chat.startupToken) ?? (await this.knownSession(chat.sessionId, workspace.path, chat.machineId));
     if (session === undefined) throw new Error("This Chat is no longer available.");
-    return this.prepareChat(session, { projects, selectedMachine: this.app.machines.find((machine) => machine.id === chat.machineId), selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [session] });
+    return this.prepareChat(session, {
+      projects,
+      selectedMachine: this.app.machines.find((machine) => machine.id === chat.machineId),
+      selectedProject: project,
+      selectedWorkspace: workspace,
+      workspaces,
+      sessions: [session],
+    });
   }
 
   private async preparePage(focused: string): Promise<void> {
     const window = this.windows.window;
     if (window === undefined) return;
-    await Promise.all(gridTiles({ ...window, focused }).map(async ({ chat }) => {
-      const key = machineSessionKey(chat.machineId, chat.sessionId);
-      try { await this.prepareWindowChat(chat); this.chatLoadErrors.delete(key); }
-      catch (error) { if (this.windows.holds(chat.machineId, chat.sessionId)) this.chatLoadErrors.set(key, error instanceof Error ? error.message : String(error)); }
-    }));
+    await Promise.all(
+      gridTiles({ ...window, focused }).map(async ({ chat }) => {
+        const key = machineSessionKey(chat.machineId, chat.sessionId);
+        try {
+          await this.prepareWindowChat(chat);
+          this.chatLoadErrors.delete(key);
+        } catch (error) {
+          if (this.windows.holds(chat.machineId, chat.sessionId)) this.chatLoadErrors.set(key, error instanceof Error ? error.message : String(error));
+        }
+      }),
+    );
     this.requestUpdate();
   }
 
@@ -502,9 +729,15 @@ export class WorkbenchApp extends LitElement {
     const selection = { sessionId: session.id, generation };
     this.selectingChat = selection;
     try {
-      if (!await this.claimChat(session, context, false) || generation !== this.loadSequence) return;
+      if (!(await this.claimChat(session, context, false)) || generation !== this.loadSequence) return;
       const warm = this.runtimeFor(session.id, context.selectedMachine?.id ?? selectedMachineId(this.app)) !== undefined;
-      const runtime = await this.prepareChat(session, { selectedProject: this.app.selectedProject, selectedWorkspace: this.app.selectedWorkspace, workspaces: this.app.workspaces, sessions: this.app.sessions, ...context });
+      const runtime = await this.prepareChat(session, {
+        selectedProject: this.app.selectedProject,
+        selectedWorkspace: this.app.selectedWorkspace,
+        workspaces: this.app.workspaces,
+        sessions: this.app.sessions,
+        ...context,
+      });
       const window = this.windows.window;
       if (window?.layout === "grid") await this.preparePage(session.id);
       if (generation !== this.loadSequence) return;
@@ -516,12 +749,20 @@ export class WorkbenchApp extends LitElement {
       if (options?.updateUrl !== false) this.updateUrl();
       await this.updateComplete;
       this.releaseOffPageChats();
-    } finally { if (this.selectingChat === selection) this.selectingChat = undefined; }
+    } finally {
+      if (this.selectingChat === selection) this.selectingChat = undefined;
+    }
   }
 
   private releaseOffPageChats(): void {
     const window = this.windows.window;
-    const kept = new Set(window === undefined ? [] : [this.app.selectedSession?.id ?? window.focused, this.selectingChat?.sessionId].flatMap((focused) => focused === undefined ? [] : gridTiles({ ...window, focused }).map((tile) => tile.chat.sessionId)));
+    const kept = new Set(
+      window === undefined
+        ? []
+        : [this.app.selectedSession?.id ?? window.focused, this.selectingChat?.sessionId].flatMap((focused) =>
+            focused === undefined ? [] : gridTiles({ ...window, focused }).map((tile) => tile.chat.sessionId),
+          ),
+    );
     for (const chat of this.chats) {
       if (chat === this.focused.current || chat === this.launcher || chat.pending || kept.has(chat.state.selectedSession?.id ?? "")) continue;
       chat.dispose();
@@ -531,10 +772,24 @@ export class WorkbenchApp extends LitElement {
 
   private async startSessionWithOptions(options?: { startupToken?: string; propagateError?: boolean; runtime?: "durable" }): Promise<SessionInfo | undefined> {
     const generation = this.beginNavigation();
-    const chat = this.createChatSession({ ...initialAppState(), machines: this.app.machines, projects: this.app.projects, sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities, selectedMachine: this.app.selectedMachine, selectedProject: this.app.selectedProject, selectedWorkspace: this.app.selectedWorkspace, workspaces: this.app.workspaces, sessions: this.app.sessions });
+    const chat = this.createChatSession({
+      ...initialAppState(),
+      machines: this.app.machines,
+      projects: this.app.projects,
+      sessionStatuses: this.app.sessionStatuses,
+      sessionActivities: this.app.sessionActivities,
+      selectedMachine: this.app.selectedMachine,
+      selectedProject: this.app.selectedProject,
+      selectedWorkspace: this.app.selectedWorkspace,
+      workspaces: this.app.workspaces,
+      sessions: this.app.sessions,
+    });
     this.focused.focus(chat);
     const session = await chat.start(options);
-    if (this.focused.current === chat && generation === this.loadSequence) { this.focusRuntime(chat); this.updateUrl(); }
+    if (this.focused.current === chat && generation === this.loadSequence) {
+      this.focusRuntime(chat);
+      this.updateUrl();
+    }
     await this.updateComplete;
     this.releaseOffPageChats();
     return session;
@@ -564,14 +819,28 @@ export class WorkbenchApp extends LitElement {
     if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "t" && !event.altKey && !event.shiftKey) {
       event.preventDefault();
       this.goHome();
-    } else if (event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "p" && !event.altKey && !event.shiftKey && this.app.selectedSession !== undefined
+    } else if (
+      event.metaKey
+      && !event.ctrlKey
+      && event.key.toLowerCase() === "p"
+      && !event.altKey
+      && !event.shiftKey
+      && this.app.selectedSession !== undefined
       && this.app.selectedWorkspace !== undefined
-      && !hasRenderedModal(this.ownerDocument)) {
+      && !hasRenderedModal(this.ownerDocument)
+    ) {
       event.preventDefault();
       this.openFileSearch();
-    } else if (event.key === "+" || event.key === "=") { event.preventDefault(); this.stepScale(1); }
-    else if (event.key === "-") { event.preventDefault(); this.stepScale(-1); }
-    else if (event.key === "0") { event.preventDefault(); this.setScale(DEFAULT_INTERFACE_SCALE); }
+    } else if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      this.stepScale(1);
+    } else if (event.key === "-") {
+      event.preventDefault();
+      this.stepScale(-1);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      this.setScale(DEFAULT_INTERFACE_SCALE);
+    }
   };
 
   /** ⌃G switches Grid and Tabs; ⌃↩ outside a text field toggles the focused tile's full size. */
@@ -582,7 +851,11 @@ export class WorkbenchApp extends LitElement {
       this.toggleWindowLayout();
       return true;
     }
-    const typing = event.composedPath().some((target) => target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement));
+    const typing = event
+      .composedPath()
+      .some(
+        (target) => target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement),
+      );
     if (event.key !== "Enter" || window.layout !== "grid" || typing || this.app.selectedSession === undefined) return false;
     void this.updateWindow(toggleMaximized);
     return true;
@@ -633,7 +906,8 @@ export class WorkbenchApp extends LitElement {
     const anchor = takeMessageAnchor();
     const route = readRoute();
     const revealed = anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) && route.sessionId !== undefined ? anchor : undefined;
-    if (revealed !== undefined && route.sessionId !== undefined) this.revealTarget = { machineId: route.machineId ?? "local", sessionId: route.sessionId, anchor: revealed };
+    if (revealed !== undefined && route.sessionId !== undefined)
+      this.revealTarget = { machineId: route.machineId ?? "local", sessionId: route.sessionId, anchor: revealed };
     void this.startWindow(route);
   }
 
@@ -660,7 +934,9 @@ export class WorkbenchApp extends LitElement {
   // gateway Mermaid renderer for Chat fences; widen the allowlist when another renderer plugin ships.
   private async loadContentRenderers(): Promise<void> {
     try {
-      const { registrations } = await loadExternalPlugins("pi-web-plugins/manifest.json", { shouldLoadPlugin: (entry) => entry.id === "mermaid" && !entry.machineSpecific });
+      const { registrations } = await loadExternalPlugins("pi-web-plugins/manifest.json", {
+        shouldLoadPlugin: (entry) => entry.id === "mermaid" && !entry.machineSpecific,
+      });
       if (registrations.length === 0) return;
       await this.plugins.registerBatch(registrations);
       // A new reference re-renders already displayed Chat messages.
@@ -723,23 +999,40 @@ export class WorkbenchApp extends LitElement {
   private trackWindowChats(previous: AppState): void {
     const session = this.app.selectedSession;
     for (const chat of this.windows.window?.chats ?? []) {
-      if (chat.sessionId !== session?.id && previous.sessionStatuses[chat.sessionId]?.isStreaming === true && this.app.sessionStatuses[chat.sessionId]?.isStreaming !== true) this.unreadChats.add(chat.sessionId);
+      if (
+        chat.sessionId !== session?.id
+        && previous.sessionStatuses[chat.sessionId]?.isStreaming === true
+        && this.app.sessionStatuses[chat.sessionId]?.isStreaming !== true
+      )
+        this.unreadChats.add(chat.sessionId);
     }
     if (session === undefined || isCreatingSessionId(session.id)) return;
     this.unreadChats.delete(session.id);
     const title = sessionTitle(session);
     // Every newly selected Chat was claimed before it showed; only a changed session row can change its title.
     const row = this.windows.window?.chats.find((chat) => chat.sessionId === session.id);
-    if (previous.selectedSession !== session && previous.selectedSession?.id === session.id && row !== undefined && (row.title !== title || row.shortName !== session.shortName)) void this.updateWindow((store, id) => updateChat(store, id, session.id, { title, shortName: session.shortName }));
+    if (
+      previous.selectedSession !== session
+      && previous.selectedSession?.id === session.id
+      && row !== undefined
+      && (row.title !== title || row.shortName !== session.shortName)
+    )
+      void this.updateWindow((store, id) => updateChat(store, id, session.id, { title, shortName: session.shortName }));
   }
 
   /** Resolves to whether the store took a change; false when nothing changed or it could not be stored. */
   private updateWindow(change: (store: WindowStore, windowId: string) => WindowStore): Promise<boolean> {
-    return this.windows.update(change).then((changed) => { if (changed) this.requestUpdate(); return changed; }, (error: unknown) => {
-      // An unstored move keeps the Chats here: the window shows what the store still holds.
-      this.setApp({ error: error instanceof Error ? error.message : String(error) });
-      return false;
-    });
+    return this.windows.update(change).then(
+      (changed) => {
+        if (changed) this.requestUpdate();
+        return changed;
+      },
+      (error: unknown) => {
+        // An unstored move keeps the Chats here: the window shows what the store still holds.
+        this.setApp({ error: error instanceof Error ? error.message : String(error) });
+        return false;
+      },
+    );
   }
 
   /** Another window holds the Chat on screen: retire it at once. Chats moved here: show what this window now focuses. */
@@ -747,9 +1040,19 @@ export class WorkbenchApp extends LitElement {
     this.requestUpdate();
     const window = this.windows.window;
     const selected = this.app.selectedSession?.id;
-    if (window === undefined || selected === undefined || isCreatingSessionId(selected) || window.focused === selected || window.focused === this.selectingChat?.sessionId) return;
+    if (
+      window === undefined
+      || selected === undefined
+      || isCreatingSessionId(selected)
+      || window.focused === selected
+      || window.focused === this.selectingChat?.sessionId
+    )
+      return;
     const lost = Object.entries(this.windows.store).some(([id, other]) => id !== this.windows.id && other.chats.some((chat) => chat.sessionId === selected));
-    if (lost) { this.retireSelected(window.focused); this.releaseOffPageChats(); }
+    if (lost) {
+      this.retireSelected(window.focused);
+      this.releaseOffPageChats();
+    }
     this.showNext();
   }
 
@@ -759,15 +1062,18 @@ export class WorkbenchApp extends LitElement {
     this.beginNavigation();
     const row = this.windows.window?.chats.find((chat) => chat.sessionId === next);
     const runtime = row === undefined ? undefined : this.runtimeFor(row.sessionId, row.machineId);
-    if (runtime?.ready === true && !this.retiringChats.has(row?.sessionId ?? "")) { this.focusRuntime(runtime, true); this.updateUrl(); }
-    else this.clearActiveSession();
+    if (runtime?.ready === true && !this.retiringChats.has(row?.sessionId ?? "")) {
+      this.focusRuntime(runtime, true);
+      this.updateUrl();
+    } else this.clearActiveSession();
   }
 
   /** Shows the Chat this window focuses, or its home once nothing is on screen. */
   private showNext(): void {
     const next = this.windows.window?.focused;
-    if (next === undefined) { if (this.app.selectedSession === undefined) this.updateUrl(); }
-    else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next);
+    if (next === undefined) {
+      if (this.app.selectedSession === undefined) this.updateUrl();
+    } else if (next !== this.app.selectedSession?.id) void this.showWindowChat(next);
   }
 
   private filesPaneCanClose(): boolean {
@@ -782,7 +1088,8 @@ export class WorkbenchApp extends LitElement {
     if (ready?.ready === true) {
       const generation = this.beginNavigation();
       this.selectingChat = { sessionId, generation };
-      if (this.windows.window?.layout === "grid" && !gridTiles(this.windows.window).some((tile) => tile.chat.sessionId === sessionId)) await this.preparePage(sessionId);
+      if (this.windows.window?.layout === "grid" && !gridTiles(this.windows.window).some((tile) => tile.chat.sessionId === sessionId))
+        await this.preparePage(sessionId);
       if (generation !== this.loadSequence || !this.windows.holds(chat.machineId, sessionId)) return;
       this.focusRuntime(ready, true);
       this.selectingChat = undefined;
@@ -802,21 +1109,36 @@ export class WorkbenchApp extends LitElement {
     const isCurrent = () => sequence === this.loadSequence && selectedMachineId(this.app) === machineId;
     try {
       const { project, workspace, workspaces } = await this.windowChatWorkspace(chat);
-      const session = isCurrent() ? this.pendingSession(sessionId, chat.startupToken) ?? await this.knownSession(sessionId, workspace.path, machineId, isCurrent) : undefined;
+      const session = isCurrent()
+        ? (this.pendingSession(sessionId, chat.startupToken) ?? (await this.knownSession(sessionId, workspace.path, machineId, isCurrent)))
+        : undefined;
       if (!isCurrent()) return;
       if (session === undefined) throw new Error("This Chat is no longer available.");
-      await this.selectSession(session, this.inWorkspace(session, sequence, { selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session], error: "" }));
+      await this.selectSession(
+        session,
+        this.inWorkspace(session, sequence, {
+          selectedProject: project,
+          workspaces,
+          selectedWorkspace: workspace,
+          sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session],
+          error: "",
+        }),
+      );
     } catch (error) {
       if (isCurrent()) this.setApp({ error: error instanceof Error ? error.message : String(error) });
     }
   }
 
   /** The registered workspace a window Chat was opened in while its project still lists it, else the Chat's folder. */
-  private readonly windowChatWorkspace = async (chat: WindowChat): Promise<{ project: Project | undefined; projects: Project[]; workspace: Workspace; workspaces: Workspace[] }> => {
+  private readonly windowChatWorkspace = async (
+    chat: WindowChat,
+  ): Promise<{ project: Project | undefined; projects: Project[]; workspace: Workspace; workspaces: Workspace[] }> => {
     const projects = chat.machineId === selectedMachineId(this.app) ? this.app.projects : await api.projects(chat.machineId);
     const project = projects.find((candidate) => candidate.id === chat.projectId);
     if (project !== undefined && chat.workspaceId !== undefined) {
-      const loaded = chat.machineId === selectedMachineId(this.app) && this.app.workspaces.some((candidate) => candidate.id === chat.workspaceId && candidate.projectId === project.id);
+      const loaded =
+        chat.machineId === selectedMachineId(this.app)
+        && this.app.workspaces.some((candidate) => candidate.id === chat.workspaceId && candidate.projectId === project.id);
       const workspaces = loaded ? this.app.workspaces : await api.workspaces(project.id, chat.machineId).catch((): Workspace[] => []);
       const workspace = workspaces.find((candidate) => candidate.id === chat.workspaceId);
       if (workspace !== undefined) return { project, projects, workspace, workspaces };
@@ -839,10 +1161,14 @@ export class WorkbenchApp extends LitElement {
     // A close still asking or ending finishes first: a late answer must not override a later decision.
     if (sessionIds.some((id) => this.closingChats.has(id))) return Promise.resolve(false);
     for (const id of sessionIds) this.closingChats.add(id);
-    return this.closeAndEnd(sessionIds).catch((error: unknown) => {
-      this.setApp({ error: error instanceof Error ? error.message : String(error) });
-      return true;
-    }).finally(() => { for (const id of sessionIds) this.closingChats.delete(id); });
+    return this.closeAndEnd(sessionIds)
+      .catch((error: unknown) => {
+        this.setApp({ error: error instanceof Error ? error.message : String(error) });
+        return true;
+      })
+      .finally(() => {
+        for (const id of sessionIds) this.closingChats.delete(id);
+      });
   }
 
   private async closeAndEnd(sessionIds: readonly string[]): Promise<boolean> {
@@ -860,7 +1186,10 @@ export class WorkbenchApp extends LitElement {
         return work === undefined ? [] : [{ id: end.session.id, work }];
       });
     } catch (error) {
-      throw new Error(`Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+      throw new Error(
+        `Could not check what runs in the Chat, so it stays open; close it again to retry. ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
     }
     // The warning names each busy Chat and its work; only those it named are confirmed, so others still refuse when busy.
     if (busy.length > 0 && !window.confirm(busy.map(({ id, work }) => `"${title(id)}": ${work}`).join("\n"))) return false;
@@ -874,18 +1203,22 @@ export class WorkbenchApp extends LitElement {
     });
     if (stored !== true) return false;
     try {
-      await Promise.all(ending.map(async ({ session, machineId }) => {
-        const stop = (yes: boolean) => withDeadline(api.stopIfUnwatched(session, yes, machineId), STOP_DEADLINE_MS);
-        let reply = await stop(confirmed.has(session.id));
-        // This tab's socket may reach the server after its 2 s wait; still watched with no other window listing it, ask once more.
-        // Still watched after that: another browser shows the Chat, so its host keeps running.
-        if (!reply.stopped && reply.watched === true && !this.shownInOtherLiveWindow(this.windows.store, session.id)) {
-          await new Promise((resolve) => { setTimeout(resolve, WATCHED_RETRY_MS); });
-          reply = await stop(confirmed.has(session.id));
-        }
-        // Work started since the check: asked again, Cancel leaves the Chat running (reopening it shows it).
-        if (!reply.stopped && reply.busy !== undefined && window.confirm(`"${title(session.id)}": ${reply.busy}`)) await stop(true);
-      }));
+      await Promise.all(
+        ending.map(async ({ session, machineId }) => {
+          const stop = (yes: boolean) => withDeadline(api.stopIfUnwatched(session, yes, machineId), STOP_DEADLINE_MS);
+          let reply = await stop(confirmed.has(session.id));
+          // This tab's socket may reach the server after its 2 s wait; still watched with no other window listing it, ask once more.
+          // Still watched after that: another browser shows the Chat, so its host keeps running.
+          if (!reply.stopped && reply.watched === true && !this.shownInOtherLiveWindow(this.windows.store, session.id)) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, WATCHED_RETRY_MS);
+            });
+            reply = await stop(confirmed.has(session.id));
+          }
+          // Work started since the check: asked again, Cancel leaves the Chat running (reopening it shows it).
+          if (!reply.stopped && reply.busy !== undefined && window.confirm(`"${title(session.id)}": ${reply.busy}`)) await stop(true);
+        }),
+      );
     } catch (error) {
       throw new Error(`Could not end the closed Chat: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
@@ -893,7 +1226,9 @@ export class WorkbenchApp extends LitElement {
   }
 
   private shownInOtherLiveWindow(store: WindowStore, sessionId: string): boolean {
-    return Object.entries(store).some(([id, other]) => id !== this.windows.id && this.windows.isAlive(id) && other.chats.some((chat) => chat.sessionId === sessionId));
+    return Object.entries(store).some(
+      ([id, other]) => id !== this.windows.id && this.windows.isAlive(id) && other.chats.some((chat) => chat.sessionId === sessionId),
+    );
   }
 
   /**
@@ -903,7 +1238,8 @@ export class WorkbenchApp extends LitElement {
   private async durableChat(chat: WindowChat): Promise<DurableChatEnd | null> {
     // A reservation stays until creation finishes, which removing it reports.
     if (isCreatingSessionId(chat.sessionId)) return null;
-    let session = this.runtimeFor(chat.sessionId, chat.machineId)?.state.selectedSession
+    let session =
+      this.runtimeFor(chat.sessionId, chat.machineId)?.state.selectedSession
       ?? (chat.machineId === selectedMachineId(this.app) ? this.app.sessions.find((row) => row.id === chat.sessionId) : undefined);
     if (session === undefined) {
       try {
@@ -923,7 +1259,12 @@ export class WorkbenchApp extends LitElement {
    * menu's entry or the window that asked, which beats as it asks) that has closed or been dropped by the time the move
    * is stored (`listed`); a new window is not stored yet.
    */
-  private moveWindowChats(sessionIds: readonly string[], targetWindowId: string, expires = Number.POSITIVE_INFINITY, listed = false): Promise<boolean> | undefined {
+  private moveWindowChats(
+    sessionIds: readonly string[],
+    targetWindowId: string,
+    expires = Number.POSITIVE_INFINITY,
+    listed = false,
+  ): Promise<boolean> | undefined {
     if (!this.windows.shared || !this.canMoveWindowChats(sessionIds)) return undefined;
     let closedTarget = false;
     return this.removeWindowChats(sessionIds, (store, id) => {
@@ -979,33 +1320,42 @@ export class WorkbenchApp extends LitElement {
     const leaving = selected !== undefined && sessionIds.includes(selected) ? selected : undefined;
     if (leaving !== undefined && !this.filesPaneCanClose()) return undefined;
     const closing = this.windows.window?.chats.filter((row) => sessionIds.includes(row.sessionId)) ?? [];
-    const drafts = [...this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? []].flatMap((pane) => {
+    const drafts = [...(this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? [])].flatMap((pane) => {
       const state = pane.app;
       const sessionId = state?.selectedSession?.id;
       const text = pane.promptEditor?.view?.state.doc.toString();
-      return state === undefined || sessionId === undefined || text === undefined || !sessionIds.includes(sessionId) ? [] : [{ machineId: selectedMachineId(state), sessionId, text }];
+      return state === undefined || sessionId === undefined || text === undefined || !sessionIds.includes(sessionId)
+        ? []
+        : [{ machineId: selectedMachineId(state), sessionId, text }];
     });
     for (const id of sessionIds) this.retiringChats.add(id);
     if (leaving !== undefined) this.retireSelected(change(this.windows.store, this.windows.id)[this.windows.id]?.focused);
     this.requestUpdate();
-    return this.updateComplete.then(() => this.updateWindow(change)).then(async (stored) => {
-      for (const id of sessionIds) this.retiringChats.delete(id);
-      this.requestUpdate();
-      const retained = this.windows.window?.chats ?? [];
-      if (stored) for (const row of closing) this.transcriptWindowSizes.delete(machineSessionKey(row.machineId, row.sessionId));
-      for (const chat of this.chats) if (sessionIds.includes(chat.state.selectedSession?.id ?? "") && !retained.some((row) => row.sessionId === chat.state.selectedSession?.id)) {
-        chat.dispose(); this.chats.delete(chat);
-      }
-      if (leaving !== undefined) {
-        if (!retained.some((chat) => chat.sessionId === leaving)) { this.showNext(); return stored; }
-        const { error } = this.app;
-        await this.showWindowChat(leaving);
-        this.setApp({ error });
-      }
-      await this.updateComplete;
-      for (const draft of drafts) await this.replacePromptEditorText(draft);
-      return stored;
-    });
+    return this.updateComplete
+      .then(() => this.updateWindow(change))
+      .then(async (stored) => {
+        for (const id of sessionIds) this.retiringChats.delete(id);
+        this.requestUpdate();
+        const retained = this.windows.window?.chats ?? [];
+        if (stored) for (const row of closing) this.transcriptWindowSizes.delete(machineSessionKey(row.machineId, row.sessionId));
+        for (const chat of this.chats)
+          if (sessionIds.includes(chat.state.selectedSession?.id ?? "") && !retained.some((row) => row.sessionId === chat.state.selectedSession?.id)) {
+            chat.dispose();
+            this.chats.delete(chat);
+          }
+        if (leaving !== undefined) {
+          if (!retained.some((chat) => chat.sessionId === leaving)) {
+            this.showNext();
+            return stored;
+          }
+          const { error } = this.app;
+          await this.showWindowChat(leaving);
+          this.setApp({ error });
+        }
+        await this.updateComplete;
+        for (const draft of drafts) await this.replacePromptEditorText(draft);
+        return stored;
+      });
   }
 
   /** Opens a new window (a native window in the macOS app) on the moved Chats; it restores like any other. */
@@ -1016,7 +1366,10 @@ export class WorkbenchApp extends LitElement {
     if (this.moveWindowChats(sessionIds, target) === undefined) return;
     const params = new URLSearchParams({ [WINDOW_URL_PARAM]: target });
     if (first.machineId !== "local") params.set("machine", first.machineId);
-    if (first.projectId !== undefined && first.workspaceId !== undefined) { params.set("project", first.projectId); params.set("workspace", first.workspaceId); }
+    if (first.projectId !== undefined && first.workspaceId !== undefined) {
+      params.set("project", first.projectId);
+      params.set("workspace", first.workspaceId);
+    }
     params.set("session", first.sessionId);
     params.set("view", "chat");
     window.open(resolveAppUrl(`?${params.toString()}`), "_blank");
@@ -1024,7 +1377,7 @@ export class WorkbenchApp extends LitElement {
 
   /** Chats dragged here from another window's tabs or tiles: that window hands them over once its own guards allow. */
   private async takeDroppedChats({ windowId, sessionIds }: DraggedChats): Promise<void> {
-    if (windowId === this.windows.id || !this.windows.shared || !await this.windows.ask(windowId, { kind: "move", sessionIds }, MOVE_REPLY_MS)) return;
+    if (windowId === this.windows.id || !this.windows.shared || !(await this.windows.ask(windowId, { kind: "move", sessionIds }, MOVE_REPLY_MS))) return;
     // Re-reads the store the other window just wrote, whose storage event may still be on its way.
     await this.updateWindow((store) => store);
     const focused = this.windows.window?.focused;
@@ -1037,7 +1390,8 @@ export class WorkbenchApp extends LitElement {
   };
 
   private readonly closeWindowMenu = (event: Event): void => {
-    if (this.windowMenu !== undefined && !event.composedPath().some((target) => target instanceof HTMLElement && target.classList.contains("window-menu"))) this.windowMenu = undefined;
+    if (this.windowMenu !== undefined && !event.composedPath().some((target) => target instanceof HTMLElement && target.classList.contains("window-menu")))
+      this.windowMenu = undefined;
   };
 
   /** Interface scale zooms the page, so pointer positions arrive scaled while the menu is placed in CSS pixels. */
@@ -1056,12 +1410,32 @@ export class WorkbenchApp extends LitElement {
     const sizing = single !== undefined && single === this.app.selectedSession?.id && window?.layout === "grid" && window.chats.length > 1;
     return html`
       <div class="window-menu" role="menu" aria-label=${menu.label} style=${styleMap({ left: `${String(menu.left)}px`, top: `${String(menu.top)}px` })}>
-        ${shared ? html`<button role="menuitem" @click=${() => { this.moveToNewWindow(menu.sessionIds); }}>Move to new window</button>` : nothing}
-        ${others.map(([id, other]) => html`<button role="menuitem" @click=${() => { void this.moveWindowChats(menu.sessionIds, id, undefined, true); }}>Move to ${windowChatSummary(other)}</button>`)}
+        ${
+          shared
+            ? html`<button role="menuitem" @click=${() => {
+                this.moveToNewWindow(menu.sessionIds);
+              }}>Move to new window</button>`
+            : nothing
+        }
+        ${others.map(
+          ([id, other]) =>
+            html`<button role="menuitem" @click=${() => {
+              void this.moveWindowChats(menu.sessionIds, id, undefined, true);
+            }}>Move to ${windowChatSummary(other)}</button>`,
+        )}
         ${shared ? html`<hr>` : nothing}
-        ${sizing ? html`<button role="menuitem" @click=${() => { this.windowMenu = undefined; void this.updateWindow(toggleMaximized); }}>${window.maximized ? "Restore grid" : "Full size"}</button>` : nothing}
+        ${
+          sizing
+            ? html`<button role="menuitem" @click=${() => {
+                this.windowMenu = undefined;
+                void this.updateWindow(toggleMaximized);
+              }}>${window.maximized ? "Restore grid" : "Full size"}</button>`
+            : nothing
+        }
         ${this.renderAttentionMenu(menu.sessionIds)}
-        <button role="menuitem" @click=${() => { void this.closeWindowChats(menu.sessionIds); }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
+        <button role="menuitem" @click=${() => {
+          void this.closeWindowChats(menu.sessionIds);
+        }}>${single === undefined ? `Close ${String(menu.sessionIds.length)} Chats` : "Close"}</button>
       </div>
     `;
   }
@@ -1073,7 +1447,13 @@ export class WorkbenchApp extends LitElement {
     if (known.length === 0) return nothing;
     return html`
       <div class="menu-label">Attention</div>
-      ${WORKING_MODE_AXES.attention.map((value) => html`<button role="menuitemradio" aria-checked=${String(known.every((id) => attention[id] === value))} @click=${() => { this.windowMenu = undefined; void this.setChatAttention(known, value); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon("attention", value)}</svg>${value}</button>`)}
+      ${WORKING_MODE_AXES.attention.map(
+        (value) =>
+          html`<button role="menuitemradio" aria-checked=${String(known.every((id) => attention[id] === value))} @click=${() => {
+            this.windowMenu = undefined;
+            void this.setChatAttention(known, value);
+          }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon("attention", value)}</svg>${value}</button>`,
+      )}
       <hr>`;
   }
 
@@ -1103,30 +1483,36 @@ export class WorkbenchApp extends LitElement {
     const live = this.chatStatus(chat);
     const status = live?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
     const read = this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)];
-    const useRead = read?.workingMode !== undefined && (status === undefined || (live?.workingModeVersion !== undefined && (read.workingModeVersion ?? -1) > live.workingModeVersion));
+    const useRead =
+      read?.workingMode !== undefined
+      && (status === undefined || (live?.workingModeVersion !== undefined && (read.workingModeVersion ?? -1) > live.workingModeVersion));
     return { mode: parseWorkingModeSnapshot(useRead ? read.workingMode : status), version: useRead ? read.workingModeVersion : live?.workingModeVersion };
   }
 
   /** Each Chat's selected Attention, from its live status or the connect read; absent until the Chat reports one. */
   private chatAttention(): Record<string, string> {
-    return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      const value = this.chatWorkingMode(chat).mode?.selected.attention;
-      return value === undefined ? [] : [[chat.sessionId, value]];
-    }));
+    return Object.fromEntries(
+      (this.windows.window?.chats ?? []).flatMap((chat) => {
+        const value = this.chatWorkingMode(chat).mode?.selected.attention;
+        return value === undefined ? [] : [[chat.sessionId, value]];
+      }),
+    );
   }
 
   /** Chats whose selected Alignment asks for an agreement not yet reached (or reset), from their live status or the connect read. */
   private chatUnaligned(): Record<string, boolean> {
-    return Object.fromEntries((this.windows.window?.chats ?? []).flatMap((chat) => {
-      if (chat.machineId !== selectedMachineId(this.app) && this.runtimeFor(chat.sessionId, chat.machineId)?.state.status === undefined) return [];
-      const { mode, version } = this.chatWorkingMode(chat);
-      return version === undefined || mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
-    }));
+    return Object.fromEntries(
+      (this.windows.window?.chats ?? []).flatMap((chat) => {
+        if (chat.machineId !== selectedMachineId(this.app) && this.runtimeFor(chat.sessionId, chat.machineId)?.state.status === undefined) return [];
+        const { mode, version } = this.chatWorkingMode(chat);
+        return version === undefined || mode === undefined || mode.selected.alignment === "Default" || mode.aligned ? [] : [[chat.sessionId, true]];
+      }),
+    );
   }
 
   /** The home: projects, Workstreams and All sessions, with this window's tabs still above it. */
   private goHome(discardConfirmed = false): void {
-    if (this.app.selectedSession === undefined || !discardConfirmed && !this.filesPaneCanClose()) return;
+    if (this.app.selectedSession === undefined || (!discardConfirmed && !this.filesPaneCanClose())) return;
     if (this.sidePane === "files") this.sidePane = undefined;
     this.beginNavigation();
     this.clearActiveSession();
@@ -1134,7 +1520,17 @@ export class WorkbenchApp extends LitElement {
   }
 
   private chatTabStatuses(): Record<string, ChatTabStatus> {
-    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, chatTabStatus(this.runtimeFor(chat.sessionId, chat.machineId)?.state.status ?? this.app.sessionStatuses[chat.sessionId] ?? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)], this.unreadChats.has(chat.sessionId))]));
+    return Object.fromEntries(
+      (this.windows.window?.chats ?? []).map((chat) => [
+        chat.sessionId,
+        chatTabStatus(
+          this.runtimeFor(chat.sessionId, chat.machineId)?.state.status
+            ?? this.app.sessionStatuses[chat.sessionId]
+            ?? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)],
+          this.unreadChats.has(chat.sessionId),
+        ),
+      ]),
+    );
   }
 
   /** The selected Chat's live open asks, and every other Chat's as its last status reported them, else as read when the window connected. */
@@ -1145,7 +1541,9 @@ export class WorkbenchApp extends LitElement {
       const status = this.app.sessionStatuses[chat.sessionId];
       return status === undefined ? this.restoredAsks[machineSessionKey(chat.machineId, chat.sessionId)]?.pendingAsks : status.pendingAsks;
     };
-    return Object.fromEntries((this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(asks(chat), machineSessionKey(chat.machineId, chat.sessionId))]));
+    return Object.fromEntries(
+      (this.windows.window?.chats ?? []).map((chat) => [chat.sessionId, openQuestionCount(asks(chat), machineSessionKey(chat.machineId, chat.sessionId))]),
+    );
   }
 
   /** The Chat's Workstream names its tab group once known; an unreachable Workstream service keeps the last name. */
@@ -1154,7 +1552,11 @@ export class WorkbenchApp extends LitElement {
     const session = this.app.selectedSession;
     if (!changed.has("currentWorkstream") || session === undefined || this.currentWorkstream === undefined || this.currentWorkstreamError !== "") return;
     const snapshot = this.currentWorkstream;
-    void this.updateWindow((store, id) => updateChat(store, id, session.id, { workstream: snapshot === null ? undefined : { id: snapshot.id, title: snapshot.title, shortTitle: snapshot.shortTitle ?? undefined } }));
+    void this.updateWindow((store, id) =>
+      updateChat(store, id, session.id, {
+        workstream: snapshot === null ? undefined : { id: snapshot.id, title: snapshot.title, shortTitle: snapshot.shortTitle ?? undefined },
+      }),
+    );
   }
 
   /**
@@ -1164,7 +1566,7 @@ export class WorkbenchApp extends LitElement {
    */
   private async load(route: ParsedAppRoute, options?: { reuseLoaded?: boolean; push?: boolean }): Promise<void> {
     const navigation = this.loadSequence;
-    if (route.sessionId !== undefined && await this.openedElsewhere(route.sessionId)) {
+    if (route.sessionId !== undefined && (await this.openedElsewhere(route.sessionId))) {
       if (navigation !== this.loadSequence) return;
       if (this.app.selectedMachine !== undefined) {
         if (options?.push !== true) this.updateUrl({ replace: true });
@@ -1172,9 +1574,10 @@ export class WorkbenchApp extends LitElement {
       }
       const window = this.windows.window;
       const own = window?.chats.find((chat) => chat.sessionId === window.focused);
-      route = own === undefined
-        ? { ...route, sessionId: undefined, tool: undefined, view: undefined }
-        : { machineId: own.machineId, projectId: own.projectId, workspaceId: own.workspaceId, sessionId: own.sessionId, tool: undefined, view: "chat" };
+      route =
+        own === undefined
+          ? { ...route, sessionId: undefined, tool: undefined, view: undefined }
+          : { machineId: own.machineId, projectId: own.projectId, workspaceId: own.workspaceId, sessionId: own.sessionId, tool: undefined, view: "chat" };
       writeRoute(route, { replace: true });
     } else if (options?.push === true) writeRoute(route);
     const ready = route.sessionId === undefined ? undefined : this.runtimeFor(route.sessionId, route.machineId ?? "local");
@@ -1194,7 +1597,8 @@ export class WorkbenchApp extends LitElement {
     const sequence = this.beginNavigation();
     const previous = this.app;
     const selectedWorkspace = this.app.selectedWorkspace;
-    const retainSelection = completeChatRoute(route)
+    const retainSelection =
+      completeChatRoute(route)
       && route.sessionId === this.app.selectedSession?.id
       && route.projectId === this.app.selectedProject?.id
       && route.workspaceId === selectedWorkspace?.id
@@ -1206,27 +1610,37 @@ export class WorkbenchApp extends LitElement {
       const reuse = options?.reuseLoaded === true && previous.selectedMachine?.id === (route.machineId ?? "local");
       const machines = reuse ? previous.machines : await api.machines();
       if (sequence !== this.loadSequence) return;
-      const machine = machines.find((candidate) => candidate.id === (route.machineId ?? "local"))
-        ?? machines.find((candidate) => candidate.id === "local")
-        ?? machines[0];
+      const machine =
+        machines.find((candidate) => candidate.id === (route.machineId ?? "local")) ?? machines.find((candidate) => candidate.id === "local") ?? machines[0];
       const keepSelection = retainSelection && machine?.id === selectedMachineId(this.app);
       if (retainSelection && !keepSelection) this.clearActiveSession();
       // A connected realtime socket keeps live Chat states current, so keep them instead of waiting for its reconnect snapshot.
       const keepRealtime = this.realtimeMachineId === (machine?.id ?? "local");
-      this.setApp(keepSelection
-        ? { machines, selectedMachine: machine, error: "" }
-        : { ...initialAppState(), ...(keepRealtime ? { sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities } : {}), machines, selectedMachine: machine });
+      this.setApp(
+        keepSelection
+          ? { machines, selectedMachine: machine, error: "" }
+          : {
+              ...initialAppState(),
+              ...(keepRealtime ? { sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities } : {}),
+              machines,
+              selectedMachine: machine,
+            },
+      );
       if (!keepRealtime) this.connectRealtime();
       if (machine === undefined) throw new Error("No PI WEB machine is available.");
 
       const previousRows = selectedMachineId(previous) === machine.id ? previous.sessions : [];
       const isCurrent = () => sequence === this.loadSequence;
-      const knownProjects = reuse && previous.projects.length > 0 && (route.projectId === undefined || previous.projects.some((candidate) => candidate.id === route.projectId));
+      const knownProjects =
+        reuse && previous.projects.length > 0 && (route.projectId === undefined || previous.projects.some((candidate) => candidate.id === route.projectId));
       const projects = knownProjects ? previous.projects : await api.projects(machine.id);
       if (sequence !== this.loadSequence) return;
       this.setApp({ projects });
       if (!completeChatRoute(route)) {
-        if (route.sessionId !== undefined && route.projectId === undefined) { await this.openSessionAnywhere(route.sessionId, machine.id, sequence, previousRows); return; }
+        if (route.sessionId !== undefined && route.projectId === undefined) {
+          await this.openSessionAnywhere(route.sessionId, machine.id, sequence, previousRows);
+          return;
+        }
         await this.restoreLastWorkspace(projects, machine.id, sequence);
         return;
       }
@@ -1240,7 +1654,15 @@ export class WorkbenchApp extends LitElement {
       const session = await this.knownSession(route.sessionId, workspace.path, machine.id, isCurrent);
       if (sequence !== this.loadSequence) return;
       if (session === undefined) throw new Error("The selected session is no longer available.");
-      await this.selectSession(session, { updateUrl: false, ...this.inWorkspace(session, sequence, { selectedProject: project, workspaces, selectedWorkspace: workspace, sessions: keepSelection ? this.app.sessions : [...unsavedChatsIn(previousRows, workspace.path, session.id), session] }) });
+      await this.selectSession(session, {
+        updateUrl: false,
+        ...this.inWorkspace(session, sequence, {
+          selectedProject: project,
+          workspaces,
+          selectedWorkspace: workspace,
+          sessions: keepSelection ? this.app.sessions : [...unsavedChatsIn(previousRows, workspace.path, session.id), session],
+        }),
+      });
       // A reservation resolved to its created Chat: the address names that Chat from now on.
       if (route.sessionId !== session.id && this.app.selectedSession?.id === session.id) this.updateUrl({ replace: true });
     } catch (error) {
@@ -1260,8 +1682,13 @@ export class WorkbenchApp extends LitElement {
     const workspace = this.app.selectedWorkspace;
     try {
       if (project === undefined || workspace === undefined) return;
-      localStorage.setItem(WorkbenchApp.LAST_WORKSPACE_KEY, JSON.stringify({ machineId: selectedMachineId(this.app), projectId: project.id, workspaceId: workspace.id }));
-    } catch { /* ignore storage errors */ }
+      localStorage.setItem(
+        WorkbenchApp.LAST_WORKSPACE_KEY,
+        JSON.stringify({ machineId: selectedMachineId(this.app), projectId: project.id, workspaceId: workspace.id }),
+      );
+    } catch {
+      /* ignore storage errors */
+    }
   }
 
   /** Reopen the chooser on the workspace used last time so New Chat is one click. */
@@ -1271,8 +1698,13 @@ export class WorkbenchApp extends LitElement {
     try {
       const raw = localStorage.getItem(WorkbenchApp.LAST_WORKSPACE_KEY);
       saved = raw === null ? undefined : JSON.parse(raw);
-    } catch { saved = undefined; }
-    const record = typeof saved === "object" && saved !== null && "machineId" in saved && "projectId" in saved && "workspaceId" in saved && saved.machineId === machineId ? saved : undefined;
+    } catch {
+      saved = undefined;
+    }
+    const record =
+      typeof saved === "object" && saved !== null && "machineId" in saved && "projectId" in saved && "workspaceId" in saved && saved.machineId === machineId
+        ? saved
+        : undefined;
     const projectId = record !== undefined && typeof record.projectId === "string" ? record.projectId : undefined;
     const workspaceId = record !== undefined && typeof record.workspaceId === "string" ? record.workspaceId : undefined;
     const project = projects.find((candidate) => candidate.id === projectId) ?? rootProjects(projects)[0];
@@ -1288,7 +1720,15 @@ export class WorkbenchApp extends LitElement {
     const session = workspace === undefined ? undefined : await this.knownSession(sessionId, workspace.path, machineId, () => sequence === this.loadSequence);
     if (sequence !== this.loadSequence) return;
     if (workspace === undefined || session === undefined) throw new Error("The selected session is no longer available.");
-    await this.selectSession(session, { updateUrl: false, ...this.inWorkspace(session, sequence, { selectedProject: undefined, workspaces: [workspace], selectedWorkspace: workspace, sessions: [...unsavedChatsIn(previousRows, workspace.path, session.id), session] }) });
+    await this.selectSession(session, {
+      updateUrl: false,
+      ...this.inWorkspace(session, sequence, {
+        selectedProject: undefined,
+        workspaces: [workspace],
+        selectedWorkspace: workspace,
+        sessions: [...unsavedChatsIn(previousRows, workspace.path, session.id), session],
+      }),
+    });
   }
 
   /**
@@ -1315,7 +1755,13 @@ export class WorkbenchApp extends LitElement {
 
   private inWorkspace(session: SessionInfo, generation: number, context: Partial<AppState> & { selectedWorkspace: Workspace }): SessionSelectionOptions {
     const machineId = selectedMachineId(this.app);
-    return { generation, context, onCommit: () => { void this.loadCatalogBehind(session.id, context.selectedWorkspace, machineId, generation); } };
+    return {
+      generation,
+      context,
+      onCommit: () => {
+        void this.loadCatalogBehind(session.id, context.selectedWorkspace, machineId, generation);
+      },
+    };
   }
 
   /**
@@ -1343,7 +1789,10 @@ export class WorkbenchApp extends LitElement {
     });
     const selected = this.app.selectedSession;
     const selectedRow = selected === undefined ? undefined : listed.find((row) => row.id === selected.id);
-    this.setApp({ sessions: [...kept, ...merged], ...(selected === undefined || selectedRow === undefined ? {} : { selectedSession: withListedArchive(selected, selectedRow) }) });
+    this.setApp({
+      sessions: [...kept, ...merged],
+      ...(selected === undefined || selectedRow === undefined ? {} : { selectedSession: withListedArchive(selected, selectedRow) }),
+    });
   }
 
   private catalogIsCurrent(workspace: Workspace, machineId: string, sequence: number): boolean {
@@ -1364,13 +1813,19 @@ export class WorkbenchApp extends LitElement {
     this.realtimeMachineId = machineId;
     // The daemon sends its first frame after subscribing; browser socket open only reaches the proxy.
     let joined = false;
-    this.realtime.connect((event) => {
-      if (!joined) {
-        joined = true;
-        this.refreshWindowChatAsks();
-      }
-      this.handleRealtimeEvent(event);
-    }, () => { joined = false; }, machineId);
+    this.realtime.connect(
+      (event) => {
+        if (!joined) {
+          joined = true;
+          this.refreshWindowChatAsks();
+        }
+        this.handleRealtimeEvent(event);
+      },
+      () => {
+        joined = false;
+      },
+      machineId,
+    );
   }
 
   /** Open asks and attention requests read for this window's other Chats as the window connects, by machine-scoped key; a status, once known, supersedes them. */
@@ -1400,7 +1855,9 @@ export class WorkbenchApp extends LitElement {
     this.askRequests.set(key, false);
     void this.windowChatWorkspace(chat)
       .then(({ workspace }) => api.openAsks({ id: chat.sessionId, cwd: workspace.path }, chat.machineId))
-      .then((asks) => { this.restoredAsks = { ...this.restoredAsks, [key]: asks }; })
+      .then((asks) => {
+        this.restoredAsks = { ...this.restoredAsks, [key]: asks };
+      })
       .catch(() => undefined)
       .finally(() => {
         const again = this.askRequests.get(key) === true;
@@ -1417,7 +1874,8 @@ export class WorkbenchApp extends LitElement {
     }
     if (event.type !== "sessions.unread" && event.type !== "notices.updated" && event.type !== "machine.status") {
       this.sessions.applyGlobalEvent(event);
-      for (const chat of this.chats) if (chat.sessions !== this.sessions && selectedMachineId(chat.state) === selectedMachineId(this.app)) chat.sessions.applyGlobalEvent(event);
+      for (const chat of this.chats)
+        if (chat.sessions !== this.sessions && selectedMachineId(chat.state) === selectedMachineId(this.app)) chat.sessions.applyGlobalEvent(event);
     }
   }
 
@@ -1451,8 +1909,10 @@ export class WorkbenchApp extends LitElement {
       const workspaces = (await Promise.all(subprojectsOf(project, this.app.projects).map((member) => api.workspaces(member.id, machineId)))).flat();
       if (sequence !== this.loadSequence) return;
       this.setApp({ workspaces });
-      const preferred = workspaces.find((candidate) => candidate.id === preferredWorkspaceId)
-        ?? workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain) ?? workspaces[0];
+      const preferred =
+        workspaces.find((candidate) => candidate.id === preferredWorkspaceId)
+        ?? workspaces.find((candidate) => candidate.projectId === project.id && candidate.isMain)
+        ?? workspaces[0];
       if (preferred !== undefined) await this.chooseWorkspace(preferred.id);
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
@@ -1471,7 +1931,10 @@ export class WorkbenchApp extends LitElement {
     this.loadingAt = sequence;
     try {
       const sessions = await api.sessions(workspace.path, selectedMachineId(this.app));
-      if (sequence === this.loadSequence) { this.setApp({ sessions }); this.rememberWorkspace(); }
+      if (sequence === this.loadSequence) {
+        this.setApp({ sessions });
+        this.rememberWorkspace();
+      }
     } catch (error) {
       if (sequence === this.loadSequence) this.setApp({ error: String(error) });
     } finally {
@@ -1480,7 +1943,7 @@ export class WorkbenchApp extends LitElement {
   }
 
   private async openSession(session: SessionInfo): Promise<void> {
-    if (!await this.openedElsewhere(session.id)) await this.showOpenedSession(session);
+    if (!(await this.openedElsewhere(session.id))) await this.showOpenedSession(session);
   }
 
   private async showOpenedSession(session: SessionInfo, options?: SessionSelectionOptions): Promise<void> {
@@ -1495,25 +1958,44 @@ export class WorkbenchApp extends LitElement {
     try {
       const registered = await this.registeredWorkspaceForCwd(session.cwd, selectedMachineId(this.app));
       const workspace = registered?.workspace ?? adHocWorkspace(session.cwd);
-      await this.showOpenedSession(session, { generation, context: { selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] } });
+      await this.showOpenedSession(session, {
+        generation,
+        context: { selectedProject: registered?.project, selectedWorkspace: workspace, workspaces: registered?.workspaces ?? [workspace], sessions: [session] },
+      });
     } catch (error) {
       this.setApp({ error: error instanceof Error ? error.message : String(error) });
     }
   }
 
   /** A Git worktree may be a sibling of its registered project's root, not a descendant. */
-  private registeredWorkspaceForCwd(cwd: string, machineId: string, isCurrent?: () => boolean): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
-    return this.firstRegisteredWorkspace([...this.app.projects].sort((a, b) => b.path.length - a.path.length), machineId, (workspace) => workspace.path === cwd, isCurrent);
+  private registeredWorkspaceForCwd(
+    cwd: string,
+    machineId: string,
+    isCurrent?: () => boolean,
+  ): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+    return this.firstRegisteredWorkspace(
+      [...this.app.projects].sort((a, b) => b.path.length - a.path.length),
+      machineId,
+      (workspace) => workspace.path === cwd,
+      isCurrent,
+    );
   }
 
   /** The first project, in the given order, that lists a matching workspace; no further batch starts once `isCurrent` fails. */
-  private async firstRegisteredWorkspace(projects: readonly Project[], machineId: string, matches: (workspace: Workspace) => boolean, isCurrent: () => boolean = () => true): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
+  private async firstRegisteredWorkspace(
+    projects: readonly Project[],
+    machineId: string,
+    matches: (workspace: Workspace) => boolean,
+    isCurrent: () => boolean = () => true,
+  ): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[] } | undefined> {
     // ponytail: fixed batches of 4 bound the fan-out; a server lookup by path would make this one request.
     for (let start = 0; start < projects.length && isCurrent(); start += 4) {
-      const listed = await Promise.all(projects.slice(start, start + 4).map(async (project) => {
-        const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
-        return { project, workspaces, workspace: workspaces.find(matches) };
-      }));
+      const listed = await Promise.all(
+        projects.slice(start, start + 4).map(async (project) => {
+          const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
+          return { project, workspaces, workspace: workspaces.find(matches) };
+        }),
+      );
       const hit = listed.find((candidate) => candidate.workspace !== undefined);
       if (hit?.workspace !== undefined) return { project: hit.project, workspace: hit.workspace, workspaces: hit.workspaces };
     }
@@ -1523,7 +2005,11 @@ export class WorkbenchApp extends LitElement {
   /**
    * The authoritative Chat in its recorded workspace. Only a legacy catalog miss may reconstruct a blank Chat from status.
    */
-  private async anchoredWorkstreamSession(detail: OpenWorkstreamSessionDetail, machineId: string, isCurrent: () => boolean): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
+  private async anchoredWorkstreamSession(
+    detail: OpenWorkstreamSessionDetail,
+    machineId: string,
+    isCurrent: () => boolean,
+  ): Promise<{ project: Project; workspace: Workspace; workspaces: Workspace[]; session: SessionInfo } | undefined> {
     const project = this.app.projects.find((candidate) => candidate.id === detail.projectId);
     if (project === undefined || detail.workspaceId === undefined) return undefined;
     const workspaces = await api.workspaces(project.id, machineId).catch((): Workspace[] => []);
@@ -1552,8 +2038,19 @@ export class WorkbenchApp extends LitElement {
       const projectsPending = this.loading && this.app.projects.length === 0;
       navigation = this.beginNavigation();
       // ponytail: re-asks for the projects of an interrupted machine boot; resuming the dropped request would need per-step sequences.
-      if (projectsPending) void api.projects(machineId).then((projects) => { if (selectedMachineId(this.app) === machineId && this.app.projects.length === 0) this.setApp({ projects }); }, () => undefined);
-      return { selectedProject: project, selectedWorkspace: workspace, workspaces, sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session] };
+      if (projectsPending)
+        void api.projects(machineId).then(
+          (projects) => {
+            if (selectedMachineId(this.app) === machineId && this.app.projects.length === 0) this.setApp({ projects });
+          },
+          () => undefined,
+        );
+      return {
+        selectedProject: project,
+        selectedWorkspace: workspace,
+        workspaces,
+        sessions: [...unsavedChatsIn(this.app.sessions, workspace.path, session.id), session],
+      };
     };
     this.setApp({ error: "" });
     try {
@@ -1599,10 +2096,14 @@ export class WorkbenchApp extends LitElement {
         if (workspace === undefined) throw new Error("Choose a workspace before starting this Workstream.");
         cwd = workspace.path;
       }
-      if (isTemporaryDirectory(cwd)) throw new Error(`The Workstream points to a temporary directory (${cwd}). Move the work to a persistent workspace before starting a Chat.`);
+      if (isTemporaryDirectory(cwd))
+        throw new Error(`The Workstream points to a temporary directory (${cwd}). Move the work to a persistent workspace before starting a Chat.`);
       const loaded = this.app.workspaces.find((workspace) => workspace.path === cwd);
       const owner = this.app.projects.find((project) => project.id === loaded?.projectId);
-      match = owner !== undefined ? { project: owner, workspaces: this.app.workspaces } : await this.firstRegisteredWorkspace(this.app.projects, machineId, (workspace) => workspace.path === cwd);
+      match =
+        owner !== undefined
+          ? { project: owner, workspaces: this.app.workspaces }
+          : await this.firstRegisteredWorkspace(this.app.projects, machineId, (workspace) => workspace.path === cwd);
     } catch (error) {
       this.setApp({ error: `Could not find a working directory for this Workstream: ${error instanceof Error ? error.message : String(error)}` });
       return;
@@ -1611,23 +2112,36 @@ export class WorkbenchApp extends LitElement {
     const workspace = match?.workspaces.find((candidate) => candidate.path === cwd) ?? adHocWorkspace(cwd);
     const workstreamContext = await this.resolveWorkstreamServiceContext();
     if (workstreamContext === undefined) {
-      this.setApp({ error: this.app.selectedProject === undefined ? "A registered project with a workspace is needed to access Workstreams." : "Choose a registered workspace before starting this Workstream." });
+      this.setApp({
+        error:
+          this.app.selectedProject === undefined
+            ? "A registered project with a workspace is needed to access Workstreams."
+            : "Choose a registered workspace before starting this Workstream.",
+      });
       return;
     }
     const associationKey = `pi-web:${randomHex(16)}`;
     const anchor: WorkstreamSessionAnchor = match === undefined ? {} : { machineId, projectId: workspace.projectId, workspaceId: workspace.id };
     try {
       const snapshot = await inspectWorkstream(workstreamContext, detail.workstreamId);
-      if (detail.sessionId === undefined && snapshot.sessions.some((session) => session.status !== "failed")) throw new Error("This Workstream already has a session. Refresh its card before starting another Chat.");
+      if (detail.sessionId === undefined && snapshot.sessions.some((session) => session.status !== "failed"))
+        throw new Error("This Workstream already has a session. Refresh its card before starting another Chat.");
       const record: WorkstreamAppendRecord = {
         type: "session.pending",
         producer: "pi-web",
         ...(detail.sessionId === undefined ? {} : { sourceSessionId: detail.sessionId }),
         payload: { associationKey, ...(detail.sessionId === undefined ? {} : { derivationKind: "checkpoint" }), ...anchor },
       };
-      await appendWorkstream(workstreamContext, { workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:pending`, records: [record] });
+      await appendWorkstream(workstreamContext, {
+        workstreamId: detail.workstreamId,
+        expectedRevision: snapshot.revision,
+        idempotencyKey: `${associationKey}:pending`,
+        records: [record],
+      });
     } catch (error) {
-      this.setApp({ error: `Could not record the pending Workstream launch, so no Chat was started. ${error instanceof Error ? error.message : String(error)}` });
+      this.setApp({
+        error: `Could not record the pending Workstream launch, so no Chat was started. ${error instanceof Error ? error.message : String(error)}`,
+      });
       return;
     }
 
@@ -1641,9 +2155,10 @@ export class WorkbenchApp extends LitElement {
       // Known before the Workstream lookup names the tab, so even an immediate first request orients for it.
       this.workstreamChats.add(session.id);
     } catch (error) {
-      const prefix = detail.sessionId === undefined
-        ? "Chat creation outcome is unknown after the pending Workstream launch was recorded. Do not start another Chat until Pia reconciles it."
-        : "Chat creation failed after the pending Workstream launch was recorded.";
+      const prefix =
+        detail.sessionId === undefined
+          ? "Chat creation outcome is unknown after the pending Workstream launch was recorded. Do not start another Chat until Pia reconciles it."
+          : "Chat creation failed after the pending Workstream launch was recorded.";
       this.setApp({ error: `${prefix} ${error instanceof Error ? error.message : String(error)}` });
       return;
     }
@@ -1660,10 +2175,17 @@ export class WorkbenchApp extends LitElement {
         sourceSessionId: session.id,
         payload: { sessionId: session.id, associationKey, ...anchor },
       };
-      await appendWorkstream(confirmationContext, { workstreamId: detail.workstreamId, expectedRevision: snapshot.revision, idempotencyKey: `${associationKey}:confirmed`, records: [record] });
+      await appendWorkstream(confirmationContext, {
+        workstreamId: detail.workstreamId,
+        expectedRevision: snapshot.revision,
+        idempotencyKey: `${associationKey}:confirmed`,
+        records: [record],
+      });
       await this.loadCurrentWorkstream();
     } catch (error) {
-      this.setApp({ error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}` });
+      this.setApp({
+        error: `Chat ${session.id} was created, but PI WEB could not record its Workstream confirmation. ${error instanceof Error ? error.message : String(error)}`,
+      });
       return;
     }
   }
@@ -1687,8 +2209,21 @@ export class WorkbenchApp extends LitElement {
         if (context === undefined) throw new Error("the Workstream service is not available here");
         const snapshot = await inspectWorkstream(context, detail.workstreamId);
         const shortTitle = detail.name === "" ? null : detail.name;
-        await appendWorkstream(context, { workstreamId: snapshot.id, expectedRevision: snapshot.revision, idempotencyKey: `pi-web:${randomHex(16)}`, records: [{ type: "short-title.set", producer: "owner", payload: { shortTitle } }] });
-        void this.updateWindow((store, id) => (store[id]?.chats ?? []).reduce((next, chat) => chat.workstream?.id === snapshot.id ? updateChat(next, id, chat.sessionId, { workstream: { ...chat.workstream, shortTitle: shortTitle ?? undefined } }) : next, store));
+        await appendWorkstream(context, {
+          workstreamId: snapshot.id,
+          expectedRevision: snapshot.revision,
+          idempotencyKey: `pi-web:${randomHex(16)}`,
+          records: [{ type: "short-title.set", producer: "owner", payload: { shortTitle } }],
+        });
+        void this.updateWindow((store, id) =>
+          (store[id]?.chats ?? []).reduce(
+            (next, chat) =>
+              chat.workstream?.id === snapshot.id
+                ? updateChat(next, id, chat.sessionId, { workstream: { ...chat.workstream, shortTitle: shortTitle ?? undefined } })
+                : next,
+            store,
+          ),
+        );
         return;
       }
       const chat = this.windows.window?.chats.find((row) => row.sessionId === detail.sessionId);
@@ -1705,7 +2240,8 @@ export class WorkbenchApp extends LitElement {
   }
 
   private async resolveWorkstreamServiceContext(): Promise<WorkstreamServiceContext | undefined> {
-    if (this.workstreamServiceContext !== undefined || this.app.selectedWorkspace === undefined || this.app.selectedProject !== undefined) return this.workstreamServiceContext;
+    if (this.workstreamServiceContext !== undefined || this.app.selectedWorkspace === undefined || this.app.selectedProject !== undefined)
+      return this.workstreamServiceContext;
     return this.machineWorkstreamContext();
   }
 
@@ -1715,7 +2251,10 @@ export class WorkbenchApp extends LitElement {
    */
   private get chooserServiceContext(): WorkstreamServiceContext | undefined {
     const context = this.workstreamServiceContext ?? this.workstreamContexts.get(selectedMachineId(this.app));
-    if (context === undefined) void this.machineWorkstreamContext().then((found) => { if (found !== undefined) this.requestUpdate(); });
+    if (context === undefined)
+      void this.machineWorkstreamContext().then((found) => {
+        if (found !== undefined) this.requestUpdate();
+      });
     return context;
   }
 
@@ -1739,7 +2278,9 @@ export class WorkbenchApp extends LitElement {
       const context = await pending;
       if (context !== undefined) this.workstreamContexts.set(machineId, context);
       return context;
-    } finally { this.pendingWorkstreamContexts.delete(machineId); }
+    } finally {
+      this.pendingWorkstreamContexts.delete(machineId);
+    }
   }
 
   private async loadCurrentWorkstream(reset = true): Promise<void> {
@@ -1750,7 +2291,10 @@ export class WorkbenchApp extends LitElement {
       this.currentWorkstream = undefined;
       this.currentWorkstreamError = "";
     }
-    if (sessionId === undefined) { this.currentWorkstream = null; return; }
+    if (sessionId === undefined) {
+      this.currentWorkstream = null;
+      return;
+    }
     let context: WorkstreamServiceContext | undefined;
     try {
       context = await this.resolveWorkstreamServiceContext();
@@ -1771,7 +2315,10 @@ export class WorkbenchApp extends LitElement {
         this.currentWorkstream = snapshot;
         this.currentWorkstreamError = "";
         // ponytail: only the selected Chat takes its checkpoint title, when a client loads its Workstream; server-side watching would cover unopened Chats.
-        if (snapshot !== null) void applyCheckpointSessionTitle(snapshot, this.app.selectedSession, selectedMachineId(this.app), this.attemptedCheckpointTitles).catch(() => undefined);
+        if (snapshot !== null)
+          void applyCheckpointSessionTitle(snapshot, this.app.selectedSession, selectedMachineId(this.app), this.attemptedCheckpointTitles).catch(
+            () => undefined,
+          );
       }
     } catch (error) {
       if (sequence === this.workstreamLoadSequence && this.app.selectedSession?.id === sessionId) {
@@ -1807,7 +2354,9 @@ export class WorkbenchApp extends LitElement {
             await this.loadCurrentWorkstream(false);
             return;
           }
-        } catch { /* Keep the last known title; retry on the next watch. */ }
+        } catch {
+          /* Keep the last known title; retry on the next watch. */
+        }
         this.workstreamWatchDelay = Math.min(this.workstreamWatchDelay * 2, 30_000);
         if (sequence === this.workstreamLoadSequence && this.isConnected) this.scheduleWorkstreamWatch(context, sessionId);
       })();
@@ -1817,8 +2366,11 @@ export class WorkbenchApp extends LitElement {
   /** Offer New Durable Chat only where the session daemon advertises it; a failed check just hides the button. */
   private async loadDurableChatSupport(machineId: string): Promise<void> {
     try {
-      if (supportsPiWebCapability(await api.runtime(machineId), PI_WEB_CAPABILITIES.durableChats)) this.durableChatMachines = new Set([...this.durableChatMachines, machineId]);
-    } catch { /* Runtime unknown: keep offering only legacy Chats. */ }
+      if (supportsPiWebCapability(await api.runtime(machineId), PI_WEB_CAPABILITIES.durableChats))
+        this.durableChatMachines = new Set([...this.durableChatMachines, machineId]);
+    } catch {
+      /* Runtime unknown: keep offering only legacy Chats. */
+    }
   }
 
   private async startSession(runtime?: "durable"): Promise<void> {
@@ -1830,14 +2382,17 @@ export class WorkbenchApp extends LitElement {
     const session = this.app.selectedSession;
     const project = this.app.selectedProject;
     const workspace = this.app.selectedWorkspace;
-    writeRoute({
-      machineId: selectedMachineId(this.app),
-      projectId: workspace?.projectId === "" ? undefined : project?.id,
-      workspaceId: workspace?.projectId === "" ? undefined : workspace?.id,
-      sessionId: session?.id,
-      tool: undefined,
-      view: session === undefined ? undefined : "chat",
-    }, options);
+    writeRoute(
+      {
+        machineId: selectedMachineId(this.app),
+        projectId: workspace?.projectId === "" ? undefined : project?.id,
+        workspaceId: workspace?.projectId === "" ? undefined : workspace?.id,
+        sessionId: session?.id,
+        tool: undefined,
+        view: session === undefined ? undefined : "chat",
+      },
+      options,
+    );
   }
 
   /** Start one Chat without a project: in ~/IdeaProjects, or in a picked folder when asked or when that folder is missing. */
@@ -1846,7 +2401,10 @@ export class WorkbenchApp extends LitElement {
     let path: string | null | undefined = pick ? undefined : await defaultChatFolder(machineId);
     if (path === undefined) {
       const picker = nativeDirectoryPicker(machineId);
-      if (picker === undefined) { this.setApp({ error: "Choosing a folder needs the macOS app; add the folder as a project instead." }); return; }
+      if (picker === undefined) {
+        this.setApp({ error: "Choosing a folder needs the macOS app; add the folder as a project instead." });
+        return;
+      }
       try {
         path = await picker.pickDirectory();
       } catch (error) {
@@ -1864,7 +2422,10 @@ export class WorkbenchApp extends LitElement {
   /** macOS: native folder panel; browsers: the path dialog. */
   private async chooseProjectFolder(): Promise<void> {
     const picker = nativeDirectoryPicker(selectedMachineId(this.app));
-    if (picker === undefined) { this.setApp({ projectDialogOpen: true }); return; }
+    if (picker === undefined) {
+      this.setApp({ projectDialogOpen: true });
+      return;
+    }
     try {
       const path = await picker.pickDirectory();
       if (path !== null) await this.addProject(path, false);
@@ -1874,9 +2435,14 @@ export class WorkbenchApp extends LitElement {
   }
 
   private async copySessionInfo(session: SessionInfo, status: SessionStatus | undefined): Promise<void> {
-    if (!await writeClipboardText(sessionInfoText(session, status))) { this.setApp({ error: "Could not copy the session info." }); return; }
+    if (!(await writeClipboardText(sessionInfoText(session, status)))) {
+      this.setApp({ error: "Could not copy the session info." });
+      return;
+    }
     this.sessionInfoCopied = true;
-    window.setTimeout(() => { this.sessionInfoCopied = false; }, 1200);
+    window.setTimeout(() => {
+      this.sessionInfoCopied = false;
+    }, 1200);
   }
 
   private async addProject(path: string, create: boolean): Promise<void> {
@@ -1899,14 +2465,31 @@ export class WorkbenchApp extends LitElement {
     const selected = this.app.selectedSession?.id;
     return html`
       <workbench-window-tabs .workingSet=${this.windows.window} .windowId=${this.windows.id} .selected=${selected === undefined || isCreatingSessionId(selected) ? undefined : selected} .statuses=${this.chatTabStatuses()} .questionCounts=${this.chatQuestionCounts()} .attention=${this.chatAttention()} .unaligned=${this.chatUnaligned()}
-        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => { this.swipe.cancel(); void this.showWindowChat(event.detail.sessionId); }}
-        @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => { void this.closeWindowChats(event.detail.sessionIds); }}
-        @tab-rename=${(event: CustomEvent<TabRenameDetail>) => { void this.renameTab(event.detail); }}
-        @window-home=${() => { this.goHome(); }}
-        @window-layout=${() => { this.toggleWindowLayout(); }}
-        @chat-tab-menu=${(event: CustomEvent<ChatTabMenuDetail>) => { this.openWindowMenu(event.detail); }}
-        @chat-tab-drop=${(event: CustomEvent<DraggedChats>) => { void this.takeDroppedChats(event.detail); }}
-        @chat-tab-drag-out=${(event: CustomEvent<DraggedChats>) => { this.moveToNewWindow(event.detail.sessionIds); }}
+        @chat-tab-select=${(event: CustomEvent<ChatTabSelectDetail>) => {
+          this.swipe.cancel();
+          void this.showWindowChat(event.detail.sessionId);
+        }}
+        @chat-tab-close=${(event: CustomEvent<ChatTabCloseDetail>) => {
+          void this.closeWindowChats(event.detail.sessionIds);
+        }}
+        @tab-rename=${(event: CustomEvent<TabRenameDetail>) => {
+          void this.renameTab(event.detail);
+        }}
+        @window-home=${() => {
+          this.goHome();
+        }}
+        @window-layout=${() => {
+          this.toggleWindowLayout();
+        }}
+        @chat-tab-menu=${(event: CustomEvent<ChatTabMenuDetail>) => {
+          this.openWindowMenu(event.detail);
+        }}
+        @chat-tab-drop=${(event: CustomEvent<DraggedChats>) => {
+          void this.takeDroppedChats(event.detail);
+        }}
+        @chat-tab-drag-out=${(event: CustomEvent<DraggedChats>) => {
+          this.moveToNewWindow(event.detail.sessionIds);
+        }}
         @dragstart=${this.guardChatDrag}>${this.chatToolsInTabRow() ? html`<div class="chat-tools" slot="tools">${this.renderChatTools()}</div>` : nothing}</workbench-window-tabs>
       <div class="stage">${this.renderStage()}${this.renderSwipePeek()}</div>
       ${this.renderWindowMenu()}
@@ -1925,13 +2508,31 @@ export class WorkbenchApp extends LitElement {
 
   private renderWindowChats() {
     const window = this.windows.window;
-    const selected = this.focused.current === undefined ? undefined : window?.chats.find((chat) => this.runtimeFor(chat.sessionId, chat.machineId) === this.focused.current)?.sessionId;
-    const tiles = window === undefined ? [] : gridTiles({ ...window, focused: selected ?? window.focused }).filter((tile) => !this.retiringChats.has(tile.chat.sessionId));
+    const selected =
+      this.focused.current === undefined
+        ? undefined
+        : window?.chats.find((chat) => this.runtimeFor(chat.sessionId, chat.machineId) === this.focused.current)?.sessionId;
+    const tiles =
+      window === undefined ? [] : gridTiles({ ...window, focused: selected ?? window.focused }).filter((tile) => !this.retiringChats.has(tile.chat.sessionId));
     const single = window?.layout !== "grid" || window.maximized || tiles.length < 2;
     const statuses = this.chatTabStatuses();
     return html`
-      <div class="grid" ?hidden=${selected === undefined} ?inert=${selected === undefined} ?data-single=${single} ?data-tabs=${window?.layout === "tabs"} style=${single ? "" : this.gridTemplate()} @dragover=${(event: DragEvent) => { if (carriesChats(event)) event.preventDefault(); }} @drop=${(event: DragEvent) => { const dropped = droppedChats(event); if (dropped !== undefined) { event.preventDefault(); void this.takeDroppedChats(dropped); } }}>
-        ${repeat(tiles, (tile) => this.runtimeFor(tile.chat.sessionId, tile.chat.machineId) ?? machineSessionKey(tile.chat.machineId, tile.chat.sessionId), (tile) => this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle", single))}
+      <div class="grid" ?hidden=${selected === undefined} ?inert=${selected === undefined} ?data-single=${single} ?data-tabs=${window?.layout === "tabs"} style=${single ? "" : this.gridTemplate()} @dragover=${(
+        event: DragEvent,
+      ) => {
+        if (carriesChats(event)) event.preventDefault();
+      }} @drop=${(event: DragEvent) => {
+        const dropped = droppedChats(event);
+        if (dropped !== undefined) {
+          event.preventDefault();
+          void this.takeDroppedChats(dropped);
+        }
+      }}>
+        ${repeat(
+          tiles,
+          (tile) => this.runtimeFor(tile.chat.sessionId, tile.chat.machineId) ?? machineSessionKey(tile.chat.machineId, tile.chat.sessionId),
+          (tile) => this.renderTile(tile, statuses[tile.chat.sessionId] ?? "idle", single),
+        )}
         ${single ? nothing : this.renderGridDivider("columns", tiles.length === 3 ? "1 / 2 / 2 / 3" : "1 / 2 / 3 / 3")}
         ${single || tiles.length < 3 ? nothing : this.renderGridDivider("rows", "2 / 1 / 3 / 3")}
       </div>
@@ -1952,7 +2553,12 @@ export class WorkbenchApp extends LitElement {
    * fraction of the rest.
    */
   private gridTemplate(): string {
-    const tracks = (axis: GridAxis) => { const share = this.gridShare(axis); return [share, 1 - share].map((part) => `minmax(min(${String(GRID_MIN_TILE[axis])}px, calc(50% - 0.5px)), ${String(Math.round(part * 10_000) / 100)}fr)`).join(" "); };
+    const tracks = (axis: GridAxis) => {
+      const share = this.gridShare(axis);
+      return [share, 1 - share]
+        .map((part) => `minmax(min(${String(GRID_MIN_TILE[axis])}px, calc(50% - 0.5px)), ${String(Math.round(part * 10_000) / 100)}fr)`)
+        .join(" ");
+    };
     return `grid-template-columns: ${tracks("columns")}; grid-template-rows: ${tracks("rows")}`;
   }
 
@@ -1972,22 +2578,44 @@ export class WorkbenchApp extends LitElement {
     return html`
       <div class="grid-divider" data-axis=${axis} role="separator" tabindex="0" aria-label=${label} title=${`${label} (double-click to even)`} aria-orientation=${axis === "columns" ? "vertical" : "horizontal"}
         aria-valuemin=${percent(bounds.min)} aria-valuemax=${percent(bounds.max)} aria-valuenow=${percent(this.gridShare(axis))} style=${`grid-area: ${area}`}
-        @pointerdown=${(event: PointerEvent) => { this.startGridResize(axis, event); }} @pointermove=${(event: PointerEvent) => { this.moveGridResize(event); }}
-        @pointerup=${(event: PointerEvent) => { this.finishGridResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishGridResize(event); }}
-        @dblclick=${() => { void this.updateWindow((store, id) => resizeGrid(store, id, axis, undefined)); }}
-        @keydown=${(event: KeyboardEvent) => { this.resizeGridWithKeyboard(axis, event); }}></div>
+        @pointerdown=${(event: PointerEvent) => {
+          this.startGridResize(axis, event);
+        }} @pointermove=${(event: PointerEvent) => {
+          this.moveGridResize(event);
+        }}
+        @pointerup=${(event: PointerEvent) => {
+          this.finishGridResize(event);
+        }} @pointercancel=${(event: PointerEvent) => {
+          this.finishGridResize(event);
+        }}
+        @dblclick=${() => {
+          void this.updateWindow((store, id) => resizeGrid(store, id, axis, undefined));
+        }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.resizeGridWithKeyboard(axis, event);
+        }}></div>
     `;
   }
 
   private startGridResize(axis: GridAxis, event: PointerEvent): void {
-    if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement) || this.gridDrag !== undefined && !this.gridDrag.released) return;
+    if (event.button !== 0 || !(event.currentTarget instanceof HTMLElement) || (this.gridDrag !== undefined && !this.gridDrag.released)) return;
     event.preventDefault();
     const handle = event.currentTarget;
     // Captured, so a drag over a tile's transcript or frame keeps reaching the divider.
     handle.setPointerCapture(event.pointerId);
     const size = this.gridSize(axis);
     const ratio = gridRatioFromDrag(this.gridShare(axis), 0, 0, size, GRID_MIN_TILE[axis]);
-    this.gridDrag = { axis, pointerId: event.pointerId, start: axis === "columns" ? event.clientX : event.clientY, startRatio: ratio, size, ratio, handle, released: false, frame: undefined };
+    this.gridDrag = {
+      axis,
+      pointerId: event.pointerId,
+      start: axis === "columns" ? event.clientX : event.clientY,
+      startRatio: ratio,
+      size,
+      ratio,
+      handle,
+      released: false,
+      frame: undefined,
+    };
     handle.toggleAttribute("data-dragging", true);
     this.toggleGridResizing(true);
   }
@@ -2016,7 +2644,9 @@ export class WorkbenchApp extends LitElement {
     const ratio = gridRatioFromDrag(drag.startRatio, drag.start, drag.axis === "columns" ? event.clientX : event.clientY, drag.size, GRID_MIN_TILE[drag.axis]);
     if (ratio === drag.ratio) return;
     drag.ratio = ratio;
-    drag.frame ??= requestAnimationFrame(() => { this.paintGridDrag(drag); });
+    drag.frame ??= requestAnimationFrame(() => {
+      this.paintGridDrag(drag);
+    });
   }
 
   /** Stores the dragged share; the drag's share stays on screen until the store has it, so the release moves nothing. */
@@ -2029,8 +2659,16 @@ export class WorkbenchApp extends LitElement {
     this.toggleGridResizing(false);
     drag.released = true;
     // Painted again once it lands, so the page shows the window's share also when the store refused the drag's.
-    const settle = () => { if (this.gridDrag === drag) { this.gridDrag = undefined; this.paintGridDrag(drag); } };
-    if (drag.ratio === drag.startRatio) { settle(); return; }
+    const settle = () => {
+      if (this.gridDrag === drag) {
+        this.gridDrag = undefined;
+        this.paintGridDrag(drag);
+      }
+    };
+    if (drag.ratio === drag.startRatio) {
+      settle();
+      return;
+    }
     void this.updateWindow((store, id) => resizeGrid(store, id, drag.axis, drag.ratio)).then(settle);
   }
 
@@ -2071,7 +2709,13 @@ export class WorkbenchApp extends LitElement {
         @click=${(event: MouseEvent) => {
           if (this.tileFocusOnClick !== chat.sessionId) return;
           this.tileFocusOnClick = undefined;
-          if (hasRenderedModal(this.ownerDocument) || !event.composedPath().some((target) => target instanceof HTMLElement && (target.matches("button, input, textarea, summary, a") || target.isContentEditable))) void this.focusChatComposer();
+          if (
+            hasRenderedModal(this.ownerDocument)
+            || !event
+              .composedPath()
+              .some((target) => target instanceof HTMLElement && (target.matches("button, input, textarea, summary, a") || target.isContentEditable))
+          )
+            void this.focusChatComposer();
         }}
         @workspace-file-open=${this.openWorkspaceFile} @outside-file-open=${this.openOutsideFile}>
         ${this.renderTileBar(tile, status)}
@@ -2084,19 +2728,31 @@ export class WorkbenchApp extends LitElement {
   private renderTileBar({ chat }: GridTile, status: ChatTabStatus) {
     const state = this.runtimeFor(chat.sessionId, chat.machineId)?.state;
     const session = state?.selectedSession;
-    const maximize = () => { void this.showWindowChat(chat.sessionId).then(() => this.app.selectedSession?.id === chat.sessionId ? this.updateWindow(toggleMaximized) : undefined); };
+    const maximize = () => {
+      void this.showWindowChat(chat.sessionId).then(() => (this.app.selectedSession?.id === chat.sessionId ? this.updateWindow(toggleMaximized) : undefined));
+    };
     const maximized = this.windows.window?.maximized === true;
     return html`
       <div class="tile-bar" draggable="true" @dblclick=${maximize}
-        @contextmenu=${(event: MouseEvent) => { event.preventDefault(); this.openWindowMenu({ sessionIds: [chat.sessionId], label: chat.title, clientX: event.clientX, clientY: event.clientY }); }}
-        @dragstart=${(event: DragEvent) => { startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title); this.guardChatDrag(event); }}
-        @dragend=${(event: DragEvent) => { if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]); }}>
+        @contextmenu=${(event: MouseEvent) => {
+          event.preventDefault();
+          this.openWindowMenu({ sessionIds: [chat.sessionId], label: chat.title, clientX: event.clientX, clientY: event.clientY });
+        }}
+        @dragstart=${(event: DragEvent) => {
+          startChatDrag(event, { windowId: this.windows.id, sessionIds: [chat.sessionId] }, chat.title);
+          this.guardChatDrag(event);
+        }}
+        @dragend=${(event: DragEvent) => {
+          if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.moveToNewWindow([chat.sessionId]);
+        }}>
         ${renderChatStatusDot(status)}
         <span class="tile-title" title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · Chat: ${chat.title}`}><span class="chat-name">${chat.title}</span>${chat.workstream === undefined ? nothing : html`<span class="tile-ws"><span class="ws-dot"></span><span>${chat.workstream.title}</span></span>`}</span>
         ${status === "needs" ? html`<span class="needs">Needs you</span>` : nothing}
         <span class="tile-actions">
           <button type="button" class="icon-button" title=${maximized ? "Restore grid (⌃↩)" : "Full size (⌃↩)"} aria-label=${maximized ? "Restore grid" : `Full size ${chat.title}`} @click=${maximize}>${renderBuiltinTabIcon(maximized ? "minimize" : "maximize")}</button>
-          <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => { void this.closeWindowChats([chat.sessionId]); }}>${renderBuiltinTabIcon("x")}</button>
+          <button type="button" class="icon-button" title="Close" aria-label=${`Close ${chat.title}`} @click=${() => {
+            void this.closeWindowChats([chat.sessionId]);
+          }}>${renderBuiltinTabIcon("x")}</button>
         </span>
         <span class="tile-tools">${session === undefined ? nothing : this.renderChatToolButtons(session, state)}</span>
       </div>
@@ -2112,7 +2768,9 @@ export class WorkbenchApp extends LitElement {
         .themePreference=${this.themePreference}
         .themes=${this.plugins.getThemes()}
         .themePairs=${this.plugins.getThemePairs()}
-        .onThemePreferenceChange=${(preference: ThemePreference) => { this.setThemePreference(preference); }}
+        .onThemePreferenceChange=${(preference: ThemePreference) => {
+          this.setThemePreference(preference);
+        }}
       ></workbench-settings-panel>
     `;
   }
@@ -2124,7 +2782,9 @@ export class WorkbenchApp extends LitElement {
   private renderDesktopNotificationButton() {
     if (!this.desktopNotifications.canRequestPermission()) return null;
     return html`
-      <button class="icon-button notification-button" title="Enable desktop notifications" aria-label="Enable desktop notifications" @click=${() => { void this.desktopNotifications.requestPermission(); }}>
+      <button class="icon-button notification-button" title="Enable desktop notifications" aria-label="Enable desktop notifications" @click=${() => {
+        void this.desktopNotifications.requestPermission();
+      }}>
         ${renderBuiltinTabIcon("bell")}
       </button>
     `;
@@ -2149,64 +2809,152 @@ export class WorkbenchApp extends LitElement {
       <main class="chooser" data-view="chooser">
         <section>
           <div class="tabs" role="tablist">
-            ${this.app.machines.length > 1 ? html`
-              <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value); }}>
+            ${
+              this.app.machines.length > 1
+                ? html`
+              <select aria-label="Machine" .value=${selectedMachineId(this.app)} @change=${(event: Event) => {
+                if (event.target instanceof HTMLSelectElement) void this.chooseMachine(event.target.value);
+              }}>
                 ${this.app.machines.map((machine) => html`<option value=${machine.id}>${machine.name}</option>`)}
               </select>
-            ` : null}
-            ${rootProjects(this.app.projects).map((candidate) => html`<button role="tab" aria-selected=${this.chooserView === "project" && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => { this.chooserView = "project"; void this.chooseProject(candidate.id); }}>${candidate.name}</button>`)}
-            <button role="tab" aria-selected=${this.chooserView === "other"} @click=${() => { this.chooserView = "other"; }}>Other</button>
-            <button role="tab" aria-selected=${this.chooserView === "all"} @click=${() => { this.chooserView = "all"; }}>All sessions</button>
+            `
+                : null
+            }
+            ${rootProjects(this.app.projects).map(
+              (candidate) =>
+                html`<button role="tab" aria-selected=${this.chooserView === "project" && project !== undefined && rootProjectOf(project, this.app.projects).id === candidate.id} @click=${() => {
+                  this.chooserView = "project";
+                  void this.chooseProject(candidate.id);
+                }}>${candidate.name}</button>`,
+            )}
+            <button role="tab" aria-selected=${this.chooserView === "other"} @click=${() => {
+              this.chooserView = "other";
+            }}>Other</button>
+            <button role="tab" aria-selected=${this.chooserView === "all"} @click=${() => {
+              this.chooserView = "all";
+            }}>All sessions</button>
             <span class="tab-actions">
               ${this.renderSettingsPanel()}
               ${this.renderDesktopNotificationButton()}
-              <button class="icon-button" title="New Chat in ~/IdeaProjects (⌥-click: choose a folder)" aria-label="New Chat without a project" @click=${(event: MouseEvent) => { void this.startChatInFolder(event.altKey); }}>
+              <button class="icon-button" title="New Chat in ~/IdeaProjects (⌥-click: choose a folder)" aria-label="New Chat without a project" @click=${(
+                event: MouseEvent,
+              ) => {
+                void this.startChatInFolder(event.altKey);
+              }}>
                 ${renderBuiltinTabIcon("chat-plus")}
               </button>
-              <button class="icon-button" title="Add project…" aria-label="Add project…" @click=${() => { void this.chooseProjectFolder(); }}>
+              <button class="icon-button" title="Add project…" aria-label="Add project…" @click=${() => {
+                void this.chooseProjectFolder();
+              }}>
                 ${renderBuiltinTabIcon("folder-plus")}
               </button>
             </span>
           </div>
-          ${this.chooserView === "all" ? html`<all-sessions .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-session=${(event: CustomEvent<SessionInfo>) => { void this.openAllSession(event.detail); }}></all-sessions>` : this.chooserView === "other" ? html`<workstream-chooser .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>` : project === undefined ? html`<p>Choose a project.</p>` : html`
+          ${
+            this.chooserView === "all"
+              ? html`<all-sessions .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-session=${(
+                  event: CustomEvent<SessionInfo>,
+                ) => {
+                  void this.openAllSession(event.detail);
+                }}></all-sessions>`
+              : this.chooserView === "other"
+                ? html`<workstream-chooser .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} .excludeProjects=${rootProjects(this.app.projects).map((candidate) => candidate.name)} @open-workstream-session=${(
+                    event: CustomEvent<OpenWorkstreamSessionDetail>,
+                  ) => {
+                    void this.openWorkstreamSession(event.detail);
+                  }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => {
+                    void this.startWorkstreamSession(event.detail);
+                  }}></workstream-chooser>`
+                : project === undefined
+                  ? html`<p>Choose a project.</p>`
+                  : html`
             <div class="new-chat">
-              <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession(); }}>New Chat</button>
-              ${this.durableChatMachines.has(serviceMachineId) ? html`<button title="A Chat on the Durable runtime (trial)" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => { void this.startSession("durable"); }}>New Durable Chat</button>` : null}
+              <button class="primary" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => {
+                void this.startSession();
+              }}>New Chat</button>
+              ${
+                this.durableChatMachines.has(serviceMachineId)
+                  ? html`<button title="A Chat on the Durable runtime (trial)" ?disabled=${this.app.selectedWorkspace === undefined || this.app.startingSessionCount > 0} @click=${() => {
+                      void this.startSession("durable");
+                    }}>New Durable Chat</button>`
+                  : null
+              }
               <label>in
-                <select aria-label="Workspace" @change=${(event: Event) => { if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value); }}>
+                <select aria-label="Workspace" @change=${(event: Event) => {
+                  if (event.target instanceof HTMLSelectElement) void this.chooseWorkspace(event.target.value);
+                }}>
                   ${this.app.workspaces.map((workspace) => html`<option value=${workspace.id}>${this.app.projects.find((candidate) => candidate.id === workspace.projectId)?.name ?? ""} · ${workspace.label}${workspace.isMain ? " (main)" : ""}</option>`)}
                 </select>
               </label>
             </div>
-            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .canStartEmpty=${this.app.selectedWorkspace !== undefined} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(event: CustomEvent<OpenWorkstreamSessionDetail>) => { void this.openWorkstreamSession(event.detail); }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => { void this.startWorkstreamSession(event.detail); }}></workstream-chooser>
-          `}
+            <workstream-chooser .project=${rootProjectOf(project, this.app.projects).name} .serviceMachineId=${serviceMachineId} .serviceProjectId=${serviceProjectId} .serviceWorkspaceId=${serviceWorkspaceId} .canStartEmpty=${this.app.selectedWorkspace !== undefined} .sessionStatuses=${this.app.sessionStatuses} .sessionActivities=${this.app.sessionActivities} @open-workstream-session=${(
+              event: CustomEvent<OpenWorkstreamSessionDetail>,
+            ) => {
+              void this.openWorkstreamSession(event.detail);
+            }} @start-workstream-session=${(event: CustomEvent<StartWorkstreamSessionDetail>) => {
+              void this.startWorkstreamSession(event.detail);
+            }}></workstream-chooser>
+          `
+          }
           ${this.loading ? html`<p role="status">Loading…</p>` : null}
           ${this.renderDesktopNotificationDiagnostic()}
           ${this.app.error === "" ? null : html`<p class="error" role="alert">${this.app.error}</p>`}
-          ${this.chooserView !== "project" || this.app.selectedWorkspace === undefined ? null : html`
+          ${
+            this.chooserView !== "project" || this.app.selectedWorkspace === undefined
+              ? null
+              : html`
             <div class="sessions">
               <h2>Sessions <small>${String(visibleSessions.length)}</small></h2>
-              ${recentSessions.map((session) => html`
-                <button class="session" @click=${() => { void this.openSession(session); }}>
+              ${recentSessions.map(
+                (session) => html`
+                <button class="session" @click=${() => {
+                  void this.openSession(session);
+                }}>
                   <strong>${sessionTitle(session)}</strong>
                   <small>${session.archived === true ? "Archived · " : ""}${String(session.messageCount)} messages</small>
                 </button>
-              `)}
+              `,
+              )}
               <div class="session-tools">
-                ${visibleSessions.length > 5 ? html`<button class="link" @click=${() => { this.showAllSessions = !this.showAllSessions; }}>${this.showAllSessions ? "Show recent only" : `Show all ${String(visibleSessions.length)}`}</button>` : null}
-                ${agentSessionCount === 0 ? null : html`
-                  <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked; }}> Show agent sessions (${agentSessionCount})</label>
-                `}
+                ${
+                  visibleSessions.length > 5
+                    ? html`<button class="link" @click=${() => {
+                        this.showAllSessions = !this.showAllSessions;
+                      }}>${this.showAllSessions ? "Show recent only" : `Show all ${String(visibleSessions.length)}`}</button>`
+                    : null
+                }
+                ${
+                  agentSessionCount === 0
+                    ? null
+                    : html`
+                  <label class="agent-filter"><input type="checkbox" aria-label="Show agent sessions" .checked=${this.showAgentSessions} @change=${(
+                    event: Event,
+                  ) => {
+                    if (event.target instanceof HTMLInputElement) this.showAgentSessions = event.target.checked;
+                  }}> Show agent sessions (${agentSessionCount})</label>
+                `
+                }
               </div>
             </div>
-          `}
+          `
+          }
         </section>
-        ${this.app.projectDialogOpen ? html`<project-dialog .machineId=${selectedMachineId(this.app)} .onSubmit=${(path: string, create: boolean) => { void this.addProject(path, create); }} .onCancel=${() => { this.setApp({ projectDialogOpen: false }); }}></project-dialog>` : null}
+        ${
+          this.app.projectDialogOpen
+            ? html`<project-dialog .machineId=${selectedMachineId(this.app)} .onSubmit=${(path: string, create: boolean) => {
+                void this.addProject(path, create);
+              }} .onCancel=${() => {
+                this.setApp({ projectDialogOpen: false });
+              }}></project-dialog>`
+            : null
+        }
       </main>
     `;
   }
 
-  private readonly onWindowResize = (): void => { this.requestUpdate(); };
+  private readonly onWindowResize = (): void => {
+    this.requestUpdate();
+  };
 
   private filesConstraints(): PanelResizeConstraints {
     const container = this.shadowRoot?.querySelector<HTMLElement>(".chat-and-files");
@@ -2235,7 +2983,7 @@ export class WorkbenchApp extends LitElement {
 
   private finishFilesResize(event?: PointerEvent): void {
     const resize = this.filesResize;
-    if (resize === undefined || event !== undefined && resize.pointerId !== event.pointerId) return;
+    if (resize === undefined || (event !== undefined && resize.pointerId !== event.pointerId)) return;
     this.filesResize = undefined;
     if (resize.handle.hasPointerCapture(resize.pointerId)) resize.handle.releasePointerCapture(resize.pointerId);
   }
@@ -2253,7 +3001,10 @@ export class WorkbenchApp extends LitElement {
     this.sidePane = "files";
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-      if (pane !== null && pane !== undefined) { await pane.updateComplete; await pane.searchFiles(); }
+      if (pane !== null && pane !== undefined) {
+        await pane.updateComplete;
+        await pane.searchFiles();
+      }
     });
   }
 
@@ -2280,10 +3031,16 @@ export class WorkbenchApp extends LitElement {
     const next = { machineId: selectedMachineId(this.app), workspace: this.filesWorkspace() };
     const key = filesKey(next);
     this.filesElsewhere = key !== filesKey(this.filesShown);
-    if (!this.filesElsewhere) { this.filesDeclined = undefined; return; }
+    if (!this.filesElsewhere) {
+      this.filesDeclined = undefined;
+      return;
+    }
     // No Chat on screen (a chooser, a load or a machine switch in flight): Files keeps what it shows, and says so.
     if (this.app.selectedSession === undefined) return;
-    if (this.sidePane !== undefined && (key === this.filesDeclined || !this.filesPaneCanClose())) { this.filesDeclined = key; return; }
+    if (this.sidePane !== undefined && (key === this.filesDeclined || !this.filesPaneCanClose())) {
+      this.filesDeclined = key;
+      return;
+    }
     this.filesShown = next;
     this.filesDeclined = undefined;
     this.filesElsewhere = false;
@@ -2306,16 +3063,25 @@ export class WorkbenchApp extends LitElement {
     const wanted = filesKey({ machineId: selectedMachineId(this.app), workspace: workspace ?? this.app.selectedWorkspace });
     void this.updateComplete.then(async () => {
       const pane = this.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-      if (pane !== null && pane !== undefined && filesKey(this.filesShown) === wanted) { await pane.updateComplete; await pane.openFile(path, false, lines); }
+      if (pane !== null && pane !== undefined && filesKey(this.filesShown) === wanted) {
+        await pane.updateComplete;
+        await pane.openFile(path, false, lines);
+      }
     });
   }
 
   private readonly openWorkspaceFile = (event: CustomEvent<WorkspaceFileOpenRequest>): void => {
     const workspace = this.app.selectedWorkspace;
     const request = event.detail;
-    if (event.defaultPrevented || workspace === undefined
-      || request.machineId !== selectedMachineId(this.app) || request.projectId !== workspace.projectId
-      || request.workspaceId !== workspace.id || request.root !== workspace.path) return;
+    if (
+      event.defaultPrevented
+      || workspace === undefined
+      || request.machineId !== selectedMachineId(this.app)
+      || request.projectId !== workspace.projectId
+      || request.workspaceId !== workspace.id
+      || request.root !== workspace.path
+    )
+      return;
     event.preventDefault();
     this.openInFiles(undefined, request.path, request.lines);
   };
@@ -2325,8 +3091,12 @@ export class WorkbenchApp extends LitElement {
     if (event.defaultPrevented || machineId !== selectedMachineId(this.app)) return;
     event.preventDefault();
     void this.workspaceForFile(path, machineId).then(
-      (target) => { this.openInFiles(target.workspace, target.path, lines); },
-      (error: unknown) => { this.setApp({ error: error instanceof Error ? error.message : String(error) }); },
+      (target) => {
+        this.openInFiles(target.workspace, target.path, lines);
+      },
+      (error: unknown) => {
+        this.setApp({ error: error instanceof Error ? error.message : String(error) });
+      },
     );
   };
 
@@ -2365,19 +3135,46 @@ export class WorkbenchApp extends LitElement {
    */
   private renderChatToolButtons(session: SessionInfo, state = this.app) {
     const workspace = state.selectedWorkspace;
-    const folder = workspace === undefined ? "" : ` — ${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${workspace.label} (${workspace.path})`;
+    const folder =
+      workspace === undefined
+        ? ""
+        : ` — ${state.selectedProject === undefined ? "" : `${state.selectedProject.name} · `}${workspace.label} (${workspace.path})`;
     return html`
       <workbench-menu-button class="chat-menu" label="Chat menu">
-        <button type="button" class="menu-item files-toggle" title=${`Files${folder}`} aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("files")}Files</button>
-        <button type="button" class="menu-item" @click=${() => { void this.runtimeFor(session.id, selectedMachineId(state))?.sessions.runCommand("/tree"); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>Session tree</button>
-        <button type="button" class="menu-item" data-keep-open title=${sessionInfoText(session, state.status)} @click=${() => { void this.copySessionInfo(session, state.status); }}>${this.sessionInfoCopied ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>Copied session info` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>Copy session info`}</button>
-        <button type="button" class="menu-item" aria-haspopup="dialog" @click=${(event: MouseEvent) => { this.openSettings(event); }}>${renderBuiltinTabIcon("settings")}Workbench settings</button>
-        <button type="button" class="menu-item install-latest" aria-haspopup="dialog" @click=${() => { openInstallLatestDialog(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Install latest</button>
-        ${this.desktopNotifications.canRequestPermission() ? html`<button type="button" class="menu-item" @click=${() => { void this.desktopNotifications.requestPermission(); }}>${renderBuiltinTabIcon("bell")}Enable desktop notifications</button>` : nothing}
-        ${this.windows.window?.layout !== "grid" ? nothing : html`
+        <button type="button" class="menu-item files-toggle" title=${`Files${folder}`} aria-expanded=${this.sidePane === "files"} aria-controls="workbench-files" @click=${() => {
+          this.toggleFiles();
+        }}>${renderBuiltinTabIcon("files")}Files</button>
+        <button type="button" class="menu-item" @click=${() => {
+          void this.runtimeFor(session.id, selectedMachineId(state))?.sessions.runCommand("/tree");
+        }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>Session tree</button>
+        <button type="button" class="menu-item" data-keep-open title=${sessionInfoText(session, state.status)} @click=${() => {
+          void this.copySessionInfo(session, state.status);
+        }}>${this.sessionInfoCopied ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>Copied session info` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>Copy session info`}</button>
+        <button type="button" class="menu-item" aria-haspopup="dialog" @click=${(event: MouseEvent) => {
+          this.openSettings(event);
+        }}>${renderBuiltinTabIcon("settings")}Workbench settings</button>
+        <button type="button" class="menu-item install-latest" aria-haspopup="dialog" @click=${() => {
+          openInstallLatestDialog();
+        }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Install latest</button>
+        ${
+          this.desktopNotifications.canRequestPermission()
+            ? html`<button type="button" class="menu-item" @click=${() => {
+                void this.desktopNotifications.requestPermission();
+              }}>${renderBuiltinTabIcon("bell")}Enable desktop notifications</button>`
+            : nothing
+        }
+        ${
+          this.windows.window?.layout !== "grid"
+            ? nothing
+            : html`
           <hr>
-          <button type="button" class="menu-item window-add" @click=${() => { this.goHome(); }}>${renderBuiltinTabIcon("plus")}Add Chat<kbd>⌘T</kbd></button>
-          <button type="button" class="menu-item window-layout" @click=${() => { this.toggleWindowLayout(); }}>${renderBuiltinTabIcon("panels-top-left")}Tabs layout<kbd>⌃G</kbd></button>`}
+          <button type="button" class="menu-item window-add" @click=${() => {
+            this.goHome();
+          }}>${renderBuiltinTabIcon("plus")}Add Chat<kbd>⌘T</kbd></button>
+          <button type="button" class="menu-item window-layout" @click=${() => {
+            this.toggleWindowLayout();
+          }}>${renderBuiltinTabIcon("panels-top-left")}Tabs layout<kbd>⌃G</kbd></button>`
+        }
       </workbench-menu-button>
     `;
   }
@@ -2394,10 +3191,32 @@ export class WorkbenchApp extends LitElement {
     if (this.sidePane === undefined) return nothing;
     return html`
       <div class="files-divider" role="separator" tabindex="0" aria-label="Resize Files pane" title="Resize Files pane" aria-orientation="vertical" aria-controls="workbench-files" aria-valuemin="240" aria-valuemax=${String(this.filesConstraints().maxWidth)} aria-valuenow=${String(this.visibleFilesWidth())}
-        @pointerdown=${(event: PointerEvent) => { this.startFilesResize(event); }} @pointermove=${(event: PointerEvent) => { this.moveFilesResize(event); }} @pointerup=${(event: PointerEvent) => { this.finishFilesResize(event); }} @pointercancel=${(event: PointerEvent) => { this.finishFilesResize(event); }} @keydown=${(event: KeyboardEvent) => { this.resizeFilesWithKeyboard(event); }}></div>
-      <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => { this.toggleFiles(); }}>${renderBuiltinTabIcon("chevron")}</button></div>
-      <workbench-files-pane id="workbench-files" .workspace=${this.filesShown.workspace} .machineId=${this.filesShown.machineId}>${this.filesElsewhere ? html`
-        <p class="files-elsewhere" role="status">Files still shows ${this.filesShownLabel()}.${this.filesDeclined === undefined ? nothing : html` <button type="button" @click=${() => { this.filesDeclined = undefined; }}>Show this Chat's files</button>`}</p>` : nothing}</workbench-files-pane>
+        @pointerdown=${(event: PointerEvent) => {
+          this.startFilesResize(event);
+        }} @pointermove=${(event: PointerEvent) => {
+          this.moveFilesResize(event);
+        }} @pointerup=${(event: PointerEvent) => {
+          this.finishFilesResize(event);
+        }} @pointercancel=${(event: PointerEvent) => {
+          this.finishFilesResize(event);
+        }} @keydown=${(event: KeyboardEvent) => {
+          this.resizeFilesWithKeyboard(event);
+        }}></div>
+      <div class="files-close-anchor"><button type="button" class="files-close" title="Close Files" aria-label="Close Files" aria-controls="workbench-files" @click=${() => {
+        this.toggleFiles();
+      }}>${renderBuiltinTabIcon("chevron")}</button></div>
+      <workbench-files-pane id="workbench-files" .workspace=${this.filesShown.workspace} .machineId=${this.filesShown.machineId}>${
+        this.filesElsewhere
+          ? html`
+        <p class="files-elsewhere" role="status">Files still shows ${this.filesShownLabel()}.${
+          this.filesDeclined === undefined
+            ? nothing
+            : html` <button type="button" @click=${() => {
+                this.filesDeclined = undefined;
+              }}>Show this Chat's files</button>`
+        }</p>`
+          : nothing
+      }</workbench-files-pane>
     `;
   }
 
@@ -2561,8 +3380,10 @@ function watchConcerns(batch: object, workstreamId: string | undefined, sessionI
   const events: unknown = Reflect.get(batch, "events");
   if (Reflect.get(batch, "mode") !== "replay" || !Array.isArray(events) || events.length === 0) return true;
   const quotedSessionId = JSON.stringify(sessionId);
-  return events.some((event: unknown) => typeof event !== "object" || event === null
-    || Reflect.get(event, "workstreamId") === workstreamId || JSON.stringify(event).includes(quotedSessionId));
+  return events.some(
+    (event: unknown) =>
+      typeof event !== "object" || event === null || Reflect.get(event, "workstreamId") === workstreamId || JSON.stringify(event).includes(quotedSessionId),
+  );
 }
 
 /** `live` with the catalog row's archive applied; a Chat the catalog reports archived is never left writable. */

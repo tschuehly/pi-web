@@ -1,6 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserQuestion } from "../../shared/apiTypes";
-import { answeredCount, askedFingerprint, clearAskDraft, loadAskContext, loadAskDraft, saveAskContext, saveAskDraft, toSubmission, typedDraftValue, unansweredQuestions, visibleQuestions, type AskDraftAnswers } from "./askDrafts";
+import {
+  answeredCount,
+  askedFingerprint,
+  clearAskDraft,
+  loadAskContext,
+  loadAskDraft,
+  saveAskContext,
+  saveAskDraft,
+  toSubmission,
+  typedDraftValue,
+  unansweredQuestions,
+  visibleQuestions,
+  type AskDraftAnswers,
+} from "./askDrafts";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -47,13 +60,19 @@ class ThrowingStorage extends MemoryStorage {
 const singleSelect: AskUserQuestion = {
   id: "q1",
   question: "Which database?",
-  options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }],
+  options: [
+    { value: "pg", label: "Postgres" },
+    { value: "sqlite", label: "SQLite" },
+  ],
 };
 
 const multiSelect: AskUserQuestion = {
   id: "q2",
   question: "Which extras?",
-  options: [{ value: "metrics", label: "Metrics" }, { value: "tracing", label: "Tracing" }],
+  options: [
+    { value: "metrics", label: "Metrics" },
+    { value: "tracing", label: "Tracing" },
+  ],
   multiple: true,
 };
 
@@ -96,7 +115,13 @@ describe("ask draft storage", () => {
 
   it("starts an undrafted question on its recommended options but keeps a draft the user cleared", () => {
     const storage = new MemoryStorage();
-    const single: AskUserQuestion = { ...singleSelect, options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite", recommended: true }] };
+    const single: AskUserQuestion = {
+      ...singleSelect,
+      options: [
+        { value: "pg", label: "Postgres", recommended: true },
+        { value: "sqlite", label: "SQLite", recommended: true },
+      ],
+    };
     const multi: AskUserQuestion = { ...multiSelect, options: multiSelect.options.map((option) => ({ ...option, recommended: true })) };
     const preselected = loadAskDraft("local:s1", "ask-1", storage, [single, multi]);
     expect(preselected["q1"]?.values).toEqual(["pg"]);
@@ -127,7 +152,12 @@ describe("ask draft storage", () => {
     expect(toSubmission(asked, draft)).toEqual({ answers: [{ id: "__proto__", values: ["pg"] }] });
 
     saveAskDraft("local:s1", "ask-1", { ...draft, constructor: { values: ["sqlite"], asked: askedFingerprint(untouched) } }, storage);
-    expect(toSubmission(asked, loadAskDraft("local:s1", "ask-1", storage, asked))).toEqual({ answers: [{ id: "constructor", values: ["sqlite"] }, { id: "__proto__", values: ["pg"] }] });
+    expect(toSubmission(asked, loadAskDraft("local:s1", "ask-1", storage, asked))).toEqual({
+      answers: [
+        { id: "constructor", values: ["sqlite"] },
+        { id: "__proto__", values: ["pg"] },
+      ],
+    });
   });
 
   it("starts typed questions on their defaults, a switch on off, and keeps a field the user cleared", () => {
@@ -152,7 +182,11 @@ describe("ask draft storage", () => {
     ]);
     expect(answeredCount(questions, preset)).toBe(4);
     // A yes/no answered in words sends them as its Custom answer; blank words leave the switch's value.
-    expect(toSubmission(questions, { ...preset, on: { values: [], value: true, otherText: " Later " } }).answers[0]).toEqual({ id: "on", values: [], otherText: "Later" });
+    expect(toSubmission(questions, { ...preset, on: { values: [], value: true, otherText: " Later " } }).answers[0]).toEqual({
+      id: "on",
+      values: [],
+      otherText: "Later",
+    });
     expect(toSubmission(questions, { ...preset, on: { values: [], value: true, otherText: "  " } }).answers[0]).toEqual({ id: "on", values: [], value: true });
     expect(visibleQuestions(questions, preset).map((question) => question.id)).not.toContain("child");
     expect(visibleQuestions(questions, { ...preset, on: { values: [], value: true } }).map((question) => question.id)).toContain("child");
@@ -166,7 +200,10 @@ describe("ask draft storage", () => {
     expect(typedDraftValue(padded, loadAskDraft("local:s1", "ask-2", storage, [padded])["code"])).toEqual({ value: "  code" });
     expect(typedDraftValue(padded, { values: [], value: "   " })).toBeUndefined();
     // A one-line field cannot show a line break, so it does not send one; a multiline field does.
-    expect(typedDraftValue(typed("line", { kind: "text" }), { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond", error: "must be one line" });
+    expect(typedDraftValue(typed("line", { kind: "text" }), { values: [], value: "first\nsecond" })).toEqual({
+      value: "first\nsecond",
+      error: "must be one line",
+    });
     expect(typedDraftValue(padded, { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond" });
 
     saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "", asked: askedFingerprint(text) } }, storage);
@@ -207,14 +244,22 @@ describe("ask draft storage", () => {
 
     const throwing = new ThrowingStorage();
     expect(loadAskDraft("local:s1", "ask-1", throwing)).toEqual({});
-    expect(() => { saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"] } }, throwing); }).not.toThrow();
-    expect(() => { clearAskDraft("local:s1", "ask-1", throwing); }).not.toThrow();
+    expect(() => {
+      saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"] } }, throwing);
+    }).not.toThrow();
+    expect(() => {
+      clearAskDraft("local:s1", "ask-1", throwing);
+    }).not.toThrow();
   });
 
   it("does nothing when the browser has no storage at all", () => {
     expect(loadAskDraft("local:s1", "ask-1", undefined)).toEqual({});
-    expect(() => { saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"] } }, undefined); }).not.toThrow();
-    expect(() => { clearAskDraft("local:s1", "ask-1", undefined); }).not.toThrow();
+    expect(() => {
+      saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"] } }, undefined);
+    }).not.toThrow();
+    expect(() => {
+      clearAskDraft("local:s1", "ask-1", undefined);
+    }).not.toThrow();
   });
 });
 
@@ -225,7 +270,10 @@ describe("ask answer state", () => {
     expect(answeredCount(questions, answers)).toBe(2);
     expect(unansweredQuestions(questions, answers).map((question) => question.id)).toEqual(["q2"]);
     expect(toSubmission(questions, answers)).toEqual({
-      answers: [{ id: "q1", values: ["pg"] }, { id: "q3", values: [], otherText: "ship it" }],
+      answers: [
+        { id: "q1", values: ["pg"] },
+        { id: "q3", values: [], otherText: "ship it" },
+      ],
     });
   });
 

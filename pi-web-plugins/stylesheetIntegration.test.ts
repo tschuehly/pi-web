@@ -16,14 +16,23 @@ interface ParticipatingElement extends HTMLElement {
 }
 
 const plugins: [string, PiWebPlugin][] = [
-  ["files", files], ["pi-web.terminal", terminal], ["mermaid", mermaid],
-  ["code-highlight", codeHighlight], ["tasks", tasks], ["relays", relays],
+  ["files", files],
+  ["pi-web.terminal", terminal],
+  ["mermaid", mermaid],
+  ["code-highlight", codeHighlight],
+  ["tasks", tasks],
+  ["relays", relays],
 ];
 
 function activationContext(pluginId: string): PluginActivationContext {
   return {
-    apiVersion: 4, pluginId, runtimePluginId: pluginId, html, svg,
-    signal: new AbortController().signal, lifetimeSignal: new AbortController().signal,
+    apiVersion: 4,
+    pluginId,
+    runtimePluginId: pluginId,
+    html,
+    svg,
+    signal: new AbortController().signal,
+    lifetimeSignal: new AbortController().signal,
   };
 }
 
@@ -35,7 +44,9 @@ function integration() {
   const roots = new Set<ShadowRoot>();
   const registerRoot = vi.fn((root: ShadowRoot) => {
     roots.add(root);
-    return vi.fn(() => { roots.delete(root); });
+    return vi.fn(() => {
+      roots.delete(root);
+    });
   });
   return { roots, registerRoot, createController: vi.fn(), subscribe: vi.fn(() => vi.fn()) };
 }
@@ -58,25 +69,40 @@ describe("bundled stylesheet capability participation", () => {
     const context = activationContext(id);
     const result = await (plugin.apiVersion === 4 ? plugin.activate(context) : plugin.activate({ ...context, apiVersion: 5 }));
     const requests: string[] = [];
-    await result.start?.({ signal: new AbortController().signal, capabilities: {
-      resolve<Value>(requirement: PluginCapability<Value>): Value {
-        requests.push(requirement.id);
-        return requirement.parse(requirement.id === "stylesheet-integration" ? styles
-          : requirement.id === "syntax-highlighting" ? { supports: () => false, highlight: () => Promise.resolve(undefined) }
-          : {
-          listRenderers: () => [], renderText: () => undefined, renderMarkdown: () => html``,
-        });
+    await result.start?.({
+      signal: new AbortController().signal,
+      capabilities: {
+        resolve<Value>(requirement: PluginCapability<Value>): Value {
+          requests.push(requirement.id);
+          return requirement.parse(
+            requirement.id === "stylesheet-integration"
+              ? styles
+              : requirement.id === "syntax-highlighting"
+                ? { supports: () => false, highlight: () => Promise.resolve(undefined) }
+                : {
+                    listRenderers: () => [],
+                    renderText: () => undefined,
+                    renderMarkdown: () => html``,
+                  },
+          );
+        },
       },
-    } });
+    });
     expect(requests).toContain("stylesheet-integration");
     await result.dispose?.(new AbortController().signal);
   });
 
   it.each([
-    FILES_PANEL_ELEMENT, FILES_VIEWER_ELEMENT, FILES_CODE_VIEWER_ELEMENT,
-    TERMINAL_PANEL_ELEMENT, TERMINAL_SOFT_KEYS_ELEMENT,
-    "pi-web-mermaid-preview", "pi-web-highlighted-code", "pi-web-token-highlighted-code",
-    "pi-web-workspace-tasks-panel", "pi-web-relays-panel",
+    FILES_PANEL_ELEMENT,
+    FILES_VIEWER_ELEMENT,
+    FILES_CODE_VIEWER_ELEMENT,
+    TERMINAL_PANEL_ELEMENT,
+    TERMINAL_SOFT_KEYS_ELEMENT,
+    "pi-web-mermaid-preview",
+    "pi-web-highlighted-code",
+    "pi-web-token-highlighted-code",
+    "pi-web-workspace-tasks-panel",
+    "pi-web-relays-panel",
   ])("%s registers only while connected, including replacement and reconnect", async (tag) => {
     defineFilesCustomElements();
     defineTerminalCustomElements();

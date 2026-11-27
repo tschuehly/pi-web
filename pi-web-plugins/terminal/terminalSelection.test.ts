@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalInfo } from "./terminalProtocol";
-import { InMemoryTerminalSelectionMemory, selectFallbackTerminal, selectPreferredTerminal, SessionStorageTerminalSelectionMemory, terminalSelectionScope, type KeyValueStorage } from "./terminalSelection";
+import {
+  InMemoryTerminalSelectionMemory,
+  selectFallbackTerminal,
+  selectPreferredTerminal,
+  SessionStorageTerminalSelectionMemory,
+  terminalSelectionScope,
+  type KeyValueStorage,
+} from "./terminalSelection";
 
 function terminal(id: string, exited = false): TerminalInfo {
   return { id, cwd: "/repo", name: id, createdAt: "now", exited };
@@ -72,7 +79,11 @@ function memoryStorage(seed: Record<string, string> = {}): KeyValueStorage {
   const values = new Map(Object.entries(seed));
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
-    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
   };
 }

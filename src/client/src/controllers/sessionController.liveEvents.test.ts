@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, EmitSocket, emptyPage, FakeSocket, oldSession, runPendingAnimationFrames, status, workspace, type AppState, type SessionActivity, type SessionInfo } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  EmitSocket,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  runPendingAnimationFrames,
+  status,
+  workspace,
+  type AppState,
+  type SessionActivity,
+  type SessionInfo,
+} from "./sessionController.testSupport";
 
 describe("SessionController live events", () => {
   it("notifies the host when the daemon scope revision changes", () => {
@@ -11,7 +23,12 @@ describe("SessionController live events", () => {
       () => undefined,
       () => undefined,
       undefined,
-      { socket: new FakeSocket(), onModelScopeChanged: (revision) => { revisions.push(revision); } },
+      {
+        socket: new FakeSocket(),
+        onModelScopeChanged: (revision) => {
+          revisions.push(revision);
+        },
+      },
     );
 
     controller.applyGlobalEvent({ type: "models.changed", revision: 4 });
@@ -24,7 +41,10 @@ describe("SessionController live events", () => {
     let state: AppState = { ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { setStateCalls.push(patch); state = { ...state, ...patch }; },
+      (patch) => {
+        setStateCalls.push(patch);
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -50,7 +70,10 @@ describe("SessionController live events", () => {
     let state: AppState = { ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { setStateCalls.push(patch); state = { ...state, ...patch }; },
+      (patch) => {
+        setStateCalls.push(patch);
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -76,7 +99,9 @@ describe("SessionController live events", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -106,7 +131,9 @@ describe("SessionController live events", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -128,7 +155,9 @@ describe("SessionController live events", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -145,7 +174,9 @@ describe("SessionController live events", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -161,7 +192,9 @@ describe("SessionController live events", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },

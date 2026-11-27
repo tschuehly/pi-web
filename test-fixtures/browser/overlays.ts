@@ -36,19 +36,34 @@ function openModal(): void {
   const modal = new ModalSurface();
   modal.label = `Dialog ${String(++modalNumber)}`;
   modal.initialFocus = "input";
-  modal.onClose = () => { modal.remove(); };
-  render(html`<div class="modal-content">
+  modal.onClose = () => {
+    modal.remove();
+  };
+  render(
+    html`<div class="modal-content">
     <label>Dialog input <input aria-label="Dialog input"></label>
     ${switcher()}
     <button @click=${openModal}>Open nested dialog</button>
-    <button @click=${() => { modal.busy = !modal.busy; }}>Toggle busy</button>
-    <button @click=${() => { modal.remove(); }}>Close dialog</button>
-  </div>`, modal);
+    <button @click=${() => {
+      modal.busy = !modal.busy;
+    }}>Toggle busy</button>
+    <button @click=${() => {
+      modal.remove();
+    }}>Close dialog</button>
+  </div>`,
+    modal,
+  );
   document.body.append(modal);
 }
 function openPluginModal(): void {
   const dialog = document.createElement("dialog");
-  render(html`<label>Plugin input <input aria-label="Plugin input"></label>${switcher()}<button @click=${() => { dialog.close(); dialog.remove(); }}>Close plugin dialog</button>`, dialog);
+  render(
+    html`<label>Plugin input <input aria-label="Plugin input"></label>${switcher()}<button @click=${() => {
+      dialog.close();
+      dialog.remove();
+    }}>Close plugin dialog</button>`,
+    dialog,
+  );
   document.body.append(dialog);
   dialog.showModal();
 }
@@ -60,12 +75,19 @@ chat.messages = [{ role: "user", parts: [{ type: "text", text: "Chat messages be
 const hostUpgrade = new URLSearchParams(location.search).get("host-upgrade");
 if (hostUpgrade !== null) {
   chat.status = {
-    sessionId: "browser-fixture", isStreaming: false, isCompacting: false, isBashRunning: false,
-    pendingMessageCount: 0, queuedMessages: [], cost: 0,
+    sessionId: "browser-fixture",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    cost: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     durableHostPin: { revision: "old1234", current: "new5678", pending: hostUpgrade === "pending", repeats: ["running turn", "running children"] },
   };
-  chat.onUpgradeDurableHost = (mode) => { document.body.dataset["upgradeMode"] = mode; };
+  chat.onUpgradeDurableHost = (mode) => {
+    document.body.dataset["upgradeMode"] = mode;
+  };
 }
 layout.append(chat);
 const editor = new PromptEditor();
@@ -75,28 +97,45 @@ editor.cwd = "/repo";
 layout.append(editor);
 const clippedSwitcher = switcher();
 const messageActions = new MessageActionsMenu();
-render(html`<button @click=${() => { messageActions.close(); }}>Copy fixture</button>`, messageActions);
+render(
+  html`<button @click=${() => {
+    messageActions.close();
+  }}>Copy fixture</button>`,
+  messageActions,
+);
 const scrollingHost = document.createElement("div");
 const scrollingRoot = scrollingHost.attachShadow({ mode: "open" });
-render(html`<style>
+render(
+  html`<style>
   .scroll { height: 85px; overflow: auto; }
   .scroll-content { height: 500px; padding-top: 12px; }
   .clip { display: flex; align-items: center; gap: 10px; position: relative; transform: translateZ(0); overflow: hidden; height: 56px; padding: 8px; border: 1px solid #888; }
   machine-switcher { width: 240px; flex: 0 0 240px; }
-</style><div class="scroll"><div class="scroll-content"><div class="clip">${clippedSwitcher}${messageActions}</div></div></div>`, scrollingRoot);
+</style><div class="scroll"><div class="scroll-content"><div class="clip">${clippedSwitcher}${messageActions}</div></div></div>`,
+  scrollingRoot,
+);
 const root = document.createElement("main");
 document.body.append(root);
-render(html`
+render(
+  html`
   <div class="toolbar">
     <button @click=${openModal}>Open dialog</button>
     <button @click=${openPluginModal}>Open plugin dialog</button>
-    <button @click=${() => { layout.sending = !layout.sending; }}>Toggle activity</button>
-    <button @click=${() => { layout.toggleAttribute("hidden"); }}>Toggle conversation</button>
-    <button @click=${() => { editor.sessionId = "another-session"; }}>Switch session</button>
+    <button @click=${() => {
+      layout.sending = !layout.sending;
+    }}>Toggle activity</button>
+    <button @click=${() => {
+      layout.toggleAttribute("hidden");
+    }}>Toggle conversation</button>
+    <button @click=${() => {
+      editor.sessionId = "another-session";
+    }}>Switch session</button>
   </div>
   ${layout}
   ${scrollingHost}
-`, root);
+`,
+  root,
+);
 await Promise.all([layout.updateComplete, editor.updateComplete, clippedSwitcher.updateComplete, messageActions.updateComplete]);
 
 declare global {
@@ -117,6 +156,8 @@ window.overlayFixture = {
   },
   openModal,
   openPluginModal,
-  hideConversation: () => { layout.hidden = true; },
+  hideConversation: () => {
+    layout.hidden = true;
+  },
 };
 document.body.dataset["ready"] = "true";

@@ -37,7 +37,13 @@ describe("bundled Git browser plugin", () => {
     if (capability === undefined) throw new Error("Expected stylesheet integration requirement");
     expect(capability).toMatchObject({ pluginId: "pi-web", id: "stylesheet-integration", version: 1 });
     expect(capability.parse(stylesheetIntegration)).toBe(stylesheetIntegration);
-    for (const value of [null, {}, { ...stylesheetIntegration, registerRoot: 1 }, { ...stylesheetIntegration, subscribe: null }, { ...stylesheetIntegration, createController: null }]) {
+    for (const value of [
+      null,
+      {},
+      { ...stylesheetIntegration, registerRoot: 1 },
+      { ...stylesheetIntegration, subscribe: null },
+      { ...stylesheetIntegration, createController: null },
+    ]) {
       expect(() => capability.parse(value)).toThrow("Invalid PI WEB stylesheet integration");
     }
   });
@@ -73,11 +79,15 @@ describe("bundled Git browser plugin", () => {
     expect(panel.order).toBe(20);
     expect(panel.icon).toBeDefined();
     expect(panel.visible?.(context)).toBe(true);
-    expect(panel.visible?.(panelContext(backend.request, {
-      ...gitWorkspace,
-      // Legacy Git-shaped data must not override a declared replacement owner.
-      provider: { pluginId: "jj", capabilities: { remove: false } },
-    }))).toBe(false);
+    expect(
+      panel.visible?.(
+        panelContext(backend.request, {
+          ...gitWorkspace,
+          // Legacy Git-shaped data must not override a declared replacement owner.
+          provider: { pluginId: "jj", capabilities: { remove: false } },
+        }),
+      ),
+    ).toBe(false);
 
     const selectWorkspaceTool = vi.fn<PluginRuntimeContext["selectWorkspaceTool"]>();
     const refreshWorkspacePanels = vi.fn<PluginRuntimeContext["refreshWorkspacePanels"]>(() => panel.onInvalidate?.(context));
@@ -123,10 +133,14 @@ describe("bundled Git browser plugin", () => {
     const backend = backendFixture();
 
     expect(panel.visible?.(panelContext(backend.request))).toBe(true);
-    expect(panel.visible?.(panelContext(backend.request, {
-      ...gitWorkspace,
-      provider: { pluginId: runtimePluginId, capabilities: { remove: false } },
-    }))).toBe(false);
+    expect(
+      panel.visible?.(
+        panelContext(backend.request, {
+          ...gitWorkspace,
+          provider: { pluginId: runtimePluginId, capabilities: { remove: false } },
+        }),
+      ),
+    ).toBe(false);
 
     const selectWorkspaceTool = vi.fn<PluginRuntimeContext["selectWorkspaceTool"]>();
     const action = contributions.actions?.find((candidate) => candidate.id === "view.git");
@@ -249,8 +263,12 @@ describe("bundled Git browser plugin", () => {
     requestRender.mockClear();
     const respond = backend.request.getMockImplementation();
     if (respond === undefined) throw new Error("Expected backend implementation");
-    let release: () => void = () => { throw new Error("Expected pending request"); };
-    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let release: () => void = () => {
+      throw new Error("Expected pending request");
+    };
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     backend.request.mockImplementation(async (operation, input) => {
       await pending;
       return respond(operation, input);
@@ -287,8 +305,12 @@ describe("bundled Git browser plugin", () => {
     render(panel.render(context), container);
     const respond = backend.request.getMockImplementation();
     if (respond === undefined) throw new Error("Expected backend implementation");
-    let release: () => void = () => { throw new Error("Expected pending request"); };
-    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let release: () => void = () => {
+      throw new Error("Expected pending request");
+    };
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     backend.request.mockImplementation(async (operation, input) => {
       await pending;
       return respond(operation, input);
@@ -325,8 +347,9 @@ describe("bundled Git browser plugin", () => {
     await settleBackend();
     const respond = backend.request.getMockImplementation();
     if (respond === undefined) throw new Error("Expected backend implementation");
-    backend.request.mockImplementation((requested, input) => requested === operation
-      ? Promise.reject(new Error("Polling failed")) : respond(requested, input));
+    backend.request.mockImplementation((requested, input) =>
+      requested === operation ? Promise.reject(new Error("Polling failed")) : respond(requested, input),
+    );
     requestRender.mockClear();
     await vi.advanceTimersByTimeAsync(8_000);
     expect(requestRender).toHaveBeenCalled();
@@ -517,7 +540,7 @@ function activate(pluginId: string, runtimePluginId = pluginId) {
     lifetimeSignal: new AbortController().signal,
   });
   result.start({
-    capabilities: { resolve: <Value,>(capability: PluginCapability<Value>): Value => capability.parse(stylesheetIntegration) },
+    capabilities: { resolve: <Value>(capability: PluginCapability<Value>): Value => capability.parse(stylesheetIntegration) },
     signal: new AbortController().signal,
   });
   return result.contributions;
@@ -538,12 +561,13 @@ function backendFixture(patch: { files?: ReturnType<typeof changedFile>[]; submo
     submodules: patch.submodules ?? [],
   };
   const request = vi.fn((operation: string, input: JsonValue): Promise<JsonValue> => {
-    if (operation === "status") return Promise.resolve({
-      ...status,
-      hash: `${status.hash}:${JSON.stringify(status.files)}`,
-      files: [...status.files],
-      submodules: [...status.submodules],
-    });
+    if (operation === "status")
+      return Promise.resolve({
+        ...status,
+        hash: `${status.hash}:${JSON.stringify(status.files)}`,
+        files: [...status.files],
+        submodules: [...status.submodules],
+      });
     const staged = isRecord(input) && input["staged"] === true;
     const path = isRecord(input) && typeof input["path"] === "string" ? input["path"] : "diff";
     return Promise.resolve({

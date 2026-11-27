@@ -25,6 +25,13 @@ describe("formatFileSize", () => {
 describe("formatElapsed and formatAge", () => {
   it("use the coarsest unit that still reads precisely", () => {
     expect([0, 45_000, 12 * 60_000 + 59_000, 65 * 60_000, 50 * 3_600_000].map(formatElapsed)).toEqual(["0s", "45s", "12m", "1h 05m", "2d 2h"]);
-    expect([-5_000, 9_000, 45_000, 12 * 60_000, 3 * 3_600_000, 49 * 3_600_000].map(formatAge)).toEqual(["just now", "just now", "45s ago", "12m ago", "3h ago", "2d ago"]);
+    expect([-5_000, 9_000, 45_000, 12 * 60_000, 3 * 3_600_000, 49 * 3_600_000].map(formatAge)).toEqual([
+      "just now",
+      "just now",
+      "45s ago",
+      "12m ago",
+      "3h ago",
+      "2d ago",
+    ]);
   });
 });

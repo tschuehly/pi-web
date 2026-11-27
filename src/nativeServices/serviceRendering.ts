@@ -1,22 +1,11 @@
 import { posix as posixPath } from "node:path";
-import type {
-  NativeServiceId,
-  NativeServicePlan,
-  NativeServicePlanService,
-} from "./servicePlan.js";
+import type { NativeServiceId, NativeServicePlan, NativeServicePlanService } from "./servicePlan.js";
 
-export function renderSystemdUnit(
-  plan: NativeServicePlan,
-  service: NativeServicePlanService,
-): string {
+export function renderSystemdUnit(plan: NativeServicePlan, service: NativeServicePlanService): string {
   assertPlanService(plan, service);
   assertBackend(plan, "systemd");
-  const workingDirectory = service.workingDirectory === null
-    ? ""
-    : `WorkingDirectory=${systemdPathValue(service.workingDirectory)}\n`;
-  const restart = service.restart === "on-failure"
-    ? "Restart=on-failure\nRestartSec=2\n"
-    : "Restart=no\n";
+  const workingDirectory = service.workingDirectory === null ? "" : `WorkingDirectory=${systemdPathValue(service.workingDirectory)}\n`;
+  const restart = service.restart === "on-failure" ? "Restart=on-failure\nRestartSec=2\n" : "Restart=no\n";
   return `[Unit]
 Description=${service.description}
 ${systemdDependencyLine(plan, "After", service.after)}${systemdDependencyLine(plan, "Wants", service.wants)}[Service]
@@ -28,20 +17,12 @@ WantedBy=default.target
 `;
 }
 
-export function renderLaunchdPlist(
-  plan: NativeServicePlan,
-  service: NativeServicePlanService,
-  logDirectory: string,
-): string {
+export function renderLaunchdPlist(plan: NativeServicePlan, service: NativeServicePlanService, logDirectory: string): string {
   assertPlanService(plan, service);
   assertBackend(plan, "launchd");
   const programArguments = ["/usr/bin/env", plan.shell.executable, "-lc", service.shellCommand];
-  const workingDirectory = service.workingDirectory === null
-    ? ""
-    : plistString("WorkingDirectory", service.workingDirectory);
-  const keepAlive = service.restart === "on-failure"
-    ? "  <key>KeepAlive</key>\n  <dict>\n    <key>SuccessfulExit</key>\n    <false/>\n  </dict>\n"
-    : "";
+  const workingDirectory = service.workingDirectory === null ? "" : plistString("WorkingDirectory", service.workingDirectory);
+  const keepAlive = service.restart === "on-failure" ? "  <key>KeepAlive</key>\n  <dict>\n    <key>SuccessfulExit</key>\n    <false/>\n  </dict>\n" : "";
   const logPath = posixPath.join(logDirectory, service.manager.logName);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -71,11 +52,7 @@ function assertBackend(plan: NativeServicePlan, expected: "systemd" | "launchd")
   }
 }
 
-function systemdDependencyLine(
-  plan: NativeServicePlan,
-  name: "After" | "Wants",
-  ids: readonly NativeServiceId[],
-): string {
+function systemdDependencyLine(plan: NativeServicePlan, name: "After" | "Wants", ids: readonly NativeServiceId[]): string {
   if (ids.length === 0) return "";
   const names = ids.map((id) => {
     const dependency = plan.services.find((service) => service.id === id);
@@ -92,7 +69,10 @@ function systemdEnvironmentLines(environment: Readonly<Record<string, string>>):
 }
 
 function systemdExecArgument(value: string): string {
-  return `"${systemdEscape(value.replaceAll("%", "%%").replaceAll("$", () => "$$"), false)}"`;
+  return `"${systemdEscape(
+    value.replaceAll("%", "%%").replaceAll("$", () => "$$"),
+    false,
+  )}"`;
 }
 
 function systemdQuotedDirectiveValue(value: string): string {
@@ -135,10 +115,5 @@ function plistString(key: string, value: string, indent = "  "): string {
 }
 
 function xmlEscape(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }

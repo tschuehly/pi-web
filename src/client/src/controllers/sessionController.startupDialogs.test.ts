@@ -2,7 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import type { ExtensionDialogCloseResponse, ExtensionDialogKind, PendingExtensionDialog } from "../api";
 import { SessionController } from "./sessionController";
-import { transcriptSnapshotFixture, defaultApi, deferred, EmitSocket, emptyPage, oldSession, runPendingAnimationFrames, sessionLookupId, status, workspace, type AppState, type SessionActivity, type SessionInfo, type SessionStatus } from "./sessionController.testSupport";
+import {
+  transcriptSnapshotFixture,
+  defaultApi,
+  deferred,
+  EmitSocket,
+  emptyPage,
+  oldSession,
+  runPendingAnimationFrames,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+  type SessionActivity,
+  type SessionInfo,
+  type SessionStatus,
+} from "./sessionController.testSupport";
 
 const BACKEND_SESSION_ID = "backend-session";
 
@@ -64,7 +79,9 @@ function pendingStartController(state: { current: AppState }, api: Partial<typeo
   const socket = new EmitSocket();
   const controller = new SessionController(
     () => state.current,
-    (patch) => { state.current = { ...state.current, ...patch }; },
+    (patch) => {
+      state.current = { ...state.current, ...patch };
+    },
     () => undefined,
     undefined,
     {
@@ -73,7 +90,8 @@ function pendingStartController(state: { current: AppState }, api: Partial<typeo
         startSession: () => startRequest.promise,
         messages: () => Promise.resolve(emptyPage),
         status: (session) => Promise.resolve(status(sessionLookupId(session))),
-        transcriptSnapshot: (session, _options, machineId) => transcriptSnapshotFixture(emptyPage, api.status?.(session, machineId) ?? status(sessionLookupId(session))),
+        transcriptSnapshot: (session, _options, machineId) =>
+          transcriptSnapshotFixture(emptyPage, api.status?.(session, machineId) ?? status(sessionLookupId(session))),
         thinkingLevels: () => Promise.resolve({ levels: [] }),
         ...api,
       },
@@ -116,7 +134,9 @@ describe("SessionController session_start dialog startup reachability", () => {
     reportBackendSessionId(harness, tempId);
 
     expect(harness.socket.connectedSessionIds).toEqual([BACKEND_SESSION_ID]);
-    await vi.waitFor(() => { expect(statusCalls).toEqual([BACKEND_SESSION_ID]); });
+    await vi.waitFor(() => {
+      expect(statusCalls).toEqual([BACKEND_SESSION_ID]);
+    });
     resolveBackendSession(harness);
     await start;
   });
@@ -151,13 +171,18 @@ describe("SessionController session_start dialog startup reachability", () => {
   it("recovers a dialog that opened before the subscription from the mid-startup status", async () => {
     const state = { current: { ...initialAppState(), selectedWorkspace: workspace, sessions: [] } };
     const harness = pendingStartController(state, {
-      status: (session) => Promise.resolve(sessionLookupId(session) === BACKEND_SESSION_ID ? statusWithDialogs(BACKEND_SESSION_ID, [dialog("dialog-1")]) : status(sessionLookupId(session))),
+      status: (session) =>
+        Promise.resolve(
+          sessionLookupId(session) === BACKEND_SESSION_ID ? statusWithDialogs(BACKEND_SESSION_ID, [dialog("dialog-1")]) : status(sessionLookupId(session)),
+        ),
     });
     const { start, tempId } = beginPendingStart(harness);
 
     reportBackendSessionId(harness, tempId);
 
-    await vi.waitFor(() => { expect(harness.state.current.pendingDialogs).toEqual([dialog("dialog-1")]); });
+    await vi.waitFor(() => {
+      expect(harness.state.current.pendingDialogs).toEqual([dialog("dialog-1")]);
+    });
     // The per-session map holds the backend session's status for the readiness
     // swap, while the row keeps its own temporary identity.
     expect(harness.state.current.sessionStatuses[BACKEND_SESSION_ID]?.pendingDialogs).toEqual([dialog("dialog-1")]);
@@ -172,15 +197,18 @@ describe("SessionController session_start dialog startup reachability", () => {
     // rejection must not disturb the event-driven dialog flow.
     let createResolved = false;
     const harness = pendingStartController(state, {
-      status: (session) => sessionLookupId(session) === BACKEND_SESSION_ID && !createResolved
-        ? Promise.reject(new Error("Session not found"))
-        : Promise.resolve(status(sessionLookupId(session))),
+      status: (session) =>
+        sessionLookupId(session) === BACKEND_SESSION_ID && !createResolved
+          ? Promise.reject(new Error("Session not found"))
+          : Promise.resolve(status(sessionLookupId(session))),
     });
     const { start, tempId } = beginPendingStart(harness);
     reportBackendSessionId(harness, tempId);
 
     harness.socket.emit({ type: "dialog.opened", dialog: dialog("dialog-1") });
-    await vi.waitFor(() => { expect(harness.state.current.pendingDialogs).toEqual([dialog("dialog-1")]); });
+    await vi.waitFor(() => {
+      expect(harness.state.current.pendingDialogs).toEqual([dialog("dialog-1")]);
+    });
 
     expect(harness.state.current.error).toBe("");
     createResolved = true;
@@ -212,7 +240,9 @@ describe("SessionController session_start dialog startup reachability", () => {
     // normal selection flow takes over the now-real session.
     resolveBackendSession(harness);
     await start;
-    await vi.waitFor(() => { expect(harness.state.current.selectedSession?.id).toBe(BACKEND_SESSION_ID); });
+    await vi.waitFor(() => {
+      expect(harness.state.current.selectedSession?.id).toBe(BACKEND_SESSION_ID);
+    });
     expect(harness.state.current.sessions.some((session) => session.id === tempId)).toBe(false);
     expect(harness.state.current.sessions.some((session) => session.id === BACKEND_SESSION_ID)).toBe(true);
   });
@@ -334,7 +364,9 @@ describe("SessionController session_start dialog startup reachability", () => {
 
     resolveBackendSession(harness);
     await start;
-    await vi.waitFor(() => { expect(harness.state.current.selectedSession?.id).toBe(BACKEND_SESSION_ID); });
+    await vi.waitFor(() => {
+      expect(harness.state.current.selectedSession?.id).toBe(BACKEND_SESSION_ID);
+    });
 
     // The stale snapshot — issued before the swap and claiming dialog-1 is
     // still open — must not clobber the real session's fresher state.

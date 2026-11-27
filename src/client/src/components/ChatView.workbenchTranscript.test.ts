@@ -12,7 +12,9 @@ afterEach(() => {
 });
 
 const tool = (id: string, status: ToolExecutionPart["status"], toolName = "read"): ChatLine => ({
-  role: "tool", entryId: `tool-${id}`, parts: [{ type: "toolExecution", toolCallId: id, toolName, summary: id, status, args: { path: `${id}.ts` } }],
+  role: "tool",
+  entryId: `tool-${id}`,
+  parts: [{ type: "toolExecution", toolCallId: id, toolName, summary: id, status, args: { path: `${id}.ts` } }],
 });
 
 async function mount(messages: ChatLine[], setup: (view: ChatView) => void = () => undefined): Promise<ShadowRoot> {
@@ -29,8 +31,14 @@ async function mount(messages: ChatLine[], setup: (view: ChatView) => void = () 
 function attention(value: string): SessionStatus {
   const mode = { alignment: "Default", attention: value, checking: "Default", orchestration: "Main" };
   return {
-    sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    sessionId: "session-1",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
     extensionStatuses: { [WORKING_MODE_STATUS_KEY]: JSON.stringify({ schemaVersion: 2, phase: "applied", selected: mode, applied: mode }) },
   };
 }
@@ -39,7 +47,9 @@ function attention(value: string): SessionStatus {
 describe("Workbench transcript on the upstream chat surface", () => {
   it("expands reasoning by default only under Focused Attention, and a manual open survives the group growing", async () => {
     const thought: ChatLine = { role: "assistant", entryId: "t1", parts: [{ type: "thinking", text: "first thought" }] };
-    const focused = await mount([thought], (view) => { view.status = attention("Focused"); });
+    const focused = await mount([thought], (view) => {
+      view.status = attention("Focused");
+    });
     expect(focused.querySelector<HTMLDetailsElement>("details.thinking-group")?.open).toBe(true);
     document.body.replaceChildren();
 
@@ -62,18 +72,25 @@ describe("Workbench transcript on the upstream chat surface", () => {
   });
 
   it("keeps reasoning open, folds routine tools between it to one line, and leaves a failed tool visible", async () => {
-    const root = await mount([
-      { role: "user", entryId: "u", parts: [{ type: "text", text: "Go" }] },
-      { role: "assistant", entryId: "t1", parts: [{ type: "thinking", text: "first thought" }] },
-      tool("a", "success"),
-      tool("b", "running"),
-      { role: "assistant", entryId: "t2", parts: [{ type: "thinking", text: "second thought" }] },
-      tool("c", "error", "bash"),
-      { role: "assistant", entryId: "r", parts: [{ type: "text", text: "Done" }] },
-    ], (view) => { view.status = attention("Focused"); });
+    const root = await mount(
+      [
+        { role: "user", entryId: "u", parts: [{ type: "text", text: "Go" }] },
+        { role: "assistant", entryId: "t1", parts: [{ type: "thinking", text: "first thought" }] },
+        tool("a", "success"),
+        tool("b", "running"),
+        { role: "assistant", entryId: "t2", parts: [{ type: "thinking", text: "second thought" }] },
+        tool("c", "error", "bash"),
+        { role: "assistant", entryId: "r", parts: [{ type: "text", text: "Done" }] },
+      ],
+      (view) => {
+        view.status = attention("Focused");
+      },
+    );
     const thinking = root.querySelector<HTMLDetailsElement>("details.thinking-group");
     expect(thinking?.open).toBe(true);
-    expect([...(thinking?.querySelectorAll(".tool-fold > summary") ?? [])].map((summary) => summary.textContent.replace(/\s+/gu, " ").trim())).toEqual(["2 tool calls · running"]);
+    expect([...(thinking?.querySelectorAll(".tool-fold > summary") ?? [])].map((summary) => summary.textContent.replace(/\s+/gu, " ").trim())).toEqual([
+      "2 tool calls · running",
+    ]);
     expect(thinking?.querySelectorAll(".thinking-text")).toHaveLength(2);
     const failed = root.querySelector(".visible-events tool-execution-view");
     expect(failed).not.toBeNull();
@@ -100,19 +117,42 @@ describe("Workbench transcript on the upstream chat surface", () => {
   it("filters the transcript to human and assistant text", () => {
     const messages: ChatLine[] = [
       { role: "user", entryId: "u", parts: [{ type: "text", text: "Hi" }] },
-      { role: "assistant", entryId: "a", parts: [{ type: "thinking", text: "hm" }, { type: "text", text: "Hello" }] },
+      {
+        role: "assistant",
+        entryId: "a",
+        parts: [
+          { type: "thinking", text: "hm" },
+          { type: "text", text: "Hello" },
+        ],
+      },
       tool("x", "success"),
     ];
     const groups = groupChatMessages(messages);
-    expect(filterChatGroups(groups, "human").map((group) => group.kind === "message" ? group.message.role : group.kind)).toEqual(["user"]);
-    expect(filterChatGroups(groups, "human-assistant").map((group) => group.kind === "message" ? group.message.parts.map((part) => part.type).join() : group.kind)).toEqual(["text", "text"]);
+    expect(filterChatGroups(groups, "human").map((group) => (group.kind === "message" ? group.message.role : group.kind))).toEqual(["user"]);
+    expect(
+      filterChatGroups(groups, "human-assistant").map((group) => (group.kind === "message" ? group.message.parts.map((part) => part.type).join() : group.kind)),
+    ).toEqual(["text", "text"]);
   });
 
   it("renders Working Mode, Goal, background bash and subagent cards without message headers", async () => {
     const root = await mount([
       { role: "system", entryId: "w", parts: [{ type: "workingMode", dials: [{ label: "Pace", value: "fast", guidance: "Move quickly." }] }] },
-      { role: "system", entryId: "g", parts: [{ type: "goalLifecycle", details: { schemaVersion: 1, goalId: "goal-1", transition: "start", state: "active" } }] },
-      { role: "system", entryId: "b", parts: [{ type: "backgroundBash", details: { id: "job", command: "npm test", state: "failed", elapsedSeconds: 3, logPath: "/tmp/job.log", exitCode: 1 }, output: "boom" }] },
+      {
+        role: "system",
+        entryId: "g",
+        parts: [{ type: "goalLifecycle", details: { schemaVersion: 1, goalId: "goal-1", transition: "start", state: "active" } }],
+      },
+      {
+        role: "system",
+        entryId: "b",
+        parts: [
+          {
+            type: "backgroundBash",
+            details: { id: "job", command: "npm test", state: "failed", elapsedSeconds: 3, logPath: "/tmp/job.log", exitCode: 1 },
+            output: "boom",
+          },
+        ],
+      },
       { role: "system", entryId: "s", parts: [{ type: "subagentCompletion", text: "Collect results" }] },
     ]);
     expect(root.querySelector(".working-mode-card dt")?.textContent).toContain("Pace — fast");
@@ -125,10 +165,24 @@ describe("Workbench transcript on the upstream chat surface", () => {
   });
 
   it("renders every open ask_user set as its own card and reflects the dense tile", async () => {
-    const ask = (askId: string): PendingAskUser => ({ askId, askedAt: "2026-07-20T00:00:00.000Z", updatedAt: "2026-07-20T00:00:00.000Z", revision: "", turnsSinceUpdate: 0, questions: [{ id: "q", question: "Which?", options: [] }] });
+    const ask = (askId: string): PendingAskUser => ({
+      askId,
+      askedAt: "2026-07-20T00:00:00.000Z",
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      revision: "",
+      turnsSinceUpdate: 0,
+      questions: [{ id: "q", question: "Which?", options: [] }],
+    });
     let host: ChatView | undefined;
-    const root = await mount([], (view) => { view.pendingAsks = [ask("one"), ask("two")]; view.dense = true; host = view; });
-    expect([...root.querySelectorAll(".chat-content > ask-user-card.open-question-card")].map((card) => card.getAttribute("data-scroll-anchor-id"))).toEqual(["ask:one", "ask:two"]);
+    const root = await mount([], (view) => {
+      view.pendingAsks = [ask("one"), ask("two")];
+      view.dense = true;
+      host = view;
+    });
+    expect([...root.querySelectorAll(".chat-content > ask-user-card.open-question-card")].map((card) => card.getAttribute("data-scroll-anchor-id"))).toEqual([
+      "ask:one",
+      "ask:two",
+    ]);
     expect(host?.hasAttribute("dense")).toBe(true);
   });
 
@@ -138,7 +192,11 @@ describe("Workbench transcript on the upstream chat surface", () => {
       { role: "user", entryId: "u", meta: { timestamp: at }, parts: [{ type: "text", text: "Go" }] },
       { role: "assistant", entryId: "a", parts: [{ type: "text", text: "Done" }] },
     ];
-    const root = await mount(messages, (view) => { view.workbench = true; view.messageTotal = 2; view.messageEnd = 2; });
+    const root = await mount(messages, (view) => {
+      view.workbench = true;
+      view.messageTotal = 2;
+      view.messageEnd = 2;
+    });
     const heading = root.querySelector(".msg.user .conversation-body > .msg-heading");
     expect(heading?.querySelector(".msg-role")?.textContent).toBe("user");
     expect(heading?.querySelector("time")?.getAttribute("datetime")).toBe(at);
@@ -156,9 +214,12 @@ describe("Workbench transcript on the upstream chat surface", () => {
 
   it("places the meter by the first visible message, at the end while following, and reports how much is loaded", () => {
     const base = { messageStart: 50, loaded: 50, total: 101, hasMore: true, following: false };
-    expect(conversationMeterPosition({ ...base, firstVisibleIndex: () => 75 })).toEqual({ positionPercent: 75, loadedPercent: 50 / 101 * 100 });
+    expect(conversationMeterPosition({ ...base, firstVisibleIndex: () => 75 })).toEqual({ positionPercent: 75, loadedPercent: (50 / 101) * 100 });
     expect(conversationMeterPosition({ ...base, following: true, firstVisibleIndex: () => 75 }).positionPercent).toBe(100);
     expect(conversationMeterPosition({ ...base, firstVisibleIndex: () => undefined }).positionPercent).toBe(50);
-    expect(conversationMeterPosition({ messageStart: 0, loaded: 1, total: 1, hasMore: false, following: false, firstVisibleIndex: () => 0 })).toEqual({ positionPercent: 100, loadedPercent: 100 });
+    expect(conversationMeterPosition({ messageStart: 0, loaded: 1, total: 1, hasMore: false, following: false, firstVisibleIndex: () => 0 })).toEqual({
+      positionPercent: 100,
+      loadedPercent: 100,
+    });
   });
 });

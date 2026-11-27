@@ -42,22 +42,27 @@ describe("settings config drafts", () => {
   });
 
   it("builds gateway server saves without dropping preserved config values", () => {
-    expect(gatewayServerConfigFromDraft({
-      host: " gateway.local ",
-      port: "9000",
-      allowedHostsMode: "all",
-      allowedHostsText: "ignored.local",
-    }, {
-      shortcuts: { "core:view.chat": "mod+1" },
-      plugins: { info: { enabled: false } },
-      pathAccess: { allowedPaths: ["/old"] },
-      uploads: { defaultFolder: "old/uploads" },
-      attachments: { defaultFolder: "old/attachments" },
-      maxUploadBytes: 1234,
-      spawnSessions: true,
-      subsessions: false,
-      agent: { command: "agent-lab", dir: "~/agent-profiles/lab" },
-    })).toEqual({
+    expect(
+      gatewayServerConfigFromDraft(
+        {
+          host: " gateway.local ",
+          port: "9000",
+          allowedHostsMode: "all",
+          allowedHostsText: "ignored.local",
+        },
+        {
+          shortcuts: { "core:view.chat": "mod+1" },
+          plugins: { info: { enabled: false } },
+          pathAccess: { allowedPaths: ["/old"] },
+          uploads: { defaultFolder: "old/uploads" },
+          attachments: { defaultFolder: "old/attachments" },
+          maxUploadBytes: 1234,
+          spawnSessions: true,
+          subsessions: false,
+          agent: { command: "agent-lab", dir: "~/agent-profiles/lab" },
+        },
+      ),
+    ).toEqual({
       host: "gateway.local",
       port: 9000,
       allowedHosts: true,
@@ -72,12 +77,14 @@ describe("settings config drafts", () => {
       agent: { command: "agent-lab", dir: "~/agent-profiles/lab" },
     });
 
-    expect(gatewayServerConfigFromDraft({
-      host: "",
-      port: "",
-      allowedHostsMode: "list",
-      allowedHostsText: "example.local, 192.168.1.20\n",
-    })).toEqual({ allowedHosts: ["example.local", "192.168.1.20"] });
+    expect(
+      gatewayServerConfigFromDraft({
+        host: "",
+        port: "",
+        allowedHostsMode: "list",
+        allowedHostsText: "example.local, 192.168.1.20\n",
+      }),
+    ).toEqual({ allowedHosts: ["example.local", "192.168.1.20"] });
   });
 
   it("preserves the default theme when saving gateway fields", () => {
@@ -115,20 +122,30 @@ describe("settings config drafts", () => {
   });
 
   it("rejects invalid selected-machine upload default folders before saving", () => {
-    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "/tmp/uploads", attachmentDefaultFolder: "" })).toThrow("Upload default folder must be workspace-relative.");
-    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "../secret", attachmentDefaultFolder: "" })).toThrow("Upload default folder must not contain path traversal.");
+    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "/tmp/uploads", attachmentDefaultFolder: "" })).toThrow(
+      "Upload default folder must be workspace-relative.",
+    );
+    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "../secret", attachmentDefaultFolder: "" })).toThrow(
+      "Upload default folder must not contain path traversal.",
+    );
   });
 
   it("rejects invalid selected-machine attachment default folders before saving", () => {
-    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "", attachmentDefaultFolder: "/tmp/attachments" })).toThrow("Attachment default folder must be workspace-relative.");
-    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "", attachmentDefaultFolder: "../secret" })).toThrow("Attachment default folder must not contain path traversal.");
+    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "", attachmentDefaultFolder: "/tmp/attachments" })).toThrow(
+      "Attachment default folder must be workspace-relative.",
+    );
+    expect(() => machineAccessConfigPatchFromDraft({ allowedPathsText: "", uploadDefaultFolder: "", attachmentDefaultFolder: "../secret" })).toThrow(
+      "Attachment default folder must not contain path traversal.",
+    );
   });
 
   it("rejects relative external paths before saving selected-machine access", () => {
-    expect(() => machineAccessConfigPatchFromDraft({
-      allowedPathsText: "relative/path",
-      uploadDefaultFolder: "",
-      attachmentDefaultFolder: "",
-    })).toThrow("Allowed external paths must be absolute paths or start with ~");
+    expect(() =>
+      machineAccessConfigPatchFromDraft({
+        allowedPathsText: "relative/path",
+        uploadDefaultFolder: "",
+        attachmentDefaultFolder: "",
+      }),
+    ).toThrow("Allowed external paths must be absolute paths or start with ~");
   });
 });

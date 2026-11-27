@@ -1,8 +1,38 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH, SESSION_UNREAD_CWD_MAX_LENGTH, SESSION_UNREAD_SESSION_ID_MAX_LENGTH, type AskUserAnswer, type AskUserCloseResponse, type AskUserSubmission, type ExtensionDialogAnswerRequest, type ExtensionDialogCancelRequest, type SessionBulkMutationRequest, type SessionBulkMutationRef, type SessionCleanupRequest, type SessionModelScopeMode, type SessionTreeForkRequest, type SessionTreeNavigateRequest, type SessionTreeSummaryChoice, type SessionUnreadAcknowledgeRequest } from "../../shared/apiTypes.js";
+import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_ID_MAX_LENGTH,
+  ASK_USER_OPTION_LIMIT,
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
+  ASK_USER_QUESTION_LIMIT,
+  EXTENSION_DIALOG_ID_MAX_LENGTH,
+  EXTENSION_DIALOG_INPUT_MAX_LENGTH,
+  SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH,
+  SESSION_UNREAD_CATALOG_ID_MAX_LENGTH,
+  SESSION_UNREAD_CWD_MAX_LENGTH,
+  SESSION_UNREAD_SESSION_ID_MAX_LENGTH,
+  type AskUserAnswer,
+  type AskUserCloseResponse,
+  type AskUserSubmission,
+  type ExtensionDialogAnswerRequest,
+  type ExtensionDialogCancelRequest,
+  type SessionBulkMutationRequest,
+  type SessionBulkMutationRef,
+  type SessionCleanupRequest,
+  type SessionModelScopeMode,
+  type SessionTreeForkRequest,
+  type SessionTreeNavigateRequest,
+  type SessionTreeSummaryChoice,
+  type SessionUnreadAcknowledgeRequest,
+} from "../../shared/apiTypes.js";
 import { parseSessionDefaultsUpdate } from "../../shared/sessionDefaults.js";
 import { parseAskUserSubmissionImages } from "../../shared/askUserImages.js";
-import { projectBrowserMessageResponse, projectBrowserStreamSnapshot, projectBrowserTranscriptSnapshot, type BrowserImageProjector } from "../browserMessageProjection.js";
+import {
+  projectBrowserMessageResponse,
+  projectBrowserStreamSnapshot,
+  projectBrowserTranscriptSnapshot,
+  type BrowserImageProjector,
+} from "../browserMessageProjection.js";
 import { isSessionMediaId, SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
 import { isSessionImageMimeType } from "./sessionMediaIndex.js";
 import { normalizeRequestCwd } from "../workingDirectory.js";
@@ -84,10 +114,14 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       // has anything to correlate.
       const startupToken = body["startupToken"] === undefined ? undefined : requireNonEmptyString(body, "startupToken");
       // The daemon keeps and lists the token, so it must stay a short, plain label.
-      if (startupToken !== undefined && !/^[A-Za-z0-9:._-]{1,128}$/.test(startupToken)) throw new Error("startupToken field must be at most 128 letters, digits, or : . _ -");
+      if (startupToken !== undefined && !/^[A-Za-z0-9:._-]{1,128}$/.test(startupToken))
+        throw new Error("startupToken field must be at most 128 letters, digits, or : . _ -");
       const runtime = body["runtime"];
       if (runtime !== undefined && runtime !== "legacy" && runtime !== "durable") throw new Error("runtime field must be legacy or durable");
-      return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), { ...optionalField("startupToken", startupToken), ...(runtime === undefined ? {} : { runtime }) });
+      return await sessions.start(normalizeRequestCwd(requireString(body, "cwd")), {
+        ...optionalField("startupToken", startupToken),
+        ...(runtime === undefined ? {} : { runtime }),
+      });
     } catch (error) {
       return reply.code(400).send({ error: errorMessage(error) });
     }
@@ -128,26 +162,29 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(`${prefix}/sessions/:sessionId/unread/acknowledge`, async (request, reply) => {
-    let sessionId: string;
-    let acknowledgement: SessionUnreadAcknowledgeRequest;
-    try {
-      const body = requireRecord(request.body);
-      sessionId = requireNonEmptyBoundedString(request.params.sessionId, "sessionId", SESSION_UNREAD_SESSION_ID_MAX_LENGTH);
-      acknowledgement = {
-        cwd: normalizeRequestCwd(requireNonEmptyBoundedString(body["cwd"], "cwd", SESSION_UNREAD_CWD_MAX_LENGTH)),
-        catalogId: requireNonEmptyBoundedString(body["catalogId"], "catalogId", SESSION_UNREAD_CATALOG_ID_MAX_LENGTH),
-        throughCompletionOrder: requirePositiveSafeInteger(body["throughCompletionOrder"], "throughCompletionOrder"),
-      };
-    } catch (error) {
-      return reply.code(400).send({ error: errorMessage(error) });
-    }
-    try {
-      return await sessions.acknowledgeUnread(sessionId, acknowledgement);
-    } catch (error) {
-      return reply.code(503).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(
+    `${prefix}/sessions/:sessionId/unread/acknowledge`,
+    async (request, reply) => {
+      let sessionId: string;
+      let acknowledgement: SessionUnreadAcknowledgeRequest;
+      try {
+        const body = requireRecord(request.body);
+        sessionId = requireNonEmptyBoundedString(request.params.sessionId, "sessionId", SESSION_UNREAD_SESSION_ID_MAX_LENGTH);
+        acknowledgement = {
+          cwd: normalizeRequestCwd(requireNonEmptyBoundedString(body["cwd"], "cwd", SESSION_UNREAD_CWD_MAX_LENGTH)),
+          catalogId: requireNonEmptyBoundedString(body["catalogId"], "catalogId", SESSION_UNREAD_CATALOG_ID_MAX_LENGTH),
+          throughCompletionOrder: requirePositiveSafeInteger(body["throughCompletionOrder"], "throughCompletionOrder"),
+        };
+      } catch (error) {
+        return reply.code(400).send({ error: errorMessage(error) });
+      }
+      try {
+        return await sessions.acknowledgeUnread(sessionId, acknowledgement);
+      } catch (error) {
+        return reply.code(503).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.post<{ Body: SessionCleanupRequest | undefined }>(`${prefix}/sessions/cleanup/preview`, async (request, reply) => {
     try {
@@ -189,32 +226,38 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(`${prefix}/sessions/:sessionId/notifications/dismiss`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      const ref = notificationRefFromBody(request.params.sessionId, body);
-      return await sessions.dismissNotification(ref, {
-        daemonInstanceId: requireNonEmptyBoundedString(body["daemonInstanceId"], "daemonInstanceId", MAX_NOTIFICATION_DAEMON_ID_LENGTH),
-        notificationId: requireNonEmptyBoundedString(body["notificationId"], "notificationId", MAX_NOTIFICATION_ID_LENGTH),
-      });
-    } catch (error) {
-      return reply.code(notificationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(
+    `${prefix}/sessions/:sessionId/notifications/dismiss`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        const ref = notificationRefFromBody(request.params.sessionId, body);
+        return await sessions.dismissNotification(ref, {
+          daemonInstanceId: requireNonEmptyBoundedString(body["daemonInstanceId"], "daemonInstanceId", MAX_NOTIFICATION_DAEMON_ID_LENGTH),
+          notificationId: requireNonEmptyBoundedString(body["notificationId"], "notificationId", MAX_NOTIFICATION_ID_LENGTH),
+        });
+      } catch (error) {
+        return reply.code(notificationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(`${prefix}/sessions/:sessionId/notifications/dismiss-all`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      const ref = notificationRefFromBody(request.params.sessionId, body);
-      return await sessions.dismissAllNotifications(ref, {
-        daemonInstanceId: requireNonEmptyBoundedString(body["daemonInstanceId"], "daemonInstanceId", MAX_NOTIFICATION_DAEMON_ID_LENGTH),
-        throughOrder: requireNonNegativeSafeInteger(body["throughOrder"], "throughOrder"),
-        throughOverflowWatermark: requireNonNegativeSafeInteger(body["throughOverflowWatermark"], "throughOverflowWatermark"),
-      });
-    } catch (error) {
-      return reply.code(notificationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: Record<string, unknown> | undefined }>(
+    `${prefix}/sessions/:sessionId/notifications/dismiss-all`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        const ref = notificationRefFromBody(request.params.sessionId, body);
+        return await sessions.dismissAllNotifications(ref, {
+          daemonInstanceId: requireNonEmptyBoundedString(body["daemonInstanceId"], "daemonInstanceId", MAX_NOTIFICATION_DAEMON_ID_LENGTH),
+          throughOrder: requireNonNegativeSafeInteger(body["throughOrder"], "throughOrder"),
+          throughOverflowWatermark: requireNonNegativeSafeInteger(body["throughOverflowWatermark"], "throughOverflowWatermark"),
+        });
+      } catch (error) {
+        return reply.code(notificationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.get<{ Params: { sessionId: string }; Querystring: MessageQuery }>(`${prefix}/sessions/:sessionId/messages`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
@@ -228,25 +271,28 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.get<{ Params: { sessionId: string; mediaId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/media/:mediaId`, async (request, reply) => {
-    const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
-    if (ref === undefined) return reply;
-    if (!isSessionMediaId(request.params.mediaId)) return reply.code(400).send({ error: "Invalid media id" });
-    try {
-      const media = await sessions.media(ref, request.params.mediaId);
-      if (media === undefined) return await reply.code(404).send({ error: "Session media not found" });
-      if (!isSessionImageMimeType(media.mimeType)) throw new Error("Unsupported session image MIME type");
-      return await reply
-        .type(media.mimeType)
-        .header("Cache-Control", "private, max-age=31536000, immutable")
-        .header("Content-Length", media.data.byteLength)
-        .header("X-Content-Type-Options", "nosniff")
-        .send(media.data);
-    } catch (error) {
-      if (isSessionNotFoundError(error)) return reply.code(404).send({ error: errorMessage(error) });
-      throw error; // Fastify logs unexpected failures and returns 500, not a false miss.
-    }
-  });
+  app.get<{ Params: { sessionId: string; mediaId: string }; Querystring: SessionQuery }>(
+    `${prefix}/sessions/:sessionId/media/:mediaId`,
+    async (request, reply) => {
+      const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
+      if (ref === undefined) return reply;
+      if (!isSessionMediaId(request.params.mediaId)) return reply.code(400).send({ error: "Invalid media id" });
+      try {
+        const media = await sessions.media(ref, request.params.mediaId);
+        if (media === undefined) return await reply.code(404).send({ error: "Session media not found" });
+        if (!isSessionImageMimeType(media.mimeType)) throw new Error("Unsupported session image MIME type");
+        return await reply
+          .type(media.mimeType)
+          .header("Cache-Control", "private, max-age=31536000, immutable")
+          .header("Content-Length", media.data.byteLength)
+          .header("X-Content-Type-Options", "nosniff")
+          .send(media.data);
+      } catch (error) {
+        if (isSessionNotFoundError(error)) return reply.code(404).send({ error: errorMessage(error) });
+        throw error; // Fastify logs unexpected failures and returns 500, not a false miss.
+      }
+    },
+  );
 
   app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/status`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
@@ -270,20 +316,28 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       throw error;
     }
     // A cold Durable Chat: not read, so the caller keeps what it knew, and nothing started its host.
-    const mode = await sessions.workingMode?.(ref) ?? {};
+    const mode = (await sessions.workingMode?.(ref)) ?? {};
     if (pendingAsks === undefined) return { pendingAsks: [], running: false, ...mode };
     const attentionRequest = await sessions.attentionRequest(ref);
     return attentionRequest === undefined ? { pendingAsks, ...mode } : { pendingAsks, attentionRequest, ...mode };
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/attention/acknowledge`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      return { acknowledged: await sessions.acknowledgeAttention(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["requestId"], "requestId")) };
-    } catch (error) {
-      return reply.code(400).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/attention/acknowledge`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        return {
+          acknowledged: await sessions.acknowledgeAttention(
+            sessionRefFromBody(request.params.sessionId, body),
+            requireBoundedId(body["requestId"], "requestId"),
+          ),
+        };
+      } catch (error) {
+        return reply.code(400).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.get<{ Params: { sessionId: string }; Querystring: MessageQuery }>(`${prefix}/sessions/:sessionId/transcript-snapshot`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
@@ -327,45 +381,64 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; provider?: unknown; modelId?: unknown; enabled?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/models/enabled`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      return { models: await sessions.setModelEnabled(sessionRefFromBody(request.params.sessionId, body), requireString(body, "provider"), requireString(body, "modelId"), requireBoolean(body, "enabled")) };
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; provider?: unknown; modelId?: unknown; enabled?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/models/enabled`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        return {
+          models: await sessions.setModelEnabled(
+            sessionRefFromBody(request.params.sessionId, body),
+            requireString(body, "provider"),
+            requireString(body, "modelId"),
+            requireBoolean(body, "enabled"),
+          ),
+        };
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; mode?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/models/scope`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      const mode = body["mode"];
-      if (!isSessionModelScopeMode(mode)) throw new Error("mode field must be all or current");
-      return { models: await sessions.setModelScope(sessionRefFromBody(request.params.sessionId, body), mode) };
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; mode?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/models/scope`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        const mode = body["mode"];
+        if (!isSessionModelScopeMode(mode)) throw new Error("mode field must be all or current");
+        return { models: await sessions.setModelScope(sessionRefFromBody(request.params.sessionId, body), mode) };
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; provider?: unknown; modelId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/model`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      return await sessions.setModel(sessionRefFromBody(request.params.sessionId, body), requireString(body, "provider"), requireString(body, "modelId"));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; provider?: unknown; modelId?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/model`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        return await sessions.setModel(sessionRefFromBody(request.params.sessionId, body), requireString(body, "provider"), requireString(body, "modelId"));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; direction?: "forward" | "backward" } | undefined }>(`${prefix}/sessions/:sessionId/model/cycle`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      const direction = body["direction"];
-      if (direction !== undefined && direction !== "forward" && direction !== "backward") throw new Error("direction must be forward or backward");
-      return await sessions.cycleModel(sessionRefFromBody(request.params.sessionId, body), direction ?? "forward");
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; direction?: "forward" | "backward" } | undefined }>(
+    `${prefix}/sessions/:sessionId/model/cycle`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        const direction = body["direction"];
+        if (direction !== undefined && direction !== "forward" && direction !== "backward") throw new Error("direction must be forward or backward");
+        return await sessions.cycleModel(sessionRefFromBody(request.params.sessionId, body), direction ?? "forward");
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/defaults`, async (request, reply) => {
     try {
@@ -394,25 +467,31 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; level?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/thinking-level`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      // The level string is validated against the session's live available levels
-      // in the service, so it stays correct if pi changes the set.
-      return await sessions.setThinkingLevel(sessionRefFromBody(request.params.sessionId, body), requireThinkingLevel(body["level"]));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; level?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/thinking-level`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        // The level string is validated against the session's live available levels
+        // in the service, so it stays correct if pi changes the set.
+        return await sessions.setThinkingLevel(sessionRefFromBody(request.params.sessionId, body), requireThinkingLevel(body["level"]));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/thinking-level/cycle`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      return await sessions.cycleThinkingLevel(sessionRefFromBody(request.params.sessionId, body));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/thinking-level/cycle`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        return await sessions.cycleThinkingLevel(sessionRefFromBody(request.params.sessionId, body));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.get<{ Params: { sessionId: string }; Querystring: SessionQuery }>(`${prefix}/sessions/:sessionId/commands`, async (request, reply) => {
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
@@ -430,32 +509,39 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
       const ref = sessionRefFromBody(request.params.sessionId, body);
       const operationId = optionalOperationId(body);
       await promptReceipts.run(`prompt:${ref.id}`, operationId, [body["text"], body["streamingBehavior"], body["attachments"]], () =>
-        sessions.prompt(ref, body["text"], body["streamingBehavior"], body["attachments"], operationId === undefined ? undefined : { operationId }));
+        sessions.prompt(ref, body["text"], body["streamingBehavior"], body["attachments"], operationId === undefined ? undefined : { operationId }),
+      );
       return { accepted: true };
     } catch (error) {
       return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; kind?: unknown; text?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/queue/promote`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      return await sessions.promoteQueuedMessage(sessionRefFromBody(request.params.sessionId, body), {
-        kind: requireQueuedMessageKind(body["kind"]),
-        text: requireString(body, "text"),
-      });
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; kind?: unknown; text?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/queue/promote`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        return await sessions.promoteQueuedMessage(sessionRefFromBody(request.params.sessionId, body), {
+          kind: requireQueuedMessageKind(body["kind"]),
+          text: requireString(body, "text"),
+        });
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/queue/promote-all`, async (request, reply) => {
-    try {
-      return await sessions.promoteAllQueuedMessages(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/queue/promote-all`,
+    async (request, reply) => {
+      try {
+        return await sessions.promoteAllQueuedMessages(sessionRefFromBody(request.params.sessionId, optionalRecord(request.body)));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.post<{ Params: { sessionId: string }; Body: unknown }>(`${prefix}/sessions/:sessionId/queue/message`, async (request, reply) => {
     try {
@@ -474,7 +560,12 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown; approved?: unknown; images?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
+  app.post<{
+    Params: { sessionId: string };
+    Body:
+      | { cwd?: unknown; askId?: unknown; answers?: unknown; note?: unknown; revision?: unknown; partial?: unknown; approved?: unknown; images?: unknown }
+      | undefined;
+  }>(`${prefix}/sessions/:sessionId/ask/submit`, async (request, reply) => {
     try {
       const body = requireRecord(request.body);
       const askId = requireBoundedId(body["askId"], "askId");
@@ -487,58 +578,73 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/ask/cancel`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      const ref = sessionRefFromBody(request.params.sessionId, body);
-      const askId = requireBoundedId(body["askId"], "askId");
-      const operationId = optionalOperationId(body);
-      return await askReceipts.run(`ask:${ref.id}`, operationId, ["cancel", askId], () => sessions.cancelAsk(ref, askId, operationId));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; askId?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/ask/cancel`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        const ref = sessionRefFromBody(request.params.sessionId, body);
+        const askId = requireBoundedId(body["askId"], "askId");
+        const operationId = optionalOperationId(body);
+        return await askReceipts.run(`ask:${ref.id}`, operationId, ["cancel", askId], () => sessions.cancelAsk(ref, askId, operationId));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; taskId?: unknown; resolution?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/effects/resolve`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      const resolution = body["resolution"];
-      if (resolution !== "done" && resolution !== "not-done" && resolution !== "retry") throw new Error("resolution field must be done, not-done or retry");
-      if (sessions.resolveEffect === undefined) throw new Error("Resolving interrupted tool calls is not available");
-      return await sessions.resolveEffect(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["taskId"], "taskId"), resolution);
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; taskId?: unknown; resolution?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/effects/resolve`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        const resolution = body["resolution"];
+        if (resolution !== "done" && resolution !== "not-done" && resolution !== "retry") throw new Error("resolution field must be done, not-done or retry");
+        if (sessions.resolveEffect === undefined) throw new Error("Resolving interrupted tool calls is not available");
+        return await sessions.resolveEffect(sessionRefFromBody(request.params.sessionId, body), requireBoundedId(body["taskId"], "taskId"), resolution);
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; dialogId?: unknown; value?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/dialogs/answer`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      const answer = extensionDialogAnswerFromBody(body);
-      return await sessions.answerDialog(sessionRefFromBody(request.params.sessionId, body), answer.dialogId, answer.value);
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; dialogId?: unknown; value?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/dialogs/answer`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        const answer = extensionDialogAnswerFromBody(body);
+        return await sessions.answerDialog(sessionRefFromBody(request.params.sessionId, body), answer.dialogId, answer.value);
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; dialogId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/dialogs/cancel`, async (request, reply) => {
-    try {
-      const body = requireRecord(request.body);
-      const cancel = extensionDialogCancelFromBody(body);
-      return await sessions.cancelDialog(sessionRefFromBody(request.params.sessionId, body), cancel.dialogId);
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; dialogId?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/dialogs/cancel`,
+    async (request, reply) => {
+      try {
+        const body = requireRecord(request.body);
+        const cancel = extensionDialogCancelFromBody(body);
+        return await sessions.cancelDialog(sessionRefFromBody(request.params.sessionId, body), cancel.dialogId);
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; dismissId?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/warnings/dismiss`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      return await sessions.dismissWarning(sessionRefFromBody(request.params.sessionId, body), requireString(body, "dismissId"));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; dismissId?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/warnings/dismiss`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        return await sessions.dismissWarning(sessionRefFromBody(request.params.sessionId, body), requireString(body, "dismissId"));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.post<{ Params: { sessionId: string }; Body: AttachmentsRequestBody | undefined }>(`${prefix}/sessions/:sessionId/attachments`, async (request, reply) => {
     try {
@@ -552,45 +658,61 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     }
   });
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/shell`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      await sessions.shell(sessionRefFromBody(request.params.sessionId, body), requireString(body, "text"));
-      return { accepted: true };
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/shell`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        await sessions.shell(sessionRefFromBody(request.params.sessionId, body), requireString(body, "text"));
+        return { accepted: true };
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   // The owner confirmed a pi-run block in the browser; the body names it, the Chat's transcript supplies what runs.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; entryId?: unknown; proposal?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/owner-runs`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
-      return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), requireString(body, "entryId"), body["proposal"]);
-    } catch (error) {
-      return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; entryId?: unknown; proposal?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/owner-runs`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
+        return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), requireString(body, "entryId"), body["proposal"]);
+      } catch (error) {
+        return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   // shortcut: no owner check, so any local process (an agent's bash too) can POST a command such as /pair here, as on every PI WEB route; owner authentication for PI WEB closes it.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/commands/run`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      return await sessions.runCommand(sessionRefFromBody(request.params.sessionId, body), requireString(body, "text"));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; text?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/commands/run`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        return await sessions.runCommand(sessionRefFromBody(request.params.sessionId, body), requireString(body, "text"));
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown; value?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/commands/respond`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      return await sessions.respondToCommand(sessionRefFromBody(request.params.sessionId, body), requireString(body, "requestId"), requireString(body, "value"));
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; requestId?: unknown; value?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/commands/respond`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        return await sessions.respondToCommand(
+          sessionRefFromBody(request.params.sessionId, body),
+          requireString(body, "requestId"),
+          requireString(body, "value"),
+        );
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   app.post<{ Params: { sessionId: string }; Body: unknown }>(`${prefix}/sessions/:sessionId/tree/navigate`, async (request, reply) => {
     try {
@@ -622,17 +744,20 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   // Phase C3: a pinned Durable Chat moves to the current host code on the owner's request, refused while it is busy;
   // `mode: "now"` (Upgrade now) restarts it on the current code whatever runs, recovering as after a restart;
   // `mode: "cancel"` drops its pending automatic upgrade.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; mode?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/durable-host/upgrade`, async (request, reply) => {
-    try {
-      if (sessions.upgradeDurableHost === undefined) throw new Error("Upgrading a Chat's host is not available");
-      const body = optionalRecord(request.body);
-      const mode = body["mode"];
-      if (mode !== undefined && mode !== "quiet" && mode !== "now" && mode !== "cancel") throw new Error("mode must be quiet, now or cancel");
-      return await sessions.upgradeDurableHost(sessionRefFromBody(request.params.sessionId, body), mode);
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; mode?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/durable-host/upgrade`,
+    async (request, reply) => {
+      try {
+        if (sessions.upgradeDurableHost === undefined) throw new Error("Upgrading a Chat's host is not available");
+        const body = optionalRecord(request.body);
+        const mode = body["mode"];
+        if (mode !== undefined && mode !== "quiet" && mode !== "now" && mode !== "cancel") throw new Error("mode must be quiet, now or cancel");
+        return await sessions.upgradeDurableHost(sessionRefFromBody(request.params.sessionId, body), mode);
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
+      }
+    },
+  );
 
   // Stop-all for Durable Chats: each family host closes in order and its launchd job is unloaded (Phase C3).
   app.post(`${prefix}/sessions/durable-hosts/stop`, async (_request, reply) => {
@@ -646,20 +771,23 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   });
 
   // `ifUnwatched` (closing a Workbench tab): the service may refuse, `{ stopped: false, watched | busy }`.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; ifUnwatched?: unknown; confirmed?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/stop`, async (request, reply) => {
-    try {
-      const body = optionalRecord(request.body);
-      const ref = sessionRefFromBody(request.params.sessionId, body);
-      if (body["ifUnwatched"] === true) {
-        if (sessions.stopIfUnwatched === undefined) throw new Error("Ending an unwatched Chat is not available");
-        return await sessions.stopIfUnwatched(ref, body["confirmed"] === true);
+  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; ifUnwatched?: unknown; confirmed?: unknown } | undefined }>(
+    `${prefix}/sessions/:sessionId/stop`,
+    async (request, reply) => {
+      try {
+        const body = optionalRecord(request.body);
+        const ref = sessionRefFromBody(request.params.sessionId, body);
+        if (body["ifUnwatched"] === true) {
+          if (sessions.stopIfUnwatched === undefined) throw new Error("Ending an unwatched Chat is not available");
+          return await sessions.stopIfUnwatched(ref, body["confirmed"] === true);
+        }
+        await sessions.stop(ref);
+        return { stopped: true };
+      } catch (error) {
+        return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
       }
-      await sessions.stop(ref);
-      return { stopped: true };
-    } catch (error) {
-      return reply.code(mutationErrorStatus(error)).send({ error: errorMessage(error) });
-    }
-  });
+    },
+  );
 
   app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown } | undefined }>(`${prefix}/sessions/:sessionId/archive`, async (request, reply) => {
     try {
@@ -850,9 +978,16 @@ function askUserSubmissionFromBody(body: Record<string, unknown>): AskUserSubmis
   if (context !== undefined && typeof context !== "string") throw new Error("context field must be a string");
   if (typeof context === "string" && context.length > ASK_USER_CONTEXT_MAX_LENGTH) throw new Error("context field is too long");
   const images = parseAskUserSubmissionImages(body["images"]);
-  return { answers: answers.map(askUserAnswerFromValue), ...(note === undefined ? {} : { note }), ...(revision === undefined ? {} : { revision }), ...(partial === true ? { partial } : {}), ...(context === undefined ? {} : { context }), ...(approved === true ? { approved } : {}), ...(images.length === 0 ? {} : { images }) };
+  return {
+    answers: answers.map(askUserAnswerFromValue),
+    ...(note === undefined ? {} : { note }),
+    ...(revision === undefined ? {} : { revision }),
+    ...(partial === true ? { partial } : {}),
+    ...(context === undefined ? {} : { context }),
+    ...(approved === true ? { approved } : {}),
+    ...(images.length === 0 ? {} : { images }),
+  };
 }
-
 
 function askUserAnswerFromValue(value: unknown): AskUserAnswer {
   const record = requireRecord(value);
@@ -863,7 +998,8 @@ function askUserAnswerFromValue(value: unknown): AskUserAnswer {
   if (otherText !== undefined && typeof otherText !== "string") throw new Error("otherText field must be a string");
   if (typeof otherText === "string" && otherText.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("otherText field is too long");
   const typed = record["value"];
-  if (typed !== undefined && typeof typed !== "boolean" && !(typeof typed === "number" && Number.isFinite(typed)) && typeof typed !== "string") throw new Error("value field must be a boolean, number, or string");
+  if (typed !== undefined && typeof typed !== "boolean" && !(typeof typed === "number" && Number.isFinite(typed)) && typeof typed !== "string")
+    throw new Error("value field must be a boolean, number, or string");
   if (typeof typed === "string" && typed.length > ASK_USER_OTHER_TEXT_MAX_LENGTH) throw new Error("value field is too long");
   return {
     id: requireBoundedId(record["id"], "id"),

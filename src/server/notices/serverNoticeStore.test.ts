@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  SERVER_PLUGIN_NOTICE_GLOBAL_LIMIT,
-  SERVER_PLUGIN_NOTICE_PER_SOURCE_LIMIT,
-} from "../../shared/serverNoticeContract.js";
+import { SERVER_PLUGIN_NOTICE_GLOBAL_LIMIT, SERVER_PLUGIN_NOTICE_PER_SOURCE_LIMIT } from "../../shared/serverNoticeContract.js";
 import { ServerNoticeStore } from "./serverNoticeStore.js";
 
 describe("ServerNoticeStore", () => {

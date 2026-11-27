@@ -51,28 +51,34 @@ function isCachedHistory(value: unknown): value is CachedChatHistory {
   if (typeof value !== "object" || value === null) return false;
   if (!("messages" in value) || !("start" in value) || !("total" in value) || !("savedAt" in value)) return false;
   const { messages, start, total, savedAt } = value;
-  return Array.isArray(messages)
+  return (
+    Array.isArray(messages)
     && typeof start === "number"
     && typeof total === "number"
     && typeof savedAt === "number"
-    && isValidMessagePage({ messages, start, total });
+    && isValidMessagePage({ messages, start, total })
+  );
 }
 
 function isValidMessagePage(page: RawMessagePage): boolean {
-  return Number.isInteger(page.start)
+  return (
+    Number.isInteger(page.start)
     && Number.isInteger(page.total)
     && page.start >= 0
     && page.total >= page.start
     && page.messages.length <= page.total - page.start
-    && !page.messages.some(isNormalizedChatLine);
+    && !page.messages.some(isNormalizedChatLine)
+  );
 }
 
 function isNormalizedChatLine(value: unknown): boolean {
-  return typeof value === "object"
+  return (
+    typeof value === "object"
     && value !== null
     && "role" in value
     && "parts" in value
     && !("content" in value)
     && typeof value.role === "string"
-    && Array.isArray(value.parts);
+    && Array.isArray(value.parts)
+  );
 }

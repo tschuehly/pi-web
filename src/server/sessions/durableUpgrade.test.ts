@@ -4,7 +4,15 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessDigestArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
+import {
+  daemonPathEnvironment,
+  DURABLE_HOST_PROTOCOL,
+  DurableChatService,
+  type DurableHostLauncher,
+  type DurableHostProcess,
+  fullAccessDigestArgs,
+  IDLE_HOST_CLOSE_MS,
+} from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
 import { effectivePiWebConfig } from "../../config.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
@@ -12,16 +20,38 @@ import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 // Daemon orchestration of the seamless host upgrades (idle close, Upgrade now, automatic upgrade) against host doubles:
 // which code each host starts from, what the store holds after a failed start, and what survives a daemon restart.
 
-const status = { persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
-const events = { startGeneration: () => "test", publish: () => undefined, publishGlobal: () => undefined, currentSeq: () => 0, hasSessionSubscribers: () => true };
-interface Request { id: number; method: string; params?: Record<string, unknown> }
+const status = {
+  persisted: true,
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  messageCount: 0,
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: 0,
+};
+const events = {
+  startGeneration: () => "test",
+  publish: () => undefined,
+  publishGlobal: () => undefined,
+  currentSeq: () => 0,
+  hasSessionSubscribers: () => true,
+};
+interface Request {
+  id: number;
+  method: string;
+  params?: Record<string, unknown>;
+}
 
 function isRequest(value: unknown): value is Request {
   return typeof value === "object" && value !== null && "id" in value && typeof value.id === "number" && "method" in value && typeof value.method === "string";
 }
 
 let ROOT = "";
-afterEach(() => { if (ROOT !== "") rmSync(ROOT, { recursive: true, force: true }); });
+afterEach(() => {
+  if (ROOT !== "") rmSync(ROOT, { recursive: true, force: true });
+});
 
 const SCHEMA = { documents: { "workbench.delegation": 1 }, tasks: { "workbench.child-reporter": 1 } };
 
@@ -61,7 +91,11 @@ class Fake extends EventEmitter implements DurableHostProcess {
   digestArgs: string[] = [];
   kills = 0;
 
-  constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
+  constructor(
+    readonly code: { entry: string; current: string },
+    readonly exitHook: () => void,
+    fail: boolean | "hang" = false,
+  ) {
     super();
     queueMicrotask(() => {
       if (fail === "hang") return;
@@ -70,7 +104,9 @@ class Fake extends EventEmitter implements DurableHostProcess {
     });
   }
 
-  reply(request: Request, result: unknown): void { this.emit("message", { id: request.id, result }); }
+  reply(request: Request, result: unknown): void {
+    this.emit("message", { id: request.id, result });
+  }
 
   send(request: unknown): boolean {
     if (!isRequest(request)) return false;
@@ -96,7 +132,14 @@ class Fake extends EventEmitter implements DurableHostProcess {
       }
       // As the Workbench host: B's close is accepted affirmatively.
       const closed = request.params?.["ifRestartSafe"] === true ? { closed: true } : null;
-      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : request.method === "close" && this.fullAccess && request.params?.["reason"] === "upgrade" ? { ...closed, fullAccess: true } : closed);
+      this.reply(
+        request,
+        request.method === "status"
+          ? { ...status, isStreaming: this.streaming }
+          : request.method === "close" && this.fullAccess && request.params?.["reason"] === "upgrade"
+            ? { ...closed, fullAccess: true }
+            : closed,
+      );
       if (request.method === "close") {
         this.exitHook();
         this.emit("exit", 0, null);
@@ -112,11 +155,17 @@ class Fake extends EventEmitter implements DurableHostProcess {
     return true;
   }
 
-  detach(): void { /* a launchd host keeps running */ }
+  detach(): void {
+    /* a launchd host keeps running */
+  }
 }
 
 /** A daemon over one Chat pinned to `pin`, with `current` the code new hosts get. */
-function setup(pin: string, current: string, options: { failCurrent?: boolean; failPin?: boolean; failResume?: boolean; autoUpgrade?: boolean; subscribers?: boolean } = {}) {
+function setup(
+  pin: string,
+  current: string,
+  options: { failCurrent?: boolean; failPin?: boolean; failResume?: boolean; autoUpgrade?: boolean; subscribers?: boolean } = {},
+) {
   const locator = new SessionRuntimeLocator(ROOT);
   const record = locator.create("/work", "chat");
   locator.setHostEntry(record.id, pin);
@@ -131,7 +180,13 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     const fail = entry === current ? options.failCurrent === true : options.failPin === true;
     // A newer host that fails after migrating the store, before it is ready.
     if (fail) writeFileSync(join(storeDir, "session.sqlite"), "migrated");
-    const host = new Fake({ entry, current }, () => { locator.setHost(chat.id, undefined); }, fail);
+    const host = new Fake(
+      { entry, current },
+      () => {
+        locator.setHost(chat.id, undefined);
+      },
+      fail,
+    );
     if (!fail) locator.setHostEntry(chat.id, entry);
     host.resumeError = entry === current && options.failResume === true;
     host.fullAccessDigest = launched?.fullAccessDigest;
@@ -140,11 +195,24 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     return host;
   };
   const durable = new DurableChatService({
-    locator, launch, storesDir, now: () => now, closeGraceMs: 100,
+    locator,
+    launch,
+    storesDir,
+    now: () => now,
+    closeGraceMs: 100,
     events: { ...events, hasSessionSubscribers: () => options.subscribers ?? true },
     ...(options.autoUpgrade === undefined ? {} : { autoUpgrade: options.autoUpgrade }),
   });
-  return { durable, locator, hosts, ref: { id: record.id, cwd: record.cwd }, storeDir: join(storesDir, record.storeId), idle: () => { now += IDLE_HOST_CLOSE_MS; } };
+  return {
+    durable,
+    locator,
+    hosts,
+    ref: { id: record.id, cwd: record.cwd },
+    storeDir: join(storesDir, record.storeId),
+    idle: () => {
+      now += IDLE_HOST_CLOSE_MS;
+    },
+  };
 }
 
 describe("seamless upgrade orchestration", () => {
@@ -164,8 +232,13 @@ describe("seamless upgrade orchestration", () => {
     const locator = new SessionRuntimeLocator(ROOT);
     let selected = "";
     const back = new DurableChatService({
-      locator, events, storesDir: join(ROOT, "stores"),
-      launch: (chat) => { selected = locator.durable(chat.id)?.hostEntry ?? old; return new Fake({ entry: selected, current: old }, () => undefined); },
+      locator,
+      events,
+      storesDir: join(ROOT, "stores"),
+      launch: (chat) => {
+        selected = locator.durable(chat.id)?.hostEntry ?? old;
+        return new Fake({ entry: selected, current: old }, () => undefined);
+      },
     });
     const reopened = await back.status(s.ref);
     expect(selected).toBe(b);
@@ -180,7 +253,9 @@ describe("seamless upgrade orchestration", () => {
     const s = setup(old, b);
     await s.durable.status(s.ref);
     writeFileSync(join(s.storeDir, "session.sqlite"), "history");
-    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow("This upgrade changes the store format (Pi Durable 1.4.0 to 1.5.2); use Upgrade host when the Chat is quiet");
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(
+      "This upgrade changes the store format (Pi Durable 1.4.0 to 1.5.2); use Upgrade host when the Chat is quiet",
+    );
     expect(s.hosts).toHaveLength(1);
     expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(old);
@@ -193,7 +268,10 @@ describe("seamless upgrade orchestration", () => {
 
   it("round 4 F1: Upgrade now refuses a move to another store schema, or one it cannot read, within one Pi Durable version", async () => {
     for (const [schema, refusal] of [
-      [{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet"],
+      [
+        { ...SCHEMA, documents: { "workbench.delegation": 2 } },
+        "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet",
+      ],
       // Code without the file is older than a declared schema (round 5): refused as any move to an older store is.
       [null, "This Chat was opened by host code with a newer Workbench store schema than the current host"],
     ] as const) {
@@ -212,7 +290,10 @@ describe("seamless upgrade orchestration", () => {
   });
 
   it("round 5 P1-3: quiet Upgrade host and the idle close never move a family to an older or unreadable Workbench store schema; a pin older than store-schema.json moves forward", async () => {
-    for (const [pinSchema, currentSchema] of [[{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, SCHEMA], [SCHEMA, null]] as const) {
+    for (const [pinSchema, currentSchema] of [
+      [{ ...SCHEMA, documents: { "workbench.delegation": 2 } }, SCHEMA],
+      [SCHEMA, null],
+    ] as const) {
       ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
       const [a, b] = [revision("rev-a", "1.5.2", pinSchema), revision("rev-b", "1.5.2", currentSchema)];
       const s = setup(a, b, { subscribers: false });
@@ -258,13 +339,16 @@ describe("seamless upgrade orchestration", () => {
   });
 
   it("B: a store-format change moves by itself only when the Chat is quiet, Pages or not, on a new host started at once; never to a store it cannot read", async () => {
-    for (const [pinVersion, schema] of [["1.4.0", SCHEMA], ["1.5.2", { ...SCHEMA, documents: { "workbench.delegation": 2 } }]] as const) {
+    for (const [pinVersion, schema] of [
+      ["1.4.0", SCHEMA],
+      ["1.5.2", { ...SCHEMA, documents: { "workbench.delegation": 2 } }],
+    ] as const) {
       ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
       const [a, b] = [revision("rev-a", pinVersion), revision("rev-b", "1.5.2", schema)];
       const s = setup(a, b, { autoUpgrade: true });
       expect((await s.durable.status(s.ref)).durableHostPin?.pending).toBe(true);
       const [old] = s.hosts;
-    if (old === undefined) throw new Error("no host");
+      if (old === undefined) throw new Error("no host");
       let extra: Record<string, unknown> = { pendingAsks: [{ id: "q" }] };
       old.onStatus = (request) => {
         old.reply(request, { ...status, extensionStatuses: { "pi-workbench:atelier": "{}" }, ...extra });
@@ -311,11 +395,15 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.status(s.ref);
     options.failPin = true;
     const unobserved: unknown[] = [];
-    const record = (reason: unknown) => { unobserved.push(reason); };
+    const record = (reason: unknown) => {
+      unobserved.push(reason);
+    };
     process.on("unhandledRejection", record);
     try {
       await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/did not start there either/);
-      await new Promise((resolve) => { setTimeout(resolve, 50); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
       expect(unobserved).toEqual([]);
       expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, a]);
     } finally {
@@ -330,10 +418,21 @@ describe("seamless upgrade orchestration", () => {
     const s = setup(a, b);
     await s.durable.status(s.ref);
     const write = s.locator.setUpgradeState.bind(s.locator);
-    s.locator.setUpgradeState = () => { throw Object.assign(new Error("injected phase-write ENOSPC"), { code: "ENOSPC" }); };
+    s.locator.setUpgradeState = () => {
+      throw Object.assign(new Error("injected phase-write ENOSPC"), { code: "ENOSPC" });
+    };
     await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/phase-write ENOSPC/);
     s.locator.setUpgradeState = write;
-    expect(await Promise.race([s.durable.status(s.ref).then(() => "answered"), new Promise((resolve) => { setTimeout(() => { resolve("blocked"); }, 500); })])).toBe("answered");
+    expect(
+      await Promise.race([
+        s.durable.status(s.ref).then(() => "answered"),
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve("blocked");
+          }, 500);
+        }),
+      ]),
+    ).toBe("answered");
     expect(s.hosts).toHaveLength(1);
     expect(s.hosts[0]?.requests.map((request) => request.method)).not.toContain("close");
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
@@ -351,13 +450,25 @@ describe("seamless upgrade orchestration", () => {
     // As a full disk does: the record changes in memory, the write to disk throws.
     s.locator.setHostEntry = (id, entry) => {
       write(id, entry);
-      if (entry === b && !failed) { failed = true; throw Object.assign(new Error("injected pin-write ENOSPC"), { code: "ENOSPC" }); }
+      if (entry === b && !failed) {
+        failed = true;
+        throw Object.assign(new Error("injected pin-write ENOSPC"), { code: "ENOSPC" });
+      }
     };
     const during = s.durable.upgradeHost(s.ref, "now");
     const meanwhile = s.durable.status(s.ref);
     await expect(during).rejects.toThrow(/pin-write ENOSPC.*back on its old host code/);
     await meanwhile;
-    expect(await Promise.race([s.durable.status(s.ref).then(() => "answered"), new Promise((resolve) => { setTimeout(() => { resolve("blocked"); }, 500); })])).toBe("answered");
+    expect(
+      await Promise.race([
+        s.durable.status(s.ref).then(() => "answered"),
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve("blocked");
+          }, 500);
+        }),
+      ]),
+    ).toBe("answered");
     expect(s.hosts.map((host) => host.code.entry)).toEqual([a, a]);
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
     expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
@@ -374,7 +485,9 @@ describe("seamless upgrade orchestration", () => {
     for (const closeError of [true, "hang"] as const) {
       host.closeError = closeError;
       await s.durable.upgradePendingHosts();
-      await new Promise((resolve) => { setTimeout(resolve, 300); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
       expect(host.kills, String(closeError)).toBe(0);
       expect(s.hosts).toHaveLength(1);
       expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(a);
@@ -396,8 +509,14 @@ describe("seamless upgrade orchestration", () => {
     const disk = new SessionRuntimeLocator(ROOT);
     const attached: Fake[] = [];
     const restarted = new DurableChatService({
-      locator: disk, events, storesDir: join(ROOT, "stores"),
-      launch: (chat) => { const host = new Fake({ entry: disk.durable(chat.id)?.hostEntry ?? b, current: b }, () => undefined); attached.push(host); return host; },
+      locator: disk,
+      events,
+      storesDir: join(ROOT, "stores"),
+      launch: (chat) => {
+        const host = new Fake({ entry: disk.durable(chat.id)?.hostEntry ?? b, current: b }, () => undefined);
+        attached.push(host);
+        return host;
+      },
     });
     await restarted.reattach();
     expect(attached.map((host) => host.code.entry)).toEqual([b]);
@@ -414,7 +533,10 @@ describe("seamless upgrade orchestration", () => {
     const results = await Promise.allSettled([s.durable.upgradeHost(s.ref, "now"), s.durable.upgradeHost(s.ref, "now"), s.durable.upgradeHost(s.ref)]);
     expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
     expect(s.hosts).toHaveLength(2);
-    expect(s.hosts.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "resume" || method === "close")).toEqual(["close", "resume"]);
+    expect(s.hosts.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "resume" || method === "close")).toEqual([
+      "close",
+      "resume",
+    ]);
     await s.durable.dispose();
   });
 
@@ -471,7 +593,10 @@ describe("seamless upgrade orchestration", () => {
   });
 
   it("hosts get PI WEB's folder and socket overrides absolute, resolved against the daemon's folder", () => {
-    expect(daemonPathEnvironment({ PI_WEB_DATA_DIR: "data", PI_WEB_DURABLE_HOST_DIR: "/abs/hosts", PI_WEB_SESSIOND_SOCKET: "", PI_WEB_PORT: "1" })).toEqual({ PI_WEB_DATA_DIR: join(process.cwd(), "data"), PI_WEB_DURABLE_HOST_DIR: "/abs/hosts" });
+    expect(daemonPathEnvironment({ PI_WEB_DATA_DIR: "data", PI_WEB_DURABLE_HOST_DIR: "/abs/hosts", PI_WEB_SESSIOND_SOCKET: "", PI_WEB_PORT: "1" })).toEqual({
+      PI_WEB_DATA_DIR: join(process.cwd(), "data"),
+      PI_WEB_DURABLE_HOST_DIR: "/abs/hosts",
+    });
   });
 
   it("finding 4: an automatic upgrade never closes a host that admitted input after the quiet check", async () => {
@@ -483,8 +608,17 @@ describe("seamless upgrade orchestration", () => {
     if (host === undefined) throw new Error("no host");
     let release!: () => void;
     let sampled!: () => void;
-    const sampledQuiet = new Promise<void>((resolve) => { sampled = resolve; });
-    host.onStatus = (request) => { release = () => { host.reply(request, status); }; host.onStatus = undefined; sampled(); return true; };
+    const sampledQuiet = new Promise<void>((resolve) => {
+      sampled = resolve;
+    });
+    host.onStatus = (request) => {
+      release = () => {
+        host.reply(request, status);
+      };
+      host.onStatus = undefined;
+      sampled();
+      return true;
+    };
     const moving = s.durable.upgradePendingHosts();
     await sampledQuiet;
     await s.durable.prompt(s.ref, "owner input just arrived", undefined, undefined, { operationId: "input-race" });
@@ -511,8 +645,17 @@ describe("seamless upgrade orchestration", () => {
     if (host === undefined) throw new Error("no host");
     let release!: () => void;
     let sampled!: () => void;
-    const sampledQuiet = new Promise<void>((resolve) => { sampled = resolve; });
-    host.onStatus = (request) => { release = () => { host.reply(request, status); }; host.onStatus = undefined; sampled(); return true; };
+    const sampledQuiet = new Promise<void>((resolve) => {
+      sampled = resolve;
+    });
+    host.onStatus = (request) => {
+      release = () => {
+        host.reply(request, status);
+      };
+      host.onStatus = undefined;
+      sampled();
+      return true;
+    };
     const moving = s.durable.upgradePendingHosts();
     await sampledQuiet;
     await s.durable.prompt(s.ref, "owner input just arrived", undefined, undefined, { operationId: "input-race" });
@@ -544,10 +687,14 @@ describe("seamless upgrade orchestration", () => {
     const send = old.send.bind(old);
     let release!: () => void;
     let held!: () => void;
-    const closing = new Promise<void>((resolve) => { held = resolve; });
+    const closing = new Promise<void>((resolve) => {
+      held = resolve;
+    });
     old.send = (request) => {
       if (!isRequest(request) || request.method !== "close") return send(request);
-      release = () => { send(request); };
+      release = () => {
+        send(request);
+      };
       held();
       return true;
     };
@@ -569,7 +716,9 @@ describe("seamless upgrade orchestration", () => {
     const [a, b] = [revision("rev-a", "1.4.0"), revision("rev-b", "1.5.2")];
     const s = setup(a, b, { failCurrent: true });
     await s.durable.status(s.ref);
-    await expect(s.durable.upgradeHost(s.ref)).rejects.toThrow(/did not start: .*This upgrade changes the store format, so this Chat stays on the new code; the next message tries again\.$/);
+    await expect(s.durable.upgradeHost(s.ref)).rejects.toThrow(
+      /did not start: .*This upgrade changes the store format, so this Chat stays on the new code; the next message tries again\.$/,
+    );
     expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b]);
     expect(s.locator.durable(s.ref.id)?.hostEntry).toBe(b);
     expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
@@ -586,7 +735,13 @@ describe("seamless upgrade orchestration", () => {
       const hosts: Fake[] = [];
       const launch: DurableHostLauncher = (chat) => {
         const entry = locator.durable(chat.id)?.hostEntry ?? b;
-        const host = new Fake({ entry, current: b }, () => { locator.setHost(chat.id, undefined); }, entry === b ? newHost : false);
+        const host = new Fake(
+          { entry, current: b },
+          () => {
+            locator.setHost(chat.id, undefined);
+          },
+          entry === b ? newHost : false,
+        );
         hosts.push(host);
         return host;
       };
@@ -598,7 +753,13 @@ describe("seamless upgrade orchestration", () => {
     const ref = { id: record.id, cwd: record.cwd };
     await first.durable.status(ref);
     void first.durable.upgradeHost(ref).catch(() => undefined);
-    await new Promise<void>((resolve) => { const check = () => { if (first.hosts.length === 2) resolve(); else setTimeout(check, 5); }; check(); });
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (first.hosts.length === 2) resolve();
+        else setTimeout(check, 5);
+      };
+      check();
+    });
     void first.durable.dispose();
     expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toEqual({});
 
@@ -617,16 +778,23 @@ describe("seamless upgrade orchestration", () => {
     const record = locator.create("/work", "chat");
     locator.setHostEntry(record.id, a);
     let resumeSent!: () => void;
-    const waiting = new Promise<void>((resolve) => { resumeSent = resolve; });
+    const waiting = new Promise<void>((resolve) => {
+      resumeSent = resolve;
+    });
     const hosts: Fake[] = [];
     const launch: DurableHostLauncher = (chat) => {
       const entry = locator.durable(chat.id)?.hostEntry ?? b;
-      const host = new Fake({ entry, current: b }, () => { locator.setHost(chat.id, undefined); });
+      const host = new Fake({ entry, current: b }, () => {
+        locator.setHost(chat.id, undefined);
+      });
       hosts.push(host);
       locator.setHostEntry(chat.id, entry);
       locator.setHost(chat.id, { label: "test.fake", socket: "fake.sock", revision: dirname(entry), ownerEpoch: hosts.length, pid: hosts.length });
       host.fullAccess = entry === a;
-      if (entry === b) { host.holdResume = true; host.beforeResume = resumeSent; }
+      if (entry === b) {
+        host.holdResume = true;
+        host.beforeResume = resumeSent;
+      }
       return host;
     };
     const durable = new DurableChatService({ locator, events, launch, storesDir: join(ROOT, "stores") });
@@ -641,12 +809,20 @@ describe("seamless upgrade orchestration", () => {
     expect(disk.durable(record.id)?.upgrade).toEqual({ from: a });
     const attached: Fake[] = [];
     const restarted = new DurableChatService({
-      locator: disk, events, storesDir: join(ROOT, "stores"),
-      launch: (chat) => { const host = new Fake({ entry: disk.durable(chat.id)?.hostEntry ?? b, current: b }, () => undefined); attached.push(host); return host; },
+      locator: disk,
+      events,
+      storesDir: join(ROOT, "stores"),
+      launch: (chat) => {
+        const host = new Fake({ entry: disk.durable(chat.id)?.hostEntry ?? b, current: b }, () => undefined);
+        attached.push(host);
+        return host;
+      },
     });
     await restarted.reattach();
     expect(attached).toHaveLength(1);
-    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart", discardFullAccess: true }]);
+    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([
+      { reason: "upgrade-restart", discardFullAccess: true },
+    ]);
     expect(disk.durable(record.id)?.hostEntry).toBe(b);
     expect(disk.durable(record.id)?.upgrade).toBeUndefined();
     expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toBeUndefined();
@@ -663,7 +839,13 @@ describe("seamless upgrade orchestration", () => {
         const entry = locator.durable(chat.id)?.hostEntry ?? b;
         mkdirSync(storeDir, { recursive: true });
         if (entry === b) writeFileSync(join(storeDir, "session.sqlite"), "migrated");
-        const host = new Fake({ entry, current: b }, () => { locator.setHost(chat.id, undefined); }, entry === b ? newHost : false);
+        const host = new Fake(
+          { entry, current: b },
+          () => {
+            locator.setHost(chat.id, undefined);
+          },
+          entry === b ? newHost : false,
+        );
         hosts.push(host);
         return host;
       };
@@ -677,7 +859,13 @@ describe("seamless upgrade orchestration", () => {
     await first.durable.status(ref);
     writeFileSync(join(storeDir, "session.sqlite"), "history");
     void first.durable.upgradeHost(ref, "now").catch(() => undefined);
-    await new Promise<void>((resolve) => { const check = () => { if (first.hosts.length === 2) resolve(); else setTimeout(check, 5); }; check(); });
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (first.hosts.length === 2) resolve();
+        else setTimeout(check, 5);
+      };
+      check();
+    });
     // The daemon dies here (its handover never resolves).
     void first.durable.dispose();
     expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toEqual({ from: old });
@@ -702,7 +890,13 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
     const daemon = (current: string) => {
       const locator = new SessionRuntimeLocator(ROOT);
-      return new DurableChatService({ locator, events, storesDir: join(ROOT, "stores"), autoUpgrade: true, launch: (chat) => new Fake({ entry: locator.durable(chat.id)?.hostEntry ?? current, current }, () => undefined) });
+      return new DurableChatService({
+        locator,
+        events,
+        storesDir: join(ROOT, "stores"),
+        autoUpgrade: true,
+        launch: (chat) => new Fake({ entry: locator.durable(chat.id)?.hostEntry ?? current, current }, () => undefined),
+      });
     };
     const again = daemon(b);
     const pin = (await again.status(s.ref)).durableHostPin;

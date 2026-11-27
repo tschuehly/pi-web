@@ -13,11 +13,20 @@ import { mockModels } from "./mockModels/client";
 test.skip(process.env["PI_WEB_E2E_SESSIOND_ENV"] === undefined, "needs PI_WEB_E2E_DURABLE_HOST and PI_WEB_E2E_DURABLE_LAUNCHD=1");
 test.skip(process.env["PI_WEB_E2E_MOCK_URL"] === undefined, "the mock model server is off (PI_WEB_E2E_MOCK_MODELS=0)");
 const mock = mockModels();
-test.beforeEach(async () => { await mock.reset(); });
+test.beforeEach(async () => {
+  await mock.reset();
+});
 
 const editor = (page: Page) => page.locator("prompt-editor .cm-content");
 const chat = (page: Page) => page.locator("chat-view");
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** The one host process of this Chat's store, under this fixture's root only. */
 function hostPid(sessionId: string): number {
@@ -39,7 +48,11 @@ test("AC3: the daemon is killed while a lead streams; host and provider request 
   const base = process.env["PI_WEB_E2E_BASE_URL"] ?? "";
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"] ?? "";
   const marker = `c1-${String(Date.now())}`;
-  await mock.script({ provider: "anthropic", match: marker, turns: [[{ text: "Before the daemon dies." }, { barrier: marker }, { text: " After the daemon is back." }]] });
+  await mock.script({
+    provider: "anthropic",
+    match: marker,
+    turns: [[{ text: "Before the daemon dies." }, { barrier: marker }, { text: " After the daemon is back." }]],
+  });
 
   await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
   await page.getByRole("button", { name: "New Durable Chat" }).click();

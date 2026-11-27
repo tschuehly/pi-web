@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { ASK_USER_ANSWERS_CUSTOM_TYPE, type AskUserOutcome } from "../../shared/apiTypes";
 import { groupChatMessages } from "./chatGroups";
-import { appendText, appendThinking, latestWorkingModeDials, latestWorkingModeSelection, normalizeMessage, normalizeMessages, textMessage, workingModeSummary } from "./chatMessages";
+import {
+  appendText,
+  appendThinking,
+  latestWorkingModeDials,
+  latestWorkingModeSelection,
+  normalizeMessage,
+  normalizeMessages,
+  textMessage,
+  workingModeSummary,
+} from "./chatMessages";
 import { applyTranscriptEvent, seedStreamingPartial } from "./chatTranscript";
 import type { ChatLine } from "./components/shared";
 
@@ -10,15 +19,27 @@ const imageReference = { ...legacyImageReference, width: 1200, height: 800 };
 
 it.each(["visible", "", undefined, 42])("preserves original text and optional string display text (%s)", (displayText) => {
   const display = typeof displayText === "string" ? { displayText } : {};
-  expect(normalizeMessages([{ role: "assistant", content: [
-    { type: "text", text: "original", displayText },
-    { type: "thinking", thinking: "reasoning", displayText },
-    { type: "thinking", text: "fallback reasoning", displayText },
-  ] }])).toEqual([{ role: "assistant", parts: [
-    { type: "text", text: "original", ...display },
-    { type: "thinking", text: "reasoning", ...display },
-    { type: "thinking", text: "fallback reasoning", ...display },
-  ] }]);
+  expect(
+    normalizeMessages([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "original", displayText },
+          { type: "thinking", thinking: "reasoning", displayText },
+          { type: "thinking", text: "fallback reasoning", displayText },
+        ],
+      },
+    ]),
+  ).toEqual([
+    {
+      role: "assistant",
+      parts: [
+        { type: "text", text: "original", ...display },
+        { type: "thinking", text: "reasoning", ...display },
+        { type: "thinking", text: "fallback reasoning", ...display },
+      ],
+    },
+  ]);
   expect(normalizeMessages([{ role: "user", content: "original", displayText }])).toEqual([
     { role: "user", parts: [{ type: "text", text: "original", ...display }] },
   ]);
@@ -66,14 +87,13 @@ const supersededAskUserOutcome: AskUserOutcome = {
 
 describe("chat message normalization", () => {
   it("normalizes simple text messages and drops empty content", () => {
-    expect(normalizeMessages([
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "" },
-      { role: "unknown", content: "system text" },
-    ])).toEqual([
-      textMessage("user", "hello"),
-      textMessage("system", "system text"),
-    ]);
+    expect(
+      normalizeMessages([
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "" },
+        { role: "unknown", content: "system text" },
+      ]),
+    ).toEqual([textMessage("user", "hello"), textMessage("system", "system text")]);
   });
 
   it("preserves already-normalized chat lines", () => {
@@ -96,20 +116,51 @@ describe("chat message normalization", () => {
       { ...notice, customType: "other" },
       { ...notice, details: { attention: "receipt-failure" } },
       { ...notice, details: undefined },
-    ]) expect(normalizeMessages([other])).toEqual([{ role: "system", entryId: "wake-1", parts: [{ type: "text", text: content }] }]);
+    ])
+      expect(normalizeMessages([other])).toEqual([{ role: "system", entryId: "wake-1", parts: [{ type: "text", text: content }] }]);
     // A failed Worker receipt is a failure, not a routine notice.
-    expect(normalizeMessages([{ ...notice, details: { attention: "terminal-results", receiptStatus: "failed" } }]))
-      .toEqual([{ role: "system", entryId: "wake-1", severity: "error", parts: [{ type: "text", text: content }] }]);
+    expect(normalizeMessages([{ ...notice, details: { attention: "terminal-results", receiptStatus: "failed" } }])).toEqual([
+      { role: "system", entryId: "wake-1", severity: "error", parts: [{ type: "text", text: content }] },
+    ]);
   });
 
   it("projects persisted background bash completions separately and falls back on malformed details", () => {
     const details = { id: "job-1", command: "npm test", state: "complete", elapsedSeconds: 4, bytes: 12, logPath: "/tmp/job-1.log", exitCode: 0 };
-    const notice = { role: "custom", customType: "background-bash", content: "Background bash job-1 complete (exit 0).\nFull output (available until session shutdown): /tmp/job-1.log\npassed\n", details, entryId: "job-entry" };
-    expect(normalizeMessages([notice, { ...notice, entryId: "job-entry-2" }])).toEqual(["job-entry", "job-entry-2"].map((entryId) => ({
-      role: "system", entryId, parts: [{ type: "backgroundBash", details: { id: details.id, command: details.command, state: details.state, elapsedSeconds: details.elapsedSeconds, logPath: details.logPath, exitCode: details.exitCode }, output: "passed\n" }],
-    })));
-    for (const bad of [{ ...details, command: undefined }, { ...details, elapsedSeconds: -1 }, { ...details, logPath: null }]) {
-      expect(normalizeMessage({ ...notice, details: bad })).toEqual([{ role: "system", entryId: "job-entry", parts: [{ type: "text", text: notice.content }] }]);
+    const notice = {
+      role: "custom",
+      customType: "background-bash",
+      content: "Background bash job-1 complete (exit 0).\nFull output (available until session shutdown): /tmp/job-1.log\npassed\n",
+      details,
+      entryId: "job-entry",
+    };
+    expect(normalizeMessages([notice, { ...notice, entryId: "job-entry-2" }])).toEqual(
+      ["job-entry", "job-entry-2"].map((entryId) => ({
+        role: "system",
+        entryId,
+        parts: [
+          {
+            type: "backgroundBash",
+            details: {
+              id: details.id,
+              command: details.command,
+              state: details.state,
+              elapsedSeconds: details.elapsedSeconds,
+              logPath: details.logPath,
+              exitCode: details.exitCode,
+            },
+            output: "passed\n",
+          },
+        ],
+      })),
+    );
+    for (const bad of [
+      { ...details, command: undefined },
+      { ...details, elapsedSeconds: -1 },
+      { ...details, logPath: null },
+    ]) {
+      expect(normalizeMessage({ ...notice, details: bad })).toEqual([
+        { role: "system", entryId: "job-entry", parts: [{ type: "text", text: notice.content }] },
+      ]);
     }
   });
 
@@ -117,11 +168,23 @@ describe("chat message normalization", () => {
     const logPath = "/Users/me/.pi-workbench/background-bash/jobs/job-2/output.log";
     const details = { id: "job-2", command: "npm run review", state: "cancelled", elapsedSeconds: 9, bytes: 30, logPath };
     const content = `Background bash job-2 cancelled (exit unknown).\nFull output: ${logPath}\n=== evidence-review 12:22:49`;
-    expect(normalizeMessage({ role: "custom", customType: "background-bash", content, details })).toEqual([{
-      role: "system", parts: [{ type: "backgroundBash", details: { id: "job-2", command: "npm run review", state: "cancelled", elapsedSeconds: 9, logPath }, output: "=== evidence-review 12:22:49" }],
-    }]);
+    expect(normalizeMessage({ role: "custom", customType: "background-bash", content, details })).toEqual([
+      {
+        role: "system",
+        parts: [
+          {
+            type: "backgroundBash",
+            details: { id: "job-2", command: "npm run review", state: "cancelled", elapsedSeconds: 9, logPath },
+            output: "=== evidence-review 12:22:49",
+          },
+        ],
+      },
+    ]);
     const truncated = `Background bash job-2 failed (exit 1).\nFull output: ${logPath}\n[showing recent output only]\ntail\n`;
-    expect(normalizeMessage({ role: "custom", customType: "background-bash", content: truncated, details: { ...details, state: "failed", exitCode: 1 } })[0]?.parts[0]).toMatchObject({ type: "backgroundBash", output: "tail\n" });
+    expect(
+      normalizeMessage({ role: "custom", customType: "background-bash", content: truncated, details: { ...details, state: "failed", exitCode: 1 } })[0]
+        ?.parts[0],
+    ).toMatchObject({ type: "backgroundBash", output: "tail\n" });
   });
 
   it("projects ask_user answer messages into visible read-only record parts", () => {
@@ -139,17 +202,49 @@ describe("chat message normalization", () => {
 
   it("pairs an answers message's image blocks with its record's images, from array content", () => {
     const outcome: AskUserOutcome = { ...askUserOutcome, images: [{ target: { kind: "note" }, reference: "[PIC_1]", mimeType: "image/png" }] };
-    const normalized = normalizeMessage({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: [{ type: "text", text: "answers" }, { type: "image", data: "AAAA", mimeType: "image/png" }], details: outcome });
-    expect(normalized).toEqual([{ role: "system", parts: [{ type: "askUserRecord", outcome, images: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }] }]);
+    const normalized = normalizeMessage({
+      role: "custom",
+      customType: ASK_USER_ANSWERS_CUSTOM_TYPE,
+      content: [
+        { type: "text", text: "answers" },
+        { type: "image", data: "AAAA", mimeType: "image/png" },
+      ],
+      details: outcome,
+    });
+    expect(normalized).toEqual([
+      { role: "system", parts: [{ type: "askUserRecord", outcome, images: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }] },
+    ]);
   });
 
   it("takes a whole-set record's earlier-send images from that send's own entry, by its revision, and its own from its blocks", () => {
     const [first, second] = askUserOutcome.questions;
     if (first === undefined || second === undefined) throw new Error("fixture has two questions");
-    const image = (id: string, revision?: string) => ({ target: { kind: "question" as const, id }, reference: "[PIC_1]", mimeType: "image/png", ...(revision === undefined ? {} : { revision }) });
-    const partial: AskUserOutcome = { ...askUserOutcome, questions: [first], answeredCount: 1, unansweredIds: [], summary: "Answered 1", partial: true, revision: "r2", images: [image(first.question.id)] };
+    const image = (id: string, revision?: string) => ({
+      target: { kind: "question" as const, id },
+      reference: "[PIC_1]",
+      mimeType: "image/png",
+      ...(revision === undefined ? {} : { revision }),
+    });
+    const partial: AskUserOutcome = {
+      ...askUserOutcome,
+      questions: [first],
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1",
+      partial: true,
+      revision: "r2",
+      images: [image(first.question.id)],
+    };
     const whole: AskUserOutcome = { ...askUserOutcome, images: [image(first.question.id, "r2"), image(second.question.id)] };
-    const entry = (details: AskUserOutcome, data: string) => ({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: [{ type: "text", text: "answers" }, { type: "image", data, mimeType: "image/png" }], details });
+    const entry = (details: AskUserOutcome, data: string) => ({
+      role: "custom",
+      customType: ASK_USER_ANSWERS_CUSTOM_TYPE,
+      content: [
+        { type: "text", text: "answers" },
+        { type: "image", data, mimeType: "image/png" },
+      ],
+      details,
+    });
 
     const [, record] = normalizeMessages([entry(partial, "AAAA"), entry(whole, "BBBB")]);
     const part = record?.parts[0];
@@ -161,12 +256,25 @@ describe("chat message normalization", () => {
   });
 
   it("keeps the partial flag and continuing revision of a single answer sent early", () => {
-    const single: AskUserOutcome = { ...askUserOutcome, questions: askUserOutcome.questions.slice(0, 1), answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.cache", partial: true, revision: "r2" };
-    expect(normalizeMessage({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: "text", details: single })).toEqual([{ role: "system", parts: [{ type: "askUserRecord", outcome: single }] }]);
+    const single: AskUserOutcome = {
+      ...askUserOutcome,
+      questions: askUserOutcome.questions.slice(0, 1),
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1; still open: ask.cache",
+      partial: true,
+      revision: "r2",
+    };
+    expect(normalizeMessage({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: "text", details: single })).toEqual([
+      { role: "system", parts: [{ type: "askUserRecord", outcome: single }] },
+    ]);
   });
 
   it("projects a Working Mode block into dials with guidance only for changed values", () => {
-    const message = { role: "custom", customType: "working-mode", content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
+    const message = {
+      role: "custom",
+      customType: "working-mode",
+      content: `<working-mode seq="1">\nThomas selected Working Mode Alignment: Align · Attention: Switching · Checking: Default · Orchestration: Workers.
 This is behavior guidance, not permission; explicit owner direction and repository instructions still apply.
 
 Alignment — Align: Check shared understanding.
@@ -176,13 +284,25 @@ Attention — Switching: Batch questions.
 Orchestration — Workers: Use a scope-owning worker.
 
 This block replaces every earlier <working-mode> block.
-</working-mode>`, details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } } };
-    expect(normalizeMessage(message)).toEqual([{ role: "system", parts: [{ type: "workingMode", dials: [
-      { label: "Alignment", value: "Align", guidance: "Check shared understanding." },
-      { label: "Attention", value: "Switching", guidance: "Batch questions." },
-      { label: "Checking", value: "Default" },
-      { label: "Orchestration", value: "Workers", guidance: "Use a scope-owning worker." },
-    ] }] }]);
+</working-mode>`,
+      details: { schemaVersion: 2, seq: 1, selection: { alignment: "Align", attention: "Switching", checking: "Default", orchestration: "Workers" } },
+    };
+    expect(normalizeMessage(message)).toEqual([
+      {
+        role: "system",
+        parts: [
+          {
+            type: "workingMode",
+            dials: [
+              { label: "Alignment", value: "Align", guidance: "Check shared understanding." },
+              { label: "Attention", value: "Switching", guidance: "Batch questions." },
+              { label: "Checking", value: "Default" },
+              { label: "Orchestration", value: "Workers", guidance: "Use a scope-owning worker." },
+            ],
+          },
+        ],
+      },
+    ]);
     expect(normalizeMessage({ ...message, details: { selection: { alignment: "Align" } } })[0]?.parts[0]?.type).not.toBe("workingMode");
   });
 
@@ -194,7 +314,10 @@ This block replaces every earlier <working-mode> block.
     expect(workingModeSummary(second, first)).toBe("Working Mode: Attention Focused → Switching · Checking Default → Exercise");
     expect(workingModeSummary(second, second)).toBe("Working Mode: Attention Switching · Checking Exercise");
     expect(workingModeSummary(dials(["Default", "Default", "Default", "Main"]), second)).toBe("Working Mode reset to defaults");
-    const lines: ChatLine[] = [{ role: "system", parts: [{ type: "workingMode", dials: first }] }, { role: "user", parts: [{ type: "text", text: "hi" }] }];
+    const lines: ChatLine[] = [
+      { role: "system", parts: [{ type: "workingMode", dials: first }] },
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+    ];
     expect(latestWorkingModeSelection(lines)).toEqual({ alignment: "Default", attention: "Focused", checking: "Default", orchestration: "Main" });
     expect(latestWorkingModeDials(lines, 0)).toBeUndefined();
     expect(latestWorkingModeSelection([])).toBeUndefined();
@@ -202,11 +325,30 @@ This block replaces every earlier <working-mode> block.
 
   it("projects the upstream Goal lifecycle schema instead of its model-facing fallback text", () => {
     const details = { schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked", reason: "Owner approval required", summary: "Checked twice" };
-    const message = { role: "custom", customType: "pi-goal.lifecycle", content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.", details, entryId: "entry-1" };
+    const message = {
+      role: "custom",
+      customType: "pi-goal.lifecycle",
+      content: "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.",
+      details,
+      entryId: "entry-1",
+    };
     expect(normalizeMessage(message)).toEqual([{ role: "system", entryId: "entry-1", parts: [{ type: "goalLifecycle", details }] }]);
 
-    for (const [transition, state] of Object.entries({ start: "active", resume: "active", pause: "paused", wait: "waiting", block: "blocked", usage_limit: "usage_limited", budget_limit: "budget_limited", complete: "complete", clear: "cleared" })) {
-      expect(normalizeMessage({ ...message, details: { schemaVersion: 1, goalId: "goal-1", transition, state } })[0]?.parts[0]).toMatchObject({ type: "goalLifecycle", details: { transition, state } });
+    for (const [transition, state] of Object.entries({
+      start: "active",
+      resume: "active",
+      pause: "paused",
+      wait: "waiting",
+      block: "blocked",
+      usage_limit: "usage_limited",
+      budget_limit: "budget_limited",
+      complete: "complete",
+      clear: "cleared",
+    })) {
+      expect(normalizeMessage({ ...message, details: { schemaVersion: 1, goalId: "goal-1", transition, state } })[0]?.parts[0]).toMatchObject({
+        type: "goalLifecycle",
+        details: { transition, state },
+      });
     }
   });
 
@@ -214,23 +356,33 @@ This block replaces every earlier <working-mode> block.
     const content = "[pi-goal] automated lifecycle status, not a user instruction: Goal blocked.";
     const valid = { schemaVersion: 1, goalId: "goal-1", transition: "block", state: "blocked" };
     for (const details of [
-      { ...valid, schemaVersion: 2 }, { ...valid, state: "active" }, { ...valid, transition: "resumed" },
-      { ...valid, kind: "blocked" }, { ...valid, eventId: "event-1" }, { ...valid, objective: "private" },
-      { ...valid, goalId: " goal-1" }, { ...valid, goalId: "goal\u200d-1" },
-      { ...valid, reason: " " }, { ...valid, summary: "x".repeat(401) },
-      { ...valid, reason: "bad\u001b[31m" }, { ...valid, summary: "two  spaces" },
+      { ...valid, schemaVersion: 2 },
+      { ...valid, state: "active" },
+      { ...valid, transition: "resumed" },
+      { ...valid, kind: "blocked" },
+      { ...valid, eventId: "event-1" },
+      { ...valid, objective: "private" },
+      { ...valid, goalId: " goal-1" },
+      { ...valid, goalId: "goal\u200d-1" },
+      { ...valid, reason: " " },
+      { ...valid, summary: "x".repeat(401) },
+      { ...valid, reason: "bad\u001b[31m" },
+      { ...valid, summary: "two  spaces" },
       { ...valid, goalId: "🚀".repeat(128), reason: "🚀".repeat(400), summary: "🚀".repeat(400) },
-    ]) expect(normalizeMessage({ role: "custom", customType: "pi-goal.lifecycle", content, details })).toEqual([textMessage("system", content)]);
+    ])
+      expect(normalizeMessage({ role: "custom", customType: "pi-goal.lifecycle", content, details })).toEqual([textMessage("system", content)]);
     expect(normalizeMessage({ role: "custom", customType: "other.lifecycle", content, details: valid })).toEqual([textMessage("system", content)]);
   });
 
   it("falls back to model-facing text when an ask_user answer record is malformed", () => {
-    expect(normalizeMessage({
-      role: "custom",
-      customType: ASK_USER_ANSWERS_CUSTOM_TYPE,
-      content: "Answered 0 of 1; unanswered: db",
-      details: { askId: "missing-the-rest" },
-    })).toEqual([textMessage("system", "Answered 0 of 1; unanswered: db")]);
+    expect(
+      normalizeMessage({
+        role: "custom",
+        customType: ASK_USER_ANSWERS_CUSTOM_TYPE,
+        content: "Answered 0 of 1; unanswered: db",
+        details: { askId: "missing-the-rest" },
+      }),
+    ).toEqual([textMessage("system", "Answered 0 of 1; unanswered: db")]);
   });
 
   it("projects a superseded ask from the later ask_user tool result", () => {
@@ -254,7 +406,14 @@ This block replaces every earlier <working-mode> block.
     const withdrawn = { ...supersededAskUserOutcome, reason: "withdrawn" as const };
     const normalized = normalizeMessages([
       { role: "assistant", content: [{ type: "toolCall", id: "ask-call", name: "ask_user", arguments: { withdraw: withdrawn.askId } }] },
-      { role: "toolResult", toolCallId: "ask-call", toolName: "ask_user", content: [{ type: "text", text: "Withdrew." }], details: { withdrawn }, isError: false },
+      {
+        role: "toolResult",
+        toolCallId: "ask-call",
+        toolName: "ask_user",
+        content: [{ type: "text", text: "Withdrew." }],
+        details: { withdrawn },
+        isError: false,
+      },
     ]);
 
     expect(normalized[1]).toEqual({ role: "tool", parts: [{ type: "askUserRecord", outcome: withdrawn }] });
@@ -270,8 +429,22 @@ This block replaces every earlier <working-mode> block.
   });
 
   it("normalizes image content into image parts", () => {
-    expect(normalizeMessage({ role: "user", content: [{ type: "text", text: "see this" }, { type: "image", mimeType: "image/png", data: "QUJD" }] })).toEqual([
-      { role: "user", parts: [{ type: "text", text: "see this" }, { type: "image", mimeType: "image/png", data: "QUJD" }] },
+    expect(
+      normalizeMessage({
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image", mimeType: "image/png", data: "QUJD" },
+        ],
+      }),
+    ).toEqual([
+      {
+        role: "user",
+        parts: [
+          { type: "text", text: "see this" },
+          { type: "image", mimeType: "image/png", data: "QUJD" },
+        ],
+      },
     ]);
   });
 
@@ -283,8 +456,7 @@ This block replaces every earlier <working-mode> block.
   });
 
   it("keeps older references without dimensions usable", () => {
-    expect(normalizeMessages([{ role: "user", content: [legacyImageReference] }]))
-      .toEqual([{ role: "user", parts: [legacyImageReference] }]);
+    expect(normalizeMessages([{ role: "user", content: [legacyImageReference] }])).toEqual([{ role: "user", parts: [legacyImageReference] }]);
   });
 
   it("preserves inline dimension hints through normalization and cached chat lines", () => {
@@ -295,9 +467,18 @@ This block replaces every earlier <working-mode> block.
   });
 
   it.each([
-    { width: undefined }, { height: undefined }, { width: 0 }, { height: 0 },
-    { width: -1 }, { height: -1 }, { width: 1.5 }, { height: 1.5 },
-    { width: Infinity }, { height: Infinity }, { width: "1200" }, { height: null },
+    { width: undefined },
+    { height: undefined },
+    { width: 0 },
+    { height: 0 },
+    { width: -1 },
+    { height: -1 },
+    { width: 1.5 },
+    { height: 1.5 },
+    { width: Infinity },
+    { height: Infinity },
+    { width: "1200" },
+    { height: null },
     { width: Number.MAX_SAFE_INTEGER + 1 },
   ])("drops invalid dimension pairs without discarding the image: %j", (invalid) => {
     const normalized = normalizeMessages([{ role: "user", content: [{ ...imageReference, ...invalid }] }]);
@@ -306,18 +487,30 @@ This block replaces every earlier <working-mode> block.
   });
 
   it.each([
-    { mediaId: "A".repeat(64) }, { mediaId: "a".repeat(63) }, { mediaId: "a".repeat(65) },
-    { mediaId: "../file.png" }, { mediaId: 42 }, { mediaId: null }, { mediaId: `${"a".repeat(64)}\n` },
-    { mimeType: "text/html" }, { mimeType: "" }, { mimeType: null }, { mimeType: "image/png\n" },
-    { byteSize: -1 }, { byteSize: 1.5 }, { byteSize: Infinity }, { byteSize: "3" }, { byteSize: undefined },
+    { mediaId: "A".repeat(64) },
+    { mediaId: "a".repeat(63) },
+    { mediaId: "a".repeat(65) },
+    { mediaId: "../file.png" },
+    { mediaId: 42 },
+    { mediaId: null },
+    { mediaId: `${"a".repeat(64)}\n` },
+    { mimeType: "text/html" },
+    { mimeType: "" },
+    { mimeType: null },
+    { mimeType: "image/png\n" },
+    { byteSize: -1 },
+    { byteSize: 1.5 },
+    { byteSize: Infinity },
+    { byteSize: "3" },
+    { byteSize: undefined },
   ])("fails closed for a malformed image reference: %j", (invalid) => {
-    expect(normalizeMessage({ role: "user", content: [{ ...imageReference, ...invalid, data: "QUJD" }] }))
-      .toEqual([textMessage("user", "[image]")]);
+    expect(normalizeMessage({ role: "user", content: [{ ...imageReference, ...invalid, data: "QUJD" }] })).toEqual([textMessage("user", "[image]")]);
   });
 
   it("also validates image references in already-shaped cached chat lines", () => {
-    expect(normalizeMessage({ role: "user", entryId: "cached-image", parts: [{ ...imageReference, mediaId: "invalid", data: "QUJD" }] }))
-      .toEqual([{ role: "user", entryId: "cached-image", parts: [{ type: "text", text: "[image]" }] }]);
+    expect(normalizeMessage({ role: "user", entryId: "cached-image", parts: [{ ...imageReference, mediaId: "invalid", data: "QUJD" }] })).toEqual([
+      { role: "user", entryId: "cached-image", parts: [{ type: "text", text: "[image]" }] },
+    ]);
   });
 
   it("does not reinterpret non-image parts as media references", () => {
@@ -347,8 +540,18 @@ This block replaces every earlier <working-mode> block.
     const content = [{ type: "text", text: "image read" }, imageReference];
     const call = { role: "assistant", content: [{ type: "toolCall", id: "read-image", name: "read", arguments: { path: "image.png" } }] };
     const final = { role: "toolResult", toolCallId: "read-image", toolName: "read", content, isError: false };
-    let live = applyTranscriptEvent([], { type: "tool.start", toolCallId: "read-image", toolName: "read", summary: "image.png", args: { path: "image.png" } }) ?? [];
-    live = applyTranscriptEvent(live, { type: "tool.end", toolCallId: "read-image", toolName: "read", text: "image read", content, details: undefined, isError: false }) ?? live;
+    let live =
+      applyTranscriptEvent([], { type: "tool.start", toolCallId: "read-image", toolName: "read", summary: "image.png", args: { path: "image.png" } }) ?? [];
+    live =
+      applyTranscriptEvent(live, {
+        type: "tool.end",
+        toolCallId: "read-image",
+        toolName: "read",
+        text: "image read",
+        content,
+        details: undefined,
+        isError: false,
+      }) ?? live;
     const images = (lines: ChatLine[]) => lines.flatMap((line) => line.parts.filter((part) => part.type === "image"));
     expect(images(live)).toEqual(images(normalizeMessages([call, final])));
     expect(images(live)).toEqual([imageReference]);
@@ -364,8 +567,21 @@ This block replaces every earlier <working-mode> block.
   });
 
   it("carries the thinking level into assistant message metadata", () => {
-    expect(normalizeMessage({ role: "assistant", content: [{ type: "text", text: "hi" }], provider: "openai", model: "gpt-4.1", timestamp: "2026-05-09T12:00:00.000Z", thinkingLevel: "max" })).toEqual([
-      { role: "assistant", parts: [{ type: "text", text: "hi" }], meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "openai", id: "gpt-4.1" }, thinkingLevel: "max" } },
+    expect(
+      normalizeMessage({
+        role: "assistant",
+        content: [{ type: "text", text: "hi" }],
+        provider: "openai",
+        model: "gpt-4.1",
+        timestamp: "2026-05-09T12:00:00.000Z",
+        thinkingLevel: "max",
+      }),
+    ).toEqual([
+      {
+        role: "assistant",
+        parts: [{ type: "text", text: "hi" }],
+        meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "openai", id: "gpt-4.1" }, thinkingLevel: "max" },
+      },
     ]);
   });
 
@@ -376,20 +592,36 @@ This block replaces every earlier <working-mode> block.
   });
 
   it("shows assistant model errors as system chat messages", () => {
-    expect(normalizeMessage({ role: "assistant", content: [], stopReason: "error", errorMessage: "429 rate limit", timestamp: "2026-05-09T12:00:00.000Z", provider: "openai", model: "gpt-4.1" })).toEqual([
-      { role: "system", parts: [{ type: "text", text: "Model response failed: 429 rate limit" }], severity: "error", meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "openai", id: "gpt-4.1" } } },
+    expect(
+      normalizeMessage({
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "429 rate limit",
+        timestamp: "2026-05-09T12:00:00.000Z",
+        provider: "openai",
+        model: "gpt-4.1",
+      }),
+    ).toEqual([
+      {
+        role: "system",
+        parts: [{ type: "text", text: "Model response failed: 429 rate limit" }],
+        severity: "error",
+        meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "openai", id: "gpt-4.1" } },
+      },
     ]);
   });
 
   it("keeps partial assistant content and adds a visible error line", () => {
-    expect(normalizeMessage({ role: "assistant", content: [{ type: "text", text: "partial answer" }], stopReason: "error", errorMessage: "connection lost" })).toEqual([
-      textMessage("assistant", "partial answer"),
-      { ...textMessage("system", "Model response failed: connection lost"), severity: "error" },
-    ]);
+    expect(
+      normalizeMessage({ role: "assistant", content: [{ type: "text", text: "partial answer" }], stopReason: "error", errorMessage: "connection lost" }),
+    ).toEqual([textMessage("assistant", "partial answer"), { ...textMessage("system", "Model response failed: connection lost"), severity: "error" }]);
   });
 
   it("extracts skill invocation blocks into dedicated skill and user messages", () => {
-    expect(normalizeMessage({ role: "user", content: "<skill name=\"playwright\" location=\"/skills/playwright\">\nUse browser\n</skill>\n\nNow test the UI" })).toEqual([
+    expect(
+      normalizeMessage({ role: "user", content: '<skill name="playwright" location="/skills/playwright">\nUse browser\n</skill>\n\nNow test the UI' }),
+    ).toEqual([
       { role: "user", parts: [{ type: "skillInvocation", name: "playwright", location: "/skills/playwright", content: "Use browser" }] },
       textMessage("user", "Now test the UI"),
     ]);
@@ -398,96 +630,140 @@ This block replaces every earlier <working-mode> block.
   it("preserves ordered inline skills and surrounding text in one user message", () => {
     const block = (name: string) => `<skill name="${name}" location="/skills/${name}">\nUse <${name}>\n</skill>`;
     const content = `Before <unsafe>\n${block("a")} middle\n${block("b")} after`;
-    expect(normalizeMessage({ role: "user", content, entryId: "entry-1" })).toEqual([{
-      role: "user", entryId: "entry-1", parts: [
-        { type: "text", text: "Before <unsafe>\n" },
-        { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },
-        { type: "text", text: " middle\n" },
-        { type: "skillInvocation", name: "b", location: "/skills/b", content: "Use <b>" },
-        { type: "text", text: " after" },
-      ],
-    }]);
+    expect(normalizeMessage({ role: "user", content, entryId: "entry-1" })).toEqual([
+      {
+        role: "user",
+        entryId: "entry-1",
+        parts: [
+          { type: "text", text: "Before <unsafe>\n" },
+          { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },
+          { type: "text", text: " middle\n" },
+          { type: "skillInvocation", name: "b", location: "/skills/b", content: "Use <b>" },
+          { type: "text", text: " after" },
+        ],
+      },
+    ]);
     expect(normalizeMessage({ role: "user", content: `${block("a")}\n\nthen ${block("b")} done` })).toEqual([
       { role: "user", parts: [{ type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" }] },
-      { role: "user", parts: [{ type: "text", text: "then " }, { type: "skillInvocation", name: "b", location: "/skills/b", content: "Use <b>" }, { type: "text", text: " done" }] },
+      {
+        role: "user",
+        parts: [
+          { type: "text", text: "then " },
+          { type: "skillInvocation", name: "b", location: "/skills/b", content: "Use <b>" },
+          { type: "text", text: " done" },
+        ],
+      },
     ]);
-    expect(normalizeMessage({ role: "user", content: `${block("a")}\n<skill broken>` })).toEqual([{
-      role: "user", parts: [
-        { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },
-        { type: "text", text: "\n<skill broken>" },
-      ],
-    }]);
+    expect(normalizeMessage({ role: "user", content: `${block("a")}\n<skill broken>` })).toEqual([
+      {
+        role: "user",
+        parts: [
+          { type: "skillInvocation", name: "a", location: "/skills/a", content: "Use <a>" },
+          { type: "text", text: "\n<skill broken>" },
+        ],
+      },
+    ]);
   });
 
   it("normalizes skill reads into skill chat lines", () => {
-    expect(normalizeMessage({ role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: "/home/user/.agents/skills/playwright/SKILL.md" } }] })).toEqual([
-      { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/home/user/.agents/skills/playwright/SKILL.md" }] },
-    ]);
+    expect(
+      normalizeMessage({
+        role: "assistant",
+        content: [{ type: "toolCall", name: "read", arguments: { path: "/home/user/.agents/skills/playwright/SKILL.md" } }],
+      }),
+    ).toEqual([{ role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/home/user/.agents/skills/playwright/SKILL.md" }] }]);
   });
 
   it("keeps the call's entry id on a merged tool execution line", () => {
-    expect(normalizeMessages([
-      { role: "assistant", content: [{ type: "toolCall", id: "edit-1", name: "edit", arguments: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] } }], entryId: "call-entry" },
-      { role: "toolResult", toolCallId: "edit-1", toolName: "edit", content: [{ type: "text", text: "ok" }], details: {}, isError: false, entryId: "result-entry" },
-    ])).toEqual([
-      expect.objectContaining({ entryId: "call-entry" }),
-    ]);
+    expect(
+      normalizeMessages([
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "edit-1", name: "edit", arguments: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] } }],
+          entryId: "call-entry",
+        },
+        {
+          role: "toolResult",
+          toolCallId: "edit-1",
+          toolName: "edit",
+          content: [{ type: "text", text: "ok" }],
+          details: {},
+          isError: false,
+          entryId: "result-entry",
+        },
+      ]),
+    ).toEqual([expect.objectContaining({ entryId: "call-entry" })]);
   });
 
   it("pairs tool calls and results into execution cards when normalizing history", () => {
-    expect(normalizeMessages([
-      { role: "assistant", content: [{ type: "toolCall", id: "edit-1", name: "edit", arguments: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] } }] },
-      { role: "toolResult", toolCallId: "edit-1", toolName: "edit", content: [{ type: "text", text: "ok" }], details: { diff: "-1 old\n+1 new" }, isError: false },
-    ])).toEqual([
-      {
-        role: "tool",
-        parts: [{
-          type: "toolExecution",
+    expect(
+      normalizeMessages([
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "edit-1", name: "edit", arguments: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] } }],
+        },
+        {
+          role: "toolResult",
           toolCallId: "edit-1",
           toolName: "edit",
-          summary: "src/app.ts",
-          args: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] },
-          status: "success",
-          resultText: "ok",
           content: [{ type: "text", text: "ok" }],
           details: { diff: "-1 old\n+1 new" },
-        }],
+          isError: false,
+        },
+      ]),
+    ).toEqual([
+      {
+        role: "tool",
+        parts: [
+          {
+            type: "toolExecution",
+            toolCallId: "edit-1",
+            toolName: "edit",
+            summary: "src/app.ts",
+            args: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] },
+            status: "success",
+            resultText: "ok",
+            content: [{ type: "text", text: "ok" }],
+            details: { diff: "-1 old\n+1 new" },
+          },
+        ],
       },
     ]);
   });
 
   it("formats bash execution records as bash chat lines", () => {
-    expect(normalizeMessage({
-      role: "bashExecution",
-      command: "npm test",
-      excludeFromContext: true,
-      output: "ok",
-      exitCode: 0,
-      truncated: true,
-      fullOutputPath: "/tmp/out.log",
-    })).toEqual([
-      textMessage("bash", "excluded from context\n\n$ npm test\n\nok\n\nexit 0\n\noutput truncated\n\nfull output: /tmp/out.log"),
-    ]);
+    expect(
+      normalizeMessage({
+        role: "bashExecution",
+        command: "npm test",
+        excludeFromContext: true,
+        output: "ok",
+        exitCode: 0,
+        truncated: true,
+        fullOutputPath: "/tmp/out.log",
+      }),
+    ).toEqual([textMessage("bash", "excluded from context\n\n$ npm test\n\nok\n\nexit 0\n\noutput truncated\n\nfull output: /tmp/out.log")]);
   });
 });
 
 describe("appendText", () => {
   it("appends to the previous same-role text message", () => {
-    expect(appendText([textMessage("assistant", "hello")], "assistant", " world")).toEqual([
-      textMessage("assistant", "hello world"),
-    ]);
+    expect(appendText([textMessage("assistant", "hello")], "assistant", " world")).toEqual([textMessage("assistant", "hello world")]);
   });
 
   it("starts a new message when role does not match", () => {
-    expect(appendText([textMessage("user", "hello")], "assistant", "hi")).toEqual([
-      textMessage("user", "hello"),
-      textMessage("assistant", "hi"),
-    ]);
+    expect(appendText([textMessage("user", "hello")], "assistant", "hi")).toEqual([textMessage("user", "hello"), textMessage("assistant", "hi")]);
   });
 
   it("adds a text part to the previous same-role non-text message", () => {
     expect(appendText([{ role: "assistant", parts: [{ type: "thinking", text: "plan" }] }], "assistant", "answer")).toEqual([
-      { role: "assistant", parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "plan" },
+          { type: "text", text: "answer" },
+        ],
+      },
     ]);
   });
 });
@@ -501,7 +777,13 @@ describe("appendThinking", () => {
 
   it("adds a thinking part to the previous assistant message", () => {
     expect(appendThinking([textMessage("assistant", "answer")], "plan")).toEqual([
-      { role: "assistant", parts: [{ type: "text", text: "answer" }, { type: "thinking", text: "plan" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "text", text: "answer" },
+          { type: "thinking", text: "plan" },
+        ],
+      },
     ]);
   });
 });

@@ -139,29 +139,35 @@ function setupScreenshotCarousel(carousel) {
 
   carousel.querySelector("[data-demo-prev]")?.addEventListener("click", () => selectTheme(activeIndex - 1));
   carousel.querySelector("[data-demo-next]")?.addEventListener("click", () => selectTheme(activeIndex + 1));
-  dots.forEach((dot) => dot.addEventListener("click", () => {
-    const index = availableDots.indexOf(dot);
-    if (index !== -1) selectTheme(index);
-  }));
+  dots.forEach((dot) =>
+    dot.addEventListener("click", () => {
+      const index = availableDots.indexOf(dot);
+      if (index !== -1) selectTheme(index);
+    }),
+  );
 
   function updateThemePair() {
     const pageIsLight = activeTheme() === "light";
     const scheme = pageIsLight !== inverted ? "light" : "dark";
     availableDots = dots.filter((dot) => dot.dataset.demoScheme === scheme);
-    dots.forEach((dot) => { dot.hidden = !availableDots.includes(dot); });
+    dots.forEach((dot) => {
+      dot.hidden = !availableDots.includes(dot);
+    });
     const label = scheme === "light" ? "Show dark screenshots" : "Show light screenshots";
     colorsButton.setAttribute("aria-label", label);
     colorsButton.title = label;
     selectTheme(activeIndex);
   }
 
-  deviceButtons.forEach((button) => button.addEventListener("click", () => {
-    const device = button.dataset.demoDevice;
-    if (!Object.hasOwn(devices, device)) return;
-    activeDevice = device;
-    deviceButtons.forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
-    selectTheme(activeIndex);
-  }));
+  deviceButtons.forEach((button) =>
+    button.addEventListener("click", () => {
+      const device = button.dataset.demoDevice;
+      if (!Object.hasOwn(devices, device)) return;
+      activeDevice = device;
+      deviceButtons.forEach((choice) => choice.setAttribute("aria-pressed", String(choice === button)));
+      selectTheme(activeIndex);
+    }),
+  );
 
   colorsButton.addEventListener("click", () => {
     inverted = !inverted;
@@ -254,7 +260,8 @@ function setupPageContentsNavigation() {
   dialog.id = "docs-page-contents";
   dialog.className = "docs-toc-dialog";
   dialog.setAttribute("aria-labelledby", "docs-page-contents-title");
-  dialog.innerHTML = '<div class="docs-toc-dialog-header"><strong id="docs-page-contents-title">On this page</strong><button type="button" aria-label="Close page contents" autofocus>✕</button></div>';
+  dialog.innerHTML =
+    '<div class="docs-toc-dialog-header"><strong id="docs-page-contents-title">On this page</strong><button type="button" aria-label="Close page contents" autofocus>✕</button></div>';
   const closeButton = dialog.querySelector("button");
   const nav = document.createElement("nav");
   nav.setAttribute("aria-label", "Page sections");

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Workspace } from "../api";
 import type { KeyValueStorage } from "./sessionStorageMemory";
-import { InMemoryWorkspaceSelectionMemory, selectPreferredWorkspace, shouldShowWorkspaceSelection, SessionStorageWorkspaceSelectionMemory } from "./workspaceSelection";
+import {
+  InMemoryWorkspaceSelectionMemory,
+  selectPreferredWorkspace,
+  shouldShowWorkspaceSelection,
+  SessionStorageWorkspaceSelectionMemory,
+} from "./workspaceSelection";
 
 describe("shouldShowWorkspaceSelection", () => {
   it("hides folder resolution", () => {
@@ -9,10 +14,15 @@ describe("shouldShowWorkspaceSelection", () => {
   });
 
   it.each([0, 1, 2])("keeps provider workspace details visible, including a single checked-out branch (count=%s)", (count) => {
-    expect(shouldShowWorkspaceSelection({
-      projectId: "p", status: "provider", ownerPluginId: "git", diagnostics: [],
-      workspaces: Array.from({ length: count }, (_, index) => testWorkspace(String(index))),
-    })).toBe(true);
+    expect(
+      shouldShowWorkspaceSelection({
+        projectId: "p",
+        status: "provider",
+        ownerPluginId: "git",
+        diagnostics: [],
+        workspaces: Array.from({ length: count }, (_, index) => testWorkspace(String(index))),
+      }),
+    ).toBe(true);
   });
 
   it("keeps loading and degraded resolution visible", () => {
@@ -92,7 +102,11 @@ function memoryStorage(seed: Record<string, string> = {}): KeyValueStorage {
   const values = new Map(Object.entries(seed));
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
-    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
   };
 }

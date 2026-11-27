@@ -9,12 +9,7 @@ import type {
   ServerPluginActivationContext,
   ServerPluginNoticeInput,
 } from "@jmfederico/pi-web/server-plugin-api";
-import {
-  activateTerminalPlugin,
-  createTerminalPeer,
-  TERMINAL_SERVICE_CAPABILITY,
-  terminalOutputFrames,
-} from "./server-plugin.js";
+import { activateTerminalPlugin, createTerminalPeer, TERMINAL_SERVICE_CAPABILITY, terminalOutputFrames } from "./server-plugin.js";
 import { TerminalService } from "./terminalService.js";
 
 const services: TerminalService[] = [];
@@ -34,8 +29,9 @@ describe.skipIf(process.platform === "win32")("Terminal peer server entry", () =
       expect.objectContaining({ id: terminalId, cwd: process.cwd(), name: "Scoped shell" }),
     ]);
     await expect(backendRequest(backend, requestContext("terminal.list", null, "workspace-2"))).resolves.toEqual([]);
-    await expect(backendRequest(backend, requestContext("terminal.close", { terminalId }, "workspace-2")))
-      .rejects.toThrow("Terminal not found in this workspace");
+    await expect(backendRequest(backend, requestContext("terminal.close", { terminalId }, "workspace-2"))).rejects.toThrow(
+      "Terminal not found in this workspace",
+    );
 
     await expect(backendRequest(backend, requestContext("terminal.close", { terminalId }))).resolves.toEqual({ closed: true });
   });
@@ -43,26 +39,35 @@ describe.skipIf(process.platform === "win32")("Terminal peer server entry", () =
   it("owns command-run control operations within the resolved workspace", async () => {
     const service = trackedService();
     const backend = createTerminalPeer(service);
-    const runValue = await backendRequest(backend, requestContext("terminal.run", {
-      origin: "tasks",
-      title: "Output",
-      command: "printf terminal-paired-run",
-      metadata: { "pi.operation": "test" },
-    }));
+    const runValue = await backendRequest(
+      backend,
+      requestContext("terminal.run", {
+        origin: "tasks",
+        title: "Output",
+        command: "printf terminal-paired-run",
+        metadata: { "pi.operation": "test" },
+      }),
+    );
     const runId = jsonString(runValue, "id");
 
     await expect(backendRequest(backend, requestContext("terminal.get-run", { runId }, "workspace-2"))).resolves.toBeNull();
-    await expect(backendRequest(backend, requestContext("terminal.list-runs", { metadata: { "pi.operation": "test" } })))
-      .resolves.toEqual([expect.objectContaining({ id: runId, workspaceId: "workspace-1" })]);
+    await expect(backendRequest(backend, requestContext("terminal.list-runs", { metadata: { "pi.operation": "test" } }))).resolves.toEqual([
+      expect.objectContaining({ id: runId, workspaceId: "workspace-1" }),
+    ]);
     await vi.waitFor(async () => {
-      await expect(backendRequest(backend, requestContext("terminal.get-run", { runId })))
-        .resolves.toEqual(expect.objectContaining({ status: "succeeded", exitCode: 0 }));
+      await expect(backendRequest(backend, requestContext("terminal.get-run", { runId }))).resolves.toEqual(
+        expect.objectContaining({ status: "succeeded", exitCode: 0 }),
+      );
     });
   });
 
   it("reports a private host-composed command failure without exposing the intent on the run", async () => {
     const records: ServerPluginNoticeInput[] = [];
-    const activation = activateTerminalPlugin(activationContext("pi-web.terminal", (input) => { records.push(input); }));
+    const activation = activateTerminalPlugin(
+      activationContext("pi-web.terminal", (input) => {
+        records.push(input);
+      }),
+    );
     const run = terminalServiceCapability(activation).runCommand({
       origin: "core",
       projectId: "project-1",
@@ -77,15 +82,17 @@ describe.skipIf(process.platform === "win32")("Terminal peer server entry", () =
     });
 
     await vi.waitFor(() => {
-      expect(records).toEqual([{
-        severity: "error",
-        message: "Workspace removal failed. See terminal output.",
-        scope: { projectId: "project-1" },
-        context: {
-          commandRunId: run.id,
-          targetWorkspaceId: "target-workspace",
+      expect(records).toEqual([
+        {
+          severity: "error",
+          message: "Workspace removal failed. See terminal output.",
+          scope: { projectId: "project-1" },
+          context: {
+            commandRunId: run.id,
+            targetWorkspaceId: "target-workspace",
+          },
         },
-      }]);
+      ]);
     });
     expect(run).not.toHaveProperty("failureNotice");
     await activation.dispose?.(new AbortController().signal);
@@ -93,23 +100,31 @@ describe.skipIf(process.platform === "win32")("Terminal peer server entry", () =
 
   it("does not accept a failure-notice intent from the browser peer protocol", async () => {
     const records: ServerPluginNoticeInput[] = [];
-    const activation = activateTerminalPlugin(activationContext("pi-web.terminal", (input) => { records.push(input); }));
+    const activation = activateTerminalPlugin(
+      activationContext("pi-web.terminal", (input) => {
+        records.push(input);
+      }),
+    );
     const backend = activation.peer;
     if (backend === undefined) throw new Error("Expected Terminal peer");
-    const runValue = await backendRequest(backend, requestContext("terminal.run", {
-      origin: "browser",
-      title: "Fail without host intent",
-      command: "exit 8",
-      failureNotice: {
-        message: "Spoofed notice",
-        context: { projectId: "project-1" },
-      },
-    }));
+    const runValue = await backendRequest(
+      backend,
+      requestContext("terminal.run", {
+        origin: "browser",
+        title: "Fail without host intent",
+        command: "exit 8",
+        failureNotice: {
+          message: "Spoofed notice",
+          context: { projectId: "project-1" },
+        },
+      }),
+    );
     const runId = jsonString(runValue, "id");
 
     await vi.waitFor(async () => {
-      await expect(backendRequest(backend, requestContext("terminal.get-run", { runId })))
-        .resolves.toEqual(expect.objectContaining({ status: "failed", exitCode: 8 }));
+      await expect(backendRequest(backend, requestContext("terminal.get-run", { runId }))).resolves.toEqual(
+        expect.objectContaining({ status: "failed", exitCode: 8 }),
+      );
     });
     expect(records).toEqual([]);
     expect(runValue).not.toHaveProperty("failureNotice");
@@ -131,34 +146,45 @@ describe.skipIf(process.platform === "win32")("Terminal peer server entry", () =
     // Enter, Tab, and spaces are valid PTY input even though trimming would make
     // some of those frames empty.
     await channel.receive({ type: "input", data: "\r" }, new AbortController().signal);
-    expect(() => channel.receive({ type: "input", data: "" }, new AbortController().signal))
-      .toThrow("data must be a non-empty string");
+    expect(() => channel.receive({ type: "input", data: "" }, new AbortController().signal)).toThrow("data must be a non-empty string");
     await channel.receive({ type: "resize", cols: 100.9, rows: 30.2 }, new AbortController().signal);
     await vi.waitFor(() => {
-      expect(sent.some((frame) => jsonStringOrUndefined(frame, "type") === "output"
-        && jsonStringOrUndefined(frame, "data")?.includes("__TERMINAL_PAIRED_CHANNEL__") === true)).toBe(true);
+      expect(
+        sent.some(
+          (frame) =>
+            jsonStringOrUndefined(frame, "type") === "output" && jsonStringOrUndefined(frame, "data")?.includes("__TERMINAL_PAIRED_CHANNEL__") === true,
+        ),
+      ).toBe(true);
     });
-    expect(() => channel.receive({ type: "unknown" }, new AbortController().signal))
-      .toThrow("Unsupported Terminal channel frame");
+    expect(() => channel.receive({ type: "unknown" }, new AbortController().signal)).toThrow("Unsupported Terminal channel frame");
     if (channel.closed === undefined) throw new Error("Expected Terminal-owned channel completion");
     await backendRequest(backend, requestContext("terminal.close", { terminalId }));
     await expect(channel.closed).resolves.toBeUndefined();
 
     controller.abort(new DOMException("browser disconnected", "AbortError"));
     await channel.close?.({ code: 1000, reason: "done", signal: new AbortController().signal });
-    expect(() => channel.receive({ type: "input", data: "echo late\n" }, new AbortController().signal))
-      .toThrow("browser disconnected");
+    expect(() => channel.receive({ type: "input", data: "echo late\n" }, new AbortController().signal)).toThrow("browser disconnected");
   });
 
   it("fits the full worst-case escaped replay within the directional output budget", () => {
     const output = "\u0000".repeat(200_000);
     const frames = terminalOutputFrames(output, true);
     const readyBytes = Buffer.byteLength(JSON.stringify({ version: 1, kind: "ready" }), "utf8");
-    const wireBytes = readyBytes + frames.reduce((total, data) => total + Buffer.byteLength(JSON.stringify({
-      version: 1,
-      kind: "data",
-      data,
-    }), "utf8"), 0);
+    const wireBytes =
+      readyBytes
+      + frames.reduce(
+        (total, data) =>
+          total
+          + Buffer.byteLength(
+            JSON.stringify({
+              version: 1,
+              kind: "data",
+              data,
+            }),
+            "utf8",
+          ),
+        0,
+      );
 
     expect(frames.map(({ data }) => data).join("")).toBe(output);
     expect(frames).toHaveLength(20);
@@ -186,8 +212,7 @@ describe.skipIf(process.platform === "win32")("Terminal peer server entry", () =
 
     const withoutNotices = { ...activationContext("pi-web.terminal") };
     Reflect.deleteProperty(withoutNotices, "notices");
-    expect(() => activateTerminalPlugin(Object.freeze(withoutNotices)))
-      .toThrow("requires server notice reporter version 1");
+    expect(() => activateTerminalPlugin(Object.freeze(withoutNotices))).toThrow("requires server notice reporter version 1");
   });
 });
 
@@ -213,18 +238,16 @@ function requestContext(operation: string, input: JsonValue, workspaceId = "work
   });
 }
 
-function channelContext(
-  input: JsonValue,
-  sent: JsonValue[],
-  controller: AbortController,
-): ServerPluginPeerChannelOpenContext {
+function channelContext(input: JsonValue, sent: JsonValue[], controller: AbortController): ServerPluginPeerChannelOpenContext {
   return Object.freeze({
     project: project(),
     workspace: workspace("workspace-1"),
     operation: "terminal.attach",
     input,
     signal: controller.signal,
-    send: (frame: JsonValue) => { sent.push(frame); },
+    send: (frame: JsonValue) => {
+      sent.push(frame);
+    },
   });
 }
 
@@ -242,10 +265,7 @@ function workspace(id: string): ServerPluginPeerWorkspace {
   });
 }
 
-function activationContext(
-  pluginId: string,
-  recordNotice: (input: ServerPluginNoticeInput) => void = () => undefined,
-): ServerPluginActivationContext {
+function activationContext(pluginId: string, recordNotice: (input: ServerPluginNoticeInput) => void = () => undefined): ServerPluginActivationContext {
   return Object.freeze({
     apiVersion: 3,
     pluginId,
@@ -266,10 +286,9 @@ function activationContext(
 }
 
 function terminalServiceCapability(activation: ReturnType<typeof activateTerminalPlugin>) {
-  const provision = activation.provides.find(({ capability }) => (
-    capability.pluginId === TERMINAL_SERVICE_CAPABILITY.pluginId
-      && capability.id === TERMINAL_SERVICE_CAPABILITY.id
-  ));
+  const provision = activation.provides.find(
+    ({ capability }) => capability.pluginId === TERMINAL_SERVICE_CAPABILITY.pluginId && capability.id === TERMINAL_SERVICE_CAPABILITY.id,
+  );
   if (provision === undefined) throw new Error("Expected Terminal service capability provision");
   return TERMINAL_SERVICE_CAPABILITY.parse(provision.value);
 }

@@ -400,7 +400,9 @@ describe("session-tree-navigator action step", () => {
     await settleRenderedDialog(navigator);
 
     expect(navigator.renderRoot.querySelector("h2")?.textContent).toBe("Choose how to continue");
-    expect(navigator.renderRoot.querySelector(".dialog-error[role='alert']")?.textContent).toContain("Could not navigate session history: The session changed since /tree was opened.");
+    expect(navigator.renderRoot.querySelector(".dialog-error[role='alert']")?.textContent).toContain(
+      "Could not navigate session history: The session changed since /tree was opened.",
+    );
     expect(footerButton(navigator, "Continue from here").disabled).toBe(false);
   });
 
@@ -537,7 +539,9 @@ describe("session-tree-navigator interactions", () => {
 
     expect(componentProperty(navigator, "step")).toBe("action");
     expect(componentProperty(navigator, "busy")).toBe(false);
-    expect(componentProperty(navigator, "error")).toBe("Could not navigate session history: The session changed since /tree was opened. Reopen /tree and try again.");
+    expect(componentProperty(navigator, "error")).toBe(
+      "Could not navigate session history: The session changed since /tree was opened. Reopen /tree and try again.",
+    );
   });
 
   it("focuses the active leaf selected when the dialog opens", () => {
@@ -566,7 +570,7 @@ describe("session-tree-navigator interactions", () => {
     navigator.onNavigate = onNavigate;
     const closeFocus = vi.fn();
     const root = {
-      querySelector: (selector: string) => selector === ".close-button" ? { focus: closeFocus } : null,
+      querySelector: (selector: string) => (selector === ".close-button" ? { focus: closeFocus } : null),
       querySelectorAll: () => [],
     };
     if (!Reflect.set(navigator, "renderRoot", root)) throw new Error("Could not install navigator render root");

@@ -83,7 +83,12 @@ describe("machine crumb", () => {
 
   it("is a plain machine picker in browser mode, without the location identity", async () => {
     const opened: string[] = [];
-    const bar = await mountBar({ machines: [machine("local"), machine("remote-a")], onOpenSection: (section) => { opened.push(section); } });
+    const bar = await mountBar({
+      machines: [machine("local"), machine("remote-a")],
+      onOpenSection: (section) => {
+        opened.push(section);
+      },
+    });
 
     const chip = machineChip(bar);
     expect(chip?.tagName).toBe("BUTTON");
@@ -142,7 +147,16 @@ function sessionChip(bar: AppContextBar): HTMLElement | undefined {
 }
 
 function session(id: string, firstMessage: string, name?: string): SessionInfo {
-  return { id, cwd: "/repo", path: `/sessions/${id}.jsonl`, created: "now", modified: "now", messageCount: 1, firstMessage, ...(name === undefined ? {} : { name }) };
+  return {
+    id,
+    cwd: "/repo",
+    path: `/sessions/${id}.jsonl`,
+    created: "now",
+    modified: "now",
+    messageCount: 1,
+    firstMessage,
+    ...(name === undefined ? {} : { name }),
+  };
 }
 
 function machine(id: string): Machine {

@@ -16,11 +16,19 @@ export class MessageActionsMenu extends LitElement {
   @query("[popover]") private panel!: HTMLDivElement;
 
   @state() private expanded = false;
-  readonly popup = new AnchoredPopupController(this, () => this.expanded ? {
-    anchor: this.trigger, panel: this.panel,
-    onClose: () => { this.expanded = false; this.removeAttribute("open"); },
-    options: { placement: "left-end", padding: 8 },
-  } : undefined);
+  readonly popup = new AnchoredPopupController(this, () =>
+    this.expanded
+      ? {
+          anchor: this.trigger,
+          panel: this.panel,
+          onClose: () => {
+            this.expanded = false;
+            this.removeAttribute("open");
+          },
+          options: { placement: "left-end", padding: 8 },
+        }
+      : undefined,
+  );
 
   override disconnectedCallback() {
     this.expanded = false;
@@ -49,13 +57,19 @@ export class MessageActionsMenu extends LitElement {
     return html`
       <button type="button" class="ui-button ui-button--small ui-button--icon"
         aria-label="Message actions" aria-expanded=${String(this.expanded)} aria-controls="actions"
-        @pointerdown=${() => { this.openAtPress = this.expanded; }}
-        @click=${() => { this.toggle(); }}><span aria-hidden="true">⋯</span></button>
+        @pointerdown=${() => {
+          this.openAtPress = this.expanded;
+        }}
+        @click=${() => {
+          this.toggle();
+        }}><span aria-hidden="true">⋯</span></button>
       <div id="actions" popover="auto"><slot></slot></div>
     `;
   }
 
-  static override styles = [uiButtonStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    css`
     :host { display: inline-flex; }
     .ui-button:hover:not(:disabled) { background: color-mix(in srgb, var(--pi-text) 8%, transparent); }
     [popover] {
@@ -77,5 +91,6 @@ export class MessageActionsMenu extends LitElement {
     @media (prefers-reduced-motion: reduce) {
       [popover] { transition: none; }
     }
-  `];
+  `,
+  ];
 }

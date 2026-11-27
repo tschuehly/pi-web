@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  GIT_FILE_VIEW_STORAGE_KEY,
-  parseGitFileView,
-  readGitFileView,
-  writeGitFileView,
-} from "./browser/gitFileViewPreference.js";
+import { GIT_FILE_VIEW_STORAGE_KEY, parseGitFileView, readGitFileView, writeGitFileView } from "./browser/gitFileViewPreference.js";
 
 describe("gitFileViewPreference", () => {
   it("parses stored values and defaults unknown/missing input to list", () => {
@@ -35,7 +30,9 @@ describe("gitFileViewPreference", () => {
     const storage = new ThrowingStorage();
 
     expect(readGitFileView(storage)).toBe("list");
-    expect(() => { writeGitFileView("tree", storage); }).not.toThrow();
+    expect(() => {
+      writeGitFileView("tree", storage);
+    }).not.toThrow();
   });
 });
 

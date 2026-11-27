@@ -9,9 +9,7 @@ export type { PiWebCapability };
 export const KNOWN_PI_WEB_CAPABILITIES: PiWebCapability[] = Object.values(PI_WEB_CAPABILITIES);
 const knownPiWebCapabilities: ReadonlySet<string> = new Set(KNOWN_PI_WEB_CAPABILITIES);
 
-export const WEB_RUNTIME_CAPABILITIES = [
-  PI_WEB_CAPABILITIES.pluginLifecycle,
-] as const satisfies readonly PiWebCapability[];
+export const WEB_RUNTIME_CAPABILITIES = [PI_WEB_CAPABILITIES.pluginLifecycle] as const satisfies readonly PiWebCapability[];
 
 export const SESSIOND_RUNTIME_CAPABILITIES = [] as const satisfies readonly PiWebCapability[];
 
@@ -35,7 +33,9 @@ export function parseKnownPiWebCapabilities(value: unknown): PiWebCapability[] |
   return value.filter(isPiWebCapability);
 }
 
-export function effectivePiWebCapabilities(components: Partial<Record<PiWebServiceComponent, Pick<PiWebRuntimeComponent, "available" | "capabilities">>>): PiWebCapability[] {
+export function effectivePiWebCapabilities(
+  components: Partial<Record<PiWebServiceComponent, Pick<PiWebRuntimeComponent, "available" | "capabilities">>>,
+): PiWebCapability[] {
   return KNOWN_PI_WEB_CAPABILITIES.filter((capability) => {
     const requiredComponents: readonly PiWebServiceComponent[] = EFFECTIVE_CAPABILITY_REQUIREMENTS[capability];
     return requiredComponents.every((component) => {

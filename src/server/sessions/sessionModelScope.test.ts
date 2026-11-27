@@ -6,7 +6,15 @@ import { ModelRuntime, ProjectTrustStore, SessionManager, SettingsManager } from
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
 import { CapturingSessionEventHub, sessionGateway } from "./piSessionService.testSupport.js";
-import { applyEnabledModelToggle, catalogWithEnabledFirst, liveScopedModelIds, persistedEnabledModelPatterns, resolveEnabledModelIds, resolveSessionModelOptions, scopedModelsFromEnabledIds } from "./sessionModelScope.js";
+import {
+  applyEnabledModelToggle,
+  catalogWithEnabledFirst,
+  liveScopedModelIds,
+  persistedEnabledModelPatterns,
+  resolveEnabledModelIds,
+  resolveSessionModelOptions,
+  scopedModelsFromEnabledIds,
+} from "./sessionModelScope.js";
 
 const PROVIDER = "anthropic";
 const FIRST_MODEL = "claude-opus-4-6";
@@ -95,10 +103,12 @@ describe("resolveSessionModelOptions", () => {
   });
 
   it("keeps an empty runtime scope when enabledModels is absent", async () => {
-    await expect(resolveSessionModelOptions({
-      services: services({}),
-      hasExistingSession: false,
-    })).resolves.toEqual({ scopedModels: [], diagnostics: [] });
+    await expect(
+      resolveSessionModelOptions({
+        services: services({}),
+        hasExistingSession: false,
+      }),
+    ).resolves.toEqual({ scopedModels: [], diagnostics: [] });
   });
 
   it("reports unmatched patterns without blocking startup or inventing a scope", async () => {
@@ -109,10 +119,12 @@ describe("resolveSessionModelOptions", () => {
 
     expect(resolved.scopedModels).toEqual([]);
     expect(resolved.model).toBeUndefined();
-    expect(resolved.diagnostics).toEqual([{
-      type: "warning",
-      message: 'No models match pattern "anthropic/not-a-real-model"',
-    }]);
+    expect(resolved.diagnostics).toEqual([
+      {
+        type: "warning",
+        message: 'No models match pattern "anthropic/not-a-real-model"',
+      },
+    ]);
   });
 
   it("keeps a matched model while surfacing an invalid pinned thinking level", async () => {
@@ -124,10 +136,12 @@ describe("resolveSessionModelOptions", () => {
 
     expect(resolved.scopedModels.map(({ model }) => model.id)).toEqual([FIRST_MODEL]);
     expect(resolved.scopedModels[0]?.thinkingLevel).toBeUndefined();
-    expect(resolved.diagnostics).toEqual([{
-      type: "warning",
-      message: `Invalid thinking level "turbo" in pattern "${pattern}". Using default instead.`,
-    }]);
+    expect(resolved.diagnostics).toEqual([
+      {
+        type: "warning",
+        message: `Invalid thinking level "turbo" in pattern "${pattern}". Using default instead.`,
+      },
+    ]);
   });
 
   it("wires project-overridden enabledModels into real PI WEB sessions", async () => {
@@ -137,14 +151,20 @@ describe("resolveSessionModelOptions", () => {
     const workspace = join(root, "workspace");
     await mkdir(join(workspace, ".pi"), { recursive: true });
     await mkdir(agentDir, { recursive: true });
-    await writeFile(join(agentDir, "settings.json"), JSON.stringify({
-      enabledModels: [`${PROVIDER}/${FIRST_MODEL}`],
-    }));
-    await writeFile(join(workspace, ".pi", "settings.json"), JSON.stringify({
-      enabledModels: [`${PROVIDER}/${FIRST_MODEL}:high`, `${PROVIDER}/${DEFAULT_MODEL}:low`],
-      defaultProvider: PROVIDER,
-      defaultModel: DEFAULT_MODEL,
-    }));
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({
+        enabledModels: [`${PROVIDER}/${FIRST_MODEL}`],
+      }),
+    );
+    await writeFile(
+      join(workspace, ".pi", "settings.json"),
+      JSON.stringify({
+        enabledModels: [`${PROVIDER}/${FIRST_MODEL}:high`, `${PROVIDER}/${DEFAULT_MODEL}:low`],
+        defaultProvider: PROVIDER,
+        defaultModel: DEFAULT_MODEL,
+      }),
+    );
     // Project settings are trust-gated: a workspace shipping `.pi/settings.json`
     // only loads its overrides once trusted. Persist the decision through the
     // SDK store so the key is canonicalized the way the lookup reads it.
@@ -192,17 +212,21 @@ describe("resolveEnabledModelIds", () => {
     expect(ids).toEqual([`${PROVIDER}/${FIRST_MODEL}`]);
   });
 
-  it("returns null when no scope is configured, pi's \"everything enabled\" state", async () => {
-    await expect(resolveEnabledModelIds({
-      settingsManager: SettingsManager.inMemory({}),
-      modelRuntime,
-      scopedModels: [],
-    })).resolves.toBeNull();
-    await expect(resolveEnabledModelIds({
-      settingsManager: SettingsManager.inMemory({ enabledModels: [] }),
-      modelRuntime,
-      scopedModels: [],
-    })).resolves.toBeNull();
+  it('returns null when no scope is configured, pi\'s "everything enabled" state', async () => {
+    await expect(
+      resolveEnabledModelIds({
+        settingsManager: SettingsManager.inMemory({}),
+        modelRuntime,
+        scopedModels: [],
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      resolveEnabledModelIds({
+        settingsManager: SettingsManager.inMemory({ enabledModels: [] }),
+        modelRuntime,
+        scopedModels: [],
+      }),
+    ).resolves.toBeNull();
   });
 
   it("resolves configured patterns against the runtime catalog when no live scope exists", async () => {
@@ -268,7 +292,11 @@ describe("persistedEnabledModelPatterns", () => {
   });
 
   it("keeps stale patterns riding along even when they make the list longer than the catalog", () => {
-    expect(persistedEnabledModelPatterns(["anthropic/a", "anthropic/b", "anthropic/gone"], available)).toEqual(["anthropic/a", "anthropic/b", "anthropic/gone"]);
+    expect(persistedEnabledModelPatterns(["anthropic/a", "anthropic/b", "anthropic/gone"], available)).toEqual([
+      "anthropic/a",
+      "anthropic/b",
+      "anthropic/gone",
+    ]);
   });
 });
 
@@ -297,7 +325,9 @@ describe("scopedModelsFromEnabledIds", () => {
   ];
 
   it("resolves a partial scope while dropping stale ids", () => {
-    expect(scopedModelsFromEnabledIds(available, ["anthropic/b", "anthropic/gone"]).map(({ model }) => `${model.provider}/${model.id}`)).toEqual(["anthropic/b"]);
+    expect(scopedModelsFromEnabledIds(available, ["anthropic/b", "anthropic/gone"]).map(({ model }) => `${model.provider}/${model.id}`)).toEqual([
+      "anthropic/b",
+    ]);
   });
 
   it("returns an empty SDK scope when every model is enabled", () => {

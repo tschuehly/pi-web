@@ -62,10 +62,15 @@ describe("getBuiltinExtensionFactories", () => {
     const { McpAuthFlowService } = await import("./mcpAuthFlowService.js");
     const flows = new McpAuthFlowService();
     try {
-      const flow = flows.start({ sessionId: "session", identity: {}, isCurrent: () => true, run: () => {
-        openUrl("https://example.test/authorize");
-        return Promise.resolve();
-      } });
+      const flow = flows.start({
+        sessionId: "session",
+        identity: {},
+        isCurrent: () => true,
+        run: () => {
+          openUrl("https://example.test/authorize");
+          return Promise.resolve();
+        },
+      });
       expect(flow.auth).toEqual({ url: "https://example.test/authorize" });
     } finally {
       flows.dispose();
@@ -77,7 +82,9 @@ describe("getBuiltinExtensionFactories", () => {
     const { exports } = builtinCreators();
     const getFactories = await loadFactories({
       ...exports,
-      createMcpExtension: () => { throw error; },
+      createMcpExtension: () => {
+        throw error;
+      },
     });
     await expect(getFactories()).rejects.toBe(error);
   });

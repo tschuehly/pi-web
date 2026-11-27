@@ -21,12 +21,26 @@ export function modelPickerGroups(models: readonly SessionModel[], query: string
 
 // Lucide "check" and "cpu" (https://lucide.dev, ISC).
 const CHECK_ICON = svg`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"></path></svg>`;
-const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [[/opus/u, "opus"], [/sonnet/u, "sonnet"], [/fable/u, "fable"], [/haiku/u, "haiku"], [/astra/u, "astra"], [/sol\b/u, "sol"], [/luna/u, "luna"], [/grok/u, "grok"], [/ember/u, "ember"]];
+const MODEL_NICKNAMES: readonly (readonly [RegExp, string])[] = [
+  [/opus/u, "opus"],
+  [/sonnet/u, "sonnet"],
+  [/fable/u, "fable"],
+  [/haiku/u, "haiku"],
+  [/astra/u, "astra"],
+  [/sol\b/u, "sol"],
+  [/luna/u, "luna"],
+  [/grok/u, "grok"],
+  [/ember/u, "ember"],
+];
 const EFFORT_SHORT: Readonly<Record<string, string>> = { off: "off", minimal: "min", low: "l", medium: "m", high: "h", xhigh: "xh", max: "max" };
 
 /** Compact label such as `sol-h`; unknown models keep their short id and full effort name. */
 export function compactModelEffortLabel(modelId: string | undefined, effort: string): string {
-  const short = modelId?.split("/").at(-1)?.replace(/-\d{8}$/, "") ?? "no model";
+  const short =
+    modelId
+      ?.split("/")
+      .at(-1)
+      ?.replace(/-\d{8}$/, "") ?? "no model";
   const nickname = MODEL_NICKNAMES.find(([pattern]) => pattern.test(short))?.[1] ?? short;
   return `${nickname}-${EFFORT_SHORT[effort] ?? effort}`;
 }
@@ -66,7 +80,9 @@ export class ModelEffortPicker extends LitElement {
     const qualified = provider === "" ? model : `${provider}/${model}`;
     const thinking = thinkingLevelLabel(this.status?.thinkingLevel);
     return html`
-      <button class="trigger" type="button" title=${`Model: ${qualified} · Thinking: ${thinking}`} aria-label=${`Model: ${qualified}, thinking ${thinking}. Change model or thinking`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} @click=${() => { this.setOpen(!this.open); }}>
+      <button class="trigger" type="button" title=${`Model: ${qualified} · Thinking: ${thinking}`} aria-label=${`Model: ${qualified}, thinking ${thinking}. Change model or thinking`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} @click=${() => {
+        this.setOpen(!this.open);
+      }}>
         ${this.compact ? compactModelEffortLabel(model, thinking) : html`<span class="model-name">${model}</span><span class="separator" aria-hidden="true">·</span><span class="thinking">${thinking}</span>`}
       </button>
       ${this.open ? this.renderPopover(thinking) : null}
@@ -79,26 +95,59 @@ export class ModelEffortPicker extends LitElement {
     const active = flat[Math.min(this.activeIndex, flat.length - 1)];
     const current = this.status?.model;
     return html`
-      <div class="popover" role="dialog" aria-label="Model and thinking" @keydown=${(event: KeyboardEvent) => { this.handlePopoverKey(event); }} @focusout=${(event: FocusEvent) => { this.handleFocusOut(event); }}>
-        ${this.thinkingLevels.length === 0 ? null : html`
+      <div class="popover" role="dialog" aria-label="Model and thinking" @keydown=${(event: KeyboardEvent) => {
+        this.handlePopoverKey(event);
+      }} @focusout=${(event: FocusEvent) => {
+        this.handleFocusOut(event);
+      }}>
+        ${
+          this.thinkingLevels.length === 0
+            ? null
+            : html`
           <div class="effort" role="radiogroup" aria-label="Thinking">
-            ${this.thinkingLevels.map((level) => html`<button type="button" role="radio" aria-checked=${level === thinking ? "true" : "false"} tabindex=${level === thinking ? "0" : "-1"} data-level=${level} @click=${() => { void this.onSetThinkingLevel?.(level); }} @keydown=${(event: KeyboardEvent) => { this.handleEffortKey(event); }}>${level}</button>`)}
+            ${this.thinkingLevels.map(
+              (level) =>
+                html`<button type="button" role="radio" aria-checked=${level === thinking ? "true" : "false"} tabindex=${level === thinking ? "0" : "-1"} data-level=${level} @click=${() => {
+                  void this.onSetThinkingLevel?.(level);
+                }} @keydown=${(event: KeyboardEvent) => {
+                  this.handleEffortKey(event);
+                }}>${level}</button>`,
+            )}
           </div>
-        `}
-        <input class="search" type="search" placeholder="Search models" aria-label="Search models" role="combobox" aria-expanded="true" aria-controls="model-list" aria-autocomplete="list" aria-activedescendant=${active === undefined ? "" : optionId(active)} .value=${this.query} @input=${(event: Event) => { this.handleSearch(event); }} @keydown=${(event: KeyboardEvent) => { this.handleSearchKey(event, flat); }} />
+        `
+        }
+        <input class="search" type="search" placeholder="Search models" aria-label="Search models" role="combobox" aria-expanded="true" aria-controls="model-list" aria-autocomplete="list" aria-activedescendant=${active === undefined ? "" : optionId(active)} .value=${this.query} @input=${(
+          event: Event,
+        ) => {
+          this.handleSearch(event);
+        }} @keydown=${(event: KeyboardEvent) => {
+          this.handleSearchKey(event, flat);
+        }} />
         <div class="models" id="model-list" role="listbox" aria-label="Models">
-          ${flat.length === 0 ? html`<div class="empty">No models</div>` : groups.map((group, groupIndex) => html`
+          ${
+            flat.length === 0
+              ? html`<div class="empty">No models</div>`
+              : groups.map(
+                  (group, groupIndex) => html`
             <div role="group" aria-labelledby=${`provider-${String(groupIndex)}`}>
               <div class="provider" id=${`provider-${String(groupIndex)}`} role="presentation">${group.provider}</div>
               ${group.models.map((entry) => {
                 const isCurrent = entry.provider === current?.provider && entry.id === current.id;
                 const isActive = entry === active;
-                return html`<div class=${`model${isActive ? " active" : ""}`} id=${optionId(entry)} role="option" aria-selected=${isCurrent ? "true" : "false"} title=${entry.name ?? entry.id} ${scrollWhenSelected(isActive, this.query)} @pointerdown=${(event: PointerEvent) => { event.preventDefault(); }} @click=${() => { this.chooseModel(entry); }}>
+                return html`<div class=${`model${isActive ? " active" : ""}`} id=${optionId(entry)} role="option" aria-selected=${isCurrent ? "true" : "false"} title=${entry.name ?? entry.id} ${scrollWhenSelected(isActive, this.query)} @pointerdown=${(
+                  event: PointerEvent,
+                ) => {
+                  event.preventDefault();
+                }} @click=${() => {
+                  this.chooseModel(entry);
+                }}>
                   <span class="mark">${isCurrent ? CHECK_ICON : null}</span><span class="model-id">${entry.id}</span>
                 </div>`;
               })}
             </div>
-          `)}
+          `,
+                )
+          }
         </div>
       </div>
     `;
@@ -110,19 +159,26 @@ export class ModelEffortPicker extends LitElement {
     this.openGeneration += 1;
     if (!open) {
       document.removeEventListener("pointerdown", this.closeOnOutsidePointer, true);
-      if (restoreFocus) void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus(); });
+      if (restoreFocus)
+        void this.updateComplete.then(() => {
+          this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus();
+        });
       return;
     }
     document.addEventListener("pointerdown", this.closeOnOutsidePointer, true);
     this.query = "";
     this.activeIndex = 0;
-    void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLInputElement>(".search")?.focus(); });
+    void this.updateComplete.then(() => {
+      this.renderRoot.querySelector<HTMLInputElement>(".search")?.focus();
+    });
     const generation = this.openGeneration;
     void this.loadModels?.().then((models) => {
       if (generation !== this.openGeneration) return;
       this.models = models;
       const current = this.status?.model;
-      const index = modelPickerGroups(models, "").flatMap((group) => group.models).findIndex((model) => model.provider === current?.provider && model.id === current.id);
+      const index = modelPickerGroups(models, "")
+        .flatMap((group) => group.models)
+        .findIndex((model) => model.provider === current?.provider && model.id === current.id);
       this.activeIndex = Math.max(0, index);
     });
   }
@@ -171,7 +227,8 @@ export class ModelEffortPicker extends LitElement {
     if (level === undefined) return;
     event.preventDefault();
     // Move the roving tab stop now so Tab leaves the row even before the session confirms the level.
-    for (const radio of this.renderRoot.querySelectorAll<HTMLButtonElement>('.effort [role="radio"]')) radio.tabIndex = radio.dataset["level"] === level ? 0 : -1;
+    for (const radio of this.renderRoot.querySelectorAll<HTMLButtonElement>('.effort [role="radio"]'))
+      radio.tabIndex = radio.dataset["level"] === level ? 0 : -1;
     this.renderRoot.querySelector<HTMLButtonElement>(`.effort [data-level="${level}"]`)?.focus();
     void this.onSetThinkingLevel?.(level);
   }

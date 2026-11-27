@@ -1,4 +1,13 @@
-import type { StylesheetIntegrationCapabilityV1, PluginCapability, PiWebPlugin, PluginActivationContext, PluginActivationResult, PluginStartContext, PluginRuntimeContext, WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
+import type {
+  StylesheetIntegrationCapabilityV1,
+  PluginCapability,
+  PiWebPlugin,
+  PluginActivationContext,
+  PluginActivationResult,
+  PluginStartContext,
+  PluginRuntimeContext,
+  WorkspacePanelContext,
+} from "@jmfederico/pi-web/plugin-api";
 import { html as staticHtml, unsafeStatic } from "lit/static-html.js";
 import { TerminalBrowserRuntime } from "./TerminalBrowserRuntime";
 import { TERMINAL_BROWSER_FACADE_CAPABILITY, TerminalFacade, type RequiredTerminalBrowserFacadeV1 } from "./TerminalFacade";
@@ -11,7 +20,9 @@ export const TERMINAL_SOFT_KEYS_ELEMENT = terminalSoftKeysElementName("pi-web.te
 const terminalCustomElementOwnersKey = Symbol.for("pi-web.terminal.custom-element-owners.v1");
 
 const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse(value) {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Stylesheet integration capability v1 requires registerRoot and createController");
@@ -21,10 +32,16 @@ const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCap
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "createController" in value && typeof value.createController === "function"
-    && "subscribe" in value && typeof value.subscribe === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+  );
 }
 
 const plugin = {
@@ -73,32 +90,36 @@ export function activateTerminalPlugin(
       disposeResources();
     },
     contributions: {
-      workspacePanels: [{
-        id: "workspace.terminal",
-        title: "Terminal",
-        icon,
-        order: 30,
-        badge: (workspaceContext: WorkspacePanelContext) => runtime.activeTerminalBadge(workspaceContext),
-        onInvalidate: (workspaceContext: WorkspacePanelContext) => runtime.invalidate(workspaceContext),
-        render: (workspaceContext: WorkspacePanelContext) => context.html`${staticHtml`<${panelTag} .stylesheetIntegration=${stylesheetIntegration} .context=${workspaceContext} .runtime=${runtime} .softKeysElementName=${softKeysElement}></${panelTag}>`}`,
-      }],
-      actions: [{
-        id: "view.terminal",
-        title: "Go to Terminal",
-        shortcut: "mod+4",
-        shortcutAliases: ["core:view.terminal"],
-        group: "Navigation",
-        enabled: (runtimeContext: PluginRuntimeContext) => runtimeContext.state.selectedWorkspace !== undefined,
-        run: (runtimeContext: PluginRuntimeContext) => { runtimeContext.openTerminal(); },
-      }],
+      workspacePanels: [
+        {
+          id: "workspace.terminal",
+          title: "Terminal",
+          icon,
+          order: 30,
+          badge: (workspaceContext: WorkspacePanelContext) => runtime.activeTerminalBadge(workspaceContext),
+          onInvalidate: (workspaceContext: WorkspacePanelContext) => runtime.invalidate(workspaceContext),
+          render: (workspaceContext: WorkspacePanelContext) =>
+            context.html`${staticHtml`<${panelTag} .stylesheetIntegration=${stylesheetIntegration} .context=${workspaceContext} .runtime=${runtime} .softKeysElementName=${softKeysElement}></${panelTag}>`}`,
+        },
+      ],
+      actions: [
+        {
+          id: "view.terminal",
+          title: "Go to Terminal",
+          shortcut: "mod+4",
+          shortcutAliases: ["core:view.terminal"],
+          group: "Navigation",
+          enabled: (runtimeContext: PluginRuntimeContext) => runtimeContext.state.selectedWorkspace !== undefined,
+          run: (runtimeContext: PluginRuntimeContext) => {
+            runtimeContext.openTerminal();
+          },
+        },
+      ],
     },
   });
 }
 
-export function defineTerminalCustomElements(
-  panelElement = TERMINAL_PANEL_ELEMENT,
-  softKeysElement = TERMINAL_SOFT_KEYS_ELEMENT,
-): void {
+export function defineTerminalCustomElements(panelElement = TERMINAL_PANEL_ELEMENT, softKeysElement = TERMINAL_SOFT_KEYS_ELEMENT): void {
   if (typeof customElements === "undefined") throw new Error("Terminal requires browser Custom Elements support");
   // A CustomElementRegistry permits one constructor under only one name. Each
   // registration gets tiny local subclasses while sharing package-owned logic.

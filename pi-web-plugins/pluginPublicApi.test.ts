@@ -27,7 +27,10 @@ describe("PI WEB plugin packages", () => {
         for (const { pattern, message } of forbiddenPatterns) {
           // A statically package-relative asset is not a PI WEB API call. Keep
           // arbitrary fetches forbidden; browser API access uses capabilities.
-          const checked = message === "direct browser fetch" ? content.replace(/\bfetch\(new URL\((?:\/\* @vite-ignore \*\/ )?"\.\/[a-zA-Z0-9._/-]+", import\.meta\.url\)/gu, "packageAsset(") : content;
+          const checked =
+            message === "direct browser fetch"
+              ? content.replace(/\bfetch\(new URL\((?:\/\* @vite-ignore \*\/ )?"\.\/[a-zA-Z0-9._/-]+", import\.meta\.url\)/gu, "packageAsset(")
+              : content;
           if (pattern.test(checked)) violations.push(`${file}: ${message}`);
         }
       }
@@ -82,7 +85,7 @@ async function pluginSourceFiles(root: string): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await pluginSourceFiles(path));
+    if (entry.isDirectory()) files.push(...(await pluginSourceFiles(path)));
     else if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) files.push(path);
   }
   return files;

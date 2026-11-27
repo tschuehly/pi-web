@@ -7,7 +7,9 @@ import { mockModels, type JournalEntry } from "../mockModels/client";
 // (e2e/mockModels/README.md): a scripted thinking + tool call, its tool result, and the request journal.
 test.skip(process.env["PI_WEB_E2E_MOCK_URL"] === undefined, "the mock model server is off (PI_WEB_E2E_MOCK_MODELS=0)");
 const mock = mockModels();
-test.beforeEach(async () => { await mock.reset(); });
+test.beforeEach(async () => {
+  await mock.reset();
+});
 
 const editor = (page: Page) => page.locator("prompt-editor .cm-content");
 const chat = (page: Page) => page.locator("chat-view");
@@ -34,7 +36,11 @@ async function chooseModel(page: Page, model: { provider: string; id: string }):
 
 /** Scripts a Claude turn that thinks, holds at barrier `marker`, reads docs/notes.md, then answers `answer`. */
 async function scriptClaudeRead(marker: string, answer: string): Promise<string> {
-  return mock.script({ provider: "anthropic", match: marker, turns: [[{ thinking: "The notes file has the answer." }, { barrier: marker }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], answer] });
+  return mock.script({
+    provider: "anthropic",
+    match: marker,
+    turns: [[{ thinking: "The notes file has the answer." }, { barrier: marker }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], answer],
+  });
 }
 
 /** The held first turn is in flight (journal `pending`) until released. */
@@ -69,7 +75,10 @@ test("a legacy Chat answers through mocked Claude (with a tool round trip) and C
 
   // Journal: the prompt, then the tool result read from the fixture project, both in the subscription shape.
   const claude = await mock.journal({ provider: "anthropic", kind: "chat", contains: marker });
-  expect(claude.map((entry) => entry.answeredBy)).toEqual([{ script, turn: 0 }, { script, turn: 1 }]);
+  expect(claude.map((entry) => entry.answeredBy)).toEqual([
+    { script, turn: 0 },
+    { script, turn: 1 },
+  ]);
   expectClaudeSubscriptionShape(claude[0]);
   expectClaudeSubscriptionShape(claude[1]);
   expect(claude[1]?.lastUserText).toContain(E2E_NOTES_BODY);
@@ -113,7 +122,11 @@ test.describe("Durable Chat", () => {
   test("a Durable Chat answers through mocked Codex with a tool round trip", async ({ page }) => {
     test.setTimeout(60_000);
     const marker = `durable-codex-${String(Date.now())}`;
-    const script = await mock.script({ provider: "openai-codex", match: marker, turns: [[{ thinking: "Read the notes." }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], "Durable Codex read the notes."] });
+    const script = await mock.script({
+      provider: "openai-codex",
+      match: marker,
+      turns: [[{ thinking: "Read the notes." }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], "Durable Codex read the notes."],
+    });
     await openWorkspace(page);
     await page.getByRole("button", { name: "New Durable Chat" }).click();
     await expect(page).toHaveURL(/session=[0-9a-f-]{36}/);
@@ -122,7 +135,10 @@ test.describe("Durable Chat", () => {
     await expect(chat(page).getByText("Durable Codex read the notes.").first()).toBeVisible();
 
     const codex = await mock.journal({ provider: "openai-codex", kind: "chat", contains: marker });
-    expect(codex.map((entry) => entry.answeredBy)).toEqual([{ script, turn: 0 }, { script, turn: 1 }]);
+    expect(codex.map((entry) => entry.answeredBy)).toEqual([
+      { script, turn: 0 },
+      { script, turn: 1 },
+    ]);
     for (const entry of codex) {
       expect(entry.violations).toEqual([]);
       expect(entry.model).toBe(MOCK_CODEX_MODEL.id);

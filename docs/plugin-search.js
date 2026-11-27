@@ -54,24 +54,24 @@
   async function loadCreatedDates(packages, signal) {
     const pending = packages.filter((pkg) => !createdDates.has(pkg.name));
     // Keep metadata requests bounded; only Newest packages needs this additional data.
-    await Promise.all(Array.from({ length: Math.min(4, pending.length) }, async () => {
-      while (pending.length > 0) {
-        signal.throwIfAborted();
-        const pkg = pending.shift();
-        const url = new URL(`https://registry.npmjs.org/${encodeURIComponent(pkg.name)}`);
-        const data = await fetchJson(url, signal);
-        const created = typeof data?.time?.created === "string" ? Date.parse(data.time.created) : NaN;
-        if (!Number.isFinite(created)) throw new Error(`Missing package creation date for ${pkg.name}`);
-        signal.throwIfAborted();
-        createdDates.set(pkg.name, created);
-      }
-    }));
+    await Promise.all(
+      Array.from({ length: Math.min(4, pending.length) }, async () => {
+        while (pending.length > 0) {
+          signal.throwIfAborted();
+          const pkg = pending.shift();
+          const url = new URL(`https://registry.npmjs.org/${encodeURIComponent(pkg.name)}`);
+          const data = await fetchJson(url, signal);
+          const created = typeof data?.time?.created === "string" ? Date.parse(data.time.created) : NaN;
+          if (!Number.isFinite(created)) throw new Error(`Missing package creation date for ${pkg.name}`);
+          signal.throwIfAborted();
+          createdDates.set(pkg.name, created);
+        }
+      }),
+    );
   }
 
   function sortCatalog(mode) {
-    const value = (pkg) => mode === "popular" ? (pkg.monthlyDownloads ?? -1)
-      : mode === "newest" ? createdDates.get(pkg.name)
-        : (Date.parse(pkg.date) || 0);
+    const value = (pkg) => (mode === "popular" ? (pkg.monthlyDownloads ?? -1) : mode === "newest" ? createdDates.get(pkg.name) : Date.parse(pkg.date) || 0);
     return [...catalog].sort((a, b) => value(b) - value(a) || a.name.localeCompare(b.name, "en"));
   }
 
@@ -105,7 +105,8 @@
       metadata.append(" · ", time);
     }
     const downloads = document.createElement("span");
-    downloads.textContent = pkg.monthlyDownloads === null ? "Monthly downloads unavailable" : `${new Intl.NumberFormat("en").format(pkg.monthlyDownloads)} downloads/month`;
+    downloads.textContent =
+      pkg.monthlyDownloads === null ? "Monthly downloads unavailable" : `${new Intl.NumberFormat("en").format(pkg.monthlyDownloads)} downloads/month`;
     metadata.append(" · ", downloads);
     if (createdDates.has(pkg.name)) {
       const created = document.createElement("time");
@@ -151,10 +152,12 @@
     results.append(...ordered.slice(start, visibleCount).map(renderPackage));
     const shown = Math.min(visibleCount, ordered.length);
     more.hidden = shown >= ordered.length;
-    status.textContent = ordered.length === 0
-      ? "No matching plugins found. Try another search or check back as authors publish tagged packages."
-      : shown === ordered.length ? `${shown} ${shown === 1 ? "package" : "packages"} shown.`
-        : `${shown} of ${ordered.length} packages shown. Load more to see additional results.`;
+    status.textContent =
+      ordered.length === 0
+        ? "No matching plugins found. Try another search or check back as authors publish tagged packages."
+        : shown === ordered.length
+          ? `${shown} ${shown === 1 ? "package" : "packages"} shown.`
+          : `${shown} of ${ordered.length} packages shown. Load more to see additional results.`;
   }
 
   async function updateCatalog(search = false) {
@@ -199,9 +202,10 @@
       request.abort();
       sort.value = activeSort;
       console.error("Community plugin search failed", error);
-      status.textContent = mode === "newest" && catalog.length > 0
-        ? "Could not load package creation dates. Previous results, if any, are unchanged. Choose another sort or Search to retry."
-        : "Could not search npm. Try Search again or use the npm links below.";
+      status.textContent =
+        mode === "newest" && catalog.length > 0
+          ? "Could not load package creation dates. Previous results, if any, are unchanged. Choose another sort or Search to retry."
+          : "Could not search npm. Try Search again or use the npm links below.";
     } finally {
       window.clearTimeout(timeout);
       if (controller === request) {
@@ -216,7 +220,9 @@
     event.preventDefault();
     void updateCatalog(true);
   });
-  sort.addEventListener("change", () => { void updateCatalog(); });
+  sort.addEventListener("change", () => {
+    void updateCatalog();
+  });
   more.addEventListener("click", () => {
     visibleCount += pageSize;
     showResults(true);

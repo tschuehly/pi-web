@@ -47,18 +47,36 @@ describe("plugin stylesheet contributions", () => {
 
   it("does not publish styles from a failed start", async () => {
     const registry = new PluginRegistry();
-    await expect(registry.register({ id: "styles", plugin: {
-      apiVersion: 5, name: "Failed", activate: () => ({ contributions: { stylesheets: [file] }, start: () => { throw new Error("start failed"); } }),
-    } })).rejects.toThrow("start failed");
+    await expect(
+      registry.register({
+        id: "styles",
+        plugin: {
+          apiVersion: 5,
+          name: "Failed",
+          activate: () => ({
+            contributions: { stylesheets: [file] },
+            start: () => {
+              throw new Error("start failed");
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("start failed");
     expect(registry.getStylesheets("local")).toEqual([]);
     await registry.dispose();
   });
 
   it("qualifies theme-owned files separately and ignores machine-bound themes", async () => {
     const registry = new PluginRegistry();
-    const themes: PiWebPlugin = { apiVersion: 5, name: "Themes", activate: () => ({ contributions: {
-      themes: ["light", "dark"].map((id) => ({ id, name: id, colorScheme: "dark", stylesheets: [file] })),
-    } }) };
+    const themes: PiWebPlugin = {
+      apiVersion: 5,
+      name: "Themes",
+      activate: () => ({
+        contributions: {
+          themes: ["light", "dark"].map((id) => ({ id, name: id, colorScheme: "dark", stylesheets: [file] })),
+        },
+      }),
+    };
     await registry.register({ id: "themes", plugin: themes });
     expect(registry.getThemes().map((theme) => theme.stylesheets?.[0]?.id)).toEqual(["themes:dark:custom", "themes:light:custom"]);
     expect(registry.getStylesheets("local")).toEqual([]);
@@ -69,15 +87,23 @@ describe("plugin stylesheet contributions", () => {
 
   it("provides the framework-independent and Lit integration capability during start", async () => {
     const registry = new PluginRegistry();
-    await registry.register({ id: "consumer", plugin: {
-      apiVersion: 5, name: "Consumer", requires: [stylesheetIntegrationCapabilityToken],
-      activate: () => ({ contributions: {}, start: ({ capabilities }) => {
-        const integration = capabilities.resolve(stylesheetIntegrationCapabilityToken);
-        expect(integration.registerRoot).toBeTypeOf("function");
-        expect(integration.createController).toBeTypeOf("function");
-        expect(integration.subscribe).toBeTypeOf("function");
-      } }),
-    } });
+    await registry.register({
+      id: "consumer",
+      plugin: {
+        apiVersion: 5,
+        name: "Consumer",
+        requires: [stylesheetIntegrationCapabilityToken],
+        activate: () => ({
+          contributions: {},
+          start: ({ capabilities }) => {
+            const integration = capabilities.resolve(stylesheetIntegrationCapabilityToken);
+            expect(integration.registerRoot).toBeTypeOf("function");
+            expect(integration.createController).toBeTypeOf("function");
+            expect(integration.subscribe).toBeTypeOf("function");
+          },
+        }),
+      },
+    });
     await registry.dispose();
   });
 });

@@ -85,8 +85,7 @@ export class WorkspaceActivityService {
   snapshot(): { workspaces: ActiveWorkspaceActivity[]; sessions: { sessionId: string; cwd: string }[] } {
     return {
       workspaces: this.activeCwds().map((cwd) => this.summaryForCwd(cwd)),
-      sessions: [...this.sessions].flatMap(([sessionId, record]) =>
-        isSessionActive(record.status, record.activity) ? [{ sessionId, cwd: record.cwd }] : []),
+      sessions: [...this.sessions].flatMap(([sessionId, record]) => (isSessionActive(record.status, record.activity) ? [{ sessionId, cwd: record.cwd }] : [])),
     };
   }
 

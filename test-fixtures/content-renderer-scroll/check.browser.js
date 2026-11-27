@@ -1,7 +1,9 @@
 // Real Chromium regression: run with playwright-cli run-code --filename=... .
 // See serve.mjs for setup. This deliberately tests layout outside happy-dom.
 async (page) => {
-  const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(message);
+  };
   await page.setViewportSize({ width: 1400, height: 800 });
   await page.reload();
   const evidence = [];
@@ -21,14 +23,17 @@ async (page) => {
     const panelBox = await panel.boundingBox();
     const header = page.locator("#files .viewer-header");
     const headerBefore = await header.boundingBox();
-    const outerGeometry = () => panel.evaluate((element) => {
-      const scroller = element.id === "files" ? element.firstElementChild : element;
-      return { top: scroller.scrollTop, height: scroller.clientHeight, scroll: scroller.scrollHeight };
-    });
+    const outerGeometry = () =>
+      panel.evaluate((element) => {
+        const scroller = element.id === "files" ? element.firstElementChild : element;
+        return { top: scroller.scrollTop, height: scroller.clientHeight, scroll: scroller.scrollHeight };
+      });
     const checkEnd = async (input) => {
       const outer = await outerGeometry();
       const inner = await document.evaluate((element) => ({
-        top: element.scrollTop, height: element.clientHeight, scroll: element.scrollHeight,
+        top: element.scrollTop,
+        height: element.clientHeight,
+        scroll: element.scrollHeight,
         svgBottom: element.querySelector("svg").getBoundingClientRect().bottom,
       }));
       const box = await frame.boundingBox();
@@ -51,22 +56,26 @@ async (page) => {
     await checkEnd("wheel");
     // Reset geometry, then use native keyboard scrolling in both focusable
     // contexts. No script sets scrollTop to the end under test.
-    await document.evaluate((element) => { element.scrollTop = 0; });
-    await panel.evaluate((element) => { (element.id === "files" ? element.firstElementChild : element).scrollTop = 0; });
+    await document.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await panel.evaluate((element) => {
+      (element.id === "files" ? element.firstElementChild : element).scrollTop = 0;
+    });
     await frame.focus();
     await page.keyboard.press("Control+End");
     await page.waitForTimeout(250);
     const preview = panel.getByLabel("Diagram preview", { exact: true });
-    assert(await preview.getAttribute("tabindex") === "0", "Preview must remain keyboard focusable");
+    assert((await preview.getAttribute("tabindex")) === "0", "Preview must remain keyboard focusable");
     await preview.focus();
     await page.keyboard.press("Control+End");
     await page.waitForTimeout(250);
     await checkEnd("keyboard");
-    assert(await frame.getAttribute("sandbox") === "allow-scripts", "Mermaid must retain its opaque-origin sandbox");
+    assert((await frame.getAttribute("sandbox")) === "allow-scripts", "Mermaid must retain its opaque-origin sandbox");
     await panel.getByRole("button", { name: "Raw", exact: true }).click();
-    assert(await frame.count() === 0, `${id}: Raw must remove the preview`);
+    assert((await frame.count()) === 0, `${id}: Raw must remove the preview`);
     await panel.getByRole("button", { name: "Render", exact: true }).click();
     await frame.contentFrame().locator("svg").waitFor();
   }
   return evidence;
-}
+};

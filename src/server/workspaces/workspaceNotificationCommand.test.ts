@@ -32,8 +32,10 @@ describe("attributed workspace notification commands", () => {
     expect(argv).toEqual([
       nodeExecutable,
       join(distributionRoot, "workspaceNotificationCli.js"),
-      "notify", `--daemon-socket=${join(cwd, "socket dir", "daemon.sock")}`,
-      "--project=--project / with 'quotes'", "--plugin=provider.example",
+      "notify",
+      `--daemon-socket=${join(cwd, "socket dir", "daemon.sock")}`,
+      "--project=--project / with 'quotes'",
+      "--plugin=provider.example",
     ]);
     expect(Object.isFrozen(notifications)).toBe(true);
     expect(Object.isFrozen(argv)).toBe(true);
@@ -49,10 +51,14 @@ describe("attributed workspace notification commands", () => {
     const loader = pathToFileURL(createRequire(moduleUrl).resolve("tsx/esm")).href;
 
     expect(argv).toEqual([
-      process.execPath, "--import", loader,
+      process.execPath,
+      "--import",
+      loader,
       fileURLToPath(new URL("../../workspaceNotificationCli.ts", moduleUrl)),
-      "notify", `--daemon-socket=${join(homedir(), ".pi-web", "sessiond.sock")}`,
-      "--project=p", "--plugin=provider",
+      "notify",
+      `--daemon-socket=${join(homedir(), ".pi-web", "sessiond.sock")}`,
+      "--project=p",
+      "--plugin=provider",
     ]);
     expect(argv).not.toContain("tsx"); // A bare import would be resolved in the hook's cwd.
   });
@@ -89,8 +95,12 @@ describe("attributed workspace notification commands", () => {
     env["PI_WEB_SESSIOND_PORT"] = "9999";
     env["PI_WEB_SESSIOND_HOST"] = "another.invalid";
     expect(forPlugin("provider").command("p")).toEqual([
-      process.execPath, join(distributionRoot, "workspaceNotificationCli.js"),
-      "notify", `--daemon-url=${url}`, "--project=p", "--plugin=provider",
+      process.execPath,
+      join(distributionRoot, "workspaceNotificationCli.js"),
+      "notify",
+      `--daemon-url=${url}`,
+      "--project=p",
+      "--plugin=provider",
     ]);
   });
 
@@ -98,7 +108,9 @@ describe("attributed workspace notification commands", () => {
     const listener: { port?: number } = {};
     const env: NodeJS.ProcessEnv = { PI_WEB_SESSIOND_PORT: "0" };
     const notifications = createWorkspaceNotificationCommandFactory({
-      moduleUrl: productionModule, env, listeningPort: () => listener.port,
+      moduleUrl: productionModule,
+      env,
+      listeningPort: () => listener.port,
     })("provider");
     expect(notifications.command("p")).toEqual([]);
     env["PI_WEB_SESSIOND_HOST"] = "another.invalid";
@@ -108,9 +120,12 @@ describe("attributed workspace notification commands", () => {
   });
 
   it.each(["65536", "NaN", "-1", "1.5"])("fails closed for an unusable fixed daemon port: %s", (port) => {
-    expect(() => createWorkspaceNotificationCommandFactory({
-      moduleUrl: productionModule, env: { PI_WEB_SESSIOND_PORT: port },
-    })).toThrow("daemon port");
+    expect(() =>
+      createWorkspaceNotificationCommandFactory({
+        moduleUrl: productionModule,
+        env: { PI_WEB_SESSIOND_PORT: port },
+      }),
+    ).toThrow("daemon port");
   });
 
   it("validates plugin attribution at creation and project ids before generating argv", () => {
@@ -124,60 +139,73 @@ describe("attributed workspace notification commands", () => {
 // that explicit transport overrides beat inherited addresses, and that the
 // lightweight CLI turns a daemon rejection into an observable nonzero exit.
 describe.each(["socket", "http"])("notification source CLI %s transport", (transport) => {
-  it.skipIf(transport === "socket" && process.platform === "win32").each([202, 503])("routes with HTTP %i", async (statusCode) => {
-    const dir = await mkdtemp(join(tmpdir(), "pi notify "));
-    const socket = join(dir, "daemon socket.sock");
-    const received: { method: string | undefined; url: string | undefined; body: string }[] = [];
-    const server = createServer((request, reply) => {
-      let body = "";
-      request.setEncoding("utf8");
-      request.on("data", (chunk: string) => { body += chunk; });
-      request.on("end", () => {
-        received.push({ method: request.method, url: request.url, body });
-        reply.writeHead(statusCode, { "content-type": "application/json" });
-        reply.end(statusCode === 202 ? "{}" : '{"error":"provider unavailable"}');
+  it.skipIf(transport === "socket" && process.platform === "win32").each([202, 503])(
+    "routes with HTTP %i",
+    async (statusCode) => {
+      const dir = await mkdtemp(join(tmpdir(), "pi notify "));
+      const socket = join(dir, "daemon socket.sock");
+      const received: { method: string | undefined; url: string | undefined; body: string }[] = [];
+      const server = createServer((request, reply) => {
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        request.on("end", () => {
+          received.push({ method: request.method, url: request.url, body });
+          reply.writeHead(statusCode, { "content-type": "application/json" });
+          reply.end(statusCode === 202 ? "{}" : '{"error":"provider unavailable"}');
+        });
       });
-    });
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        if (transport === "socket") server.listen(socket, resolve);
-        else server.listen(0, "127.0.0.1", resolve);
-      });
-      const address = server.address();
-      const env: NodeJS.ProcessEnv = {
-        PI_WEB_DATA_DIR: dir,
-        PI_WEB_CONFIG: join(dir, "config.json"),
-        // This client-only URL deliberately differs from our listener.
-        PI_WEB_SESSIOND_URL: "http://gateway.invalid:8999",
-        ...(typeof address === "object" && address !== null
-          ? { PI_WEB_SESSIOND_HOST: "127.0.0.1", PI_WEB_SESSIOND_PORT: String(address.port) }
-          : { PI_WEB_SESSIOND_SOCKET: "daemon socket.sock" }),
-      };
-      const projectId = "--opaque / café?#%";
-      const argv = createWorkspaceNotificationCommandFactory({ env, cwd: dir })("provider.example").command(projectId);
-      const result = await runCommand(argv, tmpdir());
+      try {
+        await new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          if (transport === "socket") server.listen(socket, resolve);
+          else server.listen(0, "127.0.0.1", resolve);
+        });
+        const address = server.address();
+        const env: NodeJS.ProcessEnv = {
+          PI_WEB_DATA_DIR: dir,
+          PI_WEB_CONFIG: join(dir, "config.json"),
+          // This client-only URL deliberately differs from our listener.
+          PI_WEB_SESSIOND_URL: "http://gateway.invalid:8999",
+          ...(typeof address === "object" && address !== null
+            ? { PI_WEB_SESSIOND_HOST: "127.0.0.1", PI_WEB_SESSIOND_PORT: String(address.port) }
+            : { PI_WEB_SESSIOND_SOCKET: "daemon socket.sock" }),
+        };
+        const projectId = "--opaque / café?#%";
+        const argv = createWorkspaceNotificationCommandFactory({ env, cwd: dir })("provider.example").command(projectId);
+        const result = await runCommand(argv, tmpdir());
 
-      expect(received).toEqual([{
-        method: "POST",
-        url: `/workspace-notifications/projects/${encodeURIComponent(projectId)}`,
-        body: JSON.stringify({ pluginId: "provider.example" }),
-      }]);
-      expect(result.code).toBe(statusCode === 202 ? 0 : 1);
-      expect(result.stdout).toBe("");
-      if (statusCode === 202) expect(result.stderr).toBe("");
-      else {
-        expect(result.stderr).toContain("HTTP 503");
-        expect(result.stderr).toContain("provider unavailable");
+        expect(received).toEqual([
+          {
+            method: "POST",
+            url: `/workspace-notifications/projects/${encodeURIComponent(projectId)}`,
+            body: JSON.stringify({ pluginId: "provider.example" }),
+          },
+        ]);
+        expect(result.code).toBe(statusCode === 202 ? 0 : 1);
+        expect(result.stdout).toBe("");
+        if (statusCode === 202) expect(result.stderr).toBe("");
+        else {
+          expect(result.stderr).toContain("HTTP 503");
+          expect(result.stderr).toContain("provider unavailable");
+        }
+      } finally {
+        if (server.listening) {
+          server.closeAllConnections();
+          await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+              if (error === undefined) resolve();
+              else reject(error);
+            });
+          });
+        }
+        await rm(dir, { recursive: true, force: true });
       }
-    } finally {
-      if (server.listening) {
-        server.closeAllConnections();
-        await new Promise<void>((resolve, reject) => { server.close((error) => { if (error === undefined) resolve(); else reject(error); }); });
-      }
-      await rm(dir, { recursive: true, force: true });
-    }
-  }, 15_000);
+    },
+    15_000,
+  );
 });
 
 function runCommand(argv: readonly string[], cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
@@ -199,10 +227,16 @@ function runCommand(argv: readonly string[], cwd: string): Promise<{ code: numbe
   });
   let stdout = "";
   let stderr = "";
-  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { stdout += chunk; });
-  child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+    stdout += chunk;
+  });
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
   return new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("close", (code) => { resolve({ code, stdout, stderr }); });
+    child.once("close", (code) => {
+      resolve({ code, stdout, stderr });
+    });
   });
 }

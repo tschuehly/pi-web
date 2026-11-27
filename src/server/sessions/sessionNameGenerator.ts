@@ -10,8 +10,7 @@ const FALLBACK_SESSION_NAME_MAX_WORDS = 6;
 
 /** Explicit extension names are validated, not silently rewritten. */
 export function requireInitialSessionName(value: unknown): string {
-  if (typeof value !== "string" || value.trim() === "" || value !== value.trim()
-    || value.length > SESSION_NAME_MAX_LENGTH || CONTROL_CHARACTER.test(value)) {
+  if (typeof value !== "string" || value.trim() === "" || value !== value.trim() || value.length > SESSION_NAME_MAX_LENGTH || CONTROL_CHARACTER.test(value)) {
     throw new Error("Initial session name must be trimmed, non-empty, at most 60 characters, and contain no control characters");
   }
   return value;
@@ -39,19 +38,31 @@ export function sessionTitleInput(prompt: string): string | undefined {
 }
 
 /** The system prompt of every title request. */
-export const SESSION_TITLE_SYSTEM_PROMPT = "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.";
+export const SESSION_TITLE_SYSTEM_PROMPT =
+  "Generate a concise title for a coding-agent chat session. Return only the title, with no quotes or punctuation wrapper.";
 
 /** The request text of a first-prompt title. */
 export function shortSessionNamePrompt(firstMessage: string): string {
   return `Create a 2-6 word title for this request:\n\n${truncateInput(firstMessage)}`;
 }
 
-export function generateShortSessionName<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, firstMessage: string, options: SessionNameGenerationOptions = {}): Promise<string | undefined> {
+export function generateShortSessionName<TApi extends Api>(
+  streamFn: StreamFn,
+  model: Model<TApi>,
+  firstMessage: string,
+  options: SessionNameGenerationOptions = {},
+): Promise<string | undefined> {
   return requestSessionTitle(streamFn, model, shortSessionNamePrompt(firstMessage), options);
 }
 
 /** Regenerate a title naming the session's goal from its owner prompts and, when known, the first answer. */
-export function generateSessionGoalTitle<TApi extends Api>(streamFn: StreamFn, model: Model<TApi>, prompts: readonly string[], firstAnswer?: string, options: SessionNameGenerationOptions = {}): Promise<string | undefined> {
+export function generateSessionGoalTitle<TApi extends Api>(
+  streamFn: StreamFn,
+  model: Model<TApi>,
+  prompts: readonly string[],
+  firstAnswer?: string,
+  options: SessionNameGenerationOptions = {},
+): Promise<string | undefined> {
   const parts = prompts.map((prompt, index) => `Prompt ${String(index + 1)}:\n${truncateInput(prompt, SESSION_GOAL_PART_MAX_CHARS)}`);
   if (firstAnswer !== undefined && firstAnswer.trim() !== "") parts.push(`First answer:\n${truncateInput(firstAnswer, SESSION_GOAL_PART_MAX_CHARS)}`);
   return requestSessionTitle(streamFn, model, truncateInput(`Create a 2-6 word title naming the goal of this chat session:\n\n${parts.join("\n\n")}`), options);
@@ -67,11 +78,13 @@ async function requestSessionTitle<TApi extends Api>(
     model,
     normalizeContext({
       systemPrompt: SESSION_TITLE_SYSTEM_PROMPT,
-      messages: [{
-        role: "user",
-        content,
-        timestamp: Date.now(),
-      }],
+      messages: [
+        {
+          role: "user",
+          content,
+          timestamp: Date.now(),
+        },
+      ],
     }),
     {
       maxTokens,
@@ -94,14 +107,16 @@ async function requestSessionTitle<TApi extends Api>(
 export function fallbackSessionName(firstMessage: unknown): string | undefined {
   if (typeof firstMessage !== "string") return undefined;
 
-  return cleanSessionName(firstMessage
-    .replace(/<skill name="[^"]+" location="[^"]+">[\s\S]*?<\/skill>/g, "")
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/[`*_#[\](){}<>]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, FALLBACK_SESSION_NAME_MAX_WORDS)
-    .join(" "));
+  return cleanSessionName(
+    firstMessage
+      .replace(/<skill name="[^"]+" location="[^"]+">[\s\S]*?<\/skill>/g, "")
+      .replace(/```[\s\S]*?```/g, " ")
+      .replace(/[`*_#[\](){}<>]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, FALLBACK_SESSION_NAME_MAX_WORDS)
+      .join(" "),
+  );
 }
 
 /** The request text of a Chat's tab name, made from its title. */

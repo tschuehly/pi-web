@@ -8,12 +8,16 @@ export const WORKSTREAM_TINT_PERCENTAGES = {
 
 /** A compact title-derived identity cue that remains distinct without colour. */
 export function workstreamMonogram(title: string): string {
-  const words = title.trim().split(/\s+/u).filter((word) => word !== "");
+  const words = title
+    .trim()
+    .split(/\s+/u)
+    .filter((word) => word !== "");
   if (words.length === 0) return "WS";
-  const letters = words.length === 1
-    ? Array.from(words[0] ?? "").slice(0, 2)
-    : [Array.from(words[0] ?? "")[0], Array.from(words.at(-1) ?? "")[0]];
-  return letters.filter((letter): letter is string => letter !== undefined).join("").toUpperCase();
+  const letters = words.length === 1 ? Array.from(words[0] ?? "").slice(0, 2) : [Array.from(words[0] ?? "")[0], Array.from(words.at(-1) ?? "")[0]];
+  return letters
+    .filter((letter): letter is string => letter !== undefined)
+    .join("")
+    .toUpperCase();
 }
 
 /**
@@ -42,7 +46,9 @@ function readStoredOrder(): readonly string[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]");
     return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === "string") : [];
-  } catch { return []; }
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -54,16 +60,28 @@ export function setWorkstreamColorOrder(workstreams: readonly { id: string; crea
   const next = [...workstreams].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).map((item) => item.id);
   if (next.length === openOrder.length && next.every((id, index) => id === openOrder[index])) return;
   openOrder = next;
-  try { if (typeof localStorage !== "undefined") localStorage.setItem(ORDER_KEY, JSON.stringify(next)); } catch { /* Storage is a reload nicety. */ }
+  try {
+    if (typeof localStorage !== "undefined") localStorage.setItem(ORDER_KEY, JSON.stringify(next));
+  } catch {
+    /* Storage is a reload nicety. */
+  }
   orderChanged.dispatchEvent(new Event("change"));
 }
 
 /** Re-renders its host when the Workstream colour order changes. */
 export class WorkstreamColorController implements ReactiveController {
-  private readonly update = (): void => { this.host.requestUpdate(); };
-  constructor(private readonly host: ReactiveControllerHost) { host.addController(this); }
-  hostConnected(): void { orderChanged.addEventListener("change", this.update); }
-  hostDisconnected(): void { orderChanged.removeEventListener("change", this.update); }
+  private readonly update = (): void => {
+    this.host.requestUpdate();
+  };
+  constructor(private readonly host: ReactiveControllerHost) {
+    host.addController(this);
+  }
+  hostConnected(): void {
+    orderChanged.addEventListener("change", this.update);
+  }
+  hostDisconnected(): void {
+    orderChanged.removeEventListener("change", this.update);
+  }
 }
 
 /** Palette index: creation order among open Workstreams, else a stable id hash so nothing renders colourless. */

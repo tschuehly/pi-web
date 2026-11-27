@@ -10,12 +10,23 @@ function markdown(source: string): HTMLElement {
   return container;
 }
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 describe("Captain's Log Markdown", () => {
   it("renders headings, nested lists, emphasis, quotes, and tables as semantic elements", () => {
-    const view = markdown(`# Captain\n\n## Orders\n\n### Crew\n\n#### Deck\n\n##### Watch\n\n###### Bell\n\nA **bold** and *fine* ~~old~~ tale.\n\n3. First\n4. Second\n   - Nested\n\n> Steady\n\n| Port | Cargo |\n| --- | --- |\n| East | **Gold** |\n\n---`);
-    expect(Array.from(view.querySelectorAll("h1,h2,h3,h4,h5,h6"), (heading) => heading.textContent)).toEqual(["Captain", "Orders", "Crew", "Deck", "Watch", "Bell"]);
+    const view = markdown(
+      `# Captain\n\n## Orders\n\n### Crew\n\n#### Deck\n\n##### Watch\n\n###### Bell\n\nA **bold** and *fine* ~~old~~ tale.\n\n3. First\n4. Second\n   - Nested\n\n> Steady\n\n| Port | Cargo |\n| --- | --- |\n| East | **Gold** |\n\n---`,
+    );
+    expect(Array.from(view.querySelectorAll("h1,h2,h3,h4,h5,h6"), (heading) => heading.textContent)).toEqual([
+      "Captain",
+      "Orders",
+      "Crew",
+      "Deck",
+      "Watch",
+      "Bell",
+    ]);
     expect(view.querySelector("p strong")?.textContent).toBe("bold");
     expect(view.querySelector("em")?.textContent).toBe("fine");
     expect(view.querySelector("del")?.textContent).toBe("old");
@@ -36,17 +47,20 @@ describe("Captain's Log Markdown", () => {
   });
 
   it("keeps raw HTML inert and omits image loading", () => {
-    const source = '<script>alert(1)</script>\n\n<img src="https://evil.test/pixel" onerror="alert(1)">\n\n<iframe src="https://evil.test"></iframe>\n\n![Treasure](https://evil.test/image.png)\n\nInline <b onclick="alert(1)">tag</b>';
+    const source =
+      '<script>alert(1)</script>\n\n<img src="https://evil.test/pixel" onerror="alert(1)">\n\n<iframe src="https://evil.test"></iframe>\n\n![Treasure](https://evil.test/image.png)\n\nInline <b onclick="alert(1)">tag</b>';
     const view = markdown(source);
     expect(view.querySelector("script,img,iframe,b")).toBeNull();
-    expect(view.textContent).toContain('<script>alert(1)</script>');
+    expect(view.textContent).toContain("<script>alert(1)</script>");
     expect(view.textContent).toContain('<img src="https://evil.test/pixel" onerror="alert(1)">');
     expect(view.textContent).toContain("Treasure");
     expect(view.textContent).toContain('<b onclick="alert(1)">tag</b>');
   });
 
   it("only creates absolute HTTP(S) links with isolated new-tab navigation", () => {
-    const view = markdown('[**Safe**](https://example.com/path?q=1#gold) [HTTP](http://example.com) <https://example.org> [Script](javascript:alert%281%29) [Data](data:text/html,hi) [Relative](/api/secrets) [Protocol-relative](//evil.test) [Mail](mailto:captain@example.com) [Encoded](jav&#x61;script:alert%281%29)');
+    const view = markdown(
+      "[**Safe**](https://example.com/path?q=1#gold) [HTTP](http://example.com) <https://example.org> [Script](javascript:alert%281%29) [Data](data:text/html,hi) [Relative](/api/secrets) [Protocol-relative](//evil.test) [Mail](mailto:captain@example.com) [Encoded](jav&#x61;script:alert%281%29)",
+    );
     const links = Array.from(view.querySelectorAll("a"));
     expect(links.map((link) => link.getAttribute("href"))).toEqual(["https://example.com/path?q=1#gold", "http://example.com/", "https://example.org/"]);
     for (const link of links) {
@@ -58,7 +72,7 @@ describe("Captain's Log Markdown", () => {
   });
 
   it("renders reference links and task lists without interactive inputs", () => {
-    const view = markdown('[Chart][map]\n\n[map]: https://example.com/chart\n\n- [x] Done\n- [ ] Next');
+    const view = markdown("[Chart][map]\n\n[map]: https://example.com/chart\n\n- [x] Done\n- [ ] Next");
     expect(view.querySelector("a")?.getAttribute("href")).toBe("https://example.com/chart");
     const tasks = Array.from(view.querySelectorAll("input"));
     expect(tasks.map((task) => task.checked)).toEqual([true, false]);

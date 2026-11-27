@@ -29,10 +29,7 @@ interface EntryProjection {
  * Project Pi's complete append-only session tree into the strict browser contract.
  * Only explicitly selected plain-text fields leave this boundary.
  */
-export function projectSessionTree(
-  roots: readonly ProjectableSessionTreeNode[],
-  activeLeafId: string | null,
-): SessionTreeSnapshot {
+export function projectSessionTree(roots: readonly ProjectableSessionTreeNode[], activeLeafId: string | null): SessionTreeSnapshot {
   const nodes: SessionTreeNode[] = [];
   const projectedIds = new Set<string>();
   const stack = [...roots].reverse();
@@ -165,9 +162,7 @@ function assistantToolNames(content: unknown): string[] {
 function toolResultSummary(message: Record<string, unknown>): string {
   const isError = message["isError"] === true;
   const toolName = optionalPlainText(message["toolName"], NAMED_FIELD_MAX_LENGTH);
-  const prefix = toolName === undefined
-    ? isError ? "Tool error" : "Tool result"
-    : `${isError ? "Tool error" : "Tool result"} (${toolName})`;
+  const prefix = toolName === undefined ? (isError ? "Tool error" : "Tool result") : `${isError ? "Tool error" : "Tool result"} (${toolName})`;
   const content = contentPreview(message["content"], true);
   return summary(content === "" ? prefix : `${prefix}: ${content}`, prefix);
 }
@@ -261,11 +256,13 @@ function isProjectableSessionTreeNode(value: unknown): value is ProjectableSessi
 }
 
 function isProjectableSessionEntry(value: unknown): value is ProjectableSessionEntry {
-  return isRecord(value)
+  return (
+    isRecord(value)
     && typeof value["id"] === "string"
     && value["id"].trim() !== ""
     && (value["parentId"] === null || (typeof value["parentId"] === "string" && value["parentId"].trim() !== ""))
-    && typeof value["type"] === "string";
+    && typeof value["type"] === "string"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

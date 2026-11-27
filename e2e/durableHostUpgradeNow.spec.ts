@@ -20,13 +20,21 @@ const base = () => process.env["PI_WEB_E2E_BASE_URL"] ?? "";
 const project = () => process.env["PI_WEB_E2E_PROJECT_DIR"] ?? "";
 const chat = (page: Page) => page.locator("chat-view");
 const tc = (name: string, args: Record<string, unknown> = {}): Step => ({ toolCall: { name, args } });
-type Message = { role?: string; toolName?: string; customType?: string; content?: string | { type: string; text?: string }[]; details?: Record<string, unknown> };
-const textOf = (message: Message) => typeof message.content === "string" ? message.content : (message.content ?? []).map((part) => part.text ?? "").join("");
+type Message = {
+  role?: string;
+  toolName?: string;
+  customType?: string;
+  content?: string | { type: string; text?: string }[];
+  details?: Record<string, unknown>;
+};
+const textOf = (message: Message) => (typeof message.content === "string" ? message.content : (message.content ?? []).map((part) => part.text ?? "").join(""));
 
 /** The one host process of this Chat's store and its command line. */
 function host(sessionId: string): { pid: number; command: string } {
   const store = join(dirname(project()), "data", "durable", sessionId);
-  const lines = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").filter((line) => line.includes(`--store ${store} `));
+  const lines = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" })
+    .split("\n")
+    .filter((line) => line.includes(`--store ${store} `));
   expect(lines, `exactly one host under ${store}`).toHaveLength(1);
   const [pid, ...command] = lines[0]?.trim().split(/\s+/) ?? [];
   return { pid: Number(pid), command: command.join(" ") };
@@ -37,7 +45,9 @@ function launchdPid(sessionId: string): number | undefined {
   return pid === undefined ? undefined : Number(pid);
 }
 async function messages(page: Page, sessionId: string): Promise<Message[]> {
-  const response = await page.request.get(`${base()}api/sessions/${encodeURIComponent(sessionId)}/messages?${new URLSearchParams({ cwd: project(), limit: "1000" }).toString()}`);
+  const response = await page.request.get(
+    `${base()}api/sessions/${encodeURIComponent(sessionId)}/messages?${new URLSearchParams({ cwd: project(), limit: "1000" }).toString()}`,
+  );
   expect(response.ok()).toBe(true);
   return ((await response.json()) as { messages: Message[] }).messages;
 }
@@ -60,7 +70,10 @@ test.afterEach(async ({ page }, info) => {
 test("Upgrade now: a Chat with a running Subagent and background bash moves to the new host code; both finish once", async ({ page }) => {
   test.setTimeout(240_000);
   await mock.reset();
-  await writeFile(process.env["PI_WEB_E2E_QUOTA_CACHE"] ?? "", JSON.stringify({ version: 1, checkedAt: Date.now(), status: 0, stdout: JSON.stringify({ providers: [] }), stderr: "" }));
+  await writeFile(
+    process.env["PI_WEB_E2E_QUOTA_CACHE"] ?? "",
+    JSON.stringify({ version: 1, checkedAt: Date.now(), status: 0, stdout: JSON.stringify({ providers: [] }), stderr: "" }),
+  );
   const id = Date.now().toString(36);
   const [lead, sub] = [`up-lead-${id}`, `up-sub-${id}`];
   gate = join(project(), `up-bash-${id}`);
@@ -73,13 +86,25 @@ test("Upgrade now: a Chat with a running Subagent and background bash moves to t
   await page.getByRole("combobox", { name: "Search models" }).fill(MOCK_CLAUDE_MODEL.id);
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: MOCK_CLAUDE_MODEL.id, exact: true }).first().click();
 
-  const leadScript = await mock.script({ provider: "anthropic", match: lead, turns: [
-    [tc("subagent", { task: sub, profile: "scout", cognitiveRole: "routine", background: true }),
-      tc("bash", { description: "Wait for the gate", command: `echo launch >> '${gate}'; while [ ! -e '${gate}.go' ]; do sleep .1; done; echo up-bash-done` })],
-    "Both launched.",
-  ] });
+  const leadScript = await mock.script({
+    provider: "anthropic",
+    match: lead,
+    turns: [
+      [
+        tc("subagent", { task: sub, profile: "scout", cognitiveRole: "routine", background: true }),
+        tc("bash", {
+          description: "Wait for the gate",
+          command: `echo launch >> '${gate}'; while [ ! -e '${gate}.go' ]; do sleep .1; done; echo up-bash-done`,
+        }),
+      ],
+      "Both launched.",
+    ],
+  });
   // The first request is held at the barrier (cut by the upgrade); the new host's request answers.
-  const subScript = await mock.script({ match: sub, turns: [[{ text: "Subagent working." }, { barrier: sub }, { text: " Subagent result." }], "Subagent result after the upgrade."] });
+  const subScript = await mock.script({
+    match: sub,
+    turns: [[{ text: "Subagent working." }, { barrier: sub }, { text: " Subagent result." }], "Subagent result after the upgrade."],
+  });
 
   await page.locator("prompt-editor .cm-content").click();
   await page.keyboard.insertText(`${lead} run both`);
@@ -114,7 +139,8 @@ test("Upgrade now: a Chat with a running Subagent and background bash moves to t
   // Both finish, without another message: the Subagent's result reaches the lead once, the bash job completes once.
   await mock.release(sub);
   await writeFile(`${gate}.go`, "go");
-  const delivered = (list: Message[]) => list.filter((m) => m.customType === "pi-workbench:child-completion").flatMap((m) => (m.details?.["delivered"] ?? []) as string[]);
+  const delivered = (list: Message[]) =>
+    list.filter((m) => m.customType === "pi-workbench:child-completion").flatMap((m) => (m.details?.["delivered"] ?? []) as string[]);
   await expect.poll(async () => delivered(await messages(page, sessionId)).length, { timeout: 90_000 }).toBe(1);
   await expect.poll(async () => (await messages(page, sessionId)).filter((m) => m.customType === "background-bash").length, { timeout: 90_000 }).toBe(1);
   const transcript = await messages(page, sessionId);
@@ -127,11 +153,23 @@ test("Upgrade now: a Chat with a running Subagent and background bash moves to t
   expect((await readFile(gate, "utf8")).trim()).toBe("launch");
   const journal = await mock.journal();
   expect(journal.flatMap((e) => e.violations)).toEqual([]);
-  await writeFile(test.info().outputPath("upgrade-now.json"), JSON.stringify({
-    sessionId, oldHost: old, newHost: upgraded, launchdPid: launchdPid(sessionId),
-    subagentRequests: (await requests(subScript)).map((r) => ({ seq: r.seq, outcome: r.outcome })),
-    leadRequests: (await requests(leadScript)).map((r) => ({ seq: r.seq, outcome: r.outcome })),
-    deliveries: delivered(transcript), bashCompletions: transcript.filter((m) => m.customType === "background-bash").length,
-    bashLaunches: (await readFile(gate, "utf8")).trim().split("\n").length, completionText: textOf(completion).slice(0, 300),
-  }, null, 2));
+  await writeFile(
+    test.info().outputPath("upgrade-now.json"),
+    JSON.stringify(
+      {
+        sessionId,
+        oldHost: old,
+        newHost: upgraded,
+        launchdPid: launchdPid(sessionId),
+        subagentRequests: (await requests(subScript)).map((r) => ({ seq: r.seq, outcome: r.outcome })),
+        leadRequests: (await requests(leadScript)).map((r) => ({ seq: r.seq, outcome: r.outcome })),
+        deliveries: delivered(transcript),
+        bashCompletions: transcript.filter((m) => m.customType === "background-bash").length,
+        bashLaunches: (await readFile(gate, "utf8")).trim().split("\n").length,
+        completionText: textOf(completion).slice(0, 300),
+      },
+      null,
+      2,
+    ),
+  );
 });

@@ -5,8 +5,16 @@ import { toSafeMarkdownHtml } from "./markdown";
 import { MarkdownImage } from "../components/MarkdownImage";
 import { imagePresentation, loadIntrinsicDimensions, nativeImage, settleImage } from "../components/imagePresentation.testSupport";
 
-beforeEach(() => { vi.stubGlobal("IntersectionObserver", undefined); });
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+beforeEach(() => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+});
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
 
 function required<T>(value: T | null | undefined): T {
   if (value === null || value === undefined) throw new Error("Expected rendered image control");
@@ -41,30 +49,39 @@ it.each([
   expect(localMarkdownImage(input, root)).toEqual({ path, outside });
 });
 
-it.each(["https://example.com/a.png", "//example.com/a.png", "data:image/png,x", "bad%ZZ.png", "a%00.png"])("does not interpret %s as a local file", (input) => {
-  for (const root of ["/srv/work", "C:/work", "\\\\server\\share\\work"]) {
-    expect(localMarkdownImage(input, root)).toBeUndefined();
-  }
-});
+it.each(["https://example.com/a.png", "//example.com/a.png", "data:image/png,x", "bad%ZZ.png", "a%00.png"])(
+  "does not interpret %s as a local file",
+  (input) => {
+    for (const root of ["/srv/work", "C:/work", "\\\\server\\share\\work"]) {
+      expect(localMarkdownImage(input, root)).toBeUndefined();
+    }
+  },
+);
 
-it.each(["/srv/work", "C:/work", "C:\\work", "\\\\server\\share\\work"])("renders machine-aware nested preview URLs without approving outside images (%s)", (root) => {
-  vi.stubEnv("BASE_URL", "/nested/pi/");
-  const host = document.createElement("div");
-  host.innerHTML = toSafeMarkdownHtml("![inside](a.png) ![outside](/tmp/a.png) ![external](https://example.com/a.png)", {
-    machineId: "remote /1", projectId: "p", workspaceId: "w", root,
-  });
-  const images = host.querySelectorAll("pi-web-markdown-image");
-  const first = required(images[0]);
-  const second = required(images[1]);
-  const inside = new URL(required(first.getAttribute("preview-url")));
-  expect(inside.pathname).toBe("/nested/pi/api/machines/remote%20%2F1/projects/p/workspaces/w/file/preview");
-  expect(inside.searchParams.get("path")).toBe("a.png");
-  expect(inside.searchParams.has("showImage")).toBe(false);
-  expect(first.hasAttribute("outside")).toBe(false);
-  expect(second.hasAttribute("outside")).toBe(true);
-  expect(new URL(required(second.getAttribute("preview-url"))).searchParams.get("showImage")).toBe("1");
-  expect(host.querySelector("img")?.src).toBe("https://example.com/a.png");
-});
+it.each(["/srv/work", "C:/work", "C:\\work", "\\\\server\\share\\work"])(
+  "renders machine-aware nested preview URLs without approving outside images (%s)",
+  (root) => {
+    vi.stubEnv("BASE_URL", "/nested/pi/");
+    const host = document.createElement("div");
+    host.innerHTML = toSafeMarkdownHtml("![inside](a.png) ![outside](/tmp/a.png) ![external](https://example.com/a.png)", {
+      machineId: "remote /1",
+      projectId: "p",
+      workspaceId: "w",
+      root,
+    });
+    const images = host.querySelectorAll("pi-web-markdown-image");
+    const first = required(images[0]);
+    const second = required(images[1]);
+    const inside = new URL(required(first.getAttribute("preview-url")));
+    expect(inside.pathname).toBe("/nested/pi/api/machines/remote%20%2F1/projects/p/workspaces/w/file/preview");
+    expect(inside.searchParams.get("path")).toBe("a.png");
+    expect(inside.searchParams.has("showImage")).toBe(false);
+    expect(first.hasAttribute("outside")).toBe(false);
+    expect(second.hasAttribute("outside")).toBe(true);
+    expect(new URL(required(second.getAttribute("preview-url"))).searchParams.get("showImage")).toBe("1");
+    expect(host.querySelector("img")?.src).toBe("https://example.com/a.png");
+  },
+);
 
 it("uses native attributes and independently disables every built-in Markdown image source", () => {
   const context = { machineId: "local", projectId: "p", workspaceId: "w", root: "/srv/work" };

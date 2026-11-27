@@ -55,7 +55,11 @@ describe("settings-panel-frame", () => {
 
     expect(notices.map(settingsNoticeTone)).toEqual(["error", "success", "warning", "info", "warning"]);
     expect([...shadowRoot(frame).querySelectorAll("article")].map((notice) => notice.getAttribute("role"))).toEqual([
-      "alert", "status", "note", "note", "status",
+      "alert",
+      "status",
+      "note",
+      "note",
+      "status",
     ]);
   });
 

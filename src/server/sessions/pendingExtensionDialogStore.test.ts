@@ -1,14 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  EXTENSION_DIALOG_INPUT_MAX_LENGTH,
-  EXTENSION_DIALOG_OPTION_LIMIT,
-  type ExtensionDialogAnswer,
-} from "../../shared/apiTypes.js";
-import {
-  PendingExtensionDialogStore,
-  PendingExtensionDialogValidationError,
-  type ExtensionDialogCancelReason,
-} from "./pendingExtensionDialogStore.js";
+import { EXTENSION_DIALOG_INPUT_MAX_LENGTH, EXTENSION_DIALOG_OPTION_LIMIT, type ExtensionDialogAnswer } from "../../shared/apiTypes.js";
+import { PendingExtensionDialogStore, PendingExtensionDialogValidationError, type ExtensionDialogCancelReason } from "./pendingExtensionDialogStore.js";
 
 const sessionId = "session-1";
 
@@ -127,8 +119,7 @@ describe("PendingExtensionDialogStore open", () => {
 
   it("rejects dialogs the user could not meaningfully answer", () => {
     const store = testStore();
-    const open = (overrides: Record<string, unknown>) => () =>
-      store.open({ sessionId, kind: "confirm", title: "Ok?", runScoped: false, ...overrides });
+    const open = (overrides: Record<string, unknown>) => () => store.open({ sessionId, kind: "confirm", title: "Ok?", runScoped: false, ...overrides });
 
     expect(open({ title: "  " })).toThrow(/dialog title must not be empty/);
     expect(open({ kind: "widget" })).toThrow(/Unknown dialog kind widget/);
@@ -136,10 +127,12 @@ describe("PendingExtensionDialogStore open", () => {
     expect(open({ kind: "select", options: [] })).toThrow(/at least one option/);
     expect(open({ kind: "select", options: ["a", "a"] })).toThrow(/Duplicate select option a/);
     expect(open({ kind: "select", options: ["  "] })).toThrow(/select option must not be empty/);
-    expect(open({
-      kind: "select",
-      options: Array.from({ length: EXTENSION_DIALOG_OPTION_LIMIT + 1 }, (_, index) => `v${index.toString()}`),
-    })).toThrow(/more than 24 options/);
+    expect(
+      open({
+        kind: "select",
+        options: Array.from({ length: EXTENSION_DIALOG_OPTION_LIMIT + 1 }, (_, index) => `v${index.toString()}`),
+      }),
+    ).toThrow(/more than 24 options/);
     expect(open({ timeoutMs: 0 })).toThrow(PendingExtensionDialogValidationError);
     expect(open({ timeoutMs: -5 })).toThrow(PendingExtensionDialogValidationError);
     expect(open({ timeoutMs: Number.NaN })).toThrow(PendingExtensionDialogValidationError);
@@ -150,8 +143,7 @@ describe("PendingExtensionDialogStore open", () => {
     const store = testStore(() => "dialog-x");
     store.open({ sessionId, kind: "confirm", title: "First?", runScoped: false });
 
-    expect(() => store.open({ sessionId, kind: "confirm", title: "Second?", runScoped: false }))
-      .toThrow(/already open/);
+    expect(() => store.open({ sessionId, kind: "confirm", title: "Second?", runScoped: false })).toThrow(/already open/);
     expect(store.pendingDialogs(sessionId).map((dialog) => dialog.title)).toEqual(["First?"]);
   });
 });

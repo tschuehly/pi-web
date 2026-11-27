@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  CORE_STATUS_FLAGS,
-  rollUpStatusFlags,
-  type MachineStatusSnapshot,
-  type StatusFlags,
-} from "../../shared/machineStatus.js";
+import { CORE_STATUS_FLAGS, rollUpStatusFlags, type MachineStatusSnapshot, type StatusFlags } from "../../shared/machineStatus.js";
 import type { WorkspaceAttribution } from "./workspaceAttribution.js";
 
 /** One active working directory as recorded by `WorkspaceActivityService`. */
@@ -47,8 +42,9 @@ export interface MachineStatusServiceDependencies {
 }
 
 /** The part of a snapshot that carries status; the rest is identity and ordering. */
-type MachineStatusTree = Pick<MachineStatusSnapshot, "machine" | "projects" | "workspaces" | "unattributed">
-  & { sessions: Readonly<Record<string, StatusFlags>> };
+type MachineStatusTree = Pick<MachineStatusSnapshot, "machine" | "projects" | "workspaces" | "unattributed"> & {
+  sessions: Readonly<Record<string, StatusFlags>>;
+};
 
 /**
  * Owns this daemon's per-machine status projection.
@@ -170,11 +166,7 @@ export class MachineStatusService {
     const rolledWorkspaces = workspaces.rollUp();
     const rolledUnattributed = rollUpStatusFlags(unattributed);
     return {
-      machine: rollUpStatusFlags([
-        ...Object.values(rolledProjects),
-        ...Object.values(rolledWorkspaces),
-        rolledUnattributed,
-      ]),
+      machine: rollUpStatusFlags([...Object.values(rolledProjects), ...Object.values(rolledWorkspaces), rolledUnattributed]),
       projects: rolledProjects,
       workspaces: rolledWorkspaces,
       sessions: sessions.rollUp(),
@@ -187,10 +179,7 @@ export class MachineStatusService {
    * cwd that stops being active disappears instead of turning into empty flags,
    * which is what makes structural comparison a sound change test.
    */
-  private flagsByCwd(
-    activities: readonly ActiveCwdActivity[],
-    unreadSessions: readonly { cwd: string }[],
-  ): Map<string, StatusFlags> {
+  private flagsByCwd(activities: readonly ActiveCwdActivity[], unreadSessions: readonly { cwd: string }[]): Map<string, StatusFlags> {
     const flagsByCwd = new Map<string, Record<string, boolean>>();
     const setFlag = (cwd: string, flagId: string): void => {
       if (cwd === "") return;
@@ -227,11 +216,13 @@ class FlagAccumulator {
 }
 
 function isSameStatusTree(left: MachineStatusTree, right: MachineStatusSnapshot): boolean {
-  return isSameFlags(left.machine, right.machine)
+  return (
+    isSameFlags(left.machine, right.machine)
     && isSameFlags(left.unattributed, right.unattributed)
     && isSameNodes(left.projects, right.projects)
     && isSameNodes(left.workspaces, right.workspaces)
-    && isSameNodes(left.sessions, right.sessions ?? {});
+    && isSameNodes(left.sessions, right.sessions ?? {})
+  );
 }
 
 function isSameNodes(left: Readonly<Record<string, StatusFlags>>, right: Readonly<Record<string, StatusFlags>>): boolean {

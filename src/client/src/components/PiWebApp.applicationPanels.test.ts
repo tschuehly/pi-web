@@ -2,7 +2,15 @@
 
 import { LitElement, html } from "lit";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ApplicationPanelContext, PiWebPlugin, PiWebStatusResponse, PluginProjects, PluginSelectionService, WorkspacePanelContext, WorkspacePanelTerminal } from "../../../plugin-api";
+import type {
+  ApplicationPanelContext,
+  PiWebPlugin,
+  PiWebStatusResponse,
+  PluginProjects,
+  PluginSelectionService,
+  WorkspacePanelContext,
+  WorkspacePanelTerminal,
+} from "../../../plugin-api";
 import infoPlugin from "../../../../pi-web-plugins/info/pi-web-plugin";
 import updatesPlugin from "../../../../pi-web-plugins/updates/pi-web-plugin";
 import type { PluginRuntimeContext as InternalPluginRuntimeContext } from "../plugins/types";
@@ -17,7 +25,9 @@ import { themeStylesheetFetch } from "./themeStylesheetFetch.testSupport";
 
 // Keep real shell, registry, loader and public callback adaptation; omit socket/API startup.
 class ApplicationPanelsApp extends PiWebApp {
-  override connectedCallback(): void { LitElement.prototype.connectedCallback.call(this); }
+  override connectedCallback(): void {
+    LitElement.prototype.connectedCallback.call(this);
+  }
 }
 customElements.define("application-panels-test-app", ApplicationPanelsApp);
 
@@ -49,12 +59,15 @@ it("uses bundled Info with no project, workspace or session and follows selectio
   expect(panel.shadowRoot?.textContent).not.toContain("Workspace");
   expect(navigationTabs(app).querySelector('[aria-label="Info"]')).not.toBeNull();
   const status: PiWebStatusResponse = {
-    packageName: "@jmfederico/pi-web", generatedAt: "now",
+    packageName: "@jmfederico/pi-web",
+    generatedAt: "now",
     components: {
       web: { component: "web", label: "Web/UI", runtimeVersion: "1.202610.0", stale: false, available: true },
       sessiond: { component: "sessiond", label: "Session daemon", stale: false, available: true },
     },
-    release: { packageName: "@jmfederico/pi-web", updateAvailable: false }, commands: {}, messages: [],
+    release: { packageName: "@jmfederico/pi-web", updateAvailable: false },
+    commands: {},
+    messages: [],
   };
   patchState(app, { piWebStatus: status });
   await settle(app);
@@ -79,18 +92,37 @@ it("uses bundled Info with no project, workspace or session and follows selectio
 it("gives public callbacks fresh basic selections and keeps workspace-only tabs out until selected", async () => {
   const contexts: ApplicationPanelContext[] = [];
   const plugin: PiWebPlugin = {
-    apiVersion: 4, name: "Selection probe",
-    activate: () => ({ contributions: { applicationPanels: [{
-      id: "workspace.info", title: "Info", badge: (context) => context.state.selectedProject?.name,
-      render: (context) => { contexts.push(context); return html`<p>${context.state.selectedSession?.name ?? "No session"}</p>`; },
-    }] } }),
+    apiVersion: 4,
+    name: "Selection probe",
+    activate: () => ({
+      contributions: {
+        applicationPanels: [
+          {
+            id: "workspace.info",
+            title: "Info",
+            badge: (context) => context.state.selectedProject?.name,
+            render: (context) => {
+              contexts.push(context);
+              return html`<p>${context.state.selectedSession?.name ?? "No session"}</p>`;
+            },
+          },
+        ],
+      },
+    }),
   };
   const app = await mount(plugin);
   const registry = registryFor(app);
   const workspaceRender = vi.fn(() => html`<p>Workspace only</p>`);
-  await registry.register({ id: "workspace-only", plugin: { apiVersion: 4, name: "Workspace only", activate: () => ({
-    contributions: { workspacePanels: [{ id: "panel", title: "Workspace only", render: workspaceRender }] },
-  }) } });
+  await registry.register({
+    id: "workspace-only",
+    plugin: {
+      apiVersion: 4,
+      name: "Workspace only",
+      activate: () => ({
+        contributions: { workspacePanels: [{ id: "panel", title: "Workspace only", render: workspaceRender }] },
+      }),
+    },
+  });
   patchState(app, { error: "Unrelated update" });
   await settle(app);
   expect(navigationTabs(app).textContent).not.toContain("Workspace only");
@@ -98,7 +130,16 @@ it("gives public callbacks fresh basic selections and keeps workspace-only tabs 
   expect(contexts.at(-1)?.workspace).toBeUndefined();
   expect(contexts.at(-1)?.terminal).toBeUndefined();
 
-  const session = { id: "session", name: "Conversation", cwd: "/repo", path: "/private/session.jsonl", created: "now", modified: "now", messageCount: 1, firstMessage: "private" };
+  const session = {
+    id: "session",
+    name: "Conversation",
+    cwd: "/repo",
+    path: "/private/session.jsonl",
+    created: "now",
+    modified: "now",
+    messageCount: 1,
+    firstMessage: "private",
+  };
   patchState(app, { selectedProject: project, selectedWorkspace: workspace, selectedSession: session, workspaces: [workspace] });
   await settle(app);
   const context = contexts.at(-1);
@@ -133,14 +174,22 @@ it("supplies an external plugin live selection while its panel is closed, with e
     if (selection === undefined) throw new Error("Missing public selection service");
     selection.subscribe(received);
     unsubscribe = selection.subscribe(early);
-    return { contributions: { applicationPanels: [
-      { id: "workspace.selection", title: "Selection", render },
-      { id: "other", title: "Other", render: () => html`<p>Other tab</p>` },
-    ] } };
+    return {
+      contributions: {
+        applicationPanels: [
+          { id: "workspace.selection", title: "Selection", render },
+          { id: "other", title: "Other", render: () => html`<p>Other tab</p>` },
+        ],
+      },
+    };
   });
-  const app = await mount({ apiVersion: 4, name: "Selection observer", activate }, {
-    id: "selection", state: { workspaceTool: "selection:other" },
-  });
+  const app = await mount(
+    { apiVersion: 4, name: "Selection observer", activate },
+    {
+      id: "selection",
+      state: { workspaceTool: "selection:other" },
+    },
+  );
   expect(selection?.getSnapshot()).toEqual({});
   expect(received).not.toHaveBeenCalled(); // subscribe is not an initial notification.
   expect(toolSurface(app).shadowRoot?.textContent).toContain("Other tab");
@@ -161,17 +210,27 @@ it("supplies an external plugin live selection while its panel is closed, with e
   });
   expect(early).toHaveBeenCalledOnce();
 
-  const session = { id: "session", name: "Conversation", cwd: "/repo", path: "/private/session.jsonl",
-    created: "now", modified: "now", messageCount: 1, firstMessage: "private" };
+  const session = {
+    id: "session",
+    name: "Conversation",
+    cwd: "/repo",
+    path: "/private/session.jsonl",
+    created: "now",
+    modified: "now",
+    messageCount: 1,
+    firstMessage: "private",
+  };
   // Exercise the same state commit used by host controllers, not a service-only publish.
   const setState: unknown = Reflect.get(app, "setState");
   if (typeof setState !== "function") throw new Error("Expected host state commit");
   Reflect.apply(setState, app, [{ selectedSession: session }]);
   expect(selection?.getSnapshot().selectedSession).toEqual({ id: "session", name: "Conversation", cwd: "/repo", archived: false, pending: false });
   await settle(app);
-  expect(received).toHaveBeenLastCalledWith(expect.objectContaining({
-    selectedSession: { id: "session", name: "Conversation", cwd: "/repo", archived: false, pending: false },
-  }));
+  expect(received).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      selectedSession: { id: "session", name: "Conversation", cwd: "/repo", archived: false, pending: false },
+    }),
+  );
   patchState(app, { selectedSession: { ...session, name: "Renamed", archived: true } });
   await settle(app);
   expect(selection?.getSnapshot().selectedSession).toEqual({ id: "session", name: "Renamed", cwd: "/repo", archived: true, pending: false });
@@ -205,25 +264,45 @@ it("discovers registered projects and directories through a portable public pane
   const workspaceContexts: WorkspacePanelContext[] = [];
   let actionProjects: PluginProjects | undefined;
   let discovery = "";
-  const activate = vi.fn<Extract<PiWebPlugin, { apiVersion: 4 }>["activate"]>(() => ({ contributions: {
-    applicationPanels: [{
-      id: "workspace.discovery", title: "Discovery",
-      render: (context) => {
-        contexts.push(context);
-        return html`<button @click=${async () => {
-          if (context.projects === undefined) throw new Error("Missing public project discovery");
-          const projects = await context.projects.listProjects();
-          const directories = await context.projects.suggestDirectories("/repo & docs");
-          discovery = `${projects[0]?.name ?? "No projects"}: ${directories[0]?.path ?? "No directories"}`;
-          context.host.requestRender();
-        }}>Discover projects</button><p>${discovery}</p>`;
-      },
-    }],
-    actions: [{ id: "discover", title: "Discover", run: (context) => { actionProjects = context.projects; } }],
-    workspacePanels: [{ id: "workspace-only", title: "Workspace discovery", render: (context) => {
-      workspaceContexts.push(context); return html`Workspace discovery`;
-    } }],
-  } }));
+  const activate = vi.fn<Extract<PiWebPlugin, { apiVersion: 4 }>["activate"]>(() => ({
+    contributions: {
+      applicationPanels: [
+        {
+          id: "workspace.discovery",
+          title: "Discovery",
+          render: (context) => {
+            contexts.push(context);
+            return html`<button @click=${async () => {
+              if (context.projects === undefined) throw new Error("Missing public project discovery");
+              const projects = await context.projects.listProjects();
+              const directories = await context.projects.suggestDirectories("/repo & docs");
+              discovery = `${projects[0]?.name ?? "No projects"}: ${directories[0]?.path ?? "No directories"}`;
+              context.host.requestRender();
+            }}>Discover projects</button><p>${discovery}</p>`;
+          },
+        },
+      ],
+      actions: [
+        {
+          id: "discover",
+          title: "Discover",
+          run: (context) => {
+            actionProjects = context.projects;
+          },
+        },
+      ],
+      workspacePanels: [
+        {
+          id: "workspace-only",
+          title: "Workspace discovery",
+          render: (context) => {
+            workspaceContexts.push(context);
+            return html`Workspace discovery`;
+          },
+        },
+      ],
+    },
+  }));
   const app = await mount({ apiVersion: 4, name: "Discovery", activate }, { id: "discovery" });
   const fetch = projectDiscoveryTransport();
   const localProjects = contexts.at(-1)?.projects;
@@ -241,8 +320,15 @@ it("discovers registered projects and directories through a portable public pane
   ]);
   expect(await localProjects.listProjects()).toEqual([{ id: "project", name: "local project", path: "/local/repo" }]);
 
-  let resolveLocal: (response: Response) => void = () => { throw new Error("Missing pending request"); };
-  fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveLocal = resolve; }));
+  let resolveLocal: (response: Response) => void = () => {
+    throw new Error("Missing pending request");
+  };
+  fetch.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        resolveLocal = resolve;
+      }),
+  );
   const pendingLocal = localProjects.listProjects();
   patchState(app, { selectedMachine: remote });
   await settle(app);
@@ -271,8 +357,7 @@ it("discovers registered projects and directories through a portable public pane
   navigationButton(app, "Workspace discovery").click();
   await settle(app);
   expect(workspaceContexts.at(-1)?.projects?.machineId).toBe("remote");
-  expect(await workspaceContexts.at(-1)?.projects?.suggestDirectories("/workspace/query"))
-    .toEqual([{ path: "/remote/directory" }]);
+  expect(await workspaceContexts.at(-1)?.projects?.suggestDirectories("/workspace/query")).toEqual([{ path: "/remote/directory" }]);
 
   fetch.mockClear();
   fetch.mockResolvedValueOnce(new Response(JSON.stringify({ error: "Remote unavailable" }), { status: 502 }));
@@ -280,7 +365,8 @@ it("discovers registered projects and directories through a portable public pane
   fetch.mockRejectedValueOnce(new TypeError("Network failure"));
   await expect(remoteProjects.suggestDirectories("/failed")).rejects.toThrow("Network failure");
   expect(fetch.mock.calls.map(([url]) => new URL(discoveryRequestUrl(url)).pathname)).toEqual([
-    "/api/machines/remote/projects", "/api/machines/remote/project-directories",
+    "/api/machines/remote/projects",
+    "/api/machines/remote/project-directories",
   ]); // No gateway retry and no substitution from the host's loaded project state.
 });
 
@@ -288,22 +374,41 @@ it.each([false, true])("keeps machine-specific discovery bound under existing lo
   const gatewayContexts: ApplicationPanelContext[] = [];
   const remoteContexts: ApplicationPanelContext[] = [];
   const plugin = (contexts: ApplicationPanelContext[], label: string): PiWebPlugin => ({
-    apiVersion: 4, name: "Discovery", activate: () => ({ contributions: { applicationPanels: [{
-      id: "workspace.discovery", title: "Discovery", render: (context) => { contexts.push(context); return html`<p>${label}</p>`; },
-    }] } }),
+    apiVersion: 4,
+    name: "Discovery",
+    activate: () => ({
+      contributions: {
+        applicationPanels: [
+          {
+            id: "workspace.discovery",
+            title: "Discovery",
+            render: (context) => {
+              contexts.push(context);
+              return html`<p>${label}</p>`;
+            },
+          },
+        ],
+      },
+    }),
   });
   const app = await mount(plugin(gatewayContexts, "Gateway discovery"), { id: "discovery", machineSpecific: gatewaySpecific });
   const fetch = projectDiscoveryTransport();
   const registry = registryFor(app);
   const moduleLoader = vi.fn(() => Promise.resolve({ default: plugin(remoteContexts, "Remote discovery") }));
-  const manifest = (machineSpecific: boolean) => new Response(JSON.stringify({
-    lifecycleVersion: PI_WEB_PLUGIN_LIFECYCLE_VERSION, terminalMode: "recovery-disabled",
-    plugins: [{ id: "discovery", module: "discovery/pi-web-plugin.js", machineSpecific }],
-  }));
-  const loadRemote = () => loadExternalPlugins(undefined, {
-    machineId: "remote", moduleLoader,
-    shouldLoadPlugin: (entry) => registry.shouldLoadRemotePlugin(entry.id, entry.machineSpecific),
-  });
+  const manifest = (machineSpecific: boolean) =>
+    new Response(
+      JSON.stringify({
+        lifecycleVersion: PI_WEB_PLUGIN_LIFECYCLE_VERSION,
+        terminalMode: "recovery-disabled",
+        plugins: [{ id: "discovery", module: "discovery/pi-web-plugin.js", machineSpecific }],
+      }),
+    );
+  const loadRemote = () =>
+    loadExternalPlugins(undefined, {
+      machineId: "remote",
+      moduleLoader,
+      shouldLoadPlugin: (entry) => registry.shouldLoadRemotePlugin(entry.id, entry.machineSpecific),
+    });
   if (!gatewaySpecific) {
     fetch.mockResolvedValueOnce(manifest(false));
     expect((await loadRemote()).registrations).toEqual([]); // Gateway portable duplicates are not imported.
@@ -321,7 +426,14 @@ it.each([false, true])("keeps machine-specific discovery bound under existing lo
   await settle(app);
   expect(toolSurface(app).shadowRoot?.textContent).not.toContain("Remote discovery");
   expect(remoteContexts).toHaveLength(0); // No callbacks until the selected machine's loading gate opens.
-  Reflect.set(app, "verifiedPluginModeByMachine", new Map([["local", "recovery-disabled"], ["remote", "recovery-disabled"]]));
+  Reflect.set(
+    app,
+    "verifiedPluginModeByMachine",
+    new Map([
+      ["local", "recovery-disabled"],
+      ["remote", "recovery-disabled"],
+    ]),
+  );
   invalidateToolSurface(app);
   await settle(app);
   navigationButton(app, "Discovery").click();
@@ -341,8 +453,7 @@ it.each([false, true])("keeps machine-specific discovery bound under existing lo
   await settle(app);
   expect(toolSurface(app).shadowRoot?.textContent).toContain("Gateway discovery");
   expect(remoteContexts).toHaveLength(remoteRenders);
-  expect(await remoteProjects?.suggestDirectories("/retained/remote"))
-    .toEqual([{ path: "/remote/directory" }]); // Retained machine-specific access cannot drift to local.
+  expect(await remoteProjects?.suggestDirectories("/retained/remote")).toEqual([{ path: "/remote/directory" }]); // Retained machine-specific access cannot drift to local.
   expect(gatewayContexts.at(-1)?.projects?.machineId).toBe("local");
 });
 
@@ -352,9 +463,15 @@ function projectDiscoveryTransport() {
     const match = /^\/api\/machines\/([^/]+)\/(projects|project-directories)$/u.exec(url.pathname);
     if (match === null) throw new Error(`Unexpected discovery URL: ${url.href}`);
     const machineId = decodeURIComponent(match[1] ?? "");
-    return Promise.resolve(new Response(JSON.stringify(match[2] === "projects"
-      ? [{ ...project, name: `${machineId} project`, path: `/${machineId}/repo` }]
-      : [{ path: `/${machineId}/directory`, kind: "other" }])));
+    return Promise.resolve(
+      new Response(
+        JSON.stringify(
+          match[2] === "projects"
+            ? [{ ...project, name: `${machineId} project`, path: `/${machineId}/repo` }]
+            : [{ path: `/${machineId}/directory`, kind: "other" }],
+        ),
+      ),
+    );
   });
   vi.stubGlobal("fetch", themeStylesheetFetch(fetch));
   return fetch;
@@ -413,13 +530,16 @@ it("shows bundled Updates guidance and Copy without selections, retaining visibi
   await settle(app);
   expect(navigationTabs(app).querySelector('[aria-label="Updates"]')).not.toBeNull();
   const managed = { kind: "pi-package" as const };
-  patchState(app, { piWebStatus: {
-    ...updatesStatus, messages: [],
-    components: {
-      web: { ...updatesStatus.components.web, installation: managed },
-      sessiond: { ...updatesStatus.components.sessiond, installation: managed },
+  patchState(app, {
+    piWebStatus: {
+      ...updatesStatus,
+      messages: [],
+      components: {
+        web: { ...updatesStatus.components.web, installation: managed },
+        sessiond: { ...updatesStatus.components.sessiond, installation: managed },
+      },
     },
-  } });
+  });
   await settle(app);
   expect(navigationTabs(app).querySelector('[aria-label="Updates"]')).toBeNull();
   expect(activate).toHaveBeenCalledOnce();
@@ -441,10 +561,15 @@ it("offers Updates Run only with a selected-workspace Terminal on the current ma
   run.click();
   expect(createWorkspaceTerminal).toHaveBeenCalledOnce();
   expect(createWorkspaceTerminal.mock.calls[0]?.[0]).toMatchObject({
-    origin: "updates", registrationPluginId: "pi-web.terminal", workspace,
+    origin: "updates",
+    registrationPluginId: "pi-web.terminal",
+    workspace,
   });
   expect(runCommand).toHaveBeenCalledExactlyOnceWith({
-    title: "Update PI WEB", command: "node /workspace/dist/cli.js update", open: true, metadata: { "pi.plugin": "updates" },
+    title: "Update PI WEB",
+    command: "node /workspace/dist/cli.js update",
+    open: true,
+    metadata: { "pi.plugin": "updates" },
   });
 
   const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -453,7 +578,8 @@ it("offers Updates Run only with a selected-workspace Terminal on the current ma
   run.click(); // A retained local callback must not run after selection changed, even before rerender.
   await vi.waitFor(() => {
     expect(error).toHaveBeenCalledWith(
-      'Updates plugin failed to run "Update PI WEB"', expect.objectContaining({ message: "Workspace panel context is no longer current" }),
+      'Updates plugin failed to run "Update PI WEB"',
+      expect.objectContaining({ message: "Workspace panel context is no longer current" }),
     );
   });
   expect(createWorkspaceTerminal).toHaveBeenCalledOnce();
@@ -470,7 +596,9 @@ it("offers Updates Run only with a selected-workspace Terminal on the current ma
   remoteRun?.click();
   expect(remoteTerminal).toHaveBeenCalledOnce();
   expect(remoteTerminal.mock.calls[0]?.[0]).toMatchObject({
-    origin: "updates", registrationPluginId: "remote-terminal", workspace,
+    origin: "updates",
+    registrationPluginId: "remote-terminal",
+    workspace,
   });
   expect(createWorkspaceTerminal).toHaveBeenCalledOnce();
 
@@ -481,7 +609,8 @@ it("offers Updates Run only with a selected-workspace Terminal on the current ma
 });
 
 const updatesStatus: PiWebStatusResponse = {
-  packageName: "@jmfederico/pi-web", generatedAt: "now",
+  packageName: "@jmfederico/pi-web",
+  generatedAt: "now",
   components: {
     web: { component: "web", label: "Web/UI", stale: false, available: true, installation: { kind: "docker" } },
     sessiond: { component: "sessiond", label: "Session daemon", stale: false, available: true, installation: { kind: "docker" } },
@@ -495,22 +624,38 @@ const updatesStatus: PiWebStatusResponse = {
 function installTerminal(app: PiWebApp, machineId: string) {
   const runCommand = vi.fn<WorkspacePanelTerminal["runCommand"]>((input) => {
     const run = {
-      id: "run", origin: "updates", projectId: workspace.projectId, workspaceId: workspace.id,
-      terminalId: "terminal", title: input.title, command: input.command, status: "succeeded" as const, createdAt: "now", metadata: {},
+      id: "run",
+      origin: "updates",
+      projectId: workspace.projectId,
+      workspaceId: workspace.id,
+      terminalId: "terminal",
+      title: input.title,
+      command: input.command,
+      status: "succeeded" as const,
+      createdAt: "now",
+      metadata: {},
     };
     return Promise.resolve({ run, completed: Promise.resolve(run) });
   });
   const createWorkspaceTerminal = vi.fn<RequiredTerminalBrowserFacadeV1["createWorkspaceTerminal"]>(() => ({
-    open: () => undefined, runCommand,
+    open: () => undefined,
+    runCommand,
   }));
   const composition: RequiredTerminalBrowserComposition = {
     binding: {
       registrationPluginId: machineId === "local" ? "pi-web.terminal" : "remote-terminal",
-      sourcePluginId: "pi-web.terminal", backendRevision: `${machineId}-revision`, pairedRequestVersion: 1, pairedChannelVersion: 1,
+      sourcePluginId: "pi-web.terminal",
+      backendRevision: `${machineId}-revision`,
+      pairedRequestVersion: 1,
+      pairedChannelVersion: 1,
     },
     facade: {
-      version: 1, createWorkspaceTerminal, listCommandRuns: () => Promise.resolve([]),
-      parseCommandRun: () => { throw new Error("Unexpected command parsing"); },
+      version: 1,
+      createWorkspaceTerminal,
+      listCommandRuns: () => Promise.resolve([]),
+      parseCommandRun: () => {
+        throw new Error("Unexpected command parsing");
+      },
     },
   };
   const compositions: unknown = Reflect.get(app, "requiredTerminalByMachine");
@@ -528,16 +673,36 @@ function invalidateToolSurface(app: PiWebApp): void {
 }
 
 function commandButtons(panel: WorkspacePanel, label: string): HTMLButtonElement[] {
-  return [...panel.shadowRoot?.querySelectorAll<HTMLButtonElement>(".updates-command-actions button") ?? []].filter((button) => button.textContent === label);
+  return [...(panel.shadowRoot?.querySelectorAll<HTMLButtonElement>(".updates-command-actions button") ?? [])].filter((button) => button.textContent === label);
 }
 
-async function mount(plugin: PiWebPlugin, { id = "info", state = {}, machineSpecific = false }: { id?: string; state?: Partial<AppState>; machineSpecific?: boolean } = {}): Promise<ApplicationPanelsApp> {
-  vi.stubGlobal("fetch", themeStylesheetFetch(vi.fn().mockResolvedValue(new Response(JSON.stringify({
-    lifecycleVersion: PI_WEB_PLUGIN_LIFECYCLE_VERSION, terminalMode: "recovery-disabled",
-    plugins: [{ id, module: `${id}/pi-web-plugin.js`, machineSpecific }],
-  })))));
+async function mount(
+  plugin: PiWebPlugin,
+  { id = "info", state = {}, machineSpecific = false }: { id?: string; state?: Partial<AppState>; machineSpecific?: boolean } = {},
+): Promise<ApplicationPanelsApp> {
+  vi.stubGlobal(
+    "fetch",
+    themeStylesheetFetch(
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            lifecycleVersion: PI_WEB_PLUGIN_LIFECYCLE_VERSION,
+            terminalMode: "recovery-disabled",
+            plugins: [{ id, module: `${id}/pi-web-plugin.js`, machineSpecific }],
+          }),
+        ),
+      ),
+    ),
+  );
   const app = new ApplicationPanelsApp();
-  Reflect.set(app, "verifiedPluginModeByMachine", new Map([["local", "recovery-disabled"], ["remote", "recovery-disabled"]]));
+  Reflect.set(
+    app,
+    "verifiedPluginModeByMachine",
+    new Map([
+      ["local", "recovery-disabled"],
+      ["remote", "recovery-disabled"],
+    ]),
+  );
   const loaded = await loadExternalPlugins(undefined, { moduleLoader: () => Promise.resolve({ default: plugin }) });
   expect(loaded.failures).toEqual([]);
   await registryFor(app).registerBatch(loaded.registrations, { declarations: loaded.declarations });
@@ -561,8 +726,7 @@ function navigationTabs(app: PiWebApp): ShadowRoot {
 }
 
 function navigationButton(app: PiWebApp, label: string): HTMLButtonElement {
-  const button = [...navigationTabs(app).querySelectorAll<HTMLButtonElement>("button")]
-    .find((candidate) => candidate.getAttribute("aria-label") === label);
+  const button = [...navigationTabs(app).querySelectorAll<HTMLButtonElement>("button")].find((candidate) => candidate.getAttribute("aria-label") === label);
   if (button === undefined) throw new Error(`Expected navigation button: ${label}`);
   return button;
 }

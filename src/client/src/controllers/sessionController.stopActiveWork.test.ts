@@ -24,7 +24,9 @@ describe("SessionController stopActiveWork", () => {
     const api: typeof defaultApi = { ...defaultApi, abort: () => Promise.resolve({ aborted: true }) };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -54,7 +56,9 @@ describe("SessionController stopActiveWork", () => {
     const api: typeof defaultApi = { ...defaultApi, abort: () => abort.promise };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -69,7 +73,9 @@ describe("SessionController stopActiveWork", () => {
     state = { ...state, selectedSession: oldSession, status: queuedStatus };
     const failedController = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api: { ...defaultApi, abort: () => Promise.reject(new Error("abort failed")) }, socket: new FakeSocket(), replacePromptEditorText },

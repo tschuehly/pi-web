@@ -5,7 +5,13 @@ import { html, svg, type TemplateResult } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TerminalBrowserRuntime } from "./TerminalBrowserRuntime";
 import { TERMINAL_BROWSER_FACADE_CAPABILITY } from "./TerminalFacade";
-import plugin, { TERMINAL_PANEL_ELEMENT, TERMINAL_SOFT_KEYS_ELEMENT, activateTerminalPlugin, terminalPanelElementName, terminalSoftKeysElementName } from "./pi-web-plugin";
+import plugin, {
+  TERMINAL_PANEL_ELEMENT,
+  TERMINAL_SOFT_KEYS_ELEMENT,
+  activateTerminalPlugin,
+  terminalPanelElementName,
+  terminalSoftKeysElementName,
+} from "./pi-web-plugin";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -54,13 +60,15 @@ describe("Terminal browser plugin activation", () => {
     expect(secondValues).toContain(secondContext);
     expect(customElements.get(terminalPanelElementName("machine.one.pi-web.terminal"))).toBeDefined();
     expect(customElements.get(terminalPanelElementName("machine.two.pi-web.terminal"))).toBeDefined();
-    expect(customElements.get(terminalPanelElementName("machine.two.pi-web.terminal")))
-      .not.toBe(customElements.get(terminalPanelElementName("machine.one.pi-web.terminal")));
+    expect(customElements.get(terminalPanelElementName("machine.two.pi-web.terminal"))).not.toBe(
+      customElements.get(terminalPanelElementName("machine.one.pi-web.terminal")),
+    );
     expect(firstValues).toContain(terminalSoftKeysElementName("machine.one.pi-web.terminal"));
     expect(secondValues).toContain(terminalSoftKeysElementName("machine.two.pi-web.terminal"));
     expect(customElements.get(terminalSoftKeysElementName("machine.one.pi-web.terminal"))).toBeDefined();
-    expect(customElements.get(terminalSoftKeysElementName("machine.two.pi-web.terminal")))
-      .not.toBe(customElements.get(terminalSoftKeysElementName("machine.one.pi-web.terminal")));
+    expect(customElements.get(terminalSoftKeysElementName("machine.two.pi-web.terminal"))).not.toBe(
+      customElements.get(terminalSoftKeysElementName("machine.one.pi-web.terminal")),
+    );
     expect(firstRuntime).toBeInstanceOf(TerminalBrowserRuntime);
     expect(secondRuntime).toBeInstanceOf(TerminalBrowserRuntime);
     expect(secondRuntime).not.toBe(firstRuntime);
@@ -87,7 +95,9 @@ describe("Terminal browser plugin activation", () => {
     expect(Object.isFrozen(facade)).toBe(true);
     await result.dispose?.(new AbortController().signal);
 
-    expect(() => { terminal.open(); }).toThrow(expect.objectContaining({ name: "AbortError" }));
+    expect(() => {
+      terminal.open();
+    }).toThrow(expect.objectContaining({ name: "AbortError" }));
     await expect(runtime.refresh(context)).rejects.toMatchObject({ name: "AbortError" });
   });
 
@@ -102,8 +112,7 @@ describe("Terminal browser plugin activation", () => {
   });
 
   it("rejects activation under any source identity other than pi-web.terminal", () => {
-    expect(() => activateTerminalPlugin({ ...activationContext(), pluginId: "other" }))
-      .toThrow("must activate as plugin id pi-web.terminal");
+    expect(() => activateTerminalPlugin({ ...activationContext(), pluginId: "other" })).toThrow("must activate as plugin id pi-web.terminal");
   });
 });
 
@@ -159,12 +168,12 @@ function runtimeContext(openTerminal: PluginRuntimeContext["openTerminal"]): Plu
 
 function templateText(result: TemplateResult | undefined): string {
   if (result === undefined) return "";
-  return `${result.strings.join("")}${result.values.map((value) => isTemplateResult(value) ? templateText(value) : "").join("")}`;
+  return `${result.strings.join("")}${result.values.map((value) => (isTemplateResult(value) ? templateText(value) : "")).join("")}`;
 }
 
 function templateValues(result: TemplateResult | undefined): unknown[] {
   if (result === undefined) return [];
-  return result.values.flatMap((value) => isTemplateResult(value) ? templateValues(value) : [value]);
+  return result.values.flatMap((value) => (isTemplateResult(value) ? templateValues(value) : [value]));
 }
 
 function isTemplateResult(value: unknown): value is TemplateResult {

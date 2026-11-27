@@ -13,7 +13,14 @@ afterEach(() => {
 async function renderTool(overrides: Partial<ToolExecutionPart>, orphan = false): Promise<ToolExecutionView> {
   const view = new ToolExecutionView();
   view.orphan = orphan;
-  view.execution = { type: "toolExecution", toolName: "edit", summary: "file", status: "success", args: { path: "file.ts", edits: [{ oldText: "before", newText: "after" }] }, ...overrides };
+  view.execution = {
+    type: "toolExecution",
+    toolName: "edit",
+    summary: "file",
+    status: "success",
+    args: { path: "file.ts", edits: [{ oldText: "before", newText: "after" }] },
+    ...overrides,
+  };
   document.body.append(view);
   await view.updateComplete;
   return view;
@@ -23,7 +30,13 @@ async function renderTool(overrides: Partial<ToolExecutionPart>, orphan = false)
 describe("Workbench tool card details", () => {
   it("labels the action and summarizes a bash description while keeping the full command in the title", async () => {
     const args = { description: "Run the unit tests", command: "npm test -- --run" };
-    const view = await renderTool({ toolName: "bash", summary: "npm test", args, details: { id: "job", logPath: "/Users/me/.pi-workbench/background-bash/jobs/job/output.log" }, resultText: "ok" });
+    const view = await renderTool({
+      toolName: "bash",
+      summary: "npm test",
+      args,
+      details: { id: "job", logPath: "/Users/me/.pi-workbench/background-bash/jobs/job/output.log" },
+      resultText: "ok",
+    });
     const header = view.shadowRoot?.querySelector(".tool-header");
     expect(header?.querySelector("strong")?.textContent).toBe("Ran bash command");
     expect(header?.querySelector(".summary")?.textContent).toBe("Run the unit tests");

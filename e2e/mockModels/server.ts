@@ -15,7 +15,25 @@ export type MockModelServer = { readonly url: string; close(): Promise<void> };
 /** Anthropic OAuth requests must open with this system block (pi-ai `buildParams`). */
 export const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
 /** pi-ai 1.3/1.4 `claudeCodeTools`: the only flat tool names a Claude subscription request may carry. */
-const CLAUDE_CODE_TOOLS = ["Read", "Write", "Edit", "Bash", "Grep", "Glob", "AskUserQuestion", "EnterPlanMode", "ExitPlanMode", "KillShell", "NotebookEdit", "Skill", "Task", "TaskOutput", "TodoWrite", "WebFetch", "WebSearch"];
+const CLAUDE_CODE_TOOLS = [
+  "Read",
+  "Write",
+  "Edit",
+  "Bash",
+  "Grep",
+  "Glob",
+  "AskUserQuestion",
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "KillShell",
+  "NotebookEdit",
+  "Skill",
+  "Task",
+  "TaskOutput",
+  "TodoWrite",
+  "WebFetch",
+  "WebSearch",
+];
 /** pi-claude-code-use rewrites these out of every system prompt. */
 const FORBIDDEN_SYSTEM_PHRASES = ["pi itself", "pi .md files", "pi packages"];
 /** PI WEB's session-naming system prompt (src/server/sessions/sessionNameGenerator.ts). */
@@ -68,10 +86,24 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
       const script = (await readJson(req)) as Script;
       if (!Array.isArray(script.turns) || script.turns.length === 0) return send(400, { error: "turns must be a non-empty array" });
       const id = script.id ?? `script-${String(nextScriptId++)}`;
-      scripts.push({ turns: script.turns, status: { id, kind: script.kind ?? "chat", ...(script.provider ? { provider: script.provider } : {}), ...(script.match ? { match: script.match } : {}), total: script.turns.length, used: 0 } });
+      scripts.push({
+        turns: script.turns,
+        status: {
+          id,
+          kind: script.kind ?? "chat",
+          ...(script.provider ? { provider: script.provider } : {}),
+          ...(script.match ? { match: script.match } : {}),
+          total: script.turns.length,
+          used: 0,
+        },
+      });
       return send(200, { id });
     }
-    if (route === "GET /__mock/scripts") return send(200, scripts.map((entry) => entry.status));
+    if (route === "GET /__mock/scripts")
+      return send(
+        200,
+        scripts.map((entry) => entry.status),
+      );
     if (req.method === "DELETE" && path.startsWith("/__mock/scripts/")) {
       const id = decodeURIComponent(path.slice("/__mock/scripts/".length));
       scripts = scripts.filter((entry) => entry.status.id !== id);
@@ -82,10 +114,22 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
       const contains = query.get("contains");
       const kind = query.get("kind");
       const since = Number(query.get("since") ?? "0");
-      return send(200, journal.filter((entry) => entry.seq > since && (provider === null || entry.provider === provider) && (kind === null || entry.kind === kind) && (contains === null || entry.lastUserText.includes(contains) || JSON.stringify(entry.body).includes(contains))));
+      return send(
+        200,
+        journal.filter(
+          (entry) =>
+            entry.seq > since
+            && (provider === null || entry.provider === provider)
+            && (kind === null || entry.kind === kind)
+            && (contains === null || entry.lastUserText.includes(contains) || JSON.stringify(entry.body).includes(contains)),
+        ),
+      );
     }
     if (route === "GET /__mock/barriers") {
-      return send(200, [...barriers].map(([name, state]): BarrierState => ({ name, reached: state.reached, released: state.released })));
+      return send(
+        200,
+        [...barriers].map(([name, state]): BarrierState => ({ name, reached: state.reached, released: state.released })),
+      );
     }
     const barrierRoute = /^\/__mock\/barriers\/([^/]+)\/(wait|release)$/.exec(path);
     if (req.method === "POST" && barrierRoute !== null) {
@@ -99,7 +143,14 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
       // Long poll: answers once a response reaches the barrier, or 408 after `timeoutMs` (default 30 s).
       if (!state.reached) {
         const timeoutMs = Number(query.get("timeoutMs") ?? "30000");
-        const reached = await Promise.race([new Promise<true>((done) => state.onReached.push(() => { done(true); })), sleep(timeoutMs, false)]);
+        const reached = await Promise.race([
+          new Promise<true>((done) =>
+            state.onReached.push(() => {
+              done(true);
+            }),
+          ),
+          sleep(timeoutMs, false),
+        ]);
         if (!reached) return send(408, { name, reached: false, error: `Barrier ${name} was not reached within ${String(timeoutMs)} ms` });
       }
       return send(200, { name, reached: true, released: state.released });
@@ -110,18 +161,38 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
   const model = async (req: IncomingMessage, res: ServerResponse, provider: MockProvider, path: string): Promise<void> => {
     const body = decodeBody(req.headers["content-encoding"], await readBody(req));
     const headers = redactHeaders(req.headers);
-    const violations = provider === "anthropic" ? claudeViolations(req.headers, body) : provider === "openai" ? openaiViolations(req.headers, body) : codexViolations(req.headers, body);
+    const violations =
+      provider === "anthropic"
+        ? claudeViolations(req.headers, body)
+        : provider === "openai"
+          ? openaiViolations(req.headers, body)
+          : codexViolations(req.headers, body);
     const userTexts = provider === "anthropic" ? anthropicUserTexts(body) : codexUserTexts(body);
-    const systemText = JSON.stringify(provider === "anthropic" ? body["system"] ?? "" : body["instructions"] ?? "");
+    const systemText = JSON.stringify(provider === "anthropic" ? (body["system"] ?? "") : (body["instructions"] ?? ""));
     const kind: RequestKind = systemText.includes(TITLE_PROMPT) ? "title" : "chat";
     const entry: JournalEntry = {
-      seq: ++seq, at: new Date().toISOString(), provider, kind, transport: "http", method: req.method ?? "POST", path,
+      seq: ++seq,
+      at: new Date().toISOString(),
+      provider,
+      kind,
+      transport: "http",
+      method: req.method ?? "POST",
+      path,
       ...(typeof body["model"] === "string" ? { model: body["model"] } : {}),
-      headers, auth: authKind(req.headers), body, violations, answeredBy: "echo", toolCalls: [], status: 200, outcome: "pending",
+      headers,
+      auth: authKind(req.headers),
+      body,
+      violations,
+      answeredBy: "echo",
+      toolCalls: [],
+      status: 200,
+      outcome: "pending",
       lastUserText: userTexts.at(-1) ?? "",
     };
     journal.push(entry);
-    res.on("close", () => { if (entry.outcome === "pending") entry.outcome = "client-closed"; });
+    res.on("close", () => {
+      if (entry.outcome === "pending") entry.outcome = "client-closed";
+    });
     if (violations.length > 0 && strict) {
       entry.answeredBy = "rejected";
       const spec = { status: 400, type: "invalid_request_error", message: `Mock rejected the request shape: ${violations.join("; ")}` };
@@ -130,10 +201,13 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
       return provider === "anthropic" ? anthropicHttpError(res, spec) : codexHttpError(res, spec);
     }
     const allText = userTexts.join("\n");
-    const script = scripts.find((candidate) => candidate.status.used < candidate.status.total
-      && candidate.status.kind === kind
-      && (candidate.status.provider === undefined || candidate.status.provider === provider)
-      && (candidate.status.match === undefined || allText.includes(candidate.status.match)));
+    const script = scripts.find(
+      (candidate) =>
+        candidate.status.used < candidate.status.total
+        && candidate.status.kind === kind
+        && (candidate.status.provider === undefined || candidate.status.provider === provider)
+        && (candidate.status.match === undefined || allText.includes(candidate.status.match)),
+    );
     let turn: Turn;
     // One short line: long echoes reflow in narrow Grid tiles and shift scroll anchors in unrelated specs.
     if (script === undefined) turn = kind === "title" ? "Mock title" : `echo: ${truncate((entry.lastUserText.split("\n")[0] ?? "").trim(), 60)}`;
@@ -142,24 +216,45 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
       turn = script.turns[script.status.used] ?? "";
       script.status.used += 1;
     }
-    const { steps, stopReason, usage } = typeof turn === "string" ? { steps: [{ text: turn }], stopReason: undefined, usage: undefined } : Array.isArray(turn) ? { steps: turn, stopReason: undefined, usage: undefined } : turn;
+    const { steps, stopReason, usage } =
+      typeof turn === "string"
+        ? { steps: [{ text: turn }], stopReason: undefined, usage: undefined }
+        : Array.isArray(turn)
+          ? { steps: turn, stopReason: undefined, usage: undefined }
+          : turn;
     const writer = provider === "anthropic" ? anthropicWriter(res, body) : codexWriter(res, body);
-    await play(steps, writer, entry, res, (name) => {
-      const state = barrier(name);
-      state.reached = true;
-      for (const done of state.onReached.splice(0)) done();
-      return state.released ? Promise.resolve() : new Promise<void>((done) => state.onReleased.push(done));
-    }, stopReason, usage);
+    await play(
+      steps,
+      writer,
+      entry,
+      res,
+      (name) => {
+        const state = barrier(name);
+        state.reached = true;
+        for (const done of state.onReached.splice(0)) done();
+        return state.released ? Promise.resolve() : new Promise<void>((done) => state.onReleased.push(done));
+      },
+      stopReason,
+      usage,
+    );
   };
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
-    const handle = path.startsWith("/__mock/") ? control(req, res, path, url.searchParams)
-      : req.method === "POST" && path === "/v1/messages" ? model(req, res, "anthropic", path)
-        : req.method === "POST" && path === "/codex/responses" ? model(req, res, "openai-codex", path)
-          : req.method === "POST" && path === "/openai/v1/responses" ? model(req, res, "openai", path)
-          : Promise.resolve(void res.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: `The mock model server does not serve ${req.method ?? ""} ${path}` })));
+    const handle = path.startsWith("/__mock/")
+      ? control(req, res, path, url.searchParams)
+      : req.method === "POST" && path === "/v1/messages"
+        ? model(req, res, "anthropic", path)
+        : req.method === "POST" && path === "/codex/responses"
+          ? model(req, res, "openai-codex", path)
+          : req.method === "POST" && path === "/openai/v1/responses"
+            ? model(req, res, "openai", path)
+            : Promise.resolve(
+                void res
+                  .writeHead(404, { "content-type": "application/json" })
+                  .end(JSON.stringify({ error: `The mock model server does not serve ${req.method ?? ""} ${path}` })),
+              );
     handle.catch((error: unknown) => {
       if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: String(error) }));
@@ -168,23 +263,42 @@ export async function startMockModelServer(options: { port?: number } = {}): Pro
   // Codex prefers a WebSocket; refusing the upgrade makes pi-ai fall back to SSE (the harness also sets transport=sse).
   server.on("upgrade", (req, socket) => {
     journal.push({
-      seq: ++seq, at: new Date().toISOString(), provider: "openai-codex", kind: "chat", transport: "websocket", method: req.method ?? "GET", path: new URL(req.url ?? "/", "http://mock").pathname,
-      headers: redactHeaders(req.headers), auth: authKind(req.headers), body: null, violations: [], answeredBy: "rejected", toolCalls: [], status: 501, outcome: "error", lastUserText: "",
+      seq: ++seq,
+      at: new Date().toISOString(),
+      provider: "openai-codex",
+      kind: "chat",
+      transport: "websocket",
+      method: req.method ?? "GET",
+      path: new URL(req.url ?? "/", "http://mock").pathname,
+      headers: redactHeaders(req.headers),
+      auth: authKind(req.headers),
+      body: null,
+      violations: [],
+      answeredBy: "rejected",
+      toolCalls: [],
+      status: 501,
+      outcome: "error",
+      lastUserText: "",
     });
     socket.end("HTTP/1.1 501 Not Implemented\r\nconnection: close\r\ncontent-length: 0\r\n\r\n");
   });
   await new Promise<void>((done, fail) => {
     server.once("error", fail);
-    server.listen(options.port ?? 0, "127.0.0.1", () => { done(); });
+    server.listen(options.port ?? 0, "127.0.0.1", () => {
+      done();
+    });
   });
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Mock model server has no TCP address");
   return {
     url: `http://127.0.0.1:${String(address.port)}`,
-    close: () => new Promise<void>((done) => {
-      server.closeAllConnections();
-      server.close(() => { done(); });
-    }),
+    close: () =>
+      new Promise<void>((done) => {
+        server.closeAllConnections();
+        server.close(() => {
+          done();
+        });
+      }),
   };
 }
 
@@ -201,7 +315,15 @@ type Writer = {
   httpError(spec: ErrorSpec): void;
 };
 
-async function play(steps: Step[], writer: Writer, entry: JournalEntry, res: ServerResponse, hold: (name: string) => Promise<void>, stopReason: StopReason | undefined, usage: Usage | undefined): Promise<void> {
+async function play(
+  steps: Step[],
+  writer: Writer,
+  entry: JournalEntry,
+  res: ServerResponse,
+  hold: (name: string) => Promise<void>,
+  stopReason: StopReason | undefined,
+  usage: Usage | undefined,
+): Promise<void> {
   let calledTool = false;
   for (const step of steps) {
     if (res.destroyed) return;
@@ -231,7 +353,8 @@ async function play(steps: Step[], writer: Writer, entry: JournalEntry, res: Ser
 }
 
 function errorSpec(error: Extract<Step, { error: unknown }>["error"], provider: MockProvider): ErrorSpec {
-  if (typeof error !== "string") return { type: provider === "anthropic" ? "api_error" : "server_error", message: `Mock error ${String(error.status)}`, ...error };
+  if (typeof error !== "string")
+    return { type: provider === "anthropic" ? "api_error" : "server_error", message: `Mock error ${String(error.status)}`, ...error };
   const presets: Record<ErrorPreset, [number, string, string, string]> = {
     overloaded: [529, "overloaded_error", "server_is_overloaded", "Overloaded"],
     rate_limit: [429, "rate_limit_error", "rate_limit_exceeded", "Rate limited by the mock"],
@@ -257,10 +380,12 @@ function chunks(text: string): string[] {
 function wireToolName(name: string, declared: string[]): string {
   const lower = name.toLowerCase();
   const sanitized = `__${lower.replace(/[^a-z0-9_]/g, "_")}`;
-  return declared.find((candidate) => candidate === name)
+  return (
+    declared.find((candidate) => candidate === name)
     ?? declared.find((candidate) => candidate.toLowerCase() === lower)
     ?? declared.find((candidate) => candidate.toLowerCase().startsWith("mcp__") && candidate.toLowerCase().endsWith(sanitized))
-    ?? name;
+    ?? name
+  );
 }
 
 function declaredTools(body: Json): Json[] {
@@ -278,8 +403,9 @@ function declaredTools(body: Json): Json[] {
   return out;
 }
 
-const messageBlocks = (body: Json): Json[] => asArray(body["messages"]).flatMap((message) => isObject(message) ? asArray(message["content"]).filter(isObject) : []);
-const toolChange = (block: Json): Json => isObject(block["tool"]) ? block["tool"] : {};
+const messageBlocks = (body: Json): Json[] =>
+  asArray(body["messages"]).flatMap((message) => (isObject(message) ? asArray(message["content"]).filter(isObject) : []));
+const toolChange = (block: Json): Json => (isObject(block["tool"]) ? block["tool"] : {});
 
 const ids = () => {
   let n = 0;
@@ -291,19 +417,37 @@ const ids = () => {
 function anthropicWriter(res: ServerResponse, body: Json): Writer {
   const id = ids();
   const declared = declaredTools(body).map((tool) => String(tool["name"]));
-  const event = (type: string, data: Json) => { res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`); };
+  const event = (type: string, data: Json) => {
+    res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+  };
   let index = 0;
   let outputTokens = 0;
   const writer: Writer = {
     started: false,
-    text: (text) => { start(); block({ type: "text", text: "" }, chunks(text).map((delta) => ({ type: "text_delta", text: delta }))); outputTokens += chunks(text).length; },
-    thinking: (text) => { start(); block({ type: "thinking", thinking: "", signature: "" }, [...chunks(text).map((delta) => ({ type: "thinking_delta", thinking: delta })), { type: "signature_delta", signature: `mock-signature-${String(index)}` }]); },
+    text: (text) => {
+      start();
+      block(
+        { type: "text", text: "" },
+        chunks(text).map((delta) => ({ type: "text_delta", text: delta })),
+      );
+      outputTokens += chunks(text).length;
+    },
+    thinking: (text) => {
+      start();
+      block({ type: "thinking", thinking: "", signature: "" }, [
+        ...chunks(text).map((delta) => ({ type: "thinking_delta", thinking: delta })),
+        { type: "signature_delta", signature: `mock-signature-${String(index)}` },
+      ]);
+    },
     toolCall: (name, args, callId) => {
       start();
       const json = JSON.stringify(args);
       const half = Math.ceil(json.length / 2);
       const wire = wireToolName(name, declared);
-      block({ type: "tool_use", id: callId ?? id("toolu"), name: wire, input: {} }, [json.slice(0, half), json.slice(half)].map((part) => ({ type: "input_json_delta", partial_json: part })));
+      block(
+        { type: "tool_use", id: callId ?? id("toolu"), name: wire, input: {} },
+        [json.slice(0, half), json.slice(half)].map((part) => ({ type: "input_json_delta", partial_json: part })),
+      );
       return wire;
     },
     finish: (stopReason, usage) => {
@@ -312,15 +456,31 @@ function anthropicWriter(res: ServerResponse, body: Json): Writer {
       event("message_stop", {});
       res.end();
     },
-    streamError: (spec) => { event("error", { error: { type: spec.type, message: spec.message } }); res.end(); },
-    httpError: (spec) => { anthropicHttpError(res, spec); },
+    streamError: (spec) => {
+      event("error", { error: { type: spec.type, message: spec.message } });
+      res.end();
+    },
+    httpError: (spec) => {
+      anthropicHttpError(res, spec);
+    },
   };
   const usageAtStart = { input_tokens: 0, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
   function start() {
     if (writer.started) return;
     writer.started = true;
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", "request-id": id("req") });
-    event("message_start", { message: { id: id("msg"), type: "message", role: "assistant", model: body["model"], content: [], stop_reason: null, stop_sequence: null, usage: usageAtStart } });
+    event("message_start", {
+      message: {
+        id: id("msg"),
+        type: "message",
+        role: "assistant",
+        model: body["model"],
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: usageAtStart,
+      },
+    });
   }
   function block(contentBlock: Json, deltas: Json[]) {
     const at = index++;
@@ -332,15 +492,22 @@ function anthropicWriter(res: ServerResponse, body: Json): Writer {
 }
 
 function anthropicHttpError(res: ServerResponse, spec: ErrorSpec): void {
-  res.writeHead(spec.status, { "content-type": "application/json", ...spec.headers }).end(JSON.stringify({ type: "error", error: { type: spec.type, message: spec.message } }));
+  res
+    .writeHead(spec.status, { "content-type": "application/json", ...spec.headers })
+    .end(JSON.stringify({ type: "error", error: { type: spec.type, message: spec.message } }));
 }
 
 function claudeViolations(headers: IncomingMessage["headers"], body: Json): string[] {
   const out: string[] = [];
-  const header = (name: string) => { const value = headers[name]; return Array.isArray(value) ? value.join(",") : value ?? ""; };
+  const header = (name: string) => {
+    const value = headers[name];
+    return Array.isArray(value) ? value.join(",") : (value ?? "");
+  };
   if (!/^Bearer sk-ant-oat/.test(header("authorization"))) out.push("authorization must be an sk-ant-oat OAuth bearer token");
   if (header("x-api-key") !== "") out.push("x-api-key must be absent on the subscription path");
-  const betas = header("anthropic-beta").split(",").map((beta) => beta.trim());
+  const betas = header("anthropic-beta")
+    .split(",")
+    .map((beta) => beta.trim());
   for (const beta of ["claude-code-20250219", "oauth-2025-04-20"]) if (!betas.includes(beta)) out.push(`anthropic-beta must include ${beta}`);
   if (!header("user-agent").startsWith("claude-cli/")) out.push("user-agent must be claude-cli/<version>");
   if (header("x-app") !== "cli") out.push("x-app must be cli");
@@ -353,12 +520,14 @@ function claudeViolations(headers: IncomingMessage["headers"], body: Json): stri
   if (!isObject(first) || first["text"] !== CLAUDE_CODE_IDENTITY) out.push("system must open with the Claude Code identity block");
   for (const block of system) {
     const text = isObject(block) && typeof block["text"] === "string" ? block["text"] : "";
-    for (const phrase of FORBIDDEN_SYSTEM_PHRASES) if (text.includes(phrase)) out.push(`system prompt must not contain "${phrase}" (pi-claude-code-use rewrites it)`);
+    for (const phrase of FORBIDDEN_SYSTEM_PHRASES)
+      if (text.includes(phrase)) out.push(`system prompt must not contain "${phrase}" (pi-claude-code-use rewrites it)`);
   }
   const checkName = (name: unknown, where: string) => {
     if (typeof name !== "string") return;
     if (name.length > 128 || !/^[A-Za-z0-9_-]+$/.test(name)) out.push(`${where} ${name} is not a valid Anthropic tool name`);
-    else if (!CLAUDE_CODE_TOOLS.includes(name) && !name.startsWith("mcp__") && name !== "__pi_deferred_placeholder__") out.push(`${where} ${name} must be a Claude Code tool or an mcp__ alias`);
+    else if (!CLAUDE_CODE_TOOLS.includes(name) && !name.startsWith("mcp__") && name !== "__pi_deferred_placeholder__")
+      out.push(`${where} ${name} must be a Claude Code tool or an mcp__ alias`);
   };
   for (const tool of asArray(body["tools"])) if (isObject(tool) && tool["type"] === undefined) checkName(tool["name"], "tool");
   for (const block of messageBlocks(body)) {
@@ -375,8 +544,15 @@ function claudeViolations(headers: IncomingMessage["headers"], body: Json): stri
 /** User prompts and tool results, in order; the system prompt is excluded. */
 function anthropicUserTexts(body: Json): string[] {
   const out: string[] = [];
-  const text = (content: unknown): string => typeof content === "string" ? content
-    : asArray(content).map((block) => isObject(block) ? (typeof block["text"] === "string" ? block["text"] : block["type"] === "tool_result" ? text(block["content"]) : "") : "").filter(Boolean).join("\n");
+  const text = (content: unknown): string =>
+    typeof content === "string"
+      ? content
+      : asArray(content)
+          .map((block) =>
+            isObject(block) ? (typeof block["text"] === "string" ? block["text"] : block["type"] === "tool_result" ? text(block["content"]) : "") : "",
+          )
+          .filter(Boolean)
+          .join("\n");
   for (const message of asArray(body["messages"])) if (isObject(message) && message["role"] === "user") out.push(text(message["content"]));
   return out;
 }
@@ -389,7 +565,9 @@ function codexWriter(res: ServerResponse, body: Json): Writer {
   const declared = tools.map((tool) => String(tool["name"]));
   const responseId = id("resp");
   const output: Json[] = [];
-  const event = (type: string, data: Json) => { res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`); };
+  const event = (type: string, data: Json) => {
+    res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
+  };
   const item = (added: Json, deltas: [string, Json][], done: Json) => {
     start();
     const outputIndex = output.length;
@@ -404,15 +582,19 @@ function codexWriter(res: ServerResponse, body: Json): Writer {
     text: (text) => {
       const itemId = id("msg");
       outputTokens += chunks(text).length;
-      item({ type: "message", id: itemId, role: "assistant", status: "in_progress", content: [] },
+      item(
+        { type: "message", id: itemId, role: "assistant", status: "in_progress", content: [] },
         chunks(text).map((delta) => ["response.output_text.delta", { content_index: 0, delta }]),
-        { type: "message", id: itemId, role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] });
+        { type: "message", id: itemId, role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] },
+      );
     },
     thinking: (text) => {
       const itemId = id("rs");
-      item({ type: "reasoning", id: itemId, summary: [] },
+      item(
+        { type: "reasoning", id: itemId, summary: [] },
         chunks(text).map((delta) => ["response.reasoning_summary_text.delta", { summary_index: 0, delta }]),
-        { type: "reasoning", id: itemId, summary: [{ type: "summary_text", text }], encrypted_content: `mock-encrypted-${itemId}` });
+        { type: "reasoning", id: itemId, summary: [{ type: "summary_text", text }], encrypted_content: `mock-encrypted-${itemId}` },
+      );
     },
     toolCall: (name, args, callId) => {
       const wire = wireToolName(name, declared);
@@ -421,15 +603,25 @@ function codexWriter(res: ServerResponse, body: Json): Writer {
       if (tools.find((tool) => tool["name"] === wire)?.["type"] === "custom") {
         // Grammar (custom) tools take one free-form input: the first string argument.
         const input = String(Object.values(args).find((value) => typeof value === "string") ?? "");
-        item({ type: "custom_tool_call", id: itemId, call_id: call, name: wire, input: "" },
-          [["response.custom_tool_call_input.delta", { delta: input }], ["response.custom_tool_call_input.done", { input }]],
-          { type: "custom_tool_call", id: itemId, call_id: call, name: wire, input, status: "completed" });
+        item(
+          { type: "custom_tool_call", id: itemId, call_id: call, name: wire, input: "" },
+          [
+            ["response.custom_tool_call_input.delta", { delta: input }],
+            ["response.custom_tool_call_input.done", { input }],
+          ],
+          { type: "custom_tool_call", id: itemId, call_id: call, name: wire, input, status: "completed" },
+        );
         return wire;
       }
       const json = JSON.stringify(args);
-      item({ type: "function_call", id: itemId, call_id: call, name: wire, arguments: "", status: "in_progress" },
-        [["response.function_call_arguments.delta", { delta: json }], ["response.function_call_arguments.done", { arguments: json }]],
-        { type: "function_call", id: itemId, call_id: call, name: wire, arguments: json, status: "completed" });
+      item(
+        { type: "function_call", id: itemId, call_id: call, name: wire, arguments: "", status: "in_progress" },
+        [
+          ["response.function_call_arguments.delta", { delta: json }],
+          ["response.function_call_arguments.done", { arguments: json }],
+        ],
+        { type: "function_call", id: itemId, call_id: call, name: wire, arguments: json, status: "completed" },
+      );
       return wire;
     },
     finish: (stopReason, usage) => {
@@ -438,16 +630,30 @@ function codexWriter(res: ServerResponse, body: Json): Writer {
       const out = usage.output ?? outputTokens;
       event("response.completed", {
         response: {
-          id: responseId, object: "response", model: body["model"], output,
+          id: responseId,
+          object: "response",
+          model: body["model"],
+          output,
           status: stopReason === "max_tokens" ? "incomplete" : "completed",
           ...(stopReason === "max_tokens" ? { incomplete_details: { reason: "max_output_tokens" } } : {}),
-          usage: { input_tokens: input, output_tokens: out, total_tokens: input + out, input_tokens_details: { cached_tokens: usage.cacheRead ?? 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+          usage: {
+            input_tokens: input,
+            output_tokens: out,
+            total_tokens: input + out,
+            input_tokens_details: { cached_tokens: usage.cacheRead ?? 0 },
+            output_tokens_details: { reasoning_tokens: 0 },
+          },
         },
       });
       res.end();
     },
-    streamError: (spec) => { event("error", { code: spec.type, message: spec.message }); res.end(); },
-    httpError: (spec) => { codexHttpError(res, spec); },
+    streamError: (spec) => {
+      event("error", { code: spec.type, message: spec.message });
+      res.end();
+    },
+    httpError: (spec) => {
+      codexHttpError(res, spec);
+    },
   };
   function start() {
     if (writer.started) return;
@@ -459,12 +665,17 @@ function codexWriter(res: ServerResponse, body: Json): Writer {
 }
 
 function codexHttpError(res: ServerResponse, spec: ErrorSpec): void {
-  res.writeHead(spec.status, { "content-type": "application/json", ...spec.headers }).end(JSON.stringify({ error: { type: spec.type, code: spec.type, message: spec.message } }));
+  res
+    .writeHead(spec.status, { "content-type": "application/json", ...spec.headers })
+    .end(JSON.stringify({ error: { type: spec.type, code: spec.type, message: spec.message } }));
 }
 
 function codexViolations(headers: IncomingMessage["headers"], body: Json): string[] {
   const out: string[] = [];
-  const header = (name: string) => { const value = headers[name]; return Array.isArray(value) ? value.join(",") : value ?? ""; };
+  const header = (name: string) => {
+    const value = headers[name];
+    return Array.isArray(value) ? value.join(",") : (value ?? "");
+  };
   const token = /^Bearer (.+)$/.exec(header("authorization"))?.[1] ?? "";
   const account = jwtAccount(token);
   if (account === undefined) out.push("authorization must be a ChatGPT bearer JWT with a chatgpt_account_id claim");
@@ -501,8 +712,13 @@ function jwtAccount(token: string): string | undefined {
 
 function codexUserTexts(body: Json): string[] {
   const out: string[] = [];
-  const text = (content: unknown): string => typeof content === "string" ? content
-    : asArray(content).map((part) => isObject(part) && typeof part["text"] === "string" ? part["text"] : "").filter(Boolean).join("\n");
+  const text = (content: unknown): string =>
+    typeof content === "string"
+      ? content
+      : asArray(content)
+          .map((part) => (isObject(part) && typeof part["text"] === "string" ? part["text"] : ""))
+          .filter(Boolean)
+          .join("\n");
   for (const item of asArray(body["input"])) {
     if (!isObject(item)) continue;
     if (item["role"] === "user") out.push(text(item["content"]));
@@ -532,7 +748,9 @@ function decodeBody(encoding: string | undefined, raw: Buffer): Json {
 }
 
 function redactHeaders(headers: IncomingMessage["headers"]): Record<string, string> {
-  return Object.fromEntries(Object.entries(headers).map(([name, value]) => [name, SECRET_HEADERS.has(name) ? "[redacted]" : Array.isArray(value) ? value.join(",") : value ?? ""]));
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [name, SECRET_HEADERS.has(name) ? "[redacted]" : Array.isArray(value) ? value.join(",") : (value ?? "")]),
+  );
 }
 
 function authKind(headers: IncomingMessage["headers"]): JournalEntry["auth"] {

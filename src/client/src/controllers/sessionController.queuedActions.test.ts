@@ -7,11 +7,18 @@ import { machineSessionKey } from "../machineKeys";
 
 beforeEach(() => {
   const values = new Map<string, string>();
-  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: {
-    getItem: (key: string) => values.get(key) ?? null,
-    setItem: (key: string, value: string) => { values.set(key, value); },
-    removeItem: (key: string) => { values.delete(key); },
-  } });
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+    },
+  });
 });
 
 function setup() {
@@ -19,8 +26,25 @@ function setup() {
   const request = deferred<SessionStatus>();
   const mutateQueuedMessage = vi.fn().mockReturnValue(request.promise);
   const replacePromptEditorText = vi.fn();
-  const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, { api: { ...defaultApi, mutateQueuedMessage }, socket: new FakeSocket(), replacePromptEditorText });
-  return { controller, request, mutateQueuedMessage, replacePromptEditorText, state: () => state, selectOther: () => { state = { ...state, selectedSession: replacementSession, status: status(replacementSession.id) }; } };
+  const controller = new SessionController(
+    () => state,
+    (patch) => {
+      state = { ...state, ...patch };
+    },
+    () => undefined,
+    undefined,
+    { api: { ...defaultApi, mutateQueuedMessage }, socket: new FakeSocket(), replacePromptEditorText },
+  );
+  return {
+    controller,
+    request,
+    mutateQueuedMessage,
+    replacePromptEditorText,
+    state: () => state,
+    selectOther: () => {
+      state = { ...state, selectedSession: replacementSession, status: status(replacementSession.id) };
+    },
+  };
 }
 const queue = [{ kind: "followUp" as const, text: "restore me" }];
 

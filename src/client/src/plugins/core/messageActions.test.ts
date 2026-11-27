@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DisplayedMessageActionContext, DisplayedMessageActionContribution, MessageActionAvailabilityContextV5 as MessageActionAvailabilityContext } from "../../../../plugin-api";
+import type {
+  DisplayedMessageActionContext,
+  DisplayedMessageActionContribution,
+  MessageActionAvailabilityContextV5 as MessageActionAvailabilityContext,
+} from "../../../../plugin-api";
 import { availableDisplayedMessageActions, availableMessageActions } from "../messageActions";
 import { createCoreMessageActions } from "./messageActions";
 
@@ -38,17 +42,27 @@ describe("core question history actions", () => {
     { flags: { pending: true }, enabled: false },
   ])("uses the existing history policy for questions ($flags)", ({ flags, enabled }) => {
     const actions = createCoreMessageActions().map((action) => ({
-      ...action, binding: { registrationPluginId: "core", sourcePluginId: "core" },
+      ...action,
+      binding: { registrationPluginId: "core", sourcePluginId: "core" },
     }));
     const session = { ...input.session, ...flags };
-    expect(availableMessageActions(actions, {
-      ...input, session, message: { entryId: "question-result", role: "tool", text: "", isQuestion: true },
-    }).map(({ action, enabled }) => ({ id: action.id, enabled }))).toEqual([
-      { id: "message.fork", enabled }, { id: "message.back", enabled },
+    expect(
+      availableMessageActions(actions, {
+        ...input,
+        session,
+        message: { entryId: "question-result", role: "tool", text: "", isQuestion: true },
+      }).map(({ action, enabled }) => ({ id: action.id, enabled })),
+    ).toEqual([
+      { id: "message.fork", enabled },
+      { id: "message.back", enabled },
     ]);
-    expect(availableMessageActions(actions, {
-      ...input, session, message: { entryId: "ordinary-tool-result", role: "tool", text: "Tool output" },
-    })).toEqual([]);
+    expect(
+      availableMessageActions(actions, {
+        ...input,
+        session,
+        message: { entryId: "ordinary-tool-result", role: "tool", text: "Tool output" },
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -62,7 +76,8 @@ describe("core display Copy action", () => {
   ])("leaves Copy available for entryless user/assistant text while $state without weakening history policy", ({ flags }) => {
     const writeText = vi.fn<(text: string) => Promise<boolean>>();
     const actions = createCoreMessageActions(writeText).map((action) => ({
-      ...action, binding: { registrationPluginId: "core", sourcePluginId: "core" },
+      ...action,
+      binding: { registrationPluginId: "core", sourcePluginId: "core" },
     }));
     for (const role of ["user", "assistant"] as const) {
       const session = { ...input.session, ...flags };
@@ -93,26 +108,30 @@ describe("core display Copy action", () => {
   ] as const)("does not offer Copy for $role with text '$text'", ({ role, text }) => {
     const writeText = vi.fn<(text: string) => Promise<boolean>>();
     const actions = createCoreMessageActions(writeText).map((action) => ({
-      ...action, binding: { registrationPluginId: "core", sourcePluginId: "core" },
+      ...action,
+      binding: { registrationPluginId: "core", sourcePluginId: "core" },
     }));
     expect(availableDisplayedMessageActions(actions, { ...input, message: { role, text } })).toEqual([]);
     expect(writeText).not.toHaveBeenCalled();
   });
 
-  it.each(["user", "assistant"] as const)("copies %s original text through the injected helper and returns success feedback without confirmation", async (role) => {
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("window", { confirm });
-    const writeText = vi.fn<(text: string) => Promise<boolean>>().mockResolvedValue(true);
-    const action = copyAction(writeText);
-    const context = invocation(role);
-    const feedback = await action.run(context);
-    expect(writeText).toHaveBeenCalledExactlyOnceWith("**Original**\n\nSecond  line");
-    expect(confirm).not.toHaveBeenCalled();
-    expect(context).not.toHaveProperty("history");
-    expect(feedback).toMatchObject({ title: "Copied", ariaLabel: `Copied ${role} message` });
-    expect(feedback).toHaveProperty("icon");
-    expect(feedback).not.toMatchObject({ icon: action.icon });
-  });
+  it.each(["user", "assistant"] as const)(
+    "copies %s original text through the injected helper and returns success feedback without confirmation",
+    async (role) => {
+      const confirm = vi.fn(() => false);
+      vi.stubGlobal("window", { confirm });
+      const writeText = vi.fn<(text: string) => Promise<boolean>>().mockResolvedValue(true);
+      const action = copyAction(writeText);
+      const context = invocation(role);
+      const feedback = await action.run(context);
+      expect(writeText).toHaveBeenCalledExactlyOnceWith("**Original**\n\nSecond  line");
+      expect(confirm).not.toHaveBeenCalled();
+      expect(context).not.toHaveProperty("history");
+      expect(feedback).toMatchObject({ title: "Copied", ariaLabel: `Copied ${role} message` });
+      expect(feedback).toHaveProperty("icon");
+      expect(feedback).not.toMatchObject({ icon: action.icon });
+    },
+  );
 
   it("fails visibly instead of returning success feedback when the clipboard helper reports failure", async () => {
     const writeText = vi.fn<(text: string) => Promise<boolean>>().mockResolvedValue(false);

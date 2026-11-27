@@ -97,9 +97,7 @@ export class TerminalService {
 
   list(scope: TerminalWorkspaceScope): TerminalInfo[] {
     validateScope(scope);
-    return [...this.terminals.values()]
-      .filter((terminal) => matchesScope(terminal, scope))
-      .map(toInfo);
+    return [...this.terminals.values()].filter((terminal) => matchesScope(terminal, scope)).map(toInfo);
   }
 
   closeForCwd(cwd: string): void {
@@ -163,9 +161,7 @@ export class TerminalService {
   }
 
   listCommandRuns(filter: TerminalCommandRunFilter = {}): TerminalCommandRun[] {
-    return [...this.commandRuns.values()]
-      .filter((run) => matchesCommandRunFilter(run, filter))
-      .map(copyCommandRun);
+    return [...this.commandRuns.values()].filter((run) => matchesCommandRunFilter(run, filter)).map(copyCommandRun);
   }
 
   listCommandRunsForScope(scope: TerminalWorkspaceScope, filter: TerminalCommandRunFilter = {}): TerminalCommandRun[] {
@@ -181,9 +177,7 @@ export class TerminalService {
   getCommandRunForScope(scope: TerminalWorkspaceScope, runId: string): TerminalCommandRun | undefined {
     validateScope(scope);
     const run = this.commandRuns.get(runId);
-    return run?.projectId === scope.projectId && run.workspaceId === scope.workspaceId
-      ? copyCommandRun(run)
-      : undefined;
+    return run?.projectId === scope.projectId && run.workspaceId === scope.workspaceId ? copyCommandRun(run) : undefined;
   }
 
   cancelCommandRun(runId: string): TerminalCommandRun {
@@ -209,9 +203,15 @@ export class TerminalService {
     const terminal = this.requireScoped(scope, id);
     if (terminal.buffer !== "") handlers.output(terminal.buffer, true);
     if (terminal.exited) handlers.exit(terminal.exitCode);
-    const onOutput = (data: string): void => { handlers.output(data, false); };
-    const onExit = (exitCode: number | undefined): void => { handlers.exit(exitCode); };
-    const onClosed = (): void => { handlers.closed?.(); };
+    const onOutput = (data: string): void => {
+      handlers.output(data, false);
+    };
+    const onExit = (exitCode: number | undefined): void => {
+      handlers.exit(exitCode);
+    };
+    const onClosed = (): void => {
+      handlers.closed?.();
+    };
     terminal.events.on("output", onOutput);
     terminal.events.on("exit", onExit);
     terminal.events.on("closed", onClosed);
@@ -281,7 +281,9 @@ export class TerminalService {
     for (const terminal of [...this.terminals.values()]) this.closeRecord(terminal);
   }
 
-  private createTerminal(options: CreateTerminalOptions & { id?: string; shellArgs: string[]; commandRunId?: string; failureNotice?: TerminalCommandFailureNotice }): TerminalInfo {
+  private createTerminal(
+    options: CreateTerminalOptions & { id?: string; shellArgs: string[]; commandRunId?: string; failureNotice?: TerminalCommandFailureNotice },
+  ): TerminalInfo {
     this.requireAvailable();
     validateScope(options);
     const id = options.id ?? randomUUID();
@@ -331,11 +333,7 @@ export class TerminalService {
     });
   }
 
-  private completeCommandRun(
-    runId: string | undefined,
-    exitCode: number | undefined,
-    failureNotice: TerminalCommandFailureNotice | undefined,
-  ): void {
+  private completeCommandRun(runId: string | undefined, exitCode: number | undefined, failureNotice: TerminalCommandFailureNotice | undefined): void {
     if (runId === undefined) return;
     const run = this.commandRuns.get(runId);
     if (run === undefined || isTerminalCommandRunFinal(run.status)) return;
@@ -410,7 +408,12 @@ function trimReplayBuffer(buffer: string): string {
 }
 
 export function interactiveShellArgs(shell: string): string[] {
-  const executable = shell.split(/[\\/]/).at(-1)?.toLowerCase().replace(/^-/, "").replace(/\.exe$/, "");
+  const executable = shell
+    .split(/[\\/]/)
+    .at(-1)
+    ?.toLowerCase()
+    .replace(/^-/, "")
+    .replace(/\.exe$/, "");
   // Preserve the existing invocation for arbitrary SHELL values rather than guessing at an unsupported login flag.
   return executable === "bash" || executable === "zsh" || executable === "fish" ? ["-l"] : [];
 }
@@ -434,9 +437,7 @@ function validateScope(scope: TerminalWorkspaceScope): void {
 }
 
 function matchesScope(record: TerminalWorkspaceScope, scope: TerminalWorkspaceScope): boolean {
-  return record.projectId === scope.projectId
-    && record.workspaceId === scope.workspaceId
-    && record.cwd === scope.cwd;
+  return record.projectId === scope.projectId && record.workspaceId === scope.workspaceId && record.cwd === scope.cwd;
 }
 
 function validateCommandRunOptions(options: RunTerminalCommandOptions): void {
@@ -450,11 +451,13 @@ function validateCommandRunOptions(options: RunTerminalCommandOptions): void {
 function parseMetadata(value: unknown): Record<string, string> {
   if (value === undefined || value === null) return {};
   if (!isRecord(value)) throw new Error("metadata must be an object");
-  return Object.fromEntries(Object.entries(value).map(([key, metadataValue]) => {
-    if (key.trim() === "") throw new Error("metadata keys must not be empty");
-    if (typeof metadataValue !== "string") throw new Error("metadata values must be strings");
-    return [key, metadataValue];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, metadataValue]) => {
+      if (key.trim() === "") throw new Error("metadata keys must not be empty");
+      if (typeof metadataValue !== "string") throw new Error("metadata values must be strings");
+      return [key, metadataValue];
+    }),
+  );
 }
 
 function parseFailureNotice(value: TerminalCommandFailureNotice | undefined): TerminalCommandFailureNotice | undefined {

@@ -3,7 +3,17 @@ import type { SessionInfo } from "../api";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
 import { InMemorySessionSelectionMemory } from "./sessionSelection";
-import { emptyTranscriptApi as defaultApi, deferred, emptyPage, FakeSocket, oldSession, sessionLookupId, status, workspace, type AppState } from "./sessionController.testSupport";
+import {
+  emptyTranscriptApi as defaultApi,
+  deferred,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+} from "./sessionController.testSupport";
 
 describe("SessionController archive and cleanup", () => {
   it.each([false, true])("uses only visible workspace fallbacks when a remembered session is missing (visible: %s)", (hasVisible) => {
@@ -42,7 +52,9 @@ describe("SessionController archive and cleanup", () => {
       let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: selected, sessions: [selected, ...remaining] };
       const controller = new SessionController(
         () => state,
-        (patch) => { state = { ...state, ...patch }; },
+        (patch) => {
+          state = { ...state, ...patch };
+        },
         () => undefined,
         undefined,
         {
@@ -82,7 +94,9 @@ describe("SessionController archive and cleanup", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -107,8 +121,12 @@ describe("SessionController archive and cleanup", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
-      (options) => { urlUpdates.push(options); },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      (options) => {
+        urlUpdates.push(options);
+      },
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
     );
@@ -144,7 +162,9 @@ describe("SessionController archive and cleanup", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket(), navigateToSession },
@@ -164,13 +184,16 @@ describe("SessionController archive and cleanup", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [persistedSession, childSession, nextSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      archiveWithDescendants: () => Promise.resolve({ archived: true, sessionIds: [persistedSession.id, childSession.id], archivedCount: 2, skippedAlreadyArchivedCount: 0 }),
+      archiveWithDescendants: () =>
+        Promise.resolve({ archived: true, sessionIds: [persistedSession.id, childSession.id], archivedCount: 2, skippedAlreadyArchivedCount: 0 }),
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -196,13 +219,17 @@ describe("SessionController archive and cleanup", () => {
         archiveCalls.push({ ids: sessions.map(sessionLookupId), machineId: machineId ?? "local" });
         return Promise.resolve({ archived: true, archivedSessionIds: sessions.map(sessionLookupId), failures: [], generatedAt: "now" });
       },
-      archive: () => { throw new Error("single archive should not be used"); },
+      archive: () => {
+        throw new Error("single archive should not be used");
+      },
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -230,15 +257,24 @@ describe("SessionController archive and cleanup", () => {
       ...defaultApi,
       archiveMany: (sessions, machineId) => {
         archiveCalls.push({ ids: sessions.map(sessionLookupId), machineId: machineId ?? "local" });
-        return Promise.resolve({ archived: true, archivedSessionIds: [persistedSession.id], failures: [{ sessionId: failedSession.id, error: "busy" }], generatedAt: "now" });
+        return Promise.resolve({
+          archived: true,
+          archivedSessionIds: [persistedSession.id],
+          failures: [{ sessionId: failedSession.id, error: "busy" }],
+          generatedAt: "now",
+        });
       },
-      archive: () => { throw new Error("single archive should not be used"); },
+      archive: () => {
+        throw new Error("single archive should not be used");
+      },
       messages: () => Promise.resolve(emptyPage),
       status: (session) => Promise.resolve(status(sessionLookupId(session))),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -270,7 +306,9 @@ describe("SessionController archive and cleanup", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -296,7 +334,9 @@ describe("SessionController archive and cleanup", () => {
     const navigationExpected: string[] = [];
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -337,13 +377,20 @@ describe("SessionController archive and cleanup", () => {
       ...defaultApi,
       deleteArchivedMany: (sessions, machineId) => {
         deleteCalls.push({ ids: sessions.map(sessionLookupId), machineId: machineId ?? "local" });
-        return Promise.resolve({ deleted: true, deletedSessionIds: [deletedSession.id], failures: [{ sessionId: failedSession.id, error: "busy" }], generatedAt: "now" });
+        return Promise.resolve({
+          deleted: true,
+          deletedSessionIds: [deletedSession.id],
+          failures: [{ sessionId: failedSession.id, error: "busy" }],
+          generatedAt: "now",
+        });
       },
       messages: () => Promise.resolve(emptyPage),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -359,7 +406,13 @@ describe("SessionController archive and cleanup", () => {
 
   it("applies cleanup execution results and refreshes the current workspace sessions", async () => {
     const archivedAt = "2026-06-25T12:00:00.000Z";
-    const deletedArchived = { ...oldSession, id: "deleted-archived", path: "/tmp/deleted-archived.jsonl", archived: true, archivedAt: "2026-05-01T00:00:00.000Z" };
+    const deletedArchived = {
+      ...oldSession,
+      id: "deleted-archived",
+      path: "/tmp/deleted-archived.jsonl",
+      archived: true,
+      archivedAt: "2026-05-01T00:00:00.000Z",
+    };
     const nextSession = { ...oldSession, id: "next-session", path: "/tmp/next-session.jsonl" };
     const refreshedArchived = { ...oldSession, archived: true, archivedAt };
     const sessionsCalls: { cwd: string; machineId: string }[] = [];
@@ -382,7 +435,9 @@ describe("SessionController archive and cleanup", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },

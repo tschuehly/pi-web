@@ -12,11 +12,20 @@ export interface Review {
 
 export function isReview(value: unknown): value is Review {
   if (typeof value !== "object" || value === null) return false;
-  return "id" in value && typeof value.id === "string" && /^[a-f0-9-]{36}$/.test(value.id)
-    && "createdAt" in value && typeof value.createdAt === "string"
-    && "sessionId" in value && typeof value.sessionId === "string"
-    && "status" in value && ["running", "completed", "failed", "interrupted"].includes(String(value.status))
-    && "text" in value && typeof value.text === "string" && value.text.length <= MAX_FINDINGS;
+  return (
+    "id" in value
+    && typeof value.id === "string"
+    && /^[a-f0-9-]{36}$/.test(value.id)
+    && "createdAt" in value
+    && typeof value.createdAt === "string"
+    && "sessionId" in value
+    && typeof value.sessionId === "string"
+    && "status" in value
+    && ["running", "completed", "failed", "interrupted"].includes(String(value.status))
+    && "text" in value
+    && typeof value.text === "string"
+    && value.text.length <= MAX_FINDINGS
+  );
 }
 
 export function reviewPrompt(requestId: string): string {

@@ -22,13 +22,7 @@ export function initialSessionWarningVisibilityState(): SessionWarningVisibility
 /** Stable, order-independent identity for the complete live warning set. */
 export function sessionWarningSetSignature(warnings: readonly SessionWarning[] | undefined): string {
   const warningIdentities = (warnings ?? [])
-    .map((warning) => JSON.stringify([
-      warning.severity,
-      warning.message,
-      warning.source,
-      warning.path,
-      warning.dismiss?.id,
-    ]))
+    .map((warning) => JSON.stringify([warning.severity, warning.message, warning.source, warning.path, warning.dismiss?.id]))
     .sort();
   return JSON.stringify(warningIdentities);
 }
@@ -56,7 +50,8 @@ export function reconcileSessionWarningVisibility(
     && current.warningCount === warningCount
     && current.collapsed === collapsed
     && current.collapsedWarningSets === collapsedWarningSets
-  ) return current;
+  )
+    return current;
   return {
     selectedSessionKey: sessionKey,
     warningSetSignature,

@@ -1,7 +1,17 @@
 import type { ExtensionCommandContextActions } from "../../piSdk.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PiSessionService, type PiAgentSession } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const SESSION_ID = "extension-command-session";
 const ref = sessionRef(SESSION_ID);
@@ -13,7 +23,9 @@ afterEach(async () => {
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
@@ -31,9 +43,12 @@ async function harness() {
   fake.runtime.fork = fork;
   const gateway = sessionGateway([sessionRecord(SESSION_ID)]);
   const service = new PiSessionService(hub, {
-    agentDir: "/tmp/pi-web-test-agent", modelRuntime: testModelRuntime,
-    createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: gateway,
-    archiveStore, heartbeatIntervalMs: 60_000,
+    agentDir: "/tmp/pi-web-test-agent",
+    modelRuntime: testModelRuntime,
+    createAgentRuntime: runtimeCreator(fake.runtime),
+    sessionManager: gateway,
+    archiveStore,
+    heartbeatIntervalMs: 60_000,
   });
   services.push(service);
   await service.status(ref);
@@ -42,13 +57,30 @@ async function harness() {
   const run = async (handler: (actions: ExtensionCommandContextActions) => Promise<unknown>) => {
     const completion = deferred<{ value?: unknown; error?: unknown }>();
     fake.session.prompt = async () => {
-      try { completion.resolve({ value: await handler(actions) }); }
-      catch (error) { completion.resolve({ error }); throw error; }
+      try {
+        completion.resolve({ value: await handler(actions) });
+      } catch (error) {
+        completion.resolve({ error });
+        throw error;
+      }
     };
     await service.runCommand(ref, "/control");
     return completion.promise;
   };
-  return { service, hub, fake, actions, navigateTree, fork, archiveStore, gateway, run, setLeaf: (id: string | null) => { leafId = id; } };
+  return {
+    service,
+    hub,
+    fake,
+    actions,
+    navigateTree,
+    fork,
+    archiveStore,
+    gateway,
+    run,
+    setLeaf: (id: string | null) => {
+      leafId = id;
+    },
+  };
 }
 
 describe("PiSessionService extension command-context actions", () => {
@@ -65,8 +97,7 @@ describe("PiSessionService extension command-context actions", () => {
 
   it.each([undefined, "before", "at"] as const)("preserves extension fork position %s", async (position) => {
     const h = await harness();
-    expect(await h.run((actions) => actions.fork("entry", position === undefined ? undefined : { position })))
-      .toEqual({ value: { cancelled: false } });
+    expect(await h.run((actions) => actions.fork("entry", position === undefined ? undefined : { position }))).toEqual({ value: { cancelled: false } });
     expect(h.fork).toHaveBeenCalledWith("entry", { position: position ?? "before" });
     expect(h.hub.sessionEvents.filter(({ event }) => event.type === "session.tree.changed")).toEqual([
       { sessionId: SESSION_ID, event: { type: "session.tree.changed" } },
@@ -87,11 +118,16 @@ describe("PiSessionService extension command-context actions", () => {
 
   it("shares factual change and suggested-input behavior with HTTP tree operations", async () => {
     const h = await harness();
-    expect(await h.service.navigateTree(ref, { targetId: "target", expectedLeafId: "leaf-1", summary: { mode: "none" } }))
-      .toEqual({ cancelled: false, editorText: "edit this prompt" });
+    expect(await h.service.navigateTree(ref, { targetId: "target", expectedLeafId: "leaf-1", summary: { mode: "none" } })).toEqual({
+      cancelled: false,
+      editorText: "edit this prompt",
+    });
     expect(await h.service.status(ref)).toHaveProperty("suggestedInput", "edit this prompt");
-    expect(await h.service.forkFromTree(ref, { entryId: "entry", expectedLeafId: "leaf-1" }))
-      .toMatchObject({ cancelled: false, session: { id: SESSION_ID }, promptDraft: "fork draft" });
+    expect(await h.service.forkFromTree(ref, { entryId: "entry", expectedLeafId: "leaf-1" })).toMatchObject({
+      cancelled: false,
+      session: { id: SESSION_ID },
+      promptDraft: "fork draft",
+    });
     expect(await h.service.status(ref)).toHaveProperty("suggestedInput", "fork draft");
     expect(h.hub.sessionEvents.filter(({ event }) => event.type === "session.tree.changed")).toEqual([
       { sessionId: SESSION_ID, event: { type: "session.tree.changed" } },
@@ -139,23 +175,26 @@ describe("PiSessionService extension command-context actions", () => {
     expect(h.fake.calls.bindExtensions).toHaveLength(bindings);
   });
 
-  it.each(["isStreaming", "isCompacting", "isBashRunning", "pendingMessageCount"] as const)("preserves %s protection during an extension command", async (flag) => {
-    const h = await harness();
-    const outcome = await h.run((actions) => {
-      if (flag === "pendingMessageCount") h.fake.session.pendingMessageCount = 1;
-      else h.fake.session[flag] = true;
-      return actions.navigateTree("target");
-    });
-    expect(outcome.error).toEqual(expect.objectContaining({ message: "Stop current session activity before navigating the session tree" }));
-    expect(h.navigateTree).not.toHaveBeenCalled();
-  });
+  it.each(["isStreaming", "isCompacting", "isBashRunning", "pendingMessageCount"] as const)(
+    "preserves %s protection during an extension command",
+    async (flag) => {
+      const h = await harness();
+      const outcome = await h.run((actions) => {
+        if (flag === "pendingMessageCount") h.fake.session.pendingMessageCount = 1;
+        else h.fake.session[flag] = true;
+        return actions.navigateTree("target");
+      });
+      expect(outcome.error).toEqual(expect.objectContaining({ message: "Stop current session activity before navigating the session tree" }));
+      expect(h.navigateTree).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not exempt another prompt mutation or allow HTTP tree navigation during a command", async () => {
     const h = await harness();
     const ordinary = deferred<undefined>();
     const commandReady = deferred<undefined>();
     const resume = deferred<undefined>();
-    h.fake.session.prompt = (text) => text === "ordinary" ? ordinary.promise : Promise.resolve();
+    h.fake.session.prompt = (text) => (text === "ordinary" ? ordinary.promise : Promise.resolve());
     await h.service.prompt(ref, "ordinary");
     const command = h.run(async (actions) => {
       commandReady.resolve(undefined);
@@ -163,8 +202,9 @@ describe("PiSessionService extension command-context actions", () => {
       return actions.navigateTree("target");
     });
     await commandReady.promise;
-    await expect(h.service.navigateTree(ref, { targetId: "target", expectedLeafId: "leaf-1", summary: { mode: "none" } }))
-      .rejects.toThrow("Stop current session activity");
+    await expect(h.service.navigateTree(ref, { targetId: "target", expectedLeafId: "leaf-1", summary: { mode: "none" } })).rejects.toThrow(
+      "Stop current session activity",
+    );
     resume.resolve(undefined);
     expect((await command).error).toEqual(expect.objectContaining({ message: "Stop current session activity before navigating the session tree" }));
     expect(h.navigateTree).not.toHaveBeenCalled();
@@ -175,10 +215,12 @@ describe("PiSessionService extension command-context actions", () => {
     const h = await harness();
     const trigger = deferred<undefined>();
     let late: Promise<unknown> | undefined;
-    expect(await h.run(() => {
-      late = trigger.promise.then(() => h.actions.navigateTree("target"));
-      return Promise.resolve();
-    })).toEqual({ value: undefined });
+    expect(
+      await h.run(() => {
+        late = trigger.promise.then(() => h.actions.navigateTree("target"));
+        return Promise.resolve();
+      }),
+    ).toEqual({ value: undefined });
     const ordinary = deferred<undefined>();
     h.fake.session.prompt = () => ordinary.promise;
     await h.service.prompt(ref, "ordinary");
@@ -193,7 +235,11 @@ describe("PiSessionService extension command-context actions", () => {
     const h = await harness();
     const entered = deferred<undefined>();
     const resume = deferred<undefined>();
-    h.archiveStore.get = async () => { entered.resolve(undefined); await resume.promise; return undefined; };
+    h.archiveStore.get = async () => {
+      entered.resolve(undefined);
+      await resume.promise;
+      return undefined;
+    };
     const operation = h.actions[action]("target");
     const rejection = expect(operation).rejects.toThrow("The session changed since /tree was opened");
     await entered.promise;
@@ -208,7 +254,10 @@ describe("PiSessionService extension command-context actions", () => {
     const h = await harness();
     const entered = deferred<undefined>();
     const names = deferred<ReturnType<typeof sessionRecord>[]>();
-    h.gateway.list = () => { entered.resolve(undefined); return names.promise; };
+    h.gateway.list = () => {
+      entered.resolve(undefined);
+      return names.promise;
+    };
     const operation = h.actions.fork("entry");
     const rejection = expect(operation).rejects.toThrow("The session runtime changed before forking");
     await entered.promise;
@@ -224,7 +273,9 @@ describe("PiSessionService extension command-context actions", () => {
     const completed = deferred<{ cancelled: boolean }>();
     h.navigateTree.mockImplementation(() => completed.promise);
     const operation = h.actions.navigateTree("target");
-    await vi.waitFor(() => { expect(h.navigateTree).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(h.navigateTree).toHaveBeenCalledOnce();
+    });
     await expect(h.actions.fork("entry")).rejects.toThrow("Stop current session activity");
     await expect(h.service.prompt(ref, "unrelated")).rejects.toThrow("while session tree navigation is active");
     completed.resolve({ cancelled: false });
@@ -233,8 +284,8 @@ describe("PiSessionService extension command-context actions", () => {
 
   it.each(["navigateTree", "fork", "reload"] as const)("rejects archived sessions for extension %s", async (action) => {
     const h = await harness();
-    h.archiveStore.get = () => Promise.resolve({ sessionId: SESSION_ID, cwd: ref.cwd,
-      archivedAt: "2026-01-01T00:00:00.000Z", archivePath: "/archive/session.jsonl" });
+    h.archiveStore.get = () =>
+      Promise.resolve({ sessionId: SESSION_ID, cwd: ref.cwd, archivedAt: "2026-01-01T00:00:00.000Z", archivePath: "/archive/session.jsonl" });
     await expect(action === "reload" ? h.actions.reload() : h.actions[action]("target")).rejects.toThrow("Archived sessions are read-only");
     expect(h.navigateTree).not.toHaveBeenCalled();
     expect(h.fork).not.toHaveBeenCalled();

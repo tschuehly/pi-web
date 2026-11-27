@@ -32,8 +32,9 @@ describe("expandInlineSkillMentions", () => {
   });
 
   it("expands two different skills, each at most once", () => {
-    expect(expandInlineSkillMentions("a /skill:review b\n/skill:deploy c /skill:review", skills))
-      .toBe(`a ${block("review")} b\n${block("deploy")} c /skill:review`);
+    expect(expandInlineSkillMentions("a /skill:review b\n/skill:deploy c /skill:review", skills)).toBe(
+      `a ${block("review")} b\n${block("deploy")} c /skill:review`,
+    );
   });
 
   it("keeps mentions in code spans, fences, unknown names, and non-boundaries literal", () => {
@@ -43,8 +44,9 @@ describe("expandInlineSkillMentions", () => {
   });
 
   it("leaves a leading mention for Pi core and does not repeat it inline", () => {
-    expect(expandInlineSkillMentions("/skill:review with /skill:deploy and /skill:review", skills))
-      .toBe(`/skill:review with ${block("deploy")} and /skill:review`);
+    expect(expandInlineSkillMentions("/skill:review with /skill:deploy and /skill:review", skills)).toBe(
+      `/skill:review with ${block("deploy")} and /skill:review`,
+    );
   });
 
   it("expands a leading mention Pi core rejects because no space or end follows it", () => {

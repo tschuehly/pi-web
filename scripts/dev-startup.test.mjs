@@ -13,11 +13,14 @@ function harness() {
     const child = new EventEmitter();
     child.exitCode = null;
     child.signalCode = null;
-    child.finish = (code) => { child.exitCode = code; child.emit("exit", code, null); };
+    child.finish = (code) => {
+      child.exitCode = code;
+      child.emit("exit", code, null);
+    };
     children.push(child);
     return child;
   });
-  const stop = vi.fn(child => child.finish(0));
+  const stop = vi.fn((child) => child.finish(0));
   return { signals, children, launch, stop, env: {} };
 }
 
@@ -61,7 +64,12 @@ it("stops the builder when the API exits or the web owner is stopped", async () 
 it("starts sessiond only after build readiness without starting another builder", async () => {
   const options = harness();
   let publish;
-  const wait = vi.fn(() => new Promise(resolve => { publish = resolve; }));
+  const wait = vi.fn(
+    () =>
+      new Promise((resolve) => {
+        publish = resolve;
+      }),
+  );
   const running = runDevelopmentSessiond({ ...options, wait });
   expect(options.launch).not.toHaveBeenCalled();
   publish();
@@ -77,7 +85,13 @@ it("starts sessiond only after build readiness without starting another builder"
 it("does not launch sessiond if stopped while readiness is resolving", async () => {
   const options = harness();
   let publish;
-  const running = runDevelopmentSessiond({ ...options, wait: () => new Promise(resolve => { publish = resolve; }) });
+  const running = runDevelopmentSessiond({
+    ...options,
+    wait: () =>
+      new Promise((resolve) => {
+        publish = resolve;
+      }),
+  });
   options.signals.emit("SIGTERM");
   publish();
   await expect(running).rejects.toMatchObject({ name: "AbortError" });
@@ -95,7 +109,9 @@ it("waits for the cold-start marker and reports a missing builder", async () => 
     const controller = new AbortController();
     controller.abort();
     await expect(waitForPluginBuild({ cwd, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
-  } finally { await rm(cwd, { recursive: true, force: true }); }
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
 });
 
 it("does not start sessiond after a readiness failure", async () => {

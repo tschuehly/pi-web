@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_PI_WEB_DENSITY, DENSITY_STORAGE_KEY, applyPiWebDensity, parsePiWebDensity, readStoredPiWebDensity, writeStoredPiWebDensity, type DensityStorage } from "./density";
+import {
+  DEFAULT_PI_WEB_DENSITY,
+  DENSITY_STORAGE_KEY,
+  applyPiWebDensity,
+  parsePiWebDensity,
+  readStoredPiWebDensity,
+  writeStoredPiWebDensity,
+  type DensityStorage,
+} from "./density";
 
 describe("PI WEB density preference", () => {
   it("parses supported values and rejects unknown ones", () => {
@@ -29,5 +37,12 @@ function storageWith(value: string | null): DensityStorage {
 }
 
 function throwingStorage(): DensityStorage {
-  return { getItem: () => { throw new Error("storage unavailable"); }, setItem: () => { throw new Error("storage unavailable"); } };
+  return {
+    getItem: () => {
+      throw new Error("storage unavailable");
+    },
+    setItem: () => {
+      throw new Error("storage unavailable");
+    },
+  };
 }

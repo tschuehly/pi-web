@@ -3,10 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TerminalCommandRun } from "../../shared/apiTypes.js";
 import type { Project } from "../types.js";
 import { WorkspaceRemovalError } from "../workspaces/workspaceRemovalService.js";
-import {
-  registerWorkspaceRemovalRoutes,
-  type WorkspaceRemover,
-} from "./workspaceRemovalRoutes.js";
+import { registerWorkspaceRemovalRoutes, type WorkspaceRemover } from "./workspaceRemovalRoutes.js";
 
 const project: Project = {
   id: "project one",
@@ -61,7 +58,8 @@ describe("session daemon workspace removal routes", () => {
   });
 
   it("serializes project, safety, and unexpected failures without a stack", async () => {
-    const remove = vi.fn()
+    const remove = vi
+      .fn()
       .mockRejectedValueOnce(new WorkspaceRemovalError("Workspace owner is no longer current", 409))
       .mockRejectedValueOnce(new Error("unexpected failure"));
     const onWorkspacesMutated = vi.fn();
@@ -104,8 +102,6 @@ describe("session daemon workspace removal routes", () => {
 
 function projectReader() {
   return {
-    requireProject: (projectId: string) => projectId === project.id
-      ? Promise.resolve(project)
-      : Promise.reject(new Error("Project not found")),
+    requireProject: (projectId: string) => (projectId === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))),
   };
 }

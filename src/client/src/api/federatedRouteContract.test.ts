@@ -1,8 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Workspace } from "../../../shared/apiTypes";
-import { FEDERATED_HTTP_ROUTES, FEDERATED_WEBSOCKET_ROUTES, SESSION_TREE_FORK_PROXY_TIMEOUT_MS, PLUGIN_BACKEND_FEDERATION_TIMEOUT_MS, SESSION_TREE_NAVIGATION_PROXY_TIMEOUT_MS, WORKSPACE_FILE_FEDERATION_TIMEOUT_MS, WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES, WORKSPACE_FILE_PREVIEW_ROUTE_PATH, WORKSPACE_REMOVAL_FEDERATION_TIMEOUT_MS, type FederatedHttpRouteSpec } from "../../../shared/federatedRoutes";
+import {
+  FEDERATED_HTTP_ROUTES,
+  FEDERATED_WEBSOCKET_ROUTES,
+  SESSION_TREE_FORK_PROXY_TIMEOUT_MS,
+  PLUGIN_BACKEND_FEDERATION_TIMEOUT_MS,
+  SESSION_TREE_NAVIGATION_PROXY_TIMEOUT_MS,
+  WORKSPACE_FILE_FEDERATION_TIMEOUT_MS,
+  WORKSPACE_FILE_JSON_RESPONSE_BODY_MAX_BYTES,
+  WORKSPACE_FILE_PREVIEW_ROUTE_PATH,
+  WORKSPACE_REMOVAL_FEDERATION_TIMEOUT_MS,
+  type FederatedHttpRouteSpec,
+} from "../../../shared/federatedRoutes";
 import { MAX_INLINE_PREVIEW_BYTES } from "../../../shared/workspaceFiles";
-import { PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS, PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS, PLUGIN_BACKEND_REQUEST_BODY_MAX_BYTES, PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES } from "../../../shared/pluginBackendProtocol";
+import {
+  PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS,
+  PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS,
+  PLUGIN_BACKEND_REQUEST_BODY_MAX_BYTES,
+  PLUGIN_BACKEND_RESPONSE_BODY_MAX_BYTES,
+} from "../../../shared/pluginBackendProtocol";
 import { configApi, machineStatusApi, noticesApi, piPackagesApi, piWebApi, pluginsApi, projectsApi, sessionsApi, trustApi, workspacesApi } from "./clients";
 import { globalSessionEvents, realtimeEvents, sessionEvents } from "./sockets";
 import { requestPairedPluginBackend } from "./pluginBackends";
@@ -134,9 +150,7 @@ describe("federated route contract", () => {
     expect(FEDERATED_HTTP_ROUTES.filter((route) => route.path.includes("plugin-backends"))).toEqual(
       PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS.map((path) => ({ ...boundedRequest, path })),
     );
-    expect(FEDERATED_WEBSOCKET_ROUTES.filter((path) => path.includes("plugin-backends"))).toEqual(
-      [...PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS],
-    );
+    expect(FEDERATED_WEBSOCKET_ROUTES.filter((path) => path.includes("plugin-backends"))).toEqual([...PAIRED_PLUGIN_BACKEND_CHANNEL_ROUTE_PATHS]);
   });
 
   it("allowlists only workspace trust reads and writes without adding a trust WebSocket", () => {
@@ -191,7 +205,13 @@ describe("federated route contract", () => {
       ignoreParseFailure(trustApi.workspaceTrust("p 1", "w 1", machineId)),
       ignoreParseFailure(trustApi.setWorkspaceTrust("p 1", "w 1", true, machineId)),
       ignoreParseFailure(trustApi.projectTrust("/repo", machineId)),
-      ignoreParseFailure(requestPairedPluginBackend({ pluginId: "board-tools", backendRevision: "server-r1", machineId, projectId: "p 1", workspaceId: "w 1" }, "cards.summary", { includeClosed: false })),
+      ignoreParseFailure(
+        requestPairedPluginBackend(
+          { pluginId: "board-tools", backendRevision: "server-r1", machineId, projectId: "p 1", workspaceId: "w 1" },
+          "cards.summary",
+          { includeClosed: false },
+        ),
+      ),
       ignoreParseFailure(sessionsApi.sessions("/repo", machineId)),
       ignoreParseFailure(sessionsApi.unreadCatalog(machineId)),
       ignoreParseFailure(sessionsApi.acknowledgeUnread(session, "catalog-a", 7, machineId)),
@@ -207,7 +227,9 @@ describe("federated route contract", () => {
       ignoreParseFailure(sessionsApi.promoteAllQueuedMessages(session, machineId)),
       ignoreParseFailure(sessionsApi.transcriptSnapshot(session, { limit: 20 }, machineId)),
       ignoreParseFailure(sessionsApi.clearQueue(session, machineId)),
-      ignoreParseFailure(sessionsApi.mutateQueuedMessage(session, { action: "remove", index: 0, expectedQueue: [{ kind: "steer", text: "adjust" }] }, machineId)),
+      ignoreParseFailure(
+        sessionsApi.mutateQueuedMessage(session, { action: "remove", index: 0, expectedQueue: [{ kind: "steer", text: "adjust" }] }, machineId),
+      ),
       ignoreParseFailure(sessionsApi.dismissWarning(session, "anthropicExtraUsage", machineId)),
       ignoreParseFailure(sessionsApi.submitAsk(session, "ask 1", { answers: [{ id: "q1", values: ["pg"] }] }, machineId)),
       ignoreParseFailure(sessionsApi.cancelAsk(session, "ask 1", machineId)),
@@ -224,7 +246,14 @@ describe("federated route contract", () => {
       ignoreParseFailure(sessionsApi.cycleThinkingLevel(session, machineId)),
       ignoreParseFailure(sessionsApi.commands(session, machineId)),
       ignoreParseFailure(sessionsApi.prompt(session, "hello", "followUp", machineId)),
-      ignoreParseFailure(sessionsApi.saveAttachments(session, [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }], machineId, "uploads")),
+      ignoreParseFailure(
+        sessionsApi.saveAttachments(
+          session,
+          [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }],
+          machineId,
+          "uploads",
+        ),
+      ),
       ignoreParseFailure(sessionsApi.shell(session, "ls", machineId)),
       ignoreParseFailure(sessionsApi.runCommand(session, "/help", machineId)),
       ignoreParseFailure(sessionsApi.respondToCommand(session, "req 1", "yes", machineId)),
@@ -317,8 +346,9 @@ function matchesHttpRoute(route: ObservedHttpRoute, specs: readonly FederatedHtt
 function pathMatchesPattern(path: string, pattern: string): boolean {
   const pathSegments = path.split("/").filter((segment) => segment !== "");
   const patternSegments = pattern.split("/").filter((segment) => segment !== "");
-  return pathSegments.length === patternSegments.length
-    && patternSegments.every((segment, index) => segment.startsWith(":") || segment === pathSegments[index]);
+  return (
+    pathSegments.length === patternSegments.length && patternSegments.every((segment, index) => segment.startsWith(":") || segment === pathSegments[index])
+  );
 }
 
 function uniqueHttpRoutes(routes: ObservedHttpRoute[]): ObservedHttpRoute[] {

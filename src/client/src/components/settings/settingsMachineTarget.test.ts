@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Machine } from "../../api";
 import { PI_WEB_CAPABILITIES } from "../../../../shared/capabilities";
-import { friendlySelectedMachineSettingsErrorMessage, pluginLifecycleSupport, pluginLifecycleUnavailableMessage, settingsMachineTarget, settingsMachineTargetLabel } from "./settingsMachineTarget";
+import {
+  friendlySelectedMachineSettingsErrorMessage,
+  pluginLifecycleSupport,
+  pluginLifecycleUnavailableMessage,
+  settingsMachineTarget,
+  settingsMachineTargetLabel,
+} from "./settingsMachineTarget";
 
 const remoteMachine: Machine = {
   id: "remote-a",
@@ -38,8 +44,12 @@ describe("selected-machine settings target helpers", () => {
   it("scopes remote reachability errors to selected-machine settings", () => {
     const target = settingsMachineTarget(remoteMachine);
 
-    expect(friendlySelectedMachineSettingsErrorMessage("Remote machine unavailable", target)).toBe("Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again.");
-    expect(friendlySelectedMachineSettingsErrorMessage("Remote machine timeout", target)).toBe("Timed out while contacting Lab Mac for selected-machine settings. The operation may still be running remotely; reload before retrying.");
+    expect(friendlySelectedMachineSettingsErrorMessage("Remote machine unavailable", target)).toBe(
+      "Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again.",
+    );
+    expect(friendlySelectedMachineSettingsErrorMessage("Remote machine timeout", target)).toBe(
+      "Timed out while contacting Lab Mac for selected-machine settings. The operation may still be running remotely; reload before retrying.",
+    );
     expect(friendlySelectedMachineSettingsErrorMessage("Not Found", target)).toBe("Not Found");
     expect(friendlySelectedMachineSettingsErrorMessage("Not Found", { id: "local", name: "local", kind: "local" })).toBe("Not Found");
   });

@@ -19,7 +19,10 @@ describe("messageHistoryTargetId", () => {
       user,
       assistant(),
       result("result-2", "call-2", true),
-      { ...result("result-1", "call-1"), message: { ...result("result-1", "call-1").message, content: [{ type: "image", mimeType: "image/png", data: "aW1hZ2U=" }] } },
+      {
+        ...result("result-1", "call-1"),
+        message: { ...result("result-1", "call-1").message, content: [{ type: "image", mimeType: "image/png", data: "aW1hZ2U=" }] },
+      },
       { id: "name", type: "session_info" },
       { id: "system", type: "message", message: { role: "system", content: "Technical notice" } },
       { id: "shell", type: "message", message: { role: "bashExecution", output: "Recorded shell output" } },
@@ -61,36 +64,61 @@ describe("messageHistoryTargetId", () => {
   });
 
   it("treats thinking and text within one stored message as one checkpoint", () => {
-    const branch = [assistant("combined", [
-      { type: "thinking", thinking: "Considering user testing messages" },
-      { type: "text", text: "Test message 8/10 — Emoji and Unicode" },
-      { type: "toolCall", id: "call", name: "bash", arguments: { command: "printf test" } },
-    ]), result("result", "call"), laterAssistant];
+    const branch = [
+      assistant("combined", [
+        { type: "thinking", thinking: "Considering user testing messages" },
+        { type: "text", text: "Test message 8/10 — Emoji and Unicode" },
+        { type: "toolCall", id: "call", name: "bash", arguments: { command: "printf test" } },
+      ]),
+      result("result", "call"),
+      laterAssistant,
+    ];
     expect(messageHistoryTargetId(branch, "combined")).toBe("result");
   });
 
   it("retains a question result without its previous answers or subsequent tool-only work", () => {
-    const question = { id: "question", type: "message", message: {
-      role: "toolResult", toolName: "ask_user", isError: false, details: { ask: { askId: "ask-1" } },
-    } };
-    const branch = [user, question,
+    const question = {
+      id: "question",
+      type: "message",
+      message: {
+        role: "toolResult",
+        toolName: "ask_user",
+        isError: false,
+        details: { ask: { askId: "ask-1" } },
+      },
+    };
+    const branch = [
+      user,
+      question,
       { id: "answer", type: "custom_message", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, display: true },
       assistant("technical", [{ type: "toolCall", id: "call", name: "read" }]),
-      result("result", "call"), laterAssistant];
+      result("result", "call"),
+      laterAssistant,
+    ];
     expect(messageHistoryTargetId(branch, "question")).toBe("question");
     expect(messageHistoryTargetId([user, question], "question")).toBe("question");
   });
 
   it.each([false, true])("retains the question but not its answer when selecting its agent message (combined: %s)", (combined) => {
     const call = { type: "toolCall", id: "ask-call", name: "ask_user", arguments: { questions: [] } };
-    const question = { id: "question", type: "message", message: {
-      role: "toolResult", toolName: "ask_user", isError: false, details: { ask: { askId: "ask-1" } },
-    } };
+    const question = {
+      id: "question",
+      type: "message",
+      message: {
+        role: "toolResult",
+        toolName: "ask_user",
+        isError: false,
+        details: { ask: { askId: "ask-1" } },
+      },
+    };
     const answer = { id: "answer", type: "custom_message", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, display: true };
-    const branch = [user,
+    const branch = [
+      user,
       assistant("agent", [{ type: "text", text: "Which option?" }, ...(combined ? [call] : [])]),
       ...(combined ? [] : [assistant("ask-call", [call])]),
-      question, answer, laterAssistant,
+      question,
+      answer,
+      laterAssistant,
     ];
     expect(messageHistoryTargetId(branch, "agent")).toBe("question");
     expect(messageHistoryTargetId(branch, "question")).toBe("question");
@@ -110,7 +138,6 @@ describe("messageHistoryTargetId", () => {
   });
 
   it("rejects a message absent from the supplied active branch rather than choosing another branch", () => {
-    expect(() => messageHistoryTargetId([user, assistant()], "other-branch"))
-      .toThrow("no longer available on the active session branch");
+    expect(() => messageHistoryTargetId([user, assistant()], "other-branch")).toThrow("no longer available on the active session branch");
   });
 });

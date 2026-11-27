@@ -21,17 +21,21 @@ describe("canRemoveMachine", () => {
 
 it("shows native remote-machine actions and reconciles dismissal before reopening", async () => {
   const list = await mountMachineList([machine("local", "local"), machine("remote-a", "remote")]);
-  list.onRemove = () => undefined; await list.updateComplete;
+  list.onRemove = () => undefined;
+  await list.updateComplete;
   const trigger = rowFor(list, "remote-a").querySelector<HTMLButtonElement>(".action-menu-toggle");
   if (!trigger) throw new Error("Missing remote actions trigger");
-  trigger.click(); await list.updateComplete;
+  trigger.click();
+  await list.updateComplete;
   const panel = list.shadowRoot?.querySelector<HTMLElement>("[popover]");
   expect(panel?.getRootNode()).toBe(list.shadowRoot);
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
-  panel?.hidePopover(); await list.updateComplete;
+  panel?.hidePopover();
+  await list.updateComplete;
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(list.shadowRoot?.querySelector("[popover]")).toBeNull();
-  trigger.click(); await list.updateComplete;
+  trigger.click();
+  await list.updateComplete;
   expect(list.shadowRoot?.querySelector("[popover]")).not.toBeNull();
 });
 
@@ -65,13 +69,10 @@ describe("machine status indicator", () => {
   });
 
   it("wraps the work dot in an unread ring when a machine is busy and unread", async () => {
-    const list = await mountMachineList(
-      [machine("local", "local"), machine("remote-a", "remote")],
-      {
-        local: machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
-        "remote-a": machineStatusSnapshot({ machine: { "core:terminal": true, "core:unread": true } }),
-      },
-    );
+    const list = await mountMachineList([machine("local", "local"), machine("remote-a", "remote")], {
+      local: machineStatusSnapshot({ machine: { "core:working": true, "core:unread": true } }),
+      "remote-a": machineStatusSnapshot({ machine: { "core:terminal": true, "core:unread": true } }),
+    });
 
     const localRing = rowFor(list, "local").querySelector(".unread-ring");
     expect(localRing?.querySelector(".activity-indicator.session")).not.toBeNull();
@@ -86,10 +87,9 @@ describe("machine status indicator", () => {
   });
 
   it("shows no indicator at all for a machine that publishes no snapshot", async () => {
-    const list = await mountMachineList(
-      [machine("local", "local"), machine("remote-a", "remote")],
-      { "remote-a": machineStatusSnapshot({ machine: { "core:working": true } }) },
-    );
+    const list = await mountMachineList([machine("local", "local"), machine("remote-a", "remote")], {
+      "remote-a": machineStatusSnapshot({ machine: { "core:working": true } }),
+    });
 
     expect(rowFor(list, "local").querySelector(".activity-indicator")).toBeNull();
     expect(rowFor(list, "remote-a").querySelector(".activity-indicator.session")).not.toBeNull();

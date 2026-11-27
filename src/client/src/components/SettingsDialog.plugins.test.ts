@@ -2,7 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PI_WEB_CAPABILITIES } from "../../../shared/capabilities";
 import { configApi, pluginsApi, type PiWebConfigResponse, type PiWebPluginsResponse } from "../api";
 import { SettingsDialog } from "./SettingsDialog";
-import { callDialogPromise, callDialogUpdated, configResponse, deferred, getDialogProperty, pluginInfo, pluginsResponse, remoteMachine, secondRemoteMachine, setDialogProperty, stubWindowTimers } from "./SettingsDialog.testSupport";
+import {
+  callDialogPromise,
+  callDialogUpdated,
+  configResponse,
+  deferred,
+  getDialogProperty,
+  pluginInfo,
+  pluginsResponse,
+  remoteMachine,
+  secondRemoteMachine,
+  setDialogProperty,
+  stubWindowTimers,
+} from "./SettingsDialog.testSupport";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -93,7 +105,9 @@ describe("settings-dialog plugin settings machine targeting", () => {
 
     expect(getDialogProperty(dialog, "selectedPluginConfigResponse")).toBe(config);
     expect(getDialogProperty(dialog, "selectedPluginsResponse")).toBeUndefined();
-    expect(getDialogProperty(dialog, "pluginError")).toBe("Failed to load PI WEB plugin settings from Lab Mac (remote machine): PI WEB plugins: route GET:/api/plugins not found");
+    expect(getDialogProperty(dialog, "pluginError")).toBe(
+      "Failed to load PI WEB plugin settings from Lab Mac (remote machine): PI WEB plugins: route GET:/api/plugins not found",
+    );
     expect(getDialogProperty(dialog, "pluginLoading")).toBe(false);
   });
 
@@ -120,15 +134,17 @@ describe("settings-dialog plugin settings machine targeting", () => {
 
     await callDialogPromise(dialog, "togglePlugin", "info", false);
 
-    expect(saveSpy.mock.calls).toEqual([[
-      {
-        plugins: {
-          keep: { enabled: true, settings: { level: 1 } },
-          info: { enabled: false, settings: { color: "blue" } },
+    expect(saveSpy.mock.calls).toEqual([
+      [
+        {
+          plugins: {
+            keep: { enabled: true, settings: { level: 1 } },
+            info: { enabled: false, settings: { color: "blue" } },
+          },
         },
-      },
-      "remote-a",
-    ]]);
+        "remote-a",
+      ],
+    ]);
     expect(pluginsSpy.mock.calls).toEqual([["remote-a"]]);
     expect(getDialogProperty(dialog, "selectedPluginConfigResponse")).toBe(savedConfig);
     expect(getDialogProperty(dialog, "selectedPluginsResponse")).toBe(refreshedPlugins);

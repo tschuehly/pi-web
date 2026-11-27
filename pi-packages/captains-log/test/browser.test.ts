@@ -23,11 +23,16 @@ it("retains shared UI on the host root across rerenders and releases on disconne
   const integration = { registerRoot: vi.fn(() => release), subscribe: vi.fn(), createController: vi.fn() };
   const lifetime = new AbortController();
   const activation = await plugin.activate({
-    apiVersion: 4, pluginId: "captains-log", runtimePluginId: "captains-log", html, svg,
-    signal: new AbortController().signal, lifetimeSignal: lifetime.signal,
+    apiVersion: 4,
+    pluginId: "captains-log",
+    runtimePluginId: "captains-log",
+    html,
+    svg,
+    signal: new AbortController().signal,
+    lifetimeSignal: lifetime.signal,
   });
   await activation.start?.({
-    capabilities: { resolve: <Value,>(capability: PluginCapability<Value>): Value => capability.parse(integration) },
+    capabilities: { resolve: <Value>(capability: PluginCapability<Value>): Value => capability.parse(integration) },
     signal: new AbortController().signal,
   });
   const panel = activation.contributions.workspacePanels?.[0];
@@ -35,9 +40,11 @@ it("retains shared UI on the host root across rerenders and releases on disconne
   const noop = () => undefined;
   const unavailable = () => Promise.reject(new Error("unavailable"));
   const context: WorkspacePanelContext = {
-    navigate: () => Promise.resolve(), machine: { id: "local", name: "Local", kind: "local" },
+    navigate: () => Promise.resolve(),
+    machine: { id: "local", name: "Local", kind: "local" },
     workspace: { id: "main", projectId: "project", path: "/repo", label: "main", isMain: true },
-    state: { mainView: "workspace" }, host: { requestRender: noop },
+    state: { mainView: "workspace" },
+    host: { requestRender: noop },
     files: { readFile: unavailable, listFiles: unavailable, writeFile: unavailable, deleteFile: unavailable, moveFile: unavailable },
     prompt: { insertText: noop, getText: () => "", getSelection: () => null },
     terminal: { open: noop, runCommand: unavailable },

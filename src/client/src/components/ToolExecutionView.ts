@@ -23,11 +23,16 @@ export interface ToolRowSummary {
 
 export function toolActionLabel(name: string): string {
   switch (name) {
-    case "bash": return "Ran bash command";
-    case "subagent": return "Dispatched subagent";
-    case "worker_dispatch": return "Dispatched worker";
-    case "report_status": return "Reported status";
-    default: return name;
+    case "bash":
+      return "Ran bash command";
+    case "subagent":
+      return "Dispatched subagent";
+    case "worker_dispatch":
+      return "Dispatched worker";
+    case "report_status":
+      return "Reported status";
+    default:
+      return name;
   }
 }
 
@@ -76,8 +81,7 @@ export class ToolExecutionView extends LitElement {
     const diffStats = this.diffStats;
     const previewMismatch = actualDiff !== undefined && preview?.diff !== undefined && actualDiff !== preview.diff;
     const errorText = execution.status === "error" ? execution.resultText : preview?.error;
-    const bodyText = this.orphan && execution.status === "error" ? undefined
-      : this.orphan || visibleDiff === undefined ? execution.resultText : undefined;
+    const bodyText = this.orphan && execution.status === "error" ? undefined : this.orphan || visibleDiff === undefined ? execution.resultText : undefined;
     const target = toolTarget(execution, path);
     const row = toolRowSummary(execution);
     const log = execution.toolName === "bash" ? logPath(execution.details) : undefined;
@@ -88,7 +92,13 @@ export class ToolExecutionView extends LitElement {
             <span class="status-icon" aria-hidden="true">${statusIcon(execution.status)}</span>
             ${this.renderHeaderTarget(target, row.argument)}
             ${row.result === undefined ? null : html`<span class="row-result">· ${row.result}</span>`}
-            ${log === undefined ? null : html`<bash-log-button .logPath=${log} .machineId=${this.machineId} @click=${(event: Event) => { event.preventDefault(); }}></bash-log-button>`}
+            ${
+              log === undefined
+                ? null
+                : html`<bash-log-button .logPath=${log} .machineId=${this.machineId} @click=${(event: Event) => {
+                    event.preventDefault();
+                  }}></bash-log-button>`
+            }
           </div>
           <div class="tool-meta">
             ${editCountLabel(execution) === undefined ? null : html`<span>${editCountLabel(execution)}</span>`}
@@ -134,13 +144,21 @@ export class ToolExecutionView extends LitElement {
         if (event.currentTarget instanceof HTMLDetailsElement) this.textOpen = event.currentTarget.open;
       }}>
         ${header === undefined ? html`<summary class="ui-transcript-disclosure">${renderDisclosureChevron()}Details</summary>` : html`<summary class="tool-header ui-transcript-heading">${renderDisclosureChevron()}${header}</summary>`}
-        ${expanded ? html`${this.renderExpandedTarget(target)}
-        ${text === undefined || text === "" ? null : html`
+        ${
+          expanded
+            ? html`${this.renderExpandedTarget(target)}
+        ${
+          text === undefined || text === ""
+            ? null
+            : html`
           <div class="detail-result">
             <span class="detail-label">Result</span>
             <pre>${text}</pre>
           </div>
-        `}` : null}
+        `
+        }`
+            : null
+        }
       </details>
     `;
   }
@@ -148,7 +166,9 @@ export class ToolExecutionView extends LitElement {
   private renderDiffBody(diff: string, label: string, target: ToolTarget | undefined) {
     const lineCount = this.diffStats?.lines ?? 0;
     return html`
-      <details class="diff-details" ?open=${this.diffOpen} @toggle=${(event: Event) => { this.onDiffToggle(event); }}>
+      <details class="diff-details" ?open=${this.diffOpen} @toggle=${(event: Event) => {
+        this.onDiffToggle(event);
+      }}>
         <summary class="ui-transcript-disclosure">
           ${renderDisclosureChevron()}<span>${label}</span>
           <small>${String(lineCount)} ${lineCount === 1 ? "line" : "lines"}</small>
@@ -166,14 +186,22 @@ export class ToolExecutionView extends LitElement {
         ${this.renderExpandedTarget(target)}
         <div class="diff-toolbar">
           <span>${truncated ? `Showing ${String(visibleLines.length)} of ${String(lines.length)} lines` : "Full diff"}</span>
-          <button class="ui-button ui-button--compact" type="button" @click=${() => { void this.copyDiff(diff); }}>${this.copied ? "Copied" : "Copy diff"}</button>
+          <button class="ui-button ui-button--compact" type="button" @click=${() => {
+            void this.copyDiff(diff);
+          }}>${this.copied ? "Copied" : "Copy diff"}</button>
         </div>
         <pre class="diff" aria-label=${label}><code class="diff-content">${visibleLines.map((line) => html`<span class=${diffLineClass(line)}>${line}</span>`)}</code></pre>
-        ${truncated ? html`
-          <button class="show-more ui-button ui-button--compact" type="button" @click=${() => { this.showFullDiff = true; }}>
+        ${
+          truncated
+            ? html`
+          <button class="show-more ui-button ui-button--compact" type="button" @click=${() => {
+            this.showFullDiff = true;
+          }}>
             Show all ${String(lines.length)} diff lines
           </button>
-        ` : null}
+        `
+            : null
+        }
     `;
   }
 
@@ -189,10 +217,16 @@ export class ToolExecutionView extends LitElement {
       return;
     }
     this.copied = true;
-    window.setTimeout(() => { this.copied = false; }, 1200);
+    window.setTimeout(() => {
+      this.copied = false;
+    }, 1200);
   }
 
-  static override styles = [uiButtonStyles, uiTranscriptStyles, diffLineStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiTranscriptStyles,
+    diffLineStyles,
+    css`
     :host { display: block; width: 100%; max-width: 100%; min-width: 0; color: var(--pi-text); }
     .tool-card { display: grid; width: 100%; max-width: 100%; min-width: 0; overflow: hidden; padding: 0; color: var(--pi-text); }
     .tool-card.running, .tool-card.pending { --ui-activity-tone: var(--pi-warning); }
@@ -233,7 +267,8 @@ export class ToolExecutionView extends LitElement {
     .diff { box-sizing: border-box; width: calc(100% - 12px - var(--ui-transcript-inline-start, 12px)); max-width: 100%; min-width: 0; margin: 0 12px 0 var(--ui-transcript-inline-start, 12px); overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; border: 1px solid var(--pi-border-muted); border-radius: 0; background: var(--pi-bg); padding: 8px 0; color: var(--pi-muted); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); line-height: 1.45; }
     .diff-content { display: block; width: max-content; min-width: 100%; }
     .show-more { justify-self: start; margin-inline: var(--ui-transcript-inline-start, 12px) 12px; }
-  `];
+  `,
+  ];
 }
 
 function toolTarget(execution: ToolExecutionPart, path: string | undefined): ToolTarget | undefined {
@@ -253,7 +288,12 @@ function logPath(details: unknown): string | undefined {
 function toolArgumentSummary(execution: ToolExecutionPart): string {
   const path = pathFromArgs(execution.args);
   if ((execution.toolName === "read" || execution.toolName === "edit" || execution.toolName === "write") && path !== undefined) {
-    return path.replace(/\\/g, "/").split("/").filter((segment) => segment !== "").slice(-2).join("/");
+    return path
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter((segment) => segment !== "")
+      .slice(-2)
+      .join("/");
   }
   const description = getString(execution.args, "description")?.replace(/\s+/g, " ").trim();
   if (execution.toolName === "bash" && description !== undefined && description !== "") return truncate(description, 70);

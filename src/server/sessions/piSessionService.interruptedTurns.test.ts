@@ -4,7 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DAEMON_RESTART_CUSTOM_TYPE } from "./interruptedTurns.js";
 import { PiSessionService, type PiSessionRuntime } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const SHUTDOWN_AT = "2026-03-01T12:00:00.000Z";
 let dir: string;
@@ -14,7 +22,9 @@ beforeEach(async () => {
   dir = await mkdtemp(join(process.env["PI_TMP"] ?? tmpdir(), "pi-web-interrupted-turns-"));
   recordFile = join(dir, "interrupted-turns.json");
 });
-afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
 
 /** A daemon whose sessions open, in order, onto the given fake runtimes. */
 function daemon(sessionIds: string[], runtimes: PiSessionRuntime[]) {
@@ -62,13 +72,16 @@ describe("resume after a daemon restart", () => {
   });
 
   it("startup consumes the record once, wakes each reopenable session with one system message, and skips the rest", async () => {
-    await writeFile(recordFile, JSON.stringify({
-      shutdownAt: SHUTDOWN_AT,
-      sessions: [
-        { sessionId: "gone", cwd: "/workspace" },
-        { sessionId: "busy", cwd: "/workspace", sessionFile: join(dir, "missing.jsonl") },
-      ],
-    }));
+    await writeFile(
+      recordFile,
+      JSON.stringify({
+        shutdownAt: SHUTDOWN_AT,
+        sessions: [
+          { sessionId: "gone", cwd: "/workspace" },
+          { sessionId: "busy", cwd: "/workspace", sessionFile: join(dir, "missing.jsonl") },
+        ],
+      }),
+    );
     const busy = fakeRuntime("busy");
     const service = daemon(["busy"], [busy.runtime]);
 
@@ -80,7 +93,7 @@ describe("resume after a daemon restart", () => {
     expect(delivered?.message).toMatchObject({ customType: DAEMON_RESTART_CUSTOM_TYPE, display: true });
     expect(delivered?.message.content).toBe(
       `The PI WEB session daemon restarted at ${SHUTDOWN_AT}; your previous turn was interrupted. `
-      + "Check what had finished (files, background jobs, subagents) before continuing, then continue where you left off.",
+        + "Check what had finished (files, background jobs, subagents) before continuing, then continue where you left off.",
     );
     expect(delivered?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
     expect(busy.calls.prompt).toEqual([]);

@@ -17,17 +17,24 @@ export const tile = (page: Page) => page.locator(`section.tile[data-session="${i
 export const editor = (page: Page) => tile(page).locator("prompt-editor .cm-content");
 export const chat = (page: Page) => tile(page).locator("chat-view");
 export const id = (page: Page) => new URL(page.url()).searchParams.get("session")!;
-export const url = (session?: string) => `${base()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"]!, ...(session === undefined ? {} : { session, view: "chat" }) })}`;
+export const url = (session?: string) =>
+  `${base()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"]!, ...(session === undefined ? {} : { session, view: "chat" }) })}`;
 export const endpoint = (session: string, path: string) => `${base()}api/sessions/${encodeURIComponent(session)}/${path}`;
 export const query = (extra: Record<string, string> = {}) => new URLSearchParams({ cwd: project(), ...extra }).toString();
-export const get = (page: Page, session: string, path: string, extra: Record<string, string> = {}) => page.request.get(`${endpoint(session, path)}?${query(extra)}`);
-export const post = (page: Page, session: string, path: string, data: object = {}) => page.request.post(endpoint(session, path), { data: { cwd: project(), ...data } });
+export const get = (page: Page, session: string, path: string, extra: Record<string, string> = {}) =>
+  page.request.get(`${endpoint(session, path)}?${query(extra)}`);
+export const post = (page: Page, session: string, path: string, data: object = {}) =>
+  page.request.post(endpoint(session, path), { data: { cwd: project(), ...data } });
 export const status = async (page: Page, session = id(page)): Promise<SessionStatus> => (await get(page, session, "status")).json();
-export const asks = async (page: Page, session = id(page)): Promise<{ pendingAsks: PendingAskUser[]; attentionRequest?: SessionAttentionRequest }> => (await get(page, session, "asks")).json();
-export const messages = async (page: Page, session = id(page)): Promise<{ messages: { role: string; content: unknown }[]; start: number; total: number }> => (await get(page, session, "messages")).json();
+export const asks = async (page: Page, session = id(page)): Promise<{ pendingAsks: PendingAskUser[]; attentionRequest?: SessionAttentionRequest }> =>
+  (await get(page, session, "asks")).json();
+export const messages = async (page: Page, session = id(page)): Promise<{ messages: { role: string; content: unknown }[]; start: number; total: number }> =>
+  (await get(page, session, "messages")).json();
 
 export async function chooseModel(page: Page, model: { provider: string; id: string } = MOCK_CLAUDE_MODEL): Promise<void> {
-  await tile(page).getByRole("button", { name: /^Model: / }).click();
+  await tile(page)
+    .getByRole("button", { name: /^Model: / })
+    .click();
   await page.getByRole("combobox", { name: "Search models" }).fill(`${model.provider}/${model.id}`); // the id alone also matches openai/gpt-6-luna
   await page.getByRole("listbox", { name: "Models" }).getByRole("option", { name: model.id, exact: true }).first().click();
   await expect(tile(page).getByRole("button", { name: new RegExp(`^Model: ${model.provider}/${model.id}`) })).toBeVisible();
@@ -62,16 +69,36 @@ export async function killHost(page: Page, session = id(page)): Promise<void> {
   expect(owned, `one host owned by ${store}`).toHaveLength(1);
   const pid = Number(owned[0]!.trim().split(/\s+/)[0]);
   process.kill(pid, "SIGKILL");
-  await expect.poll(() => { try { process.kill(pid, 0); return true; } catch { return false; } }).toBe(false);
+  await expect
+    .poll(() => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .toBe(false);
   await expect.poll(async () => (await get(page, session, "status")).ok()).toBe(true);
 }
 export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64");
 export const PNG_BLUE = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC", "base64");
 export const image = (name = "first.png", reference = "[PIC_1]") => ({ kind: "image", mimeType: "image/png", data: PNG.toString("base64"), name, reference });
-export const ASK = { context: "Choose the deployment target.", questions: [
-  { id: "target", question: "Which target?", detail: "Where the build deploys.", options: [{ value: "prod", label: "Production" }, { value: "stage", label: "Staging" }] },
-  { id: "checks", question: "Which checks?", detail: "What runs before the deploy.", options: [{ value: "unit", label: "Unit tests" }] },
-] };
+export const ASK = {
+  context: "Choose the deployment target.",
+  questions: [
+    {
+      id: "target",
+      question: "Which target?",
+      detail: "Where the build deploys.",
+      options: [
+        { value: "prod", label: "Production" },
+        { value: "stage", label: "Staging" },
+      ],
+    },
+    { id: "checks", question: "Which checks?", detail: "What runs before the deploy.", options: [{ value: "unit", label: "Unit tests" }] },
+  ],
+};
 export async function scriptAsk(marker: string, extra = {}): Promise<void> {
   await mock.script({ match: marker, turns: [[{ toolCall: { name: "ask_user", args: { ...ASK, ...extra } } }], "Question posted."] });
 }
@@ -81,14 +108,20 @@ export async function fixtureFile(relative: string, content: string | Buffer): P
   await writeFile(path, content);
 }
 export async function installResources(): Promise<void> {
-  await fixtureFile("agent/skills/fleet-check/SKILL.md", "---\nname: fleet-check\ndescription: Fleet skill fixture\n---\nFLEET_SKILL_BODY. Read references/detail.md.\n");
+  await fixtureFile(
+    "agent/skills/fleet-check/SKILL.md",
+    "---\nname: fleet-check\ndescription: Fleet skill fixture\n---\nFLEET_SKILL_BODY. Read references/detail.md.\n",
+  );
   await fixtureFile("agent/skills/fleet-check/references/detail.md", "Fixture detail.\n");
-  for (const name of ["execute-plan-afk", "execute-plan-attended"]) await fixtureFile(`agent/prompts/${name}.md`, `---\ndescription: Fleet ${name}\nargument-hint: <plan>\n---\nFLEET_TEMPLATE_${name}: $ARGUMENTS\n`);
+  for (const name of ["execute-plan-afk", "execute-plan-attended"])
+    await fixtureFile(`agent/prompts/${name}.md`, `---\ndescription: Fleet ${name}\nargument-hint: <plan>\n---\nFLEET_TEMPLATE_${name}: $ARGUMENTS\n`);
 }
 export function setup(): void {
   test.setTimeout(45_000);
   test.beforeAll(installResources);
-  test.beforeEach(async () => { await mock.reset(); });
+  test.beforeEach(async () => {
+    await mock.reset();
+  });
   test.afterEach(async ({ page }, info) => {
     const journal = await mock.journal();
     await info.attach("mock-journal", { body: JSON.stringify(journal, null, 2), contentType: "application/json" });
@@ -104,7 +137,9 @@ export function setup(): void {
       }
     }
     // Stop only this harness's hosts, including held model requests, before the next mock reset.
-    const records = JSON.parse(await readFile(join(root(), "data/session-runtimes.json"), "utf8").catch(() => '{"chats":{}}')) as { chats: Record<string, { cwd: string }> };
+    const records = JSON.parse(await readFile(join(root(), "data/session-runtimes.json"), "utf8").catch(() => '{"chats":{}}')) as {
+      chats: Record<string, { cwd: string }>;
+    };
     await Promise.all(Object.entries(records.chats).map(([session, record]) => post(page, session, "stop", { cwd: record.cwd })));
   });
 }

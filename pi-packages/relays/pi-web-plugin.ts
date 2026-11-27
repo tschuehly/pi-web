@@ -4,7 +4,9 @@ import { relayIdentityFromMetadata } from "./relayIdentity.js";
 import { defineRelaysPanelElement, RELAY_SELECTION_QUERY_KEY } from "./relaysPanelElement.js";
 
 const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCapabilityV1, 1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse(value) {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Stylesheet integration capability v1 requires registerRoot and createController");
@@ -14,10 +16,16 @@ const stylesheetIntegrationCapability: PluginCapability<StylesheetIntegrationCap
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "createController" in value && typeof value.createController === "function"
-    && "subscribe" in value && typeof value.subscribe === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+  );
 }
 
 const plugin = {
@@ -52,25 +60,31 @@ const plugin = {
             items: (context) => {
               const identity = relayIdentityFromMetadata(context.session.metadata);
               if (identity === undefined) return [];
-              return [{
-                type: "render",
-                render: () => html`
+              return [
+                {
+                  type: "render",
+                  render: () => html`
                   <button
                     type="button"
                     style="border:0; padding:0; background:transparent; color:var(--pi-accent); font:inherit; text-align:start; overflow-wrap:anywhere; cursor:pointer"
                     title=${identity.packetPath}
                     aria-label=${`Open Relay ${identity.relayName}, leg ${identity.leg}`}
-                    @click=${() => context.navigate({
-                      machineId: context.machine.id,
-                      projectId: context.workspace.projectId,
-                      workspaceId: context.workspace.id,
-                      view: "workspace",
-                      tool: `${runtimePluginId}:workspace.relays`,
-                      query: { [RELAY_SELECTION_QUERY_KEY]: identity.packetPath },
-                    }, { mode: "patch" })}
+                    @click=${() =>
+                      context.navigate(
+                        {
+                          machineId: context.machine.id,
+                          projectId: context.workspace.projectId,
+                          workspaceId: context.workspace.id,
+                          view: "workspace",
+                          tool: `${runtimePluginId}:workspace.relays`,
+                          query: { [RELAY_SELECTION_QUERY_KEY]: identity.packetPath },
+                        },
+                        { mode: "patch" },
+                      )}
                   >relay</button>
                 `,
-              }];
+                },
+              ];
             },
           },
         ],

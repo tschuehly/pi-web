@@ -60,7 +60,9 @@ describe("MachineController", () => {
       selectedSession: session,
       error: "stale error",
     };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
     const input = { name: "New Remote", baseUrl: "https://new-remote.example.test", token: "secret-token" };
@@ -101,7 +103,9 @@ describe("MachineController", () => {
       selectedMachine: localMachine,
       machineStatusSnapshots: { local: snapshot },
     };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     vi.spyOn(api, "health").mockResolvedValue({ machineId: remoteMachine.id, ok: true, checkedAt: "2026-05-27T00:00:01.000Z", status: "online" });
     vi.spyOn(api, "runtime").mockResolvedValue({ machineId: remoteMachine.id, ok: true, checkedAt: "2026-05-27T00:00:02.000Z" });
     const controller = new MachineController(() => state, setState, vi.fn(), { loadProjects: vi.fn() });
@@ -114,23 +118,19 @@ describe("MachineController", () => {
 
   it("publishes a newly added machine through the injected navigation boundary", async () => {
     let state: AppState = { ...initialAppState(), machines: [localMachine], selectedMachine: localMachine };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const selectedAtNavigation: string[] = [];
     const projects = { loadProjects: vi.fn() };
-    const controller = new MachineController(
-      () => state,
-      setState,
-      vi.fn(),
-      projects,
-      {
-        navigateToMachine: (machine, options) => {
-          selectedAtNavigation.push(state.selectedMachine?.id ?? "missing");
-          expect(options?.expected).toEqual({ machineId: "local", projectId: undefined, workspaceId: undefined, sessionId: undefined });
-          state = { ...state, selectedMachine: machine };
-          return Promise.resolve(true);
-        },
+    const controller = new MachineController(() => state, setState, vi.fn(), projects, {
+      navigateToMachine: (machine, options) => {
+        selectedAtNavigation.push(state.selectedMachine?.id ?? "missing");
+        expect(options?.expected).toEqual({ machineId: "local", projectId: undefined, workspaceId: undefined, sessionId: undefined });
+        state = { ...state, selectedMachine: machine };
+        return Promise.resolve(true);
       },
-    );
+    });
     vi.spyOn(api, "addMachine").mockResolvedValue(addedMachine);
 
     await controller.addMachine({ name: addedMachine.name, baseUrl: addedMachine.baseUrl ?? "" });
@@ -142,23 +142,19 @@ describe("MachineController", () => {
 
   it("publishes a fallback machine through the injected navigation boundary after removal", async () => {
     let state: AppState = { ...initialAppState(), machines: [localMachine, remoteMachine], selectedMachine: remoteMachine };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const selectedAtNavigation: string[] = [];
     const projects = { loadProjects: vi.fn() };
-    const controller = new MachineController(
-      () => state,
-      setState,
-      vi.fn(),
-      projects,
-      {
-        navigateToMachine: (machine, options) => {
-          selectedAtNavigation.push(state.selectedMachine?.id ?? "missing");
-          expect(options?.expected?.machineId).toBe(remoteMachine.id);
-          state = { ...state, selectedMachine: machine };
-          return Promise.resolve(true);
-        },
+    const controller = new MachineController(() => state, setState, vi.fn(), projects, {
+      navigateToMachine: (machine, options) => {
+        selectedAtNavigation.push(state.selectedMachine?.id ?? "missing");
+        expect(options?.expected?.machineId).toBe(remoteMachine.id);
+        state = { ...state, selectedMachine: machine };
+        return Promise.resolve(true);
       },
-    );
+    });
     vi.spyOn(api, "deleteMachine").mockResolvedValue({ deleted: true });
 
     await controller.deleteMachine(remoteMachine);
@@ -171,9 +167,15 @@ describe("MachineController", () => {
 
   it("follows a deletion when the user selects the removed machine while the request is pending", async () => {
     let state: AppState = { ...initialAppState(), machines: [localMachine, remoteMachine], selectedMachine: localMachine };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     let resolveDelete: (() => void) | undefined;
-    const deleteRequest = new Promise<{ deleted: true }>((resolve) => { resolveDelete = () => { resolve({ deleted: true }); }; });
+    const deleteRequest = new Promise<{ deleted: true }>((resolve) => {
+      resolveDelete = () => {
+        resolve({ deleted: true });
+      };
+    });
     const navigationExpected: { machineId: string | undefined; selectedMachineId: string | undefined }[] = [];
     const controller = new MachineController(
       () => state,
@@ -202,7 +204,9 @@ describe("MachineController", () => {
 
   it("preserves the current machine state when adding a machine fails", async () => {
     let state: AppState = { ...initialAppState(), machines: [localMachine], selectedMachine: localMachine };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
     const input = { name: "New Remote", baseUrl: "https://new-remote.example.test" };
@@ -227,16 +231,18 @@ describe("MachineController", () => {
 
   it("keeps the routed remote machine selected while its health is offline", async () => {
     let state: AppState = initialAppState();
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
 
     vi.spyOn(api, "machines").mockResolvedValue([localMachine, remoteMachine]);
-    vi.spyOn(api, "health").mockImplementation((machineId: string) => Promise.resolve(
-      machineId === remoteMachine.id
-        ? offlineHealth
-        : { machineId: "local", ok: true, checkedAt: "2026-05-26T00:00:01.000Z", status: "online" },
-    ));
+    vi.spyOn(api, "health").mockImplementation((machineId: string) =>
+      Promise.resolve(
+        machineId === remoteMachine.id ? offlineHealth : { machineId: "local", ok: true, checkedAt: "2026-05-26T00:00:01.000Z", status: "online" },
+      ),
+    );
 
     const controller = new MachineController(() => state, setState, updateUrl, projects);
 
@@ -250,7 +256,9 @@ describe("MachineController", () => {
 
   it("records offline health without falling back when the routed remote health request rejects", async () => {
     let state: AppState = initialAppState();
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
 
@@ -262,14 +270,21 @@ describe("MachineController", () => {
     await controller.loadMachines(remoteMachine.id);
 
     expect(state.selectedMachine).toEqual(remoteMachine);
-    expect(state.machineStatuses[remoteMachine.id]).toMatchObject({ machineId: remoteMachine.id, ok: false, status: "offline", error: "Internal Server Error" });
+    expect(state.machineStatuses[remoteMachine.id]).toMatchObject({
+      machineId: remoteMachine.id,
+      ok: false,
+      status: "offline",
+      error: "Internal Server Error",
+    });
     expect(state.error).toBe("");
     expect(state.browserErrors[browserErrorScopeKey(machineBrowserErrorScope(remoteMachine.id))]?.message).toBe("Remote is unavailable; reconnecting…");
   });
 
   it("reports the local-machine removal restriction under the local machine", async () => {
     let state: AppState = { ...initialAppState(), selectedMachine: localMachine, error: "A global failure" };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const controller = new MachineController(() => state, setState, vi.fn(), { loadProjects: vi.fn() });
 
     await controller.deleteMachine(localMachine);
@@ -280,7 +295,9 @@ describe("MachineController", () => {
 
   it("reports refresh failures under the affected machine without overwriting a global error", async () => {
     let state: AppState = { ...initialAppState(), selectedMachine: remoteMachine, error: "A global failure" };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     vi.spyOn(api, "health").mockRejectedValue(new Error("Remote health failed"));
     const controller = new MachineController(() => state, setState, vi.fn(), { loadProjects: vi.fn() });
 
@@ -300,7 +317,9 @@ describe("MachineController", () => {
       selectedMachine: localMachine,
       machineStatusSnapshots: { local: localSnapshot, [remoteMachine.id]: machineStatusSnapshot() },
     };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
 
     vi.spyOn(api, "machines").mockResolvedValue([localMachine]);
     vi.spyOn(api, "health").mockResolvedValue({ machineId: "local", ok: true, checkedAt: "2026-05-26T00:00:01.000Z", status: "online" });
@@ -320,7 +339,9 @@ describe("MachineController", () => {
       selectedMachine: localMachine,
       browserErrors: reportBrowserError({}, machineBrowserErrorScope(remoteMachine.id), "Remote failure"),
     };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
 
     vi.spyOn(api, "machines").mockResolvedValue([localMachine]);
     vi.spyOn(api, "health").mockResolvedValue({ machineId: localMachine.id, ok: true, checkedAt: "2026-05-26T00:00:01.000Z", status: "online" });
@@ -335,7 +356,9 @@ describe("MachineController", () => {
 
   it("falls back to local when the routed machine is no longer configured", async () => {
     let state: AppState = initialAppState();
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
 
@@ -352,7 +375,9 @@ describe("MachineController", () => {
 
   it("returns the fallback machine without selecting it when requested", async () => {
     let state: AppState = { ...initialAppState(), machines: [localMachine, remoteMachine], selectedMachine: remoteMachine };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
 
@@ -371,9 +396,13 @@ describe("MachineController", () => {
 
   it("does not let an older runtime response overwrite a newer capability negotiation", async () => {
     let state: AppState = { ...initialAppState(), machines: [localMachine], selectedMachine: localMachine };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     let resolveOlder: ((runtime: Awaited<ReturnType<typeof api.runtime>>) => void) | undefined;
-    const older = new Promise<Awaited<ReturnType<typeof api.runtime>>>((resolve) => { resolveOlder = resolve; });
+    const older = new Promise<Awaited<ReturnType<typeof api.runtime>>>((resolve) => {
+      resolveOlder = resolve;
+    });
     vi.spyOn(api, "runtime")
       .mockImplementationOnce(() => older)
       .mockResolvedValueOnce({ machineId: "local", ok: true, checkedAt: "new", capabilities: [] });
@@ -389,8 +418,15 @@ describe("MachineController", () => {
   });
 
   it("selects the fallback machine after deleting the selected machine by default", async () => {
-    let state: AppState = { ...initialAppState(), machines: [localMachine, remoteMachine], selectedMachine: remoteMachine, selectedProject: { id: "p1", name: "Project", path: "/repo", createdAt: "now" } };
-    const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+    let state: AppState = {
+      ...initialAppState(),
+      machines: [localMachine, remoteMachine],
+      selectedMachine: remoteMachine,
+      selectedProject: { id: "p1", name: "Project", path: "/repo", createdAt: "now" },
+    };
+    const setState = (patch: Partial<AppState>) => {
+      state = { ...state, ...patch };
+    };
     const updateUrl = vi.fn();
     const projects = { loadProjects: vi.fn() };
 

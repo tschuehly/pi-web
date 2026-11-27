@@ -13,8 +13,14 @@ afterEach(() => {
 
 function status(activityItems: unknown[] = []): SessionStatus {
   return {
-    sessionId: "s", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0, total: 30 }, cost: 3.68,
+    sessionId: "s",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 10, output: 20, cacheRead: 0, cacheWrite: 0, total: 30 },
+    cost: 3.68,
     contextUsage: { tokens: 162_000, contextWindow: 1_000_000, percent: 16.2 },
     extensionStatuses: { [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: activityItems }) },
   };
@@ -33,7 +39,9 @@ async function mount(dense: boolean, showUsage: boolean, setup: (editor: PromptE
 
 describe("dense composer", () => {
   it("lays the input, meta, and actions out as one row, with stop only while there is work to stop", async () => {
-    const root = await mount(true, true, (editor) => { editor.status = status(); });
+    const root = await mount(true, true, (editor) => {
+      editor.status = status();
+    });
 
     expect(root.querySelector(".actions")).toBeNull();
     expect(root.querySelector(".input-row > .editor-wrap + .dense-meta > model-effort-picker")).not.toBeNull();
@@ -42,12 +50,17 @@ describe("dense composer", () => {
     expect(root.querySelector(".stop-button")).toBeNull();
     expect(root.querySelector(".prompt-placeholder")?.getAttribute("data-placeholder")).toBe("Message…");
 
-    const busy = await mount(true, true, (editor) => { editor.status = status(); editor.canStop = true; });
+    const busy = await mount(true, true, (editor) => {
+      editor.status = status();
+      editor.canStop = true;
+    });
     expect(busy.querySelector(".composer-actions .stop-button")).not.toBeNull();
   });
 
   it("shows the model as a short name (opus-h) naming model and thinking in its tooltip and label, opening the same picker", async () => {
-    const root = await mount(true, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" }; });
+    const root = await mount(true, true, (editor) => {
+      editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" }, thinkingLevel: "high" };
+    });
     const picker = root.querySelector<ModelEffortPicker>("model-effort-picker");
     await picker?.updateComplete;
 
@@ -60,14 +73,18 @@ describe("dense composer", () => {
     await picker?.updateComplete;
     expect(picker?.shadowRoot?.querySelector('[role="dialog"]')).not.toBeNull();
 
-    const regular = await mount(false, true, (editor) => { editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" } }; });
+    const regular = await mount(false, true, (editor) => {
+      editor.status = { ...status(), model: { provider: "anthropic", id: "claude-opus-5-5" } };
+    });
     const regularPicker = regular.querySelector<ModelEffortPicker>("model-effort-picker");
     await regularPicker?.updateComplete;
     expect(regularPicker?.shadowRoot?.querySelector(".model-name")?.textContent).toBe("claude-opus-5-5");
   });
 
   it("shows the context as short numbers whose tooltip carries the numbers and the cost, keeping the cost for screen readers", async () => {
-    const root = await mount(true, true, (editor) => { editor.status = status(); });
+    const root = await mount(true, true, (editor) => {
+      editor.status = status();
+    });
 
     const context = root.querySelector<HTMLElement>('[data-usage="context"]');
     expect(context?.querySelector('[aria-hidden="true"]')?.textContent.trim()).toBe("162k/1.0M");
@@ -77,7 +94,9 @@ describe("dense composer", () => {
   });
 
   it("keeps the regular composer's meta row with visible context and cost", async () => {
-    const regular = await mount(false, true, (editor) => { editor.status = status(); });
+    const regular = await mount(false, true, (editor) => {
+      editor.status = status();
+    });
     expect(regular.querySelector(".input-row > .composer-actions")).toBeNull();
     expect(regular.querySelector("footer > .input-row > .editor-wrap")).not.toBeNull();
     expect(regular.querySelector("footer > .input-row + .actions > .composer-actions .send-button")).not.toBeNull();
@@ -87,11 +106,18 @@ describe("dense composer", () => {
 });
 
 describe("dense Activity badge", () => {
-  const running = [{ id: "a", kind: "subagent", name: "Review" }, { id: "b", kind: "worker", name: "Rows" }, { id: "c", kind: "subagent", name: "Done", activity: "success" }];
+  const running = [
+    { id: "a", kind: "subagent", name: "Review" },
+    { id: "b", kind: "worker", name: "Rows" },
+    { id: "c", kind: "subagent", name: "Done", activity: "success" },
+  ];
 
   it("counts the roster's entries, names them in its label, and toggles the roster", async () => {
     const toggle = vi.fn();
-    const root = await mount(true, true, (editor) => { editor.status = status(running); editor.onToggleActivity = toggle; });
+    const root = await mount(true, true, (editor) => {
+      editor.status = status(running);
+      editor.onToggleActivity = toggle;
+    });
 
     const badge = root.querySelector<HTMLButtonElement>(".input-row > .activity-badge");
     expect(badge?.textContent.trim()).toBe("3");
@@ -103,7 +129,11 @@ describe("dense Activity badge", () => {
 
   it("re-renders on an activity-only status change and hides with nothing to show", async () => {
     let editor: PromptEditor | undefined;
-    const root = await mount(true, true, (created) => { editor = created; created.status = status(); created.onToggleActivity = () => undefined; });
+    const root = await mount(true, true, (created) => {
+      editor = created;
+      created.status = status();
+      created.onToggleActivity = () => undefined;
+    });
     expect(root.querySelector(".activity-badge")).toBeNull();
 
     if (editor === undefined) throw new Error("no editor");
@@ -113,7 +143,10 @@ describe("dense Activity badge", () => {
   });
 
   it("is absent outside a Grid tile", async () => {
-    const root = await mount(false, true, (editor) => { editor.status = status(running); editor.onToggleActivity = () => undefined; });
+    const root = await mount(false, true, (editor) => {
+      editor.status = status(running);
+      editor.onToggleActivity = () => undefined;
+    });
     expect(root.querySelector(".activity-badge")).toBeNull();
   });
 });

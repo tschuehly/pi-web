@@ -28,10 +28,12 @@ describe("settings-shortcuts-panel layout", () => {
     expect(panel.renderRoot.querySelector("details")?.textContent).toContain("global Start Session shortcut");
     expect(frame.querySelector(".description")?.textContent).not.toContain("760px");
     expect([...frame.querySelectorAll("code")].map((code) => code.textContent)).toContain("mod+k");
-    expect([...frame.querySelectorAll(".notice")].map((notice) => ({
-      role: notice.getAttribute("role"),
-      text: notice.textContent.trim(),
-    }))).toEqual([
+    expect(
+      [...frame.querySelectorAll(".notice")].map((notice) => ({
+        role: notice.getAttribute("role"),
+        text: notice.textContent.trim(),
+      })),
+    ).toEqual([
       { role: "alert", text: "Failed to load shortcut settings." },
       { role: "status", text: "Shortcut settings saved." },
     ]);
@@ -160,7 +162,12 @@ describe("settings-shortcuts-panel draft preservation", () => {
   });
 
   it("retains failed saves when the owner handles the error or the callback rejects", async () => {
-    const panel = await panelWithShortcuts({}, vi.fn(() => { panel.error = "Save failed. Try again."; }));
+    const panel = await panelWithShortcuts(
+      {},
+      vi.fn(() => {
+        panel.error = "Save failed. Try again.";
+      }),
+    );
     await editShortcut(panel, "core:open-palette", "mod+p");
     await editShortcut(panel, COMPOSER_SEND_DESKTOP, "mod+enter");
     await clickRow(panel, "core:open-palette", "Save");
@@ -212,7 +219,8 @@ describe("settings-shortcuts-panel accessibility", () => {
       ["Record", "Record shortcut for Open palette"],
       ["Disable shortcut", "Disable shortcut for Open palette"],
       ["Restore default", "Restore default shortcut for Open palette"],
-    ] as const) expect(button(row(panel, actionId), text).getAttribute("aria-label")).toBe(name);
+    ] as const)
+      expect(button(row(panel, actionId), text).getAttribute("aria-label")).toBe(name);
     expect(frameRoot(panel).querySelector(".description")?.textContent).toContain("⌘ on Mac or Ctrl elsewhere");
     const details = panel.renderRoot.querySelector("details");
     expect(details?.open).toBe(false);
@@ -265,10 +273,12 @@ describe("settings-shortcuts-panel composer shortcuts", () => {
       expect(panel.renderRoot.querySelector(".conflict")).toBeNull();
       await clickRow(panel, actionId, "Save");
       const savedConfig = onSave.mock.lastCall?.[0];
-      expect(savedConfig).toEqual({ shortcuts: {
-        ...(actionId === COMPOSER_SEND_MOBILE ? { [COMPOSER_SEND_DESKTOP]: "mod+k" } : {}),
-        [actionId]: "mod+k",
-      } });
+      expect(savedConfig).toEqual({
+        shortcuts: {
+          ...(actionId === COMPOSER_SEND_MOBILE ? { [COMPOSER_SEND_DESKTOP]: "mod+k" } : {}),
+          [actionId]: "mod+k",
+        },
+      });
       panel.configResponse = configResponse(savedConfig ?? {});
       await settle(panel);
     }

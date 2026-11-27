@@ -82,7 +82,9 @@ describe("buildApp active profile composition", () => {
       sessionDaemon: {
         request: () => Promise.reject(new Error("connect ECONNREFUSED")),
         requestStream: () => Promise.reject(new Error("connect ECONNREFUSED")),
-        connectWebSocket: () => { throw new Error("sessiond is offline"); },
+        connectWebSocket: () => {
+          throw new Error("sessiond is offline");
+        },
       },
       clientDist: false,
       logger: false,
@@ -106,7 +108,9 @@ describe("buildApp active profile composition", () => {
       const after = await app.inject({ method: "GET", url: "/api/plugins" });
       const manifest = await app.inject({ method: "GET", url: "/pi-web-plugins/manifest.json" });
       expect(after.statusCode).toBe(200);
-      expect(after.json<{ plugins: unknown[] }>().plugins).toEqual(expect.arrayContaining([expect.objectContaining({ id: "offline-browser", enabled: false })]));
+      expect(after.json<{ plugins: unknown[] }>().plugins).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "offline-browser", enabled: false })]),
+      );
       expect(manifest.statusCode).toBe(503);
       expect(manifest.json()).toMatchObject({
         error: "Required Terminal plugin runtime is unavailable",
@@ -159,11 +163,19 @@ async function writePiPackageSettings(agentDir: string, packages: string[]): Pro
 
 async function writePackagePlugin(root: string, pluginId: string): Promise<void> {
   await mkdir(root, { recursive: true });
-  await writeFile(join(root, "package.json"), `${JSON.stringify({
-    name: `@test/${pluginId}`,
-    version: "1.0.0",
-    piWeb: { plugins: [{ id: pluginId, browserRoot: ".", module: "pi-web-plugin.js" }] },
-  }, null, 2)}\n`, "utf8");
+  await writeFile(
+    join(root, "package.json"),
+    `${JSON.stringify(
+      {
+        name: `@test/${pluginId}`,
+        version: "1.0.0",
+        piWeb: { plugins: [{ id: pluginId, browserRoot: ".", module: "pi-web-plugin.js" }] },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
   await writeFile(join(root, "pi-web-plugin.js"), "export default {};\n", "utf8");
 }
 
@@ -207,12 +219,12 @@ function emptyConfigService(): PiWebConfigService {
 
 function packageSources(value: unknown): string[] {
   if (!isRecord(value) || !Array.isArray(value["packages"])) return [];
-  return value["packages"].flatMap((entry) => isRecord(entry) && typeof entry["source"] === "string" ? [entry["source"]] : []);
+  return value["packages"].flatMap((entry) => (isRecord(entry) && typeof entry["source"] === "string" ? [entry["source"]] : []));
 }
 
 function pluginIds(value: unknown): PiWebPluginInfo["id"][] {
   if (!isRecord(value) || !Array.isArray(value["plugins"])) return [];
-  return value["plugins"].flatMap((entry) => isRecord(entry) && typeof entry["id"] === "string" ? [entry["id"]] : []);
+  return value["plugins"].flatMap((entry) => (isRecord(entry) && typeof entry["id"] === "string" ? [entry["id"]] : []));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

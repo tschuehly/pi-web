@@ -4,10 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { piWebDataDir } from "../../config.js";
 import type { ServerPluginWorkspaceNotifications } from "../../server-plugin-api.js";
 import { sessiondSocketPath } from "../../sessiond/config.js";
-import {
-  requireWorkspaceNotificationPluginId,
-  requireWorkspaceNotificationProjectId,
-} from "../../workspaceNotificationCli.js";
+import { requireWorkspaceNotificationPluginId, requireWorkspaceNotificationProjectId } from "../../workspaceNotificationCli.js";
 
 export interface WorkspaceNotificationCommandOptions {
   /** The owning daemon's startup environment, not a gateway/client environment. */
@@ -33,12 +30,7 @@ export function createWorkspaceNotificationCommandFactory(
   const loader = source ? pathToFileURL(createRequire(moduleUrl).resolve("tsx/esm")).href : undefined;
   const listeningPort = options.listeningPort;
   const fixedTransport = env["PI_WEB_SESSIOND_PORT"] === "0" ? undefined : daemonTransportArgs(env, cwd);
-  const executable = Object.freeze([
-    options.nodeExecutable ?? process.execPath,
-    ...(loader === undefined ? [] : ["--import", loader]),
-    cliPath,
-    "notify",
-  ]);
+  const executable = Object.freeze([options.nodeExecutable ?? process.execPath, ...(loader === undefined ? [] : ["--import", loader]), cliPath, "notify"]);
   return (pluginId) => {
     const attributedPluginId = requireWorkspaceNotificationPluginId(pluginId);
     return Object.freeze({
@@ -50,7 +42,8 @@ export function createWorkspaceNotificationCommandFactory(
         if (fixedTransport === undefined && port === undefined) return Object.freeze([]);
         const transport = fixedTransport ?? daemonTransportArgs({ ...env, PI_WEB_SESSIOND_PORT: String(port) }, cwd);
         return Object.freeze([
-          ...executable, ...transport,
+          ...executable,
+          ...transport,
           // Equals form preserves opaque ids beginning with '-' under strict CLI parsing.
           `--project=${attributedProjectId}`,
           `--plugin=${attributedPluginId}`,

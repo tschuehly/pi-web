@@ -34,7 +34,8 @@ export class MachineController {
       const selectedMachine = await this.selectInitialMachine(machines, routeMachineId);
       const machineIds = new Set(machines.map((machine) => machine.id));
       for (const error of Object.values(this.getState().browserErrors)) {
-        if (error.scope.kind !== "global" && !machineIds.has(error.scope.machineId)) this.browserErrors.discard(machineBrowserErrorScope(error.scope.machineId));
+        if (error.scope.kind !== "global" && !machineIds.has(error.scope.machineId))
+          this.browserErrors.discard(machineBrowserErrorScope(error.scope.machineId));
       }
       this.setState({
         machines,
@@ -98,7 +99,10 @@ export class MachineController {
     }
   }
 
-  async deleteMachine(machine: Machine | undefined = this.getState().selectedMachine, options: { selectFallback?: boolean } = {}): Promise<Machine | undefined> {
+  async deleteMachine(
+    machine: Machine | undefined = this.getState().selectedMachine,
+    options: { selectFallback?: boolean } = {},
+  ): Promise<Machine | undefined> {
     if (machine === undefined) return undefined;
     if (machine.kind === "local") {
       this.browserErrors.report(machineBrowserErrorScope(machine.id), "The local machine cannot be removed.");
@@ -109,7 +113,12 @@ export class MachineController {
       const machines = this.getState().machines.filter((candidate) => candidate.id !== machine.id);
       const local = machines.find((candidate) => candidate.id === "local") ?? machines[0];
       this.browserErrors.discard(machineBrowserErrorScope(machine.id));
-      this.setState({ machines, machineStatuses: omitKey(this.getState().machineStatuses, machine.id), machineRuntimes: omitKey(this.getState().machineRuntimes, machine.id), machineStatusSnapshots: omitKey(this.getState().machineStatusSnapshots, machine.id) });
+      this.setState({
+        machines,
+        machineStatuses: omitKey(this.getState().machineStatuses, machine.id),
+        machineRuntimes: omitKey(this.getState().machineRuntimes, machine.id),
+        machineStatusSnapshots: omitKey(this.getState().machineStatusSnapshots, machine.id),
+      });
       if (this.getState().selectedMachine?.id === machine.id && local !== undefined) {
         if (options.selectFallback === false) return local;
         const expected = navigationSelection(this.getState(), this.captureNavigation);
@@ -180,13 +189,13 @@ export class MachineController {
 
   private async refreshMachineHealthFor(machines: Machine[]): Promise<void> {
     const results = await Promise.allSettled(machines.map((machine) => api.health(machine.id)));
-    const health = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" ? [[result.value.machineId, result.value] as const] : []));
+    const health = Object.fromEntries(results.flatMap((result) => (result.status === "fulfilled" ? [[result.value.machineId, result.value] as const] : [])));
     if (Object.keys(health).length > 0) this.setState({ machineStatuses: { ...this.getState().machineStatuses, ...health } });
   }
 
   private async refreshMachineRuntimeFor(machines: Machine[]): Promise<void> {
     const results = await Promise.allSettled(machines.map((machine) => api.runtime(machine.id)));
-    const runtimes = Object.fromEntries(results.flatMap((result) => result.status === "fulfilled" ? [[result.value.machineId, result.value] as const] : []));
+    const runtimes = Object.fromEntries(results.flatMap((result) => (result.status === "fulfilled" ? [[result.value.machineId, result.value] as const] : [])));
     if (Object.keys(runtimes).length > 0) this.setState({ machineRuntimes: { ...this.getState().machineRuntimes, ...runtimes } });
   }
 }
@@ -200,10 +209,14 @@ function filterKeys<T>(record: Record<string, T>, allowedKeys: Set<string>): Rec
 }
 
 function navigationSelection(state: ReturnType<GetState>, captureNavigation?: () => NavigationSelection): NavigationSelection {
-  return captureNavigation?.() ?? {
-    machineId: state.selectedMachine?.id ?? "local",
-    projectId: state.selectedProject?.id,
-    workspaceId: state.selectedWorkspace?.id,
-    ...(state.selectedSession === undefined || Reflect.get(state.selectedSession, "clientPendingStart") !== true ? { sessionId: state.selectedSession?.id } : {}),
-  };
+  return (
+    captureNavigation?.() ?? {
+      machineId: state.selectedMachine?.id ?? "local",
+      projectId: state.selectedProject?.id,
+      workspaceId: state.selectedWorkspace?.id,
+      ...(state.selectedSession === undefined || Reflect.get(state.selectedSession, "clientPendingStart") !== true
+        ? { sessionId: state.selectedSession?.id }
+        : {}),
+    }
+  );
 }

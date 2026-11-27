@@ -1,12 +1,36 @@
 import { html } from "lit";
 import { describe, expect, it, vi } from "vitest";
-import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeResponse, JsonValue, MoveWorkspaceFileResponse, SessionInfo, SessionStatus, WriteWorkspaceFileResponse, Workspace } from "../api";
+import type {
+  DeleteWorkspaceFileResponse,
+  FileContentResponse,
+  FileTreeResponse,
+  JsonValue,
+  MoveWorkspaceFileResponse,
+  SessionInfo,
+  SessionStatus,
+  WriteWorkspaceFileResponse,
+  Workspace,
+} from "../api";
 import { initialAppState, type AppState } from "../appState";
 import { markCachedNewSessionInfo } from "../cachedNewSessions";
 import { machineScopedPluginId } from "../../../shared/machinePluginIds";
 import { corePlugin } from "./core";
 import { PluginRegistry, installWorkspaceLabelScope, installWorkspacePanelScope } from "./registry";
-import type { PiWebPlugin, PluginActivationResult, PluginCapability, PluginRuntimeContext, QualifiedContributionId, WorkspaceFiles, WorkspaceHost, WorkspaceInvalidation, WorkspaceLabelContext, WorkspaceLabelItem, WorkspacePanelContext, WorkspacePanelContribution, WorkspacePluginBinding } from "./types";
+import type {
+  PiWebPlugin,
+  PluginActivationResult,
+  PluginCapability,
+  PluginRuntimeContext,
+  QualifiedContributionId,
+  WorkspaceFiles,
+  WorkspaceHost,
+  WorkspaceInvalidation,
+  WorkspaceLabelContext,
+  WorkspaceLabelItem,
+  WorkspacePanelContext,
+  WorkspacePanelContribution,
+  WorkspacePluginBinding,
+} from "./types";
 import { createPluginPeer } from "./pluginPeer";
 import { adaptPublicPlugin, publicPluginState } from "./publicContext";
 import type { PluginBackendRequestTarget } from "../api/pluginBackends";
@@ -17,17 +41,31 @@ it("resolves file-opening panels by availability, applicability, order and scope
   let enabled = true;
   const registry = new PluginRegistry({ isContributionEnabled: () => enabled });
   const fileOpenQuery = vi.fn((_context: WorkspacePanelContext, path: string) => ({ file: path }));
-  await registry.register({ id: "viewer", machineId: "remote", plugin: {
-    apiVersion: 4, name: "Viewer", activate: () => ({ contributions: { workspacePanels: [
-      { id: "hidden", title: "Hidden", order: 0, visible: () => false, fileOpenQuery, render: () => html`` },
-      { id: "unsupported", title: "Unsupported", order: 1, fileOpenQuery: () => undefined, render: () => html`` },
-      { id: "files", title: "Files", order: 2, fileOpenQuery, render: () => html`` },
-    ] } }),
-  } });
+  await registry.register({
+    id: "viewer",
+    machineId: "remote",
+    plugin: {
+      apiVersion: 4,
+      name: "Viewer",
+      activate: () => ({
+        contributions: {
+          workspacePanels: [
+            { id: "hidden", title: "Hidden", order: 0, visible: () => false, fileOpenQuery, render: () => html`` },
+            { id: "unsupported", title: "Unsupported", order: 1, fileOpenQuery: () => undefined, render: () => html`` },
+            { id: "files", title: "Files", order: 2, fileOpenQuery, render: () => html`` },
+          ],
+        },
+      }),
+    },
+  });
   const base = createWorkspacePanelContext("remote");
   const scoped: WorkspacePanelContext = { ...base, navigation: { version: 1, contributionId: "viewer:files", query: {}, set: vi.fn() } };
   installWorkspacePanelScope(base, () => scoped);
-  expect(registry.resolveWorkspaceFileOpen(base, "a.txt")).toEqual({ contributionId: "viewer:files", sourceContributionId: "viewer:files", query: { file: "a.txt" } });
+  expect(registry.resolveWorkspaceFileOpen(base, "a.txt")).toEqual({
+    contributionId: "viewer:files",
+    sourceContributionId: "viewer:files",
+    query: { file: "a.txt" },
+  });
   expect(fileOpenQuery).toHaveBeenCalledExactlyOnceWith(scoped, "a.txt");
   expect(registry.resolveWorkspaceFileOpen(createWorkspacePanelContext("local"), "a.txt")).toBeUndefined();
   enabled = false;
@@ -48,34 +86,88 @@ function createContext(statePatch: Partial<AppState> = {}) {
       getSelection: vi.fn(() => null),
     },
     piWebUnstable: {
-      openSettings: vi.fn(() => { calls.push("openSettings"); }),
-      openMcpAuth: vi.fn((mode: "login" | "logout") => { calls.push(`openMcpAuth:${mode}`); }),
+      openSettings: vi.fn(() => {
+        calls.push("openSettings");
+      }),
+      openMcpAuth: vi.fn((mode: "login" | "logout") => {
+        calls.push(`openMcpAuth:${mode}`);
+      }),
     },
-    openActionPalette: vi.fn(() => { calls.push("openActionPalette"); }),
-    focusPrompt: vi.fn(() => { calls.push("focusPrompt"); }),
-    addProject: vi.fn(() => { calls.push("addProject"); }),
-    addMachine: vi.fn(() => { calls.push("addMachine"); }),
-    refreshSelectedMachine: vi.fn(() => { calls.push("refreshSelectedMachine"); }),
-    removeSelectedMachine: vi.fn(() => { calls.push("removeSelectedMachine"); }),
-    openSelectedMachine: vi.fn(() => { calls.push("openSelectedMachine"); }),
-    configureAuth: vi.fn(() => { calls.push("configureAuth"); }),
-    logoutAuth: vi.fn(() => { calls.push("logoutAuth"); }),
-    openThemePicker: vi.fn(() => { calls.push("openThemePicker"); }),
-    openModelPicker: vi.fn(() => { calls.push("openModelPicker"); }),
-    openThinkingLevelPicker: vi.fn(() => { calls.push("openThinkingLevelPicker"); }),
-    selectMainView: vi.fn((view: AppState["mainView"]) => { calls.push(`selectMainView:${view}`); }),
-    selectWorkspaceTool: vi.fn((tool: QualifiedContributionId) => { calls.push(`selectWorkspaceTool:${tool}`); }),
-    openTerminal: vi.fn((options?: { terminalId?: string | undefined }) => { calls.push(`openTerminal:${options?.terminalId ?? ""}`); }),
-    refreshFiles: vi.fn(() => { calls.push("refreshFiles"); }),
-    refreshWorkspacePanels: vi.fn(() => { calls.push("refreshWorkspacePanels"); }),
-    refreshAppData: vi.fn(() => { calls.push("refreshAppData"); }),
-    reloadPage: vi.fn(() => { calls.push("reloadPage"); }),
-    deleteWorkspace: vi.fn(() => { calls.push("deleteWorkspace"); }),
-    startSession: vi.fn(() => { calls.push("startSession"); }),
-    archiveSession: vi.fn(() => { calls.push("archiveSession"); }),
-    reloadSession: vi.fn(() => { calls.push("reloadSession"); }),
-    deleteCachedNewSession: vi.fn(() => { calls.push("deleteCachedNewSession"); }),
-    stopActiveWork: vi.fn(() => { calls.push("stopActiveWork"); }),
+    openActionPalette: vi.fn(() => {
+      calls.push("openActionPalette");
+    }),
+    focusPrompt: vi.fn(() => {
+      calls.push("focusPrompt");
+    }),
+    addProject: vi.fn(() => {
+      calls.push("addProject");
+    }),
+    addMachine: vi.fn(() => {
+      calls.push("addMachine");
+    }),
+    refreshSelectedMachine: vi.fn(() => {
+      calls.push("refreshSelectedMachine");
+    }),
+    removeSelectedMachine: vi.fn(() => {
+      calls.push("removeSelectedMachine");
+    }),
+    openSelectedMachine: vi.fn(() => {
+      calls.push("openSelectedMachine");
+    }),
+    configureAuth: vi.fn(() => {
+      calls.push("configureAuth");
+    }),
+    logoutAuth: vi.fn(() => {
+      calls.push("logoutAuth");
+    }),
+    openThemePicker: vi.fn(() => {
+      calls.push("openThemePicker");
+    }),
+    openModelPicker: vi.fn(() => {
+      calls.push("openModelPicker");
+    }),
+    openThinkingLevelPicker: vi.fn(() => {
+      calls.push("openThinkingLevelPicker");
+    }),
+    selectMainView: vi.fn((view: AppState["mainView"]) => {
+      calls.push(`selectMainView:${view}`);
+    }),
+    selectWorkspaceTool: vi.fn((tool: QualifiedContributionId) => {
+      calls.push(`selectWorkspaceTool:${tool}`);
+    }),
+    openTerminal: vi.fn((options?: { terminalId?: string | undefined }) => {
+      calls.push(`openTerminal:${options?.terminalId ?? ""}`);
+    }),
+    refreshFiles: vi.fn(() => {
+      calls.push("refreshFiles");
+    }),
+    refreshWorkspacePanels: vi.fn(() => {
+      calls.push("refreshWorkspacePanels");
+    }),
+    refreshAppData: vi.fn(() => {
+      calls.push("refreshAppData");
+    }),
+    reloadPage: vi.fn(() => {
+      calls.push("reloadPage");
+    }),
+    deleteWorkspace: vi.fn(() => {
+      calls.push("deleteWorkspace");
+    }),
+    startSession: vi.fn(() => {
+      calls.push("startSession");
+    }),
+    archiveSession: vi.fn(() => {
+      calls.push("archiveSession");
+    }),
+    reloadSession: vi.fn(() => {
+      calls.push("reloadSession");
+    }),
+    deleteCachedNewSession: vi.fn(() => {
+      calls.push("deleteCachedNewSession");
+    }),
+    stopActiveWork: vi.fn(() => {
+      calls.push("stopActiveWork");
+    }),
   };
   return { context, calls };
 }
@@ -104,14 +196,34 @@ describe("PluginRegistry v5 host services", () => {
   it("captures portable action catalogs per invocation across selection changes without a backend", async () => {
     const registry = new PluginRegistry();
     const captured: PluginRuntimeContext[] = [];
-    await registry.register({ id: "portable", backendRevision: "revision", pairedRequestVersion: 1, plugin: {
-      apiVersion: 5, name: "Portable", activate: () => ({ contributions: {
-        actions: [{ id: "run", title: "Run", run: (context) => { captured.push(context); } }],
-      } }),
-    } });
+    await registry.register({
+      id: "portable",
+      backendRevision: "revision",
+      pairedRequestVersion: 1,
+      plugin: {
+        apiVersion: 5,
+        name: "Portable",
+        activate: () => ({
+          contributions: {
+            actions: [
+              {
+                id: "run",
+                title: "Run",
+                run: (context) => {
+                  captured.push(context);
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
     const context = createContext().context;
     await registry.getActions(context)[0]?.run();
-    context.state = { ...context.state, selectedMachine: { id: "remote", name: "Remote", kind: "remote", baseUrl: "https://remote.test", createdAt: "now", updatedAt: "now" } };
+    context.state = {
+      ...context.state,
+      selectedMachine: { id: "remote", name: "Remote", kind: "remote", baseUrl: "https://remote.test", createdAt: "now", updatedAt: "now" },
+    };
     await registry.getActions(context)[0]?.run();
     expect(captured.map((value) => value.catalog?.machineId)).toEqual(["local", "remote"]);
     expect(captured.every((value) => value.backend === undefined)).toBe(true);
@@ -122,9 +234,17 @@ describe("PluginRegistry v5 host services", () => {
   it("uses the scoped callback machine rather than selected machine and binds backend ownership", async () => {
     const registry = new PluginRegistry();
     const render = vi.fn((context: WorkspacePanelContext) => html`${context.machine.id}`);
-    for (const [id, machineId, machineSpecific] of [["portable", undefined, false], ["local", undefined, true], ["remote", "remote", false]] as const) {
-      await registry.register({ id, ...(machineId === undefined ? {} : { machineId }), machineSpecific,
-        backendRevision: "revision", pairedRequestVersion: 1,
+    for (const [id, machineId, machineSpecific] of [
+      ["portable", undefined, false],
+      ["local", undefined, true],
+      ["remote", "remote", false],
+    ] as const) {
+      await registry.register({
+        id,
+        ...(machineId === undefined ? {} : { machineId }),
+        machineSpecific,
+        backendRevision: "revision",
+        pairedRequestVersion: 1,
         plugin: { apiVersion: 5, name: id, activate: () => ({ contributions: { workspacePanels: [{ id: "panel", title: "Panel", render }] } }) },
       });
     }
@@ -141,7 +261,9 @@ describe("PluginRegistry v5 host services", () => {
 
 describe("PluginRegistry stylesheet integration capability", () => {
   const request: PublicPluginCapability<StylesheetIntegrationCapabilityV1> = {
-    pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+    pluginId: "pi-web",
+    id: "stylesheet-integration",
+    version: 1,
     parse: stylesheetIntegrationCapabilityToken.parse,
   };
 
@@ -152,10 +274,15 @@ describe("PluginRegistry stylesheet integration capability", () => {
       expect(() => context.capabilities.resolve({ ...request, version: 2 })).toThrow("did not declare required capability pi-web/stylesheet-integration v2");
     });
     try {
-      await registry.register({ id: "external-styles", plugin: adaptPublicPlugin({
-        apiVersion: 5, name: "External styles", requires: [request],
-        activate: () => ({ contributions: {}, start }),
-      }) });
+      await registry.register({
+        id: "external-styles",
+        plugin: adaptPublicPlugin({
+          apiVersion: 5,
+          name: "External styles",
+          requires: [request],
+          activate: () => ({ contributions: {}, start }),
+        }),
+      });
       expect(start).toHaveBeenCalledOnce();
     } finally {
       await registry.dispose();
@@ -166,10 +293,17 @@ describe("PluginRegistry stylesheet integration capability", () => {
     const registry = new PluginRegistry();
     const start = vi.fn();
     try {
-      await expect(registry.register({ id: "external-styles", plugin: adaptPublicPlugin({
-        apiVersion: 5, name: "External styles", requires: [{ ...request, version: 2 }],
-        activate: () => ({ contributions: {}, start }),
-      }) })).rejects.toThrow("requires unavailable capability pi-web/stylesheet-integration v2");
+      await expect(
+        registry.register({
+          id: "external-styles",
+          plugin: adaptPublicPlugin({
+            apiVersion: 5,
+            name: "External styles",
+            requires: [{ ...request, version: 2 }],
+            activate: () => ({ contributions: {}, start }),
+          }),
+        }),
+      ).rejects.toThrow("requires unavailable capability pi-web/stylesheet-integration v2");
       expect(start).not.toHaveBeenCalled();
     } finally {
       await registry.dispose();
@@ -182,9 +316,14 @@ describe("PluginRegistry stylesheet integration capability", () => {
       expect(() => context.capabilities.resolve(request)).toThrow("did not declare required capability pi-web/stylesheet-integration v1");
     });
     try {
-      await registry.register({ id: "external-styles", plugin: adaptPublicPlugin({
-        apiVersion: 5, name: "External styles", activate: () => ({ contributions: {}, start }),
-      }) });
+      await registry.register({
+        id: "external-styles",
+        plugin: adaptPublicPlugin({
+          apiVersion: 5,
+          name: "External styles",
+          activate: () => ({ contributions: {}, start }),
+        }),
+      });
       expect(start).toHaveBeenCalledOnce();
     } finally {
       await registry.dispose();
@@ -205,11 +344,18 @@ describe("PluginRegistry", () => {
     const enabled = vi.fn(() => true);
     const disabledReason = vi.fn(() => undefined);
     const run = vi.fn();
-    await registry.register({ id: "external", plugin: adaptPublicPlugin({
-      apiVersion: 4, name: "External", activate: () => ({ contributions: {
-        actions: [{ id: "action", title: "Action", enabled, disabledReason, run }],
-      } }),
-    }) });
+    await registry.register({
+      id: "external",
+      plugin: adaptPublicPlugin({
+        apiVersion: 4,
+        name: "External",
+        activate: () => ({
+          contributions: {
+            actions: [{ id: "action", title: "Action", enabled, disabledReason, run }],
+          },
+        }),
+      }),
+    });
     const { context } = createContext({ selectedSession: testSession() });
     const action = registry.getActions(context)[0];
     expect(action).toBeDefined();
@@ -241,12 +387,14 @@ describe("PluginRegistry", () => {
     const activate = vi.fn<PiWebPlugin["activate"]>(() => ({
       contributions: {
         actions: [{ id: "act", title: "Act", run: actionRun }],
-        workspacePanels: [{
-          id: "workspace.panel",
-          title: "Panel",
-          onInvalidate: panelInvalidate,
-          render: panelRender,
-        }],
+        workspacePanels: [
+          {
+            id: "workspace.panel",
+            title: "Panel",
+            onInvalidate: panelInvalidate,
+            render: panelRender,
+          },
+        ],
         workspaceLabels: [{ id: "label", items: labelItems }],
         themes: [{ id: "light", name: "Light", colorScheme: "light", tokens: {} }],
         themePairs: [{ id: "pair", name: "Pair", light: "light", dark: "light" }],
@@ -289,12 +437,16 @@ describe("PluginRegistry", () => {
   });
 
   it("gates portable machine-using contributions against the selected machine and rechecks stale callbacks", async () => {
-    const modes = new Map<string, boolean>([["local", false], ["remote-1", true]]);
+    const modes = new Map<string, boolean>([
+      ["local", false],
+      ["remote-1", true],
+    ]);
     const actionRun = vi.fn();
     const registry = new PluginRegistry({
-      isContributionEnabled: (_pluginId, effectiveMachineId) => effectiveMachineId === undefined
-        ? true // themes are intentionally app-global
-        : modes.get(effectiveMachineId) ?? false,
+      isContributionEnabled: (_pluginId, effectiveMachineId) =>
+        effectiveMachineId === undefined
+          ? true // themes are intentionally app-global
+          : (modes.get(effectiveMachineId) ?? false),
     });
     await registry.register({
       id: "portable",
@@ -305,11 +457,13 @@ describe("PluginRegistry", () => {
         activate: () => ({
           contributions: {
             actions: [{ id: "act", title: "Act", run: actionRun }],
-            workspacePanels: [{
-              id: "workspace.panel",
-              title: "Panel",
-              render: () => html`<p>Portable</p>`,
-            }],
+            workspacePanels: [
+              {
+                id: "workspace.panel",
+                title: "Panel",
+                render: () => html`<p>Portable</p>`,
+              },
+            ],
             workspaceLabels: [{ id: "label", items: () => [{ type: "text", text: "portable" }] }],
             themes: [{ id: "theme", name: "Portable", colorScheme: "light", tokens: {} }],
           },
@@ -363,12 +517,16 @@ describe("PluginRegistry", () => {
     const runtimePluginId = machineScopedPluginId("remote-1", "board-tools");
     const activate = vi.fn<PiWebPlugin["activate"]>(({ pluginId, runtimePluginId: activationRuntimePluginId }) => ({
       contributions: {
-        actions: [{
-          id: "open",
-          title: "Open Board",
-          enabled: (context) => context.state.selectedWorkspace?.provider?.pluginId === pluginId,
-          run: (context) => { context.selectWorkspaceTool(`${activationRuntimePluginId}:workspace.board`); },
-        }],
+        actions: [
+          {
+            id: "open",
+            title: "Open Board",
+            enabled: (context) => context.state.selectedWorkspace?.provider?.pluginId === pluginId,
+            run: (context) => {
+              context.selectWorkspaceTool(`${activationRuntimePluginId}:workspace.board`);
+            },
+          },
+        ],
       },
     }));
     await registry.register({
@@ -414,11 +572,13 @@ describe("PluginRegistry", () => {
       activate: () => ({
         contributions: {
           actions: [{ id: "view.vcs", title: "View VCS", shortcutAliases: ["core:view.vcs"], run: () => undefined }],
-          workspacePanels: [{
-            id: "workspace.vcs",
-            title: "VCS",
-            render: () => html`<p>VCS</p>`,
-          }],
+          workspacePanels: [
+            {
+              id: "workspace.vcs",
+              title: "VCS",
+              render: () => html`<p>VCS</p>`,
+            },
+          ],
         },
       }),
     };
@@ -437,15 +597,15 @@ describe("PluginRegistry", () => {
         expect(registry.resolveWorkspacePanelRouteId(historicalId, machineId)).toBeUndefined();
       }
     }
-    expect(registry.getActions(createContext({ selectedMachine: testMachine("local") }).context)[0]?.shortcutAliases)
-      .toEqual(["core:view.vcs"]);
-    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context)[0]?.shortcutAliases)
-      .toEqual(["core:view.vcs", "vcs:view.vcs"]);
-    expect(registry.getWorkspacePanels().map(({ id, sourceContributionId }) => ({ id, sourceContributionId })))
-      .toEqual([
-        { id: "vcs:workspace.vcs", sourceContributionId: "vcs:workspace.vcs" },
-        { id: `${remotePluginId}:workspace.vcs`, sourceContributionId: "vcs:workspace.vcs" },
-      ]);
+    expect(registry.getActions(createContext({ selectedMachine: testMachine("local") }).context)[0]?.shortcutAliases).toEqual(["core:view.vcs"]);
+    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context)[0]?.shortcutAliases).toEqual([
+      "core:view.vcs",
+      "vcs:view.vcs",
+    ]);
+    expect(registry.getWorkspacePanels().map(({ id, sourceContributionId }) => ({ id, sourceContributionId }))).toEqual([
+      { id: "vcs:workspace.vcs", sourceContributionId: "vcs:workspace.vcs" },
+      { id: `${remotePluginId}:workspace.vcs`, sourceContributionId: "vcs:workspace.vcs" },
+    ]);
     for (const panel of registry.getWorkspacePanels()) {
       expect(panel).not.toHaveProperty("routeAliases");
       expect(panel).not.toHaveProperty("navigationAliases");
@@ -489,15 +649,17 @@ describe("PluginRegistry", () => {
     });
     const base = createWorkspacePanelContext(machineId);
     const set = vi.fn();
-    const scope = vi.fn((binding: WorkspacePluginBinding, contributionId: QualifiedContributionId, sourceContributionId: QualifiedContributionId): WorkspacePanelContext => ({
-      ...base,
-      navigation: {
-        version: 1,
-        contributionId,
-        query: { binding: binding.sourcePluginId, sourceContributionId },
-        set,
-      },
-    }));
+    const scope = vi.fn(
+      (binding: WorkspacePluginBinding, contributionId: QualifiedContributionId, sourceContributionId: QualifiedContributionId): WorkspacePanelContext => ({
+        ...base,
+        navigation: {
+          version: 1,
+          contributionId,
+          query: { binding: binding.sourcePluginId, sourceContributionId },
+          set,
+        },
+      }),
+    );
     const context = installWorkspacePanelScope(base, scope);
 
     registry.getWorkspacePanels()[0]?.render(context);
@@ -550,7 +712,8 @@ describe("PluginRegistry", () => {
       }),
     };
 
-    const message = "Panel aliases were removed for removed-aliases:workspace.panel; remove routeAliases and navigationAliases and use the current contribution ID";
+    const message =
+      "Panel aliases were removed for removed-aliases:workspace.panel; remove routeAliases and navigationAliases and use the current contribution ID";
     await expect(registry.register({ id: "removed-aliases", plugin })).rejects.toMatchObject({
       phase: "validate",
       message,
@@ -639,21 +802,23 @@ describe("PluginRegistry", () => {
   it("rejects duplicate ids within the same namespace", async () => {
     const registry = new PluginRegistry();
 
-    await expect(registry.register({
-      id: "example",
-      plugin: {
-        apiVersion: 4,
-        name: "Example",
-        activate: () => ({
-          contributions: {
-            actions: [
-              { id: "duplicate", title: "One", run: () => undefined },
-              { id: "duplicate", title: "Two", run: () => undefined },
-            ],
-          },
-        }),
-      },
-    })).rejects.toThrow("Duplicate contribution id: example:duplicate");
+    await expect(
+      registry.register({
+        id: "example",
+        plugin: {
+          apiVersion: 4,
+          name: "Example",
+          activate: () => ({
+            contributions: {
+              actions: [
+                { id: "duplicate", title: "One", run: () => undefined },
+                { id: "duplicate", title: "Two", run: () => undefined },
+              ],
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("Duplicate contribution id: example:duplicate");
   });
 
   it("rolls back every contribution when registration fails and allows a clean retry", async () => {
@@ -683,9 +848,7 @@ describe("PluginRegistry", () => {
     await registry.register({ id: "retryable", plugin });
 
     expect(registry.hasPlugin("retryable")).toBe(true);
-    expect(registry.getActions(createContext().context).map(({ id, title }) => ({ id, title }))).toEqual([
-      { id: "retryable:action", title: "Ready" },
-    ]);
+    expect(registry.getActions(createContext().context).map(({ id, title }) => ({ id, title }))).toEqual([{ id: "retryable:action", title: "Ready" }]);
     expect(registry.shouldLoadRemotePlugin("retryable")).toBe(false);
   });
 
@@ -780,21 +943,29 @@ describe("PluginRegistry", () => {
     const provider = testPluginCapability("provider", "service", 1);
     const requirement = { ...provider, parse: vi.fn((value: unknown) => ({ label: `requirement:${provider.parse(value).label}` })) };
     const request = { ...provider, parse: (value: unknown) => ({ label: `request:${provider.parse(value).label}` }) };
-    const rejectingRequest = { ...provider, parse: () => { throw new Error("request rejected"); } };
+    const rejectingRequest = {
+      ...provider,
+      parse: () => {
+        throw new Error("request rejected");
+      },
+    };
     const provision = { capability: provider, value: { label: "ready" } };
     const registry = new PluginRegistry(source === "host" ? { hostCapabilities: [provision] } : {});
     if (source === "plugin") {
       await registry.register({ id: "provider", plugin: lifecyclePlugin("Provider", { provides: [provision] }) });
     }
     let resolved: TestPluginCapabilityValue | undefined;
-    await registry.register({ id: "consumer", plugin: lifecyclePlugin("Consumer", {
-      requires: [requirement],
-      start: ({ capabilities }) => {
-        expect(requirement.parse).toHaveBeenCalledWith({ label: "ready" });
-        resolved = capabilities.resolve(request);
-        expect(() => capabilities.resolve(rejectingRequest)).toThrow("request rejected");
-      },
-    }) });
+    await registry.register({
+      id: "consumer",
+      plugin: lifecyclePlugin("Consumer", {
+        requires: [requirement],
+        start: ({ capabilities }) => {
+          expect(requirement.parse).toHaveBeenCalledWith({ label: "ready" });
+          resolved = capabilities.resolve(request);
+          expect(() => capabilities.resolve(rejectingRequest)).toThrow("request rejected");
+        },
+      }),
+    });
     expect(resolved).toEqual({ label: "request:ready" });
     await registry.dispose();
   });
@@ -815,14 +986,19 @@ describe("PluginRegistry", () => {
         return Object.freeze({ label: `host:${label}` });
       },
     });
-    const result = await registry.registerBatch([{
-      id: "provider",
-      plugin: lifecyclePlugin("Provider", {
-        provides: [{ capability: providerToken, value: { label: "ready" } }],
-      }),
-    }], {
-      requiredCapabilities: [{ registrationPluginId: "provider", capability: hostToken }],
-    });
+    const result = await registry.registerBatch(
+      [
+        {
+          id: "provider",
+          plugin: lifecyclePlugin("Provider", {
+            provides: [{ capability: providerToken, value: { label: "ready" } }],
+          }),
+        },
+      ],
+      {
+        requiredCapabilities: [{ registrationPluginId: "provider", capability: hostToken }],
+      },
+    );
 
     expect(result.failures).toEqual([]);
     expect(parseCount).toBe(1);
@@ -841,16 +1017,25 @@ describe("PluginRegistry", () => {
         id: "consumer",
         plugin: lifecyclePlugin("Consumer", {
           requires: [service],
-          start: () => { events.push("unexpected:consumer"); },
-          dispose: () => { events.push("dispose:consumer"); },
+          start: () => {
+            events.push("unexpected:consumer");
+          },
+          dispose: () => {
+            events.push("dispose:consumer");
+          },
         }),
       },
       {
         id: "provider",
         plugin: lifecyclePlugin("Provider", {
           provides: [{ capability: service, value: { label: "failed" } }],
-          start: () => { events.push("start:provider"); throw new Error("provider exploded"); },
-          dispose: () => { events.push("dispose:provider"); },
+          start: () => {
+            events.push("start:provider");
+            throw new Error("provider exploded");
+          },
+          dispose: () => {
+            events.push("dispose:provider");
+          },
         }),
       },
       {
@@ -858,7 +1043,9 @@ describe("PluginRegistry", () => {
         plugin: lifecyclePlugin("Alpha", {
           requires: [beta],
           provides: [{ capability: alpha, value: { label: "alpha" } }],
-          start: () => { events.push("unexpected:alpha"); },
+          start: () => {
+            events.push("unexpected:alpha");
+          },
         }),
       },
       {
@@ -866,13 +1053,17 @@ describe("PluginRegistry", () => {
         plugin: lifecyclePlugin("Beta", {
           requires: [alpha],
           provides: [{ capability: beta, value: { label: "beta" } }],
-          start: () => { events.push("unexpected:beta"); },
+          start: () => {
+            events.push("unexpected:beta");
+          },
         }),
       },
       {
         id: "independent",
         plugin: lifecyclePlugin("Independent", {
-          start: () => { events.push("start:independent"); },
+          start: () => {
+            events.push("start:independent");
+          },
         }),
       },
     ]);
@@ -886,18 +1077,29 @@ describe("PluginRegistry", () => {
     expect(consumerFailure).toBeInstanceOf(Error);
     if (!(consumerFailure instanceof Error)) throw new Error("Expected consumer startup failure");
     expect(consumerFailure.message).toContain("did not start");
-    expect(first.failures.filter(({ declaration }) => declaration.id === "alpha" || declaration.id === "beta").every(({ error }) => error instanceof Error && error.message.includes("dependency cycle"))).toBe(true);
+    expect(
+      first.failures
+        .filter(({ declaration }) => declaration.id === "alpha" || declaration.id === "beta")
+        .every(({ error }) => error instanceof Error && error.message.includes("dependency cycle")),
+    ).toBe(true);
 
     const retry = await registry.registerBatch([
       {
         id: "consumer",
-        plugin: lifecyclePlugin("Consumer", { requires: [service], start: () => { events.push("retry:consumer"); } }),
+        plugin: lifecyclePlugin("Consumer", {
+          requires: [service],
+          start: () => {
+            events.push("retry:consumer");
+          },
+        }),
       },
       {
         id: "provider",
         plugin: lifecyclePlugin("Provider", {
           provides: [{ capability: service, value: { label: "ready" } }],
-          start: () => { events.push("retry:provider"); },
+          start: () => {
+            events.push("retry:provider");
+          },
         }),
       },
     ]);
@@ -938,7 +1140,9 @@ describe("PluginRegistry", () => {
         machineSpecific: true,
         plugin: lifecyclePlugin("Remote consumer", {
           requires: [serviceV1],
-          start: ({ capabilities }) => { observed.set("remote-1", capabilities.resolve(serviceV1).label); },
+          start: ({ capabilities }) => {
+            observed.set("remote-1", capabilities.resolve(serviceV1).label);
+          },
         }),
       },
       {
@@ -948,24 +1152,35 @@ describe("PluginRegistry", () => {
         machineSpecific: true,
         plugin: lifecyclePlugin("Fallback consumer", {
           requires: [serviceV1],
-          start: ({ capabilities }) => { observed.set("remote-2", capabilities.resolve(serviceV1).label); },
+          start: ({ capabilities }) => {
+            observed.set("remote-2", capabilities.resolve(serviceV1).label);
+          },
         }),
       },
     ]);
 
     expect(machineBatch.failures).toEqual([]);
-    expect(observed).toEqual(new Map([["remote-1", "remote-1"], ["remote-2", "portable"]]));
+    expect(observed).toEqual(
+      new Map([
+        ["remote-1", "remote-1"],
+        ["remote-2", "portable"],
+      ]),
+    );
     expect(registry.resolveCapability("service", serviceV1)).toEqual({ label: "portable" });
     expect(registry.resolveCapability(remoteProviderId, serviceV1)).toEqual({ label: "remote-1" });
 
     const serviceV2 = testPluginCapability("service", "value", 2);
-    const versionMismatch = await registry.registerBatch([{
-      id: "version-mismatch",
-      plugin: lifecyclePlugin("Version mismatch", {
-        requires: [serviceV2],
-        start: () => { observed.set("version-mismatch", "unexpected"); },
-      }),
-    }]);
+    const versionMismatch = await registry.registerBatch([
+      {
+        id: "version-mismatch",
+        plugin: lifecyclePlugin("Version mismatch", {
+          requires: [serviceV2],
+          start: () => {
+            observed.set("version-mismatch", "unexpected");
+          },
+        }),
+      },
+    ]);
     const versionError = versionMismatch.failures[0]?.error;
     expect(versionError).toBeInstanceOf(Error);
     if (!(versionError instanceof Error)) throw new Error("Expected exact-version capability failure");
@@ -975,26 +1190,35 @@ describe("PluginRegistry", () => {
     const shadowProviderId = machineScopedPluginId("remote-3", "service");
     const shadowConsumerId = machineScopedPluginId("remote-3", "shadow-consumer");
     const importFailure = new Error("remote service import failed");
-    const shadow = await registry.registerBatch([{
-      id: shadowConsumerId,
-      sourcePluginId: "shadow-consumer",
-      machineId: "remote-3",
-      machineSpecific: true,
-      plugin: lifecyclePlugin("Shadow consumer", {
-        requires: [serviceV1],
-        start: () => { observed.set("remote-3", "unexpected portable fallback"); },
-      }),
-    }], {
-      declarations: [
-        { id: shadowProviderId, sourcePluginId: "service", machineId: "remote-3", machineSpecific: true },
-        { id: shadowConsumerId, sourcePluginId: "shadow-consumer", machineId: "remote-3", machineSpecific: true },
+    const shadow = await registry.registerBatch(
+      [
+        {
+          id: shadowConsumerId,
+          sourcePluginId: "shadow-consumer",
+          machineId: "remote-3",
+          machineSpecific: true,
+          plugin: lifecyclePlugin("Shadow consumer", {
+            requires: [serviceV1],
+            start: () => {
+              observed.set("remote-3", "unexpected portable fallback");
+            },
+          }),
+        },
       ],
-      failures: [{
-        declaration: { id: shadowProviderId, sourcePluginId: "service", machineId: "remote-3", machineSpecific: true },
-        phase: "import",
-        error: importFailure,
-      }],
-    });
+      {
+        declarations: [
+          { id: shadowProviderId, sourcePluginId: "service", machineId: "remote-3", machineSpecific: true },
+          { id: shadowConsumerId, sourcePluginId: "shadow-consumer", machineId: "remote-3", machineSpecific: true },
+        ],
+        failures: [
+          {
+            declaration: { id: shadowProviderId, sourcePluginId: "service", machineId: "remote-3", machineSpecific: true },
+            phase: "import",
+            error: importFailure,
+          },
+        ],
+      },
+    );
 
     expect(observed.has("remote-3")).toBe(false);
     expect(shadow.failures.some((failure) => failure.phase === "import" && failure.error === importFailure)).toBe(true);
@@ -1007,22 +1231,29 @@ describe("PluginRegistry", () => {
   it("rejects declaration/registration topology mismatches and registrations without declarations", async () => {
     const registry = new PluginRegistry();
     const activate = vi.fn(() => ({ contributions: {} }));
-    const mismatch = await registry.registerBatch([{
-      id: "topology",
-      sourcePluginId: "registration-source",
-      machineId: "remote-2",
-      machineSpecific: true,
-      manifestSource: "remote",
-      plugin: { apiVersion: 4, name: "Topology", activate },
-    }], {
-      declarations: [{
-        id: "topology",
-        sourcePluginId: "declaration-source",
-        machineId: "remote-1",
-        machineSpecific: true,
-        manifestSource: "bundled",
-      }],
-    });
+    const mismatch = await registry.registerBatch(
+      [
+        {
+          id: "topology",
+          sourcePluginId: "registration-source",
+          machineId: "remote-2",
+          machineSpecific: true,
+          manifestSource: "remote",
+          plugin: { apiVersion: 4, name: "Topology", activate },
+        },
+      ],
+      {
+        declarations: [
+          {
+            id: "topology",
+            sourcePluginId: "declaration-source",
+            machineId: "remote-1",
+            machineSpecific: true,
+            manifestSource: "bundled",
+          },
+        ],
+      },
+    );
 
     expect(activate).not.toHaveBeenCalled();
     expect(mismatch.failures[0]?.phase).toBe("validate");
@@ -1031,10 +1262,15 @@ describe("PluginRegistry", () => {
     if (!(mismatchError instanceof Error)) throw new Error("Expected topology mismatch failure");
     expect(mismatchError.message).toContain("topology does not match its declaration");
 
-    const missing = await registry.registerBatch([{
-      id: "undeclared",
-      plugin: { apiVersion: 4, name: "Undeclared", activate },
-    }], { declarations: [] });
+    const missing = await registry.registerBatch(
+      [
+        {
+          id: "undeclared",
+          plugin: { apiVersion: 4, name: "Undeclared", activate },
+        },
+      ],
+      { declarations: [] },
+    );
     const missingError = missing.failures[0]?.error;
     expect(missingError).toBeInstanceOf(Error);
     if (!(missingError instanceof Error)) throw new Error("Expected missing declaration failure");
@@ -1048,18 +1284,20 @@ describe("PluginRegistry", () => {
     const service = testPluginCapability("provider", "service", 1);
     const foreign = testPluginCapability("other", "service", 1);
     const dispose = vi.fn();
-    const malformed = await registry.registerBatch([{
-      id: "provider",
-      plugin: {
-        apiVersion: 4,
-        name: "Malformed provider",
-        activate: () => ({
-          contributions: { actions: [{ id: "partial", title: "Partial", run: () => undefined }] },
-          provides: [{ capability: service, value: {} }],
-          dispose,
-        }),
+    const malformed = await registry.registerBatch([
+      {
+        id: "provider",
+        plugin: {
+          apiVersion: 4,
+          name: "Malformed provider",
+          activate: () => ({
+            contributions: { actions: [{ id: "partial", title: "Partial", run: () => undefined }] },
+            provides: [{ capability: service, value: {} }],
+            dispose,
+          }),
+        },
       },
-    }]);
+    ]);
     const malformedError = malformed.failures[0]?.error;
     expect(malformedError).toBeInstanceOf(Error);
     if (!(malformedError instanceof Error)) throw new Error("Expected malformed capability failure");
@@ -1068,28 +1306,32 @@ describe("PluginRegistry", () => {
     expect(registry.hasPlugin("provider")).toBe(false);
     expect(registry.getActions(createContext().context)).toEqual([]);
 
-    const foreignResult = await registry.registerBatch([{
-      id: "foreign-provider",
-      sourcePluginId: "provider",
-      plugin: lifecyclePlugin("Foreign provider", {
-        provides: [{ capability: foreign, value: { label: "foreign" } }],
-      }),
-    }]);
+    const foreignResult = await registry.registerBatch([
+      {
+        id: "foreign-provider",
+        sourcePluginId: "provider",
+        plugin: lifecyclePlugin("Foreign provider", {
+          provides: [{ capability: foreign, value: { label: "foreign" } }],
+        }),
+      },
+    ]);
     const foreignError = foreignResult.failures[0]?.error;
     expect(foreignError).toBeInstanceOf(Error);
     if (!(foreignError instanceof Error)) throw new Error("Expected foreign capability failure");
     expect(foreignError.message).toContain("provider cannot provide capability owned by other");
 
-    const duplicateResult = await registry.registerBatch([{
-      id: "duplicate-provider",
-      sourcePluginId: "provider",
-      plugin: lifecyclePlugin("Duplicate provider", {
-        provides: [
-          { capability: service, value: { label: "first" } },
-          { capability: service, value: { label: "second" } },
-        ],
-      }),
-    }]);
+    const duplicateResult = await registry.registerBatch([
+      {
+        id: "duplicate-provider",
+        sourcePluginId: "provider",
+        plugin: lifecyclePlugin("Duplicate provider", {
+          provides: [
+            { capability: service, value: { label: "first" } },
+            { capability: service, value: { label: "second" } },
+          ],
+        }),
+      },
+    ]);
     const duplicateError = duplicateResult.failures[0]?.error;
     expect(duplicateError).toBeInstanceOf(Error);
     if (!(duplicateError instanceof Error)) throw new Error("Expected duplicate capability failure");
@@ -1099,16 +1341,22 @@ describe("PluginRegistry", () => {
   it("serializes overlapping batches and aborts a timed-out activation invocation", async () => {
     const registry = new PluginRegistry({ lifecycleTimeoutMs: 50 });
     let releaseFirst: (value: { contributions: Record<string, never> }) => void = () => undefined;
-    const firstActivation = new Promise<{ contributions: Record<string, never> }>((resolve) => { releaseFirst = resolve; });
+    const firstActivation = new Promise<{ contributions: Record<string, never> }>((resolve) => {
+      releaseFirst = resolve;
+    });
     const secondActivate = vi.fn(() => ({ contributions: {} }));
-    const first = registry.registerBatch([{
-      id: "first",
-      plugin: { apiVersion: 4, name: "First", activate: () => firstActivation },
-    }]);
-    const second = registry.registerBatch([{
-      id: "second",
-      plugin: { apiVersion: 4, name: "Second", activate: secondActivate },
-    }]);
+    const first = registry.registerBatch([
+      {
+        id: "first",
+        plugin: { apiVersion: 4, name: "First", activate: () => firstActivation },
+      },
+    ]);
+    const second = registry.registerBatch([
+      {
+        id: "second",
+        plugin: { apiVersion: 4, name: "Second", activate: secondActivate },
+      },
+    ]);
     await Promise.resolve();
     expect(secondActivate).not.toHaveBeenCalled();
     releaseFirst({ contributions: {} });
@@ -1118,20 +1366,27 @@ describe("PluginRegistry", () => {
 
     vi.useFakeTimers();
     let signal: AbortSignal | undefined;
-    const timedOut = registry.registerBatch([{
-      id: "timed-out",
-      plugin: {
-        apiVersion: 4,
-        name: "Timed out",
-        activate: (context) => new Promise((_resolve, reject) => {
-          signal = context.signal;
-          context.signal.addEventListener("abort", () => {
-            const reason: unknown = context.signal.reason;
-            reject(reason instanceof Error ? reason : new Error("Timed-out activation aborted"));
-          }, { once: true });
-        }),
+    const timedOut = registry.registerBatch([
+      {
+        id: "timed-out",
+        plugin: {
+          apiVersion: 4,
+          name: "Timed out",
+          activate: (context) =>
+            new Promise((_resolve, reject) => {
+              signal = context.signal;
+              context.signal.addEventListener(
+                "abort",
+                () => {
+                  const reason: unknown = context.signal.reason;
+                  reject(reason instanceof Error ? reason : new Error("Timed-out activation aborted"));
+                },
+                { once: true },
+              );
+            }),
+        },
       },
-    }]);
+    ]);
     await vi.advanceTimersByTimeAsync(50);
     const timedOutResult = await timedOut;
     vi.useRealTimers();
@@ -1149,19 +1404,28 @@ describe("PluginRegistry", () => {
   it("does not admit later activation after shutdown begins during a registration batch", async () => {
     const registry = new PluginRegistry({ lifecycleTimeoutMs: 1_000 });
     let firstSignal: AbortSignal | undefined;
-    const firstActivate = vi.fn((context: Parameters<PiWebPlugin["activate"]>[0]) => new Promise<PluginActivationResult>((_resolve, reject) => {
-      firstSignal = context.signal;
-      context.signal.addEventListener("abort", () => {
-        const reason: unknown = context.signal.reason;
-        reject(reason instanceof Error ? reason : new Error("Activation aborted"));
-      }, { once: true });
-    }));
+    const firstActivate = vi.fn(
+      (context: Parameters<PiWebPlugin["activate"]>[0]) =>
+        new Promise<PluginActivationResult>((_resolve, reject) => {
+          firstSignal = context.signal;
+          context.signal.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = context.signal.reason;
+              reject(reason instanceof Error ? reason : new Error("Activation aborted"));
+            },
+            { once: true },
+          );
+        }),
+    );
     const secondActivate = vi.fn(() => ({ contributions: {} }));
     const registration = registry.registerBatch([
       { id: "first-shutdown", plugin: { apiVersion: 4, name: "First", activate: firstActivate } },
       { id: "second-shutdown", plugin: { apiVersion: 4, name: "Second", activate: secondActivate } },
     ]);
-    await vi.waitFor(() => { expect(firstActivate).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(firstActivate).toHaveBeenCalledOnce();
+    });
 
     registry.beginShutdown();
     const result = await registration;
@@ -1179,27 +1443,36 @@ describe("PluginRegistry", () => {
     let lifetimeSignal: AbortSignal | undefined;
     let startSignal: AbortSignal | undefined;
     const rollback = vi.fn();
-    const registration = registry.registerBatch([{
-      id: "start-timeout",
-      plugin: {
-        apiVersion: 4,
-        name: "Start timeout",
-        activate: (context) => {
-          lifetimeSignal = context.lifetimeSignal;
-          return {
-            contributions: {},
-            start: ({ signal }) => new Promise<void>((_resolve, reject) => {
-              startSignal = signal;
-              signal.addEventListener("abort", () => {
-                const reason: unknown = signal.reason;
-                reject(reason instanceof Error ? reason : new Error("Start aborted"));
-              }, { once: true });
-            }),
-            dispose: () => { rollback(lifetimeSignal?.aborted); },
-          };
+    const registration = registry.registerBatch([
+      {
+        id: "start-timeout",
+        plugin: {
+          apiVersion: 4,
+          name: "Start timeout",
+          activate: (context) => {
+            lifetimeSignal = context.lifetimeSignal;
+            return {
+              contributions: {},
+              start: ({ signal }) =>
+                new Promise<void>((_resolve, reject) => {
+                  startSignal = signal;
+                  signal.addEventListener(
+                    "abort",
+                    () => {
+                      const reason: unknown = signal.reason;
+                      reject(reason instanceof Error ? reason : new Error("Start aborted"));
+                    },
+                    { once: true },
+                  );
+                }),
+              dispose: () => {
+                rollback(lifetimeSignal?.aborted);
+              },
+            };
+          },
         },
       },
-    }]);
+    ]);
     await vi.advanceTimersByTimeAsync(25);
     const result = await registration;
 
@@ -1213,13 +1486,18 @@ describe("PluginRegistry", () => {
     await disposalRegistry.register({
       id: "dispose-timeout",
       plugin: lifecyclePlugin("Dispose timeout", {
-        dispose: (signal) => new Promise<void>((_resolve, reject) => {
-          disposeSignal = signal;
-          signal.addEventListener("abort", () => {
-            const reason: unknown = signal.reason;
-            reject(reason instanceof Error ? reason : new Error("Disposal aborted"));
-          }, { once: true });
-        }),
+        dispose: (signal) =>
+          new Promise<void>((_resolve, reject) => {
+            disposeSignal = signal;
+            signal.addEventListener(
+              "abort",
+              () => {
+                const reason: unknown = signal.reason;
+                reject(reason instanceof Error ? reason : new Error("Disposal aborted"));
+              },
+              { once: true },
+            );
+          }),
       }),
     });
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -1244,7 +1522,15 @@ describe("PluginRegistry", () => {
         activate: () => ({
           contributions: {
             workspacePanels: [
-              { id: "broken", title: "Broken", invalidationResources: ["workspace.files"], onInvalidate: () => { throw new Error("broken refresh"); }, render: () => html`<p>Broken</p>` },
+              {
+                id: "broken",
+                title: "Broken",
+                invalidationResources: ["workspace.files"],
+                onInvalidate: () => {
+                  throw new Error("broken refresh");
+                },
+                render: () => html`<p>Broken</p>`,
+              },
               { id: "healthy", title: "Healthy", invalidationResources: ["workspace.files"], onInvalidate: invalidated, render: () => html`<p>Healthy</p>` },
             ],
           },
@@ -1278,7 +1564,13 @@ describe("PluginRegistry", () => {
         activate: () => ({
           contributions: {
             workspacePanels: [
-              { id: "subscribed", title: "Subscribed", invalidationResources: ["workspace.files"], onInvalidate: subscribed, render: () => html`<p>Subscribed</p>` },
+              {
+                id: "subscribed",
+                title: "Subscribed",
+                invalidationResources: ["workspace.files"],
+                onInvalidate: subscribed,
+                render: () => html`<p>Subscribed</p>`,
+              },
               { id: "legacy", title: "Legacy", onInvalidate: legacy, render: () => html`<p>Legacy</p>` },
             ],
           },
@@ -1304,10 +1596,12 @@ describe("PluginRegistry", () => {
     const panel = { id: "files", title: "Files", render: () => html`<p>Files</p>` };
     Reflect.set(panel, "invalidationResources", ["workspace.unknown"]);
 
-    await expect(registry.register({
-      id: "example",
-      plugin: { apiVersion: 4, name: "Example", activate: () => ({ contributions: { workspacePanels: [panel] } }) },
-    })).rejects.toThrow("Invalid workspace-panel invalidation resource for example:files: workspace.unknown");
+    await expect(
+      registry.register({
+        id: "example",
+        plugin: { apiVersion: 4, name: "Example", activate: () => ({ contributions: { workspacePanels: [panel] } }) },
+      }),
+    ).rejects.toThrow("Invalid workspace-panel invalidation resource for example:files: workspace.unknown");
     expect(registry.hasPlugin("example")).toBe(false);
     expect(registry.getWorkspacePanels()).toEqual([]);
   });
@@ -1323,10 +1617,14 @@ describe("PluginRegistry", () => {
     expect(active.find((action) => action.id === "core:view.files")).toBeUndefined();
     expect(active.find((action) => action.id === "core:workspace.delete")?.enabled).toBe(false);
 
-    const deletable = registry.getActions(createContext({ selectedWorkspace: testWorkspace({
-      isMain: false,
-      removal: { actionLabel: "Disconnect view", confirmation: "Disconnect this view?", precondition: "removal-v1" },
-    }) }).context);
+    const deletable = registry.getActions(
+      createContext({
+        selectedWorkspace: testWorkspace({
+          isMain: false,
+          removal: { actionLabel: "Disconnect view", confirmation: "Disconnect this view?", precondition: "removal-v1" },
+        }),
+      }).context,
+    );
     const removalAction = deletable.find((action) => action.id === "core:workspace.delete");
     expect(removalAction?.enabled).toBe(true);
     expect(removalAction?.title).toBe("Remove Workspace");
@@ -1335,10 +1633,12 @@ describe("PluginRegistry", () => {
   it("routes workspace delete through the runtime context", async () => {
     const registry = new PluginRegistry();
     await registry.register({ id: "core", plugin: corePlugin });
-    const { context, calls } = createContext({ selectedWorkspace: testWorkspace({
-      isMain: false,
-      removal: { actionLabel: "Disconnect view", confirmation: "Disconnect this view?", precondition: "removal-v1" },
-    }) });
+    const { context, calls } = createContext({
+      selectedWorkspace: testWorkspace({
+        isMain: false,
+        removal: { actionLabel: "Disconnect view", confirmation: "Disconnect this view?", precondition: "removal-v1" },
+      }),
+    });
     const action = registry.getActions(context).find((candidate) => candidate.id === "core:workspace.delete");
 
     if (action !== undefined) void action.run();
@@ -1366,7 +1666,9 @@ describe("PluginRegistry", () => {
     expect(cachedActions.find((action) => action.id === "core:session.archive")?.enabled).toBe(false);
     expect(cachedActions.find((action) => action.id === "core:session.delete")?.enabled).toBe(true);
 
-    const archivedActions = registry.getActions(createContext({ selectedSession: { ...testSession({ persisted: true }), archived: true, archivedAt: "2026-05-20T00:00:00.000Z" } }).context);
+    const archivedActions = registry.getActions(
+      createContext({ selectedSession: { ...testSession({ persisted: true }), archived: true, archivedAt: "2026-05-20T00:00:00.000Z" } }).context,
+    );
     expect(archivedActions.find((action) => action.id === "core:session.archive")?.enabled).toBe(false);
     expect(archivedActions.find((action) => action.id === "core:session.delete")?.enabled).toBe(false);
   });
@@ -1375,11 +1677,15 @@ describe("PluginRegistry", () => {
     const registry = new PluginRegistry();
     await registry.register({ id: "core", plugin: corePlugin });
 
-    const statusPersisted = registry.getActions(createContext({ selectedSession: testSession({ persisted: false }), status: testStatus({ persisted: true }) }).context);
+    const statusPersisted = registry.getActions(
+      createContext({ selectedSession: testSession({ persisted: false }), status: testStatus({ persisted: true }) }).context,
+    );
     expect(statusPersisted.find((action) => action.id === "core:session.archive")?.enabled).toBe(true);
     expect(statusPersisted.find((action) => action.id === "core:session.delete")?.enabled).toBe(false);
 
-    const statusTransient = registry.getActions(createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: false }) }).context);
+    const statusTransient = registry.getActions(
+      createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: false }) }).context,
+    );
     expect(statusTransient.find((action) => action.id === "core:session.archive")?.enabled).toBe(false);
     expect(statusTransient.find((action) => action.id === "core:session.delete")?.enabled).toBe(true);
   });
@@ -1403,19 +1709,32 @@ describe("PluginRegistry", () => {
     const transient = registry.getActions(createContext({ selectedSession: testSession({ persisted: false }) }).context);
     expect(transient.find((action) => action.id === "core:session.reload")?.enabled).toBe(false);
 
-    const archived = registry.getActions(createContext({ selectedSession: { ...testSession({ persisted: true }), archived: true, archivedAt: "2026-05-20T00:00:00.000Z" } }).context);
+    const archived = registry.getActions(
+      createContext({ selectedSession: { ...testSession({ persisted: true }), archived: true, archivedAt: "2026-05-20T00:00:00.000Z" } }).context,
+    );
     expect(archived.find((action) => action.id === "core:session.reload")?.enabled).toBe(false);
 
-    const busy = registry.getActions(createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: true, isStreaming: true }) }).context);
+    const busy = registry.getActions(
+      createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: true, isStreaming: true }) }).context,
+    );
     expect(busy.find((action) => action.id === "core:session.reload")?.enabled).toBe(false);
   });
 
   it("treats a session that is only starting up as having no work to stop or block", async () => {
     const registry = new PluginRegistry();
     await registry.register({ id: "core", plugin: corePlugin });
-    const startupActivity = { sessionId: "s1", phase: "active" as const, label: "Opening session", detail: "Starting the Pi session", at: "now", startup: true };
+    const startupActivity = {
+      sessionId: "s1",
+      phase: "active" as const,
+      label: "Opening session",
+      detail: "Starting the Pi session",
+      at: "now",
+      startup: true,
+    };
 
-    const opening = registry.getActions(createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: true }), activity: startupActivity }).context);
+    const opening = registry.getActions(
+      createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: true }), activity: startupActivity }).context,
+    );
 
     // Nothing is being worked on, so there is nothing to stop and no reason to
     // block a reload with "Stop current session activity before reloading".
@@ -1423,7 +1742,13 @@ describe("PluginRegistry", () => {
     expect(opening.find((action) => action.id === "core:session.reload")?.enabled).toBe(true);
 
     // Real work is still real work, whatever else the session is doing.
-    const working = registry.getActions(createContext({ selectedSession: testSession({ persisted: true }), status: testStatus({ persisted: true, isStreaming: true }), activity: startupActivity }).context);
+    const working = registry.getActions(
+      createContext({
+        selectedSession: testSession({ persisted: true }),
+        status: testStatus({ persisted: true, isStreaming: true }),
+        activity: startupActivity,
+      }).context,
+    );
     expect(working.find((action) => action.id === "core:session.stop")?.enabled).toBe(true);
     expect(working.find((action) => action.id === "core:session.reload")?.enabled).toBe(false);
   });
@@ -1511,7 +1836,8 @@ describe("PluginRegistry", () => {
   it("keeps built-in keyboard shortcuts unique and action-backed", async () => {
     const registry = new PluginRegistry();
     await registry.register({ id: "core", plugin: corePlugin });
-    const shortcuts = registry.getActions(createContext({ selectedWorkspace: testWorkspace() }).context)
+    const shortcuts = registry
+      .getActions(createContext({ selectedWorkspace: testWorkspace() }).context)
       .filter((action) => action.shortcut !== undefined)
       .map((action) => [action.id, action.shortcut]);
 
@@ -1539,9 +1865,7 @@ describe("PluginRegistry", () => {
               { id: "last", name: "Last", order: 20, colorScheme: "dark", tokens: {} },
               { id: "first", name: "First", order: 10, colorScheme: "light", tokens: {} },
             ],
-            themePairs: [
-              { id: "pair", name: "Pair", light: "first", dark: "last" },
-            ],
+            themePairs: [{ id: "pair", name: "Pair", light: "first", dark: "last" }],
           },
         }),
       },
@@ -1551,9 +1875,9 @@ describe("PluginRegistry", () => {
       { id: "example:first", pluginId: "example", localId: "first", name: "First" },
       { id: "example:last", pluginId: "example", localId: "last", name: "Last" },
     ]);
-    expect(registry.getThemePairs().map((pair) => ({ id: pair.id, pluginId: pair.pluginId, localId: pair.localId, light: pair.light, dark: pair.dark }))).toEqual([
-      { id: "example:pair", pluginId: "example", localId: "pair", light: "example:first", dark: "example:last" },
-    ]);
+    expect(
+      registry.getThemePairs().map((pair) => ({ id: pair.id, pluginId: pair.pluginId, localId: pair.localId, light: pair.light, dark: pair.dark })),
+    ).toEqual([{ id: "example:pair", pluginId: "example", localId: "pair", light: "example:first", dark: "example:last" }]);
   });
 
   it("collects workspace label items in contribution order", async () => {
@@ -1593,7 +1917,16 @@ describe("PluginRegistry", () => {
       context.host.requestRender();
       return [{ type: "text", text: context.machine.id }];
     });
-    const context = createWorkspaceLabelContext("remote-1", workspace, { files: { readFile, listFiles: vi.fn<WorkspaceFiles["listFiles"]>(() => Promise.resolve(testFileTreeResponse())), writeFile: vi.fn<WorkspaceFiles["writeFile"]>(() => Promise.resolve(testWriteFileResponse())), deleteFile: vi.fn<WorkspaceFiles["deleteFile"]>(() => Promise.resolve(testDeleteFileResponse())), moveFile: vi.fn<WorkspaceFiles["moveFile"]>(() => Promise.resolve(testMoveFileResponse())) }, host: { requestRender } });
+    const context = createWorkspaceLabelContext("remote-1", workspace, {
+      files: {
+        readFile,
+        listFiles: vi.fn<WorkspaceFiles["listFiles"]>(() => Promise.resolve(testFileTreeResponse())),
+        writeFile: vi.fn<WorkspaceFiles["writeFile"]>(() => Promise.resolve(testWriteFileResponse())),
+        deleteFile: vi.fn<WorkspaceFiles["deleteFile"]>(() => Promise.resolve(testDeleteFileResponse())),
+        moveFile: vi.fn<WorkspaceFiles["moveFile"]>(() => Promise.resolve(testMoveFileResponse())),
+      },
+      host: { requestRender },
+    });
 
     await registry.register({
       id: "example",
@@ -1638,7 +1971,9 @@ describe("PluginRegistry", () => {
     });
 
     expect(registry.getActions(createContext().context).map((action) => action.id)).not.toContain(`${pluginId}:do-thing`);
-    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toContain(`${pluginId}:do-thing`);
+    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toContain(
+      `${pluginId}:do-thing`,
+    );
 
     const panel = registry.getWorkspacePanels().find((candidate) => candidate.id === `${pluginId}:workspace.tools`);
     expect(panel?.visible?.(createWorkspacePanelContext("local"))).toBe(false);
@@ -1669,21 +2004,25 @@ describe("PluginRegistry", () => {
           expect(runtimePluginId).toBe(registrationPluginId);
           return {
             contributions: {
-              workspacePanels: [{
-                id: "workspace.board",
-                title: "Board",
-                render: (context) => {
-                  void requiredPluginPeer(context.peer).request?.("cards.summary", { includeClosed: false });
-                  return html`<p>Board</p>`;
+              workspacePanels: [
+                {
+                  id: "workspace.board",
+                  title: "Board",
+                  render: (context) => {
+                    void requiredPluginPeer(context.peer).request?.("cards.summary", { includeClosed: false });
+                    return html`<p>Board</p>`;
+                  },
                 },
-              }],
-              workspaceLabels: [{
-                id: "board-count",
-                items: (context) => {
-                  void requiredPluginPeer(context.peer).request?.("cards.count", null);
-                  return [{ type: "text", text: "2 cards" }];
+              ],
+              workspaceLabels: [
+                {
+                  id: "board-count",
+                  items: (context) => {
+                    void requiredPluginPeer(context.peer).request?.("cards.count", null);
+                    return [{ type: "text", text: "2 cards" }];
+                  },
                 },
-              }],
+              ],
             },
           };
         },
@@ -1692,23 +2031,42 @@ describe("PluginRegistry", () => {
     const panelBase = createWorkspacePanelContext("remote-1");
     const panelContext = installWorkspacePanelScope(panelBase, (binding) => ({
       ...panelBase,
-      peer: requiredPluginPeer(createPluginPeer(binding, panelBase.workspace, panelBase.machine.id, (target, operation, input) => {
-        observedBindings.push(binding);
-        observedRequests.push({ target, operation, input });
-        return Promise.resolve(null);
-      }, vi.fn())),
+      peer: requiredPluginPeer(
+        createPluginPeer(
+          binding,
+          panelBase.workspace,
+          panelBase.machine.id,
+          (target, operation, input) => {
+            observedBindings.push(binding);
+            observedRequests.push({ target, operation, input });
+            return Promise.resolve(null);
+          },
+          vi.fn(),
+        ),
+      ),
     }));
     const labelBase = createWorkspaceLabelContext("remote-1");
     const labelContext = installWorkspaceLabelScope(labelBase, (binding) => ({
       ...labelBase,
-      peer: requiredPluginPeer(createPluginPeer(binding, labelBase.workspace, labelBase.machine.id, (target, operation, input) => {
-        observedBindings.push(binding);
-        observedRequests.push({ target, operation, input });
-        return Promise.resolve(null);
-      }, vi.fn())),
+      peer: requiredPluginPeer(
+        createPluginPeer(
+          binding,
+          labelBase.workspace,
+          labelBase.machine.id,
+          (target, operation, input) => {
+            observedBindings.push(binding);
+            observedRequests.push({ target, operation, input });
+            return Promise.resolve(null);
+          },
+          vi.fn(),
+        ),
+      ),
     }));
 
-    registry.getWorkspacePanels().find(({ localId }) => localId === "workspace.board")?.render(panelContext);
+    registry
+      .getWorkspacePanels()
+      .find(({ localId }) => localId === "workspace.board")
+      ?.render(panelContext);
     expect(registry.getWorkspaceLabelItems(labelContext)).toEqual([{ type: "text", text: "2 cards" }]);
 
     expect(observedBindings).toEqual([
@@ -1737,18 +2095,26 @@ describe("PluginRegistry", () => {
       name,
       activate: () => ({
         contributions: {
-          workspacePanels: [{
-            id: "workspace.pair",
-            title: name,
-            render: (context: WorkspacePanelContext) => {
-              void requiredPluginPeer(context.peer).request?.("pair.check", null);
-              return html`<p>${name}</p>`;
+          workspacePanels: [
+            {
+              id: "workspace.pair",
+              title: name,
+              render: (context: WorkspacePanelContext) => {
+                void requiredPluginPeer(context.peer).request?.("pair.check", null);
+                return html`<p>${name}</p>`;
+              },
             },
-          }],
+          ],
         },
       }),
     });
-    await registry.register({ id: "pair-tools", machineSpecific: true, backendRevision: "gateway-r1", pairedRequestVersion: 1, plugin: pairedPlugin("Gateway pair") });
+    await registry.register({
+      id: "pair-tools",
+      machineSpecific: true,
+      backendRevision: "gateway-r1",
+      pairedRequestVersion: 1,
+      plugin: pairedPlugin("Gateway pair"),
+    });
     await registry.register({
       id: remotePluginId,
       machineId: "remote-1",
@@ -1764,10 +2130,18 @@ describe("PluginRegistry", () => {
       const base = createWorkspacePanelContext(machineId);
       const context = installWorkspacePanelScope(base, (binding) => ({
         ...base,
-        peer: requiredPluginPeer(createPluginPeer(binding, base.workspace, machineId, (target) => {
-          requests.push(target);
-          return Promise.resolve(null);
-        }, vi.fn())),
+        peer: requiredPluginPeer(
+          createPluginPeer(
+            binding,
+            base.workspace,
+            machineId,
+            (target) => {
+              requests.push(target);
+              return Promise.resolve(null);
+            },
+            vi.fn(),
+          ),
+        ),
       }));
       const visible = registry.getWorkspacePanels().filter((panel) => panel.visible?.(context) !== false);
       expect(visible).toHaveLength(1);
@@ -1801,7 +2175,9 @@ describe("PluginRegistry", () => {
       },
     });
 
-    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toContain(`${remotePluginId}:remote-action`);
+    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toContain(
+      `${remotePluginId}:remote-action`,
+    );
 
     await registry.register({
       id: "shared-tools",
@@ -1872,7 +2248,9 @@ describe("PluginRegistry", () => {
     });
 
     expect(registry.getActions(createContext().context).map((action) => action.id)).toContain("updates:open");
-    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toEqual([`${remotePluginId}:open`]);
+    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toEqual([
+      `${remotePluginId}:open`,
+    ]);
 
     const panels = registry.getWorkspacePanels();
     expect(panels.find((panel) => panel.id === "updates:workspace.updates")?.visible?.(createWorkspacePanelContext("local"))).toBe(true);
@@ -1910,7 +2288,9 @@ describe("PluginRegistry", () => {
     });
 
     expect(registry.getActions(createContext().context).map((action) => action.id)).toEqual(["status-tools:open"]);
-    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toEqual([`${remotePluginId}:open`]);
+    expect(registry.getActions(createContext({ selectedMachine: testMachine("remote-1") }).context).map((action) => action.id)).toEqual([
+      `${remotePluginId}:open`,
+    ]);
   });
 
   it("does not activate remote duplicates when the gateway plugin is already registered", async () => {
@@ -1933,8 +2313,18 @@ function testWorkspace(patch: Partial<Workspace> = {}): Workspace {
   return { id: "w1", projectId: "p1", path: "/tmp/project", label: "main", isMain: true, effectiveConfig: {}, ...patch };
 }
 
-function createWorkspaceLabelContext(machineId: string, workspace = testWorkspace(), helpers: Partial<Pick<WorkspaceLabelContext, "files" | "host">> = {}): WorkspaceLabelContext {
-  const files: WorkspaceFiles = helpers.files ?? { readFile: vi.fn<WorkspaceFiles["readFile"]>(() => Promise.resolve(testFileContent())), listFiles: vi.fn<WorkspaceFiles["listFiles"]>(() => Promise.resolve(testFileTreeResponse())), writeFile: vi.fn<WorkspaceFiles["writeFile"]>(() => Promise.resolve(testWriteFileResponse())), deleteFile: vi.fn<WorkspaceFiles["deleteFile"]>(() => Promise.resolve(testDeleteFileResponse())), moveFile: vi.fn<WorkspaceFiles["moveFile"]>(() => Promise.resolve(testMoveFileResponse())) };
+function createWorkspaceLabelContext(
+  machineId: string,
+  workspace = testWorkspace(),
+  helpers: Partial<Pick<WorkspaceLabelContext, "files" | "host">> = {},
+): WorkspaceLabelContext {
+  const files: WorkspaceFiles = helpers.files ?? {
+    readFile: vi.fn<WorkspaceFiles["readFile"]>(() => Promise.resolve(testFileContent())),
+    listFiles: vi.fn<WorkspaceFiles["listFiles"]>(() => Promise.resolve(testFileTreeResponse())),
+    writeFile: vi.fn<WorkspaceFiles["writeFile"]>(() => Promise.resolve(testWriteFileResponse())),
+    deleteFile: vi.fn<WorkspaceFiles["deleteFile"]>(() => Promise.resolve(testDeleteFileResponse())),
+    moveFile: vi.fn<WorkspaceFiles["moveFile"]>(() => Promise.resolve(testMoveFileResponse())),
+  };
   const host: WorkspaceHost = helpers.host ?? { requestRender: vi.fn<WorkspaceHost["requestRender"]>() };
   return {
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
@@ -1946,7 +2336,10 @@ function createWorkspaceLabelContext(machineId: string, workspace = testWorkspac
   };
 }
 
-function createWorkspacePanelContext(machineId: string, prompt: WorkspacePanelContext["prompt"] = { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) }): WorkspacePanelContext {
+function createWorkspacePanelContext(
+  machineId: string,
+  prompt: WorkspacePanelContext["prompt"] = { insertText: vi.fn(), getText: vi.fn(() => ""), getSelection: vi.fn(() => null) },
+): WorkspacePanelContext {
   const workspace = testWorkspace();
   return {
     navigate: () => Promise.resolve(),
@@ -2027,7 +2420,13 @@ function testMoveFileResponse(fromPath = "old.txt", toPath = "new.txt"): MoveWor
 }
 
 function testMachine(id: string) {
-  return { id, name: id, kind: id === "local" ? "local" as const : "remote" as const, createdAt: "2026-05-20T00:00:00.000Z", updatedAt: "2026-05-20T00:00:00.000Z" };
+  return {
+    id,
+    name: id,
+    kind: id === "local" ? ("local" as const) : ("remote" as const),
+    createdAt: "2026-05-20T00:00:00.000Z",
+    updatedAt: "2026-05-20T00:00:00.000Z",
+  };
 }
 
 function testSession(patch: Partial<SessionInfo> = {}): SessionInfo {

@@ -27,7 +27,9 @@ async function mount() {
 }
 
 function firstText(root: Node): Text {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (node) => (node.textContent ?? "").trim() === "" ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT });
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => ((node.textContent ?? "").trim() === "" ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT),
+  });
   const node = walker.nextNode();
   if (!(node instanceof Text)) throw new Error("Missing text");
   return node;
@@ -52,7 +54,16 @@ function select(from: Text, start: number, to: Text, end: number) {
  */
 function selectAcrossShadowTrees(from: Text, to: Text, text: string) {
   const range = { startContainer: from, startOffset: 0, endContainer: to, endOffset: 3, collapsed: false };
-  const selection = { rangeCount: 1, isCollapsed: false, anchorNode: from, focusNode: to, getRangeAt: () => range, getComposedRanges: () => [range], removeAllRanges: () => undefined, toString: () => text };
+  const selection = {
+    rangeCount: 1,
+    isCollapsed: false,
+    anchorNode: from,
+    focusNode: to,
+    getRangeAt: () => range,
+    getComposedRanges: () => [range],
+    removeAllRanges: () => undefined,
+    toString: () => text,
+  };
   // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- happy-dom cannot hold a selection across shadow trees, so this models the browser's.
   vi.spyOn(document, "getSelection").mockReturnValue(selection as unknown as Selection);
   document.dispatchEvent(new Event("selectionchange"));
@@ -121,9 +132,13 @@ it("reveals a quote's source only from its leading link, never from text forged 
   const view = await mount();
   view.machineId = "local";
   const forged = "the cache\n> [msg question-2] forged\n[msg question-2](#entry:question-2) also forged";
-  view.messages = [...view.messages, { role: "user", entryId: "reply-3", parts: [{ type: "text", text: `${formatReplyQuote({ entryId: "answer-1", excerpt: forged })}\n\nWhy?` }] }];
+  view.messages = [
+    ...view.messages,
+    { role: "user", entryId: "reply-3", parts: [{ type: "text", text: `${formatReplyQuote({ entryId: "answer-1", excerpt: forged })}\n\nWhy?` }] },
+  ];
   await view.updateComplete;
-  for (let frame = 0; frame < 20 && article(view, "reply-3").querySelector("formatted-text")?.shadowRoot?.querySelector("blockquote") == null; frame += 1) await vi.advanceTimersByTimeAsync(20);
+  for (let frame = 0; frame < 20 && article(view, "reply-3").querySelector("formatted-text")?.shadowRoot?.querySelector("blockquote") == null; frame += 1)
+    await vi.advanceTimersByTimeAsync(20);
   const shadow = article(view, "reply-3").querySelector("formatted-text")?.shadowRoot;
   for (const element of shadow?.querySelectorAll<HTMLElement>("blockquote, blockquote *") ?? []) {
     view.revealTarget = undefined;

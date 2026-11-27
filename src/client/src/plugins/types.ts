@@ -1,7 +1,27 @@
 import type { TemplateResult } from "lit";
-import type { PluginBackend, PluginCatalog, PluginNavigate, PluginProjects, PluginPromptEditor, PluginSelectedSession, PluginSelectionService } from "../../../plugin-api";
+import type {
+  PluginBackend,
+  PluginCatalog,
+  PluginNavigate,
+  PluginProjects,
+  PluginPromptEditor,
+  PluginSelectedSession,
+  PluginSelectionService,
+} from "../../../plugin-api";
 import type { AppAction } from "../actions";
-import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeResponse, JsonValue, Machine, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, TerminalCommandRunHandle, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse, Workspace } from "../api";
+import type {
+  DeleteWorkspaceFileResponse,
+  FileContentResponse,
+  FileTreeResponse,
+  JsonValue,
+  Machine,
+  MoveWorkspaceFileOptions,
+  MoveWorkspaceFileResponse,
+  TerminalCommandRunHandle,
+  WriteWorkspaceFileOptions,
+  WriteWorkspaceFileResponse,
+  Workspace,
+} from "../api";
 import type { PluginCapability, PluginCapabilityProvision } from "../../../shared/pluginApiTypes";
 import type { AppState } from "../appState";
 import type { SettingsSection } from "../settingsRoute";

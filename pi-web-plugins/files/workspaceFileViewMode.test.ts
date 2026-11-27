@@ -50,12 +50,15 @@ describe("workspace file view mode", () => {
 
   it("binds mode restoration and replacement to scoped host navigation", () => {
     const set = vi.fn();
-    const store = createWorkspaceFileViewModeStore({
-      version: 1,
-      contributionId: "files:workspace.files",
-      query: { mode: "preview" },
-      set,
-    }, fakeStorage());
+    const store = createWorkspaceFileViewModeStore(
+      {
+        version: 1,
+        contributionId: "files:workspace.files",
+        query: { mode: "preview" },
+        set,
+      },
+      fakeStorage(),
+    );
 
     expect(store.adopt()).toBe("preview");
     store.publish("raw");
@@ -76,7 +79,9 @@ describe("workspace file view mode", () => {
     expect(readStoredWorkspaceFileViewMode(unavailableStorage())).toBeUndefined();
 
     const route = fakeRoute();
-    expect(() => { publishWorkspaceFileViewMode("preview", route, unavailableStorage()); }).not.toThrow();
+    expect(() => {
+      publishWorkspaceFileViewMode("preview", route, unavailableStorage());
+    }).not.toThrow();
     expect(route.written).toEqual(["preview"]);
   });
 });
@@ -90,7 +95,9 @@ function fakeRoute(linked?: string): FakeRoute {
   return {
     written,
     read: () => linked,
-    write: (mode) => { written.push(mode); },
+    write: (mode) => {
+      written.push(mode);
+    },
   };
 }
 
@@ -98,14 +105,20 @@ function fakeStorage(initial: Record<string, string> = {}): WorkspaceFileViewMod
   const values = new Map(Object.entries(initial));
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
   };
 }
 
 /** Private-mode browsers throw on both reads and writes. */
 function unavailableStorage(): WorkspaceFileViewModeStorage {
   return {
-    getItem: () => { throw new Error("storage disabled"); },
-    setItem: () => { throw new Error("storage disabled"); },
+    getItem: () => {
+      throw new Error("storage disabled");
+    },
+    setItem: () => {
+      throw new Error("storage disabled");
+    },
   };
 }

@@ -15,7 +15,17 @@ import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 // daemon that goes away leaves it running, the next one reattaches, and a stale or foreign socket is refused.
 const PREFIX = "com.pi-workbench.durable-trial.host";
 const domain = `gui/${String(process.getuid?.())}`;
-const status = { persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+const status = {
+  persisted: true,
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  messageCount: 0,
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: 0,
+};
 
 /**
  * A host speaking the socket protocol: each start owns the store with the next epoch, answers status and close, and
@@ -86,15 +96,30 @@ afterEach(async () => {
   for (const root of roots.splice(0)) {
     // Unload every job a test left (only labels whose plists it wrote), then remove its folders.
     for (const name of await readdir(join(root, "h")).catch(() => [])) {
-      if (name.endsWith(".plist")) { try { execFileSync("launchctl", ["bootout", `${domain}/${name.slice(0, -".plist".length)}`], { stdio: "ignore" }); } catch { /* not loaded */ } }
+      if (name.endsWith(".plist")) {
+        try {
+          execFileSync("launchctl", ["bootout", `${domain}/${name.slice(0, -".plist".length)}`], { stdio: "ignore" });
+        } catch {
+          /* not loaded */
+        }
+      }
     }
     await rm(root, { recursive: true, force: true });
   }
 });
 
 /** A daemon's view: data in a fresh folder, sockets in a short owner-only one (macOS caps socket paths at 104 bytes). */
-interface DaemonOptions { entry?: string; now?: () => number; events?: SessionEventHub; autoUpgrade?: boolean }
-async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (warnings?: string[], options?: DaemonOptions) => { durable: DurableChatService; locator: SessionRuntimeLocator } }> {
+interface DaemonOptions {
+  entry?: string;
+  now?: () => number;
+  events?: SessionEventHub;
+  autoUpgrade?: boolean;
+}
+async function fixture(): Promise<{
+  root: string;
+  hostsDir: string;
+  daemon: (warnings?: string[], options?: DaemonOptions) => { durable: DurableChatService; locator: SessionRuntimeLocator };
+}> {
   const short = tmpdir().length <= 60 ? tmpdir() : join(homedir(), ".pi-workbench", "tmp");
   await mkdir(short, { recursive: true });
   const root = await mkdtemp(join(short, "c1-"));
@@ -108,9 +133,22 @@ async function fixture(): Promise<{ root: string; hostsDir: string; daemon: (war
     const durable = new DurableChatService({
       locator,
       events: options.events ?? new SessionEventHub(),
-      launch: launchdDurableHost({ entry: options.entry ?? entry, model: "faux", agentDir: root, thinkingLevel: () => "medium", labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 15_000 }),
+      launch: launchdDurableHost({
+        entry: options.entry ?? entry,
+        model: "faux",
+        agentDir: root,
+        thinkingLevel: () => "medium",
+        labelPrefix: PREFIX,
+        hostsDir,
+        locator,
+        startTimeoutMs: 15_000,
+      }),
       storesDir: join(root, "data", "durable"),
-      logger: { warn: (_object, message) => { warnings.push(message); } },
+      logger: {
+        warn: (_object, message) => {
+          warnings.push(message);
+        },
+      },
       closeGraceMs: 2000,
       ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.autoUpgrade === undefined ? {} : { autoUpgrade: options.autoUpgrade }),
@@ -128,9 +166,28 @@ const jobPid = (label: string): number | undefined => {
     return undefined;
   }
 };
-const loaded = (label: string) => { try { execFileSync("launchctl", ["print", `${domain}/${label}`], { stdio: "ignore" }); return true; } catch { return false; } };
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
-const requests = (root: string, storeId: string) => (existsSync(join(root, "data", "durable", storeId, "requests.log")) ? readFileSync(join(root, "data", "durable", storeId, "requests.log"), "utf8").trim().split("\n") : []);
+const loaded = (label: string) => {
+  try {
+    execFileSync("launchctl", ["print", `${domain}/${label}`], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const requests = (root: string, storeId: string) =>
+  existsSync(join(root, "data", "durable", storeId, "requests.log"))
+    ? readFileSync(join(root, "data", "durable", storeId, "requests.log"), "utf8")
+        .trim()
+        .split("\n")
+    : [];
 
 const isReady = (message: unknown) => typeof message === "object" && message !== null && "ready" in message;
 
@@ -139,7 +196,9 @@ async function impostor(path: string, ready: object): Promise<{ server: Server; 
   let requested = false;
   const server = createServer((socket) => {
     socket.write(`${JSON.stringify({ ready })}\n`);
-    socket.on("data", () => { requested = true; });
+    socket.on("data", () => {
+      requested = true;
+    });
     socket.on("error", () => undefined);
   });
   const umask = process.umask(0o077);
@@ -179,7 +238,15 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
   it("writes no secret-named variable into the job's plist; everything else the daemon has, the host gets", async () => {
     const { hostsDir, daemon } = await fixture();
     const saved = { ...process.env };
-    Object.assign(process.env, { FOO_API_KEY: "synthetic-foo-value", BAR_TOKEN: "synthetic-bar-value", Baz_Secret: "synthetic-baz-value", DB_PASSWORD: "synthetic-db-value", CLOUD_CREDENTIALS: "synthetic-cloud-value", SSH_AUTH_SOCK: "/synthetic/agent.sock", PI_WEB_KEEP: "kept" });
+    Object.assign(process.env, {
+      FOO_API_KEY: "synthetic-foo-value",
+      BAR_TOKEN: "synthetic-bar-value",
+      Baz_Secret: "synthetic-baz-value",
+      DB_PASSWORD: "synthetic-db-value",
+      CLOUD_CREDENTIALS: "synthetic-cloud-value",
+      SSH_AUTH_SOCK: "/synthetic/agent.sock",
+      PI_WEB_KEEP: "kept",
+    });
     try {
       const { durable } = daemon();
       const chat = await durable.start("/work/a");
@@ -204,12 +271,28 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     await writeFile(join(root, "host-args.json"), JSON.stringify({ accepts: ["--full-access-sha256"] }));
     const locator = new SessionRuntimeLocator(join(root, "data"));
     const record = locator.create("/work/a", "chat");
-    const launch = launchdDurableHost({ entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 15_000 });
+    const launch = launchdDurableHost({
+      entry: join(root, "host.mjs"),
+      model: "faux",
+      agentDir: root,
+      labelPrefix: PREFIX,
+      hostsDir,
+      locator,
+      startTimeoutMs: 15_000,
+    });
     const nonce = "0123456789abcdef0123456789abcdef";
     const storeDir = join(root, "data", "durable", record.storeId);
     const digest = createHash("sha256").update(nonce).digest("hex");
     const host = launch(record, storeDir, { fullAccessDigest: digest });
-    await new Promise<void>((resolve, reject) => { host.on("message", (message: unknown) => { if (isReady(message)) resolve(); }); host.on("error", reject); host.on("exit", () => { reject(new Error("host exited")); }); });
+    await new Promise<void>((resolve, reject) => {
+      host.on("message", (message: unknown) => {
+        if (isReady(message)) resolve();
+      });
+      host.on("error", reject);
+      host.on("exit", () => {
+        reject(new Error("host exited"));
+      });
+    });
     const argv = readFileSync(join(storeDir, "argv.json"), "utf8");
     expect(JSON.parse(argv)).toEqual(expect.arrayContaining(["--full-access-sha256", digest]));
     expect(argv).not.toContain(nonce);
@@ -232,12 +315,22 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const server = createServer((connection) => {
       connection.on("error", () => undefined);
       connection.write(bytes.subarray(0, split));
-      setTimeout(() => { connection.write(bytes.subarray(split)); }, 3);
+      setTimeout(() => {
+        connection.write(bytes.subarray(split));
+      }, 3);
     });
     const umask = process.umask(0o077);
     await new Promise<void>((resolve) => server.listen(socket, resolve));
     process.umask(umask);
-    const launch = launchdDurableHost({ entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, launchctl: () => Promise.resolve() });
+    const launch = launchdDurableHost({
+      entry: join(root, "host.mjs"),
+      model: "faux",
+      agentDir: root,
+      labelPrefix: PREFIX,
+      hostsDir,
+      locator,
+      launchctl: () => Promise.resolve(),
+    });
     try {
       for (split = 1; split < bytes.length; split++) {
         locator.setHost(record.id, { label: `${PREFIX}.${record.id}`, socket, revision: ready.revision, ownerEpoch: 1, pid: process.pid });
@@ -245,8 +338,13 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
         const messages: unknown[] = [];
         host.on("error", () => undefined);
         await new Promise<void>((resolve) => {
-          host.on("message", (message) => { messages.push(message); if (messages.length === 2) resolve(); });
-          host.on("exit", () => { resolve(); });
+          host.on("message", (message) => {
+            messages.push(message);
+            if (messages.length === 2) resolve();
+          });
+          host.on("exit", () => {
+            resolve();
+          });
         });
         host.detach?.();
         expect(messages, `split at byte ${String(split)}`).toEqual([{ ready }, event]);
@@ -268,25 +366,54 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const server = createServer((connection) => {
       connection.on("error", () => undefined);
       connection.write(`${JSON.stringify({ ready })}\n`);
-      connection.on("data", (chunk) => { const request: unknown = JSON.parse(String(chunk)); const id = typeof request === "object" && request !== null && "id" in request ? request.id : undefined; connection.end(`${JSON.stringify({ id, result: reply })}\n`); });
+      connection.on("data", (chunk) => {
+        const request: unknown = JSON.parse(String(chunk));
+        const id = typeof request === "object" && request !== null && "id" in request ? request.id : undefined;
+        connection.end(`${JSON.stringify({ id, result: reply })}\n`);
+      });
     });
     const umask = process.umask(0o077);
     await new Promise<void>((resolve) => server.listen(socket, resolve));
     process.umask(umask);
     const launchctl: string[][] = [];
-    const launch = launchdDurableHost({ entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, launchctl: (args) => { launchctl.push(args); return Promise.resolve(); } });
+    const launch = launchdDurableHost({
+      entry: join(root, "host.mjs"),
+      model: "faux",
+      agentDir: root,
+      labelPrefix: PREFIX,
+      hostsDir,
+      locator,
+      launchctl: (args) => {
+        launchctl.push(args);
+        return Promise.resolve();
+      },
+    });
     try {
-      for (const [result, unloaded] of [[{ closed: false, busy: "a turn is running" }, false], [{ closed: true }, true]] as const) {
+      for (const [result, unloaded] of [
+        [{ closed: false, busy: "a turn is running" }, false],
+        [{ closed: true }, true],
+      ] as const) {
         reply = result;
         launchctl.length = 0;
         locator.setHost(record.id, { label: `${PREFIX}.${record.id}`, socket, revision: root, ownerEpoch: 1, pid: process.pid });
         const host = launch(record, join(root, "store"), { attachOnly: true });
         host.on("error", () => undefined);
-        await new Promise<void>((resolve) => { host.on("message", (message) => { if (isReady(message)) resolve(); }); });
-        const exited = new Promise<unknown>((resolve) => { host.on("exit", (code) => { resolve(code); }); });
+        await new Promise<void>((resolve) => {
+          host.on("message", (message) => {
+            if (isReady(message)) resolve();
+          });
+        });
+        const exited = new Promise<unknown>((resolve) => {
+          host.on("exit", (code) => {
+            resolve(code);
+          });
+        });
         host.send({ id: 1, method: "close", params: { reason: "upgrade", ifRestartSafe: true } });
         const code = await exited;
-        expect(launchctl.some((args) => args[0] === "bootout"), JSON.stringify(result)).toBe(unloaded);
+        expect(
+          launchctl.some((args) => args[0] === "bootout"),
+          JSON.stringify(result),
+        ).toBe(unloaded);
         expect(code, JSON.stringify(result)).toBe(unloaded ? 0 : null);
       }
     } finally {
@@ -320,7 +447,13 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     process.kill(replaced?.pid ?? 0, "SIGKILL");
     await expect.poll(() => alive(replaced?.pid ?? 0)).toBe(false);
     await rm(host.socket, { force: true });
-    const old = await impostor(host.socket, { protocol: DURABLE_HOST_PROTOCOL, storeId: chat.id, ownerEpoch: 1, revision: "/revisions/fake", pid: process.pid });
+    const old = await impostor(host.socket, {
+      protocol: DURABLE_HOST_PROTOCOL,
+      storeId: chat.id,
+      ownerEpoch: 1,
+      revision: "/revisions/fake",
+      pid: process.pid,
+    });
     const third = daemon();
     await third.durable.status(ref);
     expect(old.requested()).toBe(false);
@@ -342,7 +475,13 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     await expect.poll(() => alive(host.pid)).toBe(false);
     await rm(host.socket, { force: true });
 
-    const foreign = await impostor(host.socket, { protocol: DURABLE_HOST_PROTOCOL, storeId: "another-family", ownerEpoch: 1, revision: "/revisions/fake", pid: process.pid });
+    const foreign = await impostor(host.socket, {
+      protocol: DURABLE_HOST_PROTOCOL,
+      storeId: "another-family",
+      ownerEpoch: 1,
+      revision: "/revisions/fake",
+      pid: process.pid,
+    });
     const second = daemon();
     await second.durable.status(ref);
     expect(foreign.requested()).toBe(false);
@@ -370,8 +509,18 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     await symlink(revision, join(root, "pi-workbench.installed"));
     const locator = new SessionRuntimeLocator(join(root, "data"));
     const durable = new DurableChatService({
-      locator, events: new SessionEventHub(), storesDir: join(root, "data", "durable"),
-      launch: launchdDurableHost({ entry: join(root, "pi-workbench.installed", "host.mjs"), model: "faux", agentDir: root, thinkingLevel: () => "medium", labelPrefix: PREFIX, hostsDir, locator }),
+      locator,
+      events: new SessionEventHub(),
+      storesDir: join(root, "data", "durable"),
+      launch: launchdDurableHost({
+        entry: join(root, "pi-workbench.installed", "host.mjs"),
+        model: "faux",
+        agentDir: root,
+        thinkingLevel: () => "medium",
+        labelPrefix: PREFIX,
+        hostsDir,
+        locator,
+      }),
     });
     const chat = await durable.start("/work/a");
     const plist = readFileSync(join(hostsDir, `${PREFIX}.${chat.id}.plist`), "utf8");
@@ -382,7 +531,9 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const folder = join(root, "named.installed");
     await mkdir(folder);
     await writeFile(join(folder, "host.mjs"), HOST);
-    expect(() => launchdDurableHost({ entry: join(folder, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator })).toThrow(/revision folder/);
+    expect(() => launchdDurableHost({ entry: join(folder, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator })).toThrow(
+      /revision folder/,
+    );
   }, 60_000);
 });
 
@@ -472,7 +623,13 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
       // A family with nothing left to cancel is not reached again.
       expect(requests(root, a.id)).toEqual(["end-jobs"]);
     } finally {
-      for (const child of runners) { try { process.kill(-(child.pid ?? 0), "SIGKILL"); } catch { /* gone */ } }
+      for (const child of runners) {
+        try {
+          process.kill(-(child.pid ?? 0), "SIGKILL");
+        } catch {
+          /* gone */
+        }
+      }
       if (saved === undefined) Reflect.deleteProperty(process.env, "PI_BACKGROUND_BASH_ROOT");
       else process.env["PI_BACKGROUND_BASH_ROOT"] = saved;
     }
@@ -531,7 +688,11 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
   it("reads a family no host runs with a one-off reader, never a job: from the current code when it reads the pin's store on the same Pi Durable, else from the pin", async () => {
     const { root, daemon } = await fixture();
     // rev-a predates store-schema.json (every kind at version 1); rev-b declares one: it reads rev-a's store.
-    const [entryA, entryB, entryC] = [await revision(root, "rev-a", "1.5.2", null), await revision(root, "rev-b", "1.5.2"), await revision(root, "rev-c", "1.6.0")];
+    const [entryA, entryB, entryC] = [
+      await revision(root, "rev-a", "1.5.2", null),
+      await revision(root, "rev-b", "1.5.2"),
+      await revision(root, "rev-c", "1.6.0"),
+    ];
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
@@ -550,7 +711,11 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     // A pruned pin: no reader (it would not record the code that then wrote the store); the host starts, as before.
     await rm(join(root, "rev-a"), { recursive: true, force: true });
     await newer.durable.messages(ref);
-    expect(requests(root, chat.id).filter((method) => method === "transcript" || method === "read-transcript")).toEqual(["read-transcript", "read-transcript", "transcript"]);
+    expect(requests(root, chat.id).filter((method) => method === "transcript" || method === "read-transcript")).toEqual([
+      "read-transcript",
+      "read-transcript",
+      "transcript",
+    ]);
     expect(newer.locator.durable(chat.id)?.hostEntry).toBe(entryC);
     await newer.durable.stop(ref);
   }, 60_000);
@@ -644,20 +809,42 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
       [await revision(root, "rev-unknown"), /opened by a newer Pi Durable \(1\.5\.2\)/],
       [await revision(root, "rev-new", "1.5.3", { documents: { "workbench.delegation": 2 }, tasks: {} }), undefined],
     ] as const;
-    const records = cases.map(() => { const record = locator.create("/work/a"); locator.setHostEntry(record.id, pinned); return record; });
+    const records = cases.map(() => {
+      const record = locator.create("/work/a");
+      locator.setHostEntry(record.id, pinned);
+      return record;
+    });
     await rm(join(root, "rev-pruned"), { recursive: true });
     for (const [index, [current, refusal]] of cases.entries()) {
       const record = records[index];
       if (record === undefined) throw new Error("no record");
       let bootstrapped = "";
-      const launch = launchdDurableHost({ entry: current, model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 100, launchctl: (args) => {
-        if (args[0] === "bootstrap") { bootstrapped = readFileSync(args[2] ?? "", "utf8"); return Promise.reject(new Error("bootstrap captured")); }
-        return Promise.resolve();
-      } });
+      const launch = launchdDurableHost({
+        entry: current,
+        model: "faux",
+        agentDir: root,
+        labelPrefix: PREFIX,
+        hostsDir,
+        locator,
+        startTimeoutMs: 100,
+        launchctl: (args) => {
+          if (args[0] === "bootstrap") {
+            bootstrapped = readFileSync(args[2] ?? "", "utf8");
+            return Promise.reject(new Error("bootstrap captured"));
+          }
+          return Promise.resolve();
+        },
+      });
       const host = launch(record, join(root, "store"));
       const errors: Error[] = [];
-      host.on("error", (error: Error) => { errors.push(error); });
-      await new Promise<void>((resolve) => { host.on("exit", () => { resolve(); }); });
+      host.on("error", (error: Error) => {
+        errors.push(error);
+      });
+      await new Promise<void>((resolve) => {
+        host.on("exit", () => {
+          resolve();
+        });
+      });
       if (refusal === undefined) expect(bootstrapped).toContain(`<string>${current}</string>`);
       else {
         expect(bootstrapped, current).toBe("");
@@ -674,16 +861,34 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     /** Starts `record` with `current` as the code new families get: the plist it bootstraps (launchctl stubbed), or "" and the error. */
     const attempt = async (locator: SessionRuntimeLocator, record: { id: string }, current: string) => {
       let bootstrapped = "";
-      const launch = launchdDurableHost({ entry: current, model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator, startTimeoutMs: 100, launchctl: (args) => {
-        if (args[0] === "bootstrap") { bootstrapped = readFileSync(args[2] ?? "", "utf8"); return Promise.reject(new Error("bootstrap captured")); }
-        return Promise.resolve();
-      } });
+      const launch = launchdDurableHost({
+        entry: current,
+        model: "faux",
+        agentDir: root,
+        labelPrefix: PREFIX,
+        hostsDir,
+        locator,
+        startTimeoutMs: 100,
+        launchctl: (args) => {
+          if (args[0] === "bootstrap") {
+            bootstrapped = readFileSync(args[2] ?? "", "utf8");
+            return Promise.reject(new Error("bootstrap captured"));
+          }
+          return Promise.resolve();
+        },
+      });
       const durable = locator.durable(record.id);
       if (durable === undefined) throw new Error("no record");
       const host = launch(durable, join(root, "store"));
       const errors: string[] = [];
-      host.on("error", (error: Error) => { errors.push(error.message); });
-      await new Promise<void>((resolve) => { host.on("exit", () => { resolve(); }); });
+      host.on("error", (error: Error) => {
+        errors.push(error.message);
+      });
+      await new Promise<void>((resolve) => {
+        host.on("exit", () => {
+          resolve();
+        });
+      });
       return { bootstrapped, errors: errors.join("\n") };
     };
     /** A locator record as a daemon before round 4 wrote it: the pin without its store code. */
@@ -786,9 +991,19 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     await durable.reattach();
     const old = locator.durable(chat.id)?.host;
     // A turn runs, a child works and a question is open: Upgrade now names what repeats.
-    await writeFile(join(root, "data", "durable", chat.id, "status.json"), JSON.stringify({ isStreaming: true, pendingAsks: [{ askId: "q1" }], extensionStatuses: { "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items: [{ id: "delegate:1", startedAt: "2026-11-18T08:00:00Z" }] }) } }));
+    await writeFile(
+      join(root, "data", "durable", chat.id, "status.json"),
+      JSON.stringify({
+        isStreaming: true,
+        pendingAsks: [{ askId: "q1" }],
+        extensionStatuses: { "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items: [{ id: "delegate:1", startedAt: "2026-11-18T08:00:00Z" }] }) },
+      }),
+    );
     const pinned = await durable.status(ref);
-    expect(pinned.durableHostPin?.repeats).toEqual(["the running turn: its answer is requested again; safe tools rerun, others wait for you", "running Subagents and Workers resume their current step"]);
+    expect(pinned.durableHostPin?.repeats).toEqual([
+      "the running turn: its answer is requested again; safe tools rerun, others wait for you",
+      "running Subagents and Workers resume their current step",
+    ]);
     await expect(durable.upgradeHost(ref)).rejects.toThrow(/while a turn is running/);
 
     const upgraded = await durable.upgradeHost(ref, "now");
@@ -811,7 +1026,10 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const entryA = await revision(root, "rev-a", "1.5.2");
     const broken = await revision(root, "rev-broken", "1.5.2");
     // It writes to the store, then fails before it is ready.
-    await writeFile(broken, 'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[process.argv.indexOf("--store") + 1] + "/migrated", "1.5.2");\nprocess.exit(3);\n');
+    await writeFile(
+      broken,
+      'import { writeFileSync } from "node:fs";\nwriteFileSync(process.argv[process.argv.indexOf("--store") + 1] + "/migrated", "1.5.2");\nprocess.exit(3);\n',
+    );
     const first = daemon([], { entry: entryA });
     const chat = await first.durable.start("/work/a");
     const ref = { id: chat.id, cwd: chat.cwd };
@@ -819,7 +1037,9 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const { durable, locator } = daemon([], { entry: broken });
     await durable.reattach();
     expect((await durable.status(ref)).durableHostPin?.current).toBe("rev-broken");
-    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(/^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\)\.$/);
+    await expect(durable.upgradeHost(ref, "now")).rejects.toThrow(
+      /^The new host code \(rev-broken\) did not start: .*\. This Chat is back on its old host code \(rev-a\)\.$/,
+    );
     expect(locator.durable(chat.id)?.hostEntry).toBe(entryA);
     // Only the pin goes back (both run Pi Durable 1.5.2): the store is the one store, never copied or moved.
     expect(existsSync(join(root, "data", "durable", chat.id, "migrated"))).toBe(true);
@@ -837,7 +1057,10 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     const [entryA, entryB] = [await revision(root, "rev-a", "1.5.2"), await revision(root, "rev-b", "1.5.2")];
     const first = daemon([], { entry: entryA });
     const [chat, other] = [await first.durable.start("/work/a"), await first.durable.start("/work/b")];
-    const [ref, otherRef] = [{ id: chat.id, cwd: chat.cwd }, { id: other.id, cwd: other.cwd }];
+    const [ref, otherRef] = [
+      { id: chat.id, cwd: chat.cwd },
+      { id: other.id, cwd: other.cwd },
+    ];
     await first.durable.dispose();
     const statusFile = (id: string) => join(root, "data", "durable", id, "status.json");
     const running = (key: string, value: object) => ({ [key]: JSON.stringify({ schemaVersion: 1, ...value }) });
@@ -872,7 +1095,14 @@ describe.skipIf(process.platform !== "darwin")("Durable host lifetime (Phase C3)
     // The other Chat's owner cancels; then both have only open questions, background bash, a watcher and a Page.
     await durable.upgradeHost(otherRef, "cancel");
     expect((await durable.status(otherRef)).durableHostPin?.pending).toBeUndefined();
-    const survivors = JSON.stringify({ pendingAsks: [{ askId: "q1" }], extensionStatuses: { ...running("pi-workbench:background-bash", { jobs: [{ id: "job-1" }] }), ...running("pi-process-monitor:watchers", { watchers: [{ id: "w" }] }), ...running("pi-workbench:atelier", { serving: true }) } });
+    const survivors = JSON.stringify({
+      pendingAsks: [{ askId: "q1" }],
+      extensionStatuses: {
+        ...running("pi-workbench:background-bash", { jobs: [{ id: "job-1" }] }),
+        ...running("pi-process-monitor:watchers", { watchers: [{ id: "w" }] }),
+        ...running("pi-workbench:atelier", { serving: true }),
+      },
+    });
     await writeFile(statusFile(chat.id), survivors);
     await writeFile(statusFile(other.id), survivors);
     const otherPid = locator.durable(other.id)?.host?.pid;

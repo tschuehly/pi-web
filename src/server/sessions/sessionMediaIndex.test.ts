@@ -25,10 +25,15 @@ describe("SessionMediaIndex", () => {
     const page = { messages: [{ role: "user", content: [block, other] }], start: 0, total: 1 };
     const projected = projectBrowserMessageResponse(page, (part) => index.reference(scope, part));
     const id = sha256(`image/png\0${png}`);
-    expect(projected.messages).toEqual([{ role: "user", content: [
-      { type: "image", mediaId: id, mimeType: "image/png", byteSize: decodeBase64(png).byteLength, width: 1, height: 1 },
-      { type: "image", mediaId: sha256("image/png\0AQID"), mimeType: "image/png", byteSize: 3 },
-    ] }]);
+    expect(projected.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "image", mediaId: id, mimeType: "image/png", byteSize: decodeBase64(png).byteLength, width: 1, height: 1 },
+          { type: "image", mediaId: sha256("image/png\0AQID"), mimeType: "image/png", byteSize: 3 },
+        ],
+      },
+    ]);
     expect(decode).not.toHaveBeenCalled();
     expect(index.get({ id: "s2", cwd: scope.cwd }, id)).toBeUndefined();
     expect(index.get({ ...scope, cwd: "/other" }, id)).toBeUndefined();
@@ -163,7 +168,9 @@ describe("SessionMediaIndex", () => {
   });
 
   it("does not bind unscoped projections, and propagates recoverable decode failures", () => {
-    const decode = vi.fn(decodeBase64).mockImplementationOnce(() => { throw new Error("decode failure"); });
+    const decode = vi.fn(decodeBase64).mockImplementationOnce(() => {
+      throw new Error("decode failure");
+    });
     const index = new SessionMediaIndex({ decode });
     const block = image();
     const reference = index.reference(undefined, block);
@@ -176,7 +183,10 @@ describe("SessionMediaIndex", () => {
 
   it.each(["image/png", "image/jpeg", "image/gif", "image/webp"])("preserves supported MIME types but omits mismatched metadata (%s)", (mimeType) => {
     expect(referenceOf(new SessionMediaIndex(), { ...image(), mimeType })).toEqual({
-      type: "image", mediaId: sha256(`${mimeType}\0${png}`), mimeType, byteSize: decodeBase64(png).byteLength,
+      type: "image",
+      mediaId: sha256(`${mimeType}\0${png}`),
+      mimeType,
+      byteSize: decodeBase64(png).byteLength,
       ...(mimeType === "image/png" ? { width: 1, height: 1 } : {}),
     });
   });
@@ -213,7 +223,9 @@ describe("SessionMediaIndex", () => {
     { ...image(), mimeType: "text/html" },
     { ...image(), mimeType: "IMAGE/PNG" },
     { ...image(), mimeType: "image/png\r\nX-Test: bad" },
-    ...["invalid!!", "", "A", "AAAAA", "AQID==", "AQ=", "AQI==", "AQ===", "=AQ=", "AQ==x", "AQ\n==", "AQ-_", "AR==", "AR", "AQJ=", "AQJ", "//9=", "//9"].map((data) => ({ ...image(), data })),
+    ...["invalid!!", "", "A", "AAAAA", "AQID==", "AQ=", "AQI==", "AQ===", "=AQ=", "AQ==x", "AQ\n==", "AQ-_", "AR==", "AR", "AQJ=", "AQJ", "//9=", "//9"].map(
+      (data) => ({ ...image(), data }),
+    ),
     { ...image(), data: 1 },
     { ...image(), type: "text" },
   ])("consistently rejects malformed content in projection and lookup: %j", (block) => {

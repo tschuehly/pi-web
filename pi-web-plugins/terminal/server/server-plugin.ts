@@ -60,11 +60,17 @@ export function activateTerminalPlugin(context: ServerPluginActivationContext): 
   if (notices?.version !== 1) {
     throw new Error("Terminal server entry requires server notice reporter version 1");
   }
-  const service = new TerminalService((input) => { notices.record(input); });
+  const service = new TerminalService((input) => {
+    notices.record(input);
+  });
   const requiredTerminalService: RequiredTerminalServiceContribution = Object.freeze({
-    closeForCwd: (cwd: string) => { service.closeForCwd(cwd); },
+    closeForCwd: (cwd: string) => {
+      service.closeForCwd(cwd);
+    },
     runCommand: (options: RunTerminalCommandOptions) => service.runCommand(options),
-    bindActivitySink: (sink: TerminalActivitySink) => { service.bindActivitySink(sink); },
+    bindActivitySink: (sink: TerminalActivitySink) => {
+      service.bindActivitySink(sink);
+    },
   });
   const serviceProvision = Object.freeze({
     capability: TERMINAL_SERVICE_CAPABILITY,
@@ -74,9 +80,8 @@ export function activateTerminalPlugin(context: ServerPluginActivationContext): 
   return Object.freeze({
     peer: createTerminalPeer(service, context),
     provides: Object.freeze([serviceProvision] as const),
-    health: () => stopped
-      ? Object.freeze({ status: "unhealthy" as const, message: "Terminal service is stopped" })
-      : Object.freeze({ status: "healthy" as const }),
+    health: () =>
+      stopped ? Object.freeze({ status: "unhealthy" as const, message: "Terminal service is stopped" }) : Object.freeze({ status: "healthy" as const }),
     dispose: () => {
       if (stopped) return;
       stopped = true;
@@ -90,23 +95,26 @@ function snapshotTerminalServiceCapability(value: unknown): RequiredTerminalServ
     throw new Error("Terminal service capability must expose closeForCwd, runCommand, and bindActivitySink");
   }
   return Object.freeze({
-    closeForCwd: (cwd: string) => { value.closeForCwd(cwd); },
+    closeForCwd: (cwd: string) => {
+      value.closeForCwd(cwd);
+    },
     runCommand: (options: RunTerminalCommandOptions) => value.runCommand(options),
-    bindActivitySink: (sink: TerminalActivitySink) => { value.bindActivitySink(sink); },
+    bindActivitySink: (sink: TerminalActivitySink) => {
+      value.bindActivitySink(sink);
+    },
   });
 }
 
 function isRequiredTerminalServiceContribution(value: unknown): value is RequiredTerminalServiceContribution {
   if (typeof value !== "object" || value === null) return false;
-  return typeof Reflect.get(value, "closeForCwd") === "function"
+  return (
+    typeof Reflect.get(value, "closeForCwd") === "function"
     && typeof Reflect.get(value, "runCommand") === "function"
-    && typeof Reflect.get(value, "bindActivitySink") === "function";
+    && typeof Reflect.get(value, "bindActivitySink") === "function"
+  );
 }
 
-export function createTerminalPeer(
-  service: TerminalService,
-  activationContext?: Pick<ServerPluginActivationContext, "logger">,
-): ServerPluginPeer {
+export function createTerminalPeer(service: TerminalService, activationContext?: Pick<ServerPluginActivationContext, "logger">): ServerPluginPeer {
   return Object.freeze({
     request: (context: ServerPluginPeerRequestContext) => terminalRequest(service, context),
     openChannel: (context: ServerPluginPeerChannelOpenContext) => openTerminalChannel(service, context, activationContext),
@@ -122,11 +130,13 @@ function terminalRequest(service: TerminalService, context: ServerPluginPeerRequ
       return service.list(scope).map(terminalInfoJson);
     case "terminal.create": {
       const input = requireObject(context.input, context.operation);
-      return terminalInfoJson(service.create({
-        ...scope,
-        ...optionalTerminalName(input),
-        ...optionalTerminalSize(input),
-      }));
+      return terminalInfoJson(
+        service.create({
+          ...scope,
+          ...optionalTerminalName(input),
+          ...optionalTerminalSize(input),
+        }),
+      );
     }
     case "terminal.close": {
       service.close(scope, requireIdInput(context.input, context.operation, "terminalId"));
@@ -171,7 +181,9 @@ function openTerminalChannel(
   }
 
   let resolveCompleted: () => void = () => undefined;
-  const completed = new Promise<void>((resolve) => { resolveCompleted = resolve; });
+  const completed = new Promise<void>((resolve) => {
+    resolveCompleted = resolve;
+  });
   let opening = true;
   let detach = (): void => undefined;
   const send = (frame: JsonValue): void => {
@@ -259,7 +271,8 @@ function parseCommandRunFilter(input: JsonObject): TerminalCommandRunFilter {
   const metadataValue = input["metadata"];
   const statusesValue = input["statuses"];
   const metadata = metadataValue === undefined ? undefined : stringRecord(metadataValue, "terminal.list-runs metadata");
-  const statuses = statusesValue === undefined ? undefined : requireArray(statusesValue, "terminal.list-runs statuses").map((status) => parseCommandRunStatus(status));
+  const statuses =
+    statusesValue === undefined ? undefined : requireArray(statusesValue, "terminal.list-runs statuses").map((status) => parseCommandRunStatus(status));
   return {
     ...(terminalId === undefined ? {} : { terminalId }),
     ...(statuses === undefined ? {} : { statuses }),
@@ -361,10 +374,12 @@ function optionalString(record: JsonObject, key: string, label: string): string 
 
 function stringRecord(value: JsonValue, label: string): Record<string, string> {
   const record = requireObject(value, label);
-  return Object.fromEntries(Object.entries(record).map(([key, child]) => {
-    if (typeof child !== "string") throw new Error(`${label} ${key} must be a string`);
-    return [key, child];
-  }));
+  return Object.fromEntries(
+    Object.entries(record).map(([key, child]) => {
+      if (typeof child !== "string") throw new Error(`${label} ${key} must be a string`);
+      return [key, child];
+    }),
+  );
 }
 
 function requireArray(value: JsonValue, label: string): readonly JsonValue[] {
@@ -411,9 +426,7 @@ export function terminalOutputFrames(value: string, replay: boolean): TerminalOu
 }
 
 function terminalOutputFrame(data: string, replay: boolean, replayComplete: boolean): TerminalOutputFrame {
-  return replay
-    ? { type: "output", data, replay: true, replayComplete }
-    : { type: "output", data, replay: false };
+  return replay ? { type: "output", data, replay: true, replayComplete } : { type: "output", data, replay: false };
 }
 
 function throwIfAborted(signal: AbortSignal): void {

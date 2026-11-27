@@ -2,16 +2,10 @@ import { isAbsolute, parse, relative, resolve, sep } from "node:path";
 import type { TerminalCommandRun, WorkspaceListing } from "../../shared/apiTypes.js";
 import { workspaceDeleteOperation, workspaceDeletionMetadata } from "../../shared/workspaceDeletion.js";
 import type { ServerNoticeCreator } from "../notices/serverNoticeService.js";
-import {
-  requireWorkspaceRemovalPrecondition,
-  WORKSPACE_REMOVAL_OPERATION_TIMEOUT_MS,
-} from "../../shared/workspaceRemovalProtocol.js";
+import { requireWorkspaceRemovalPrecondition, WORKSPACE_REMOVAL_OPERATION_TIMEOUT_MS } from "../../shared/workspaceRemovalProtocol.js";
 import type { Project } from "../types.js";
 import type { RunTerminalCommandOptions } from "../terminals/requiredTerminalService.js";
-import {
-  WorkspaceProviderRemovalError,
-  type WorkspaceProviderRemovalTarget,
-} from "./workspaceProviderRegistry.js";
+import { WorkspaceProviderRemovalError, type WorkspaceProviderRemovalTarget } from "./workspaceProviderRegistry.js";
 import {
   composeWorktreePreRemoveCommand,
   realWorktreePreRemoveHookProbe,
@@ -20,11 +14,7 @@ import {
 } from "./worktreePreRemoveHook.js";
 
 export interface WorkspaceRemovalProvider {
-  resolveRemoval(
-    project: Project,
-    workspaceId: string,
-    signal: AbortSignal,
-  ): Promise<WorkspaceProviderRemovalTarget>;
+  resolveRemoval(project: Project, workspaceId: string, signal: AbortSignal): Promise<WorkspaceProviderRemovalTarget>;
 }
 
 export interface WorkspaceRemovalTerminalHost {
@@ -50,7 +40,11 @@ interface WorkspaceRemovalFlight {
 export class WorkspaceRemovalError extends Error {
   override name = "WorkspaceRemovalError";
 
-  constructor(message: string, readonly statusCode = 400, options: ErrorOptions = {}) {
+  constructor(
+    message: string,
+    readonly statusCode = 400,
+    options: ErrorOptions = {},
+  ) {
     super(message, options);
   }
 }
@@ -78,12 +72,7 @@ export class WorkspaceRemovalService {
     this.notices = options.notices;
   }
 
-  async remove(
-    project: Project,
-    workspaceId: string,
-    precondition: string,
-    signal?: AbortSignal,
-  ): Promise<TerminalCommandRun> {
+  async remove(project: Project, workspaceId: string, precondition: string, signal?: AbortSignal): Promise<TerminalCommandRun> {
     throwIfAborted(this.shutdown.signal);
     let expectedPrecondition: string;
     try {
@@ -97,10 +86,7 @@ export class WorkspaceRemovalService {
     const currentFlight = this.flights.get(key);
     if (currentFlight !== undefined) {
       if (currentFlight.precondition !== expectedPrecondition) {
-        throw new WorkspaceRemovalError(
-          "Workspace removal is already in progress with a different confirmation",
-          409,
-        );
+        throw new WorkspaceRemovalError("Workspace removal is already in progress with a different confirmation", 409);
       }
       return await this.waitForFlight(currentFlight, signal);
     }
@@ -116,8 +102,12 @@ export class WorkspaceRemovalService {
     };
     this.flights.set(key, flight);
     void promise.then(
-      () => { this.finishFlight(key, flight); },
-      () => { this.finishFlight(key, flight); },
+      () => {
+        this.finishFlight(key, flight);
+      },
+      () => {
+        this.finishFlight(key, flight);
+      },
     );
     return await this.waitForFlight(flight, signal);
   }
@@ -137,12 +127,7 @@ export class WorkspaceRemovalService {
     await Promise.allSettled(flights.map(({ promise }) => promise));
   }
 
-  private async executeRemoval(
-    project: Project,
-    workspaceId: string,
-    precondition: string,
-    flightSignal: AbortSignal,
-  ): Promise<TerminalCommandRun> {
+  private async executeRemoval(project: Project, workspaceId: string, precondition: string, flightSignal: AbortSignal): Promise<TerminalCommandRun> {
     try {
       return await runBoundedRemoval(this.timeoutMs, flightSignal, async (signal) => {
         const current = await this.providers.resolveRemoval(project, workspaceId, signal);
@@ -158,25 +143,15 @@ export class WorkspaceRemovalService {
         try {
           hookExecutable = await this.preRemoveHook.isExecutable(hookPath);
         } catch (error) {
-          throw new WorkspaceRemovalError(
-            `Failed to inspect the workspace pre-remove hook: ${errorMessage(error)}`,
-            500,
-            { cause: error },
-          );
+          throw new WorkspaceRemovalError(`Failed to inspect the workspace pre-remove hook: ${errorMessage(error)}`, 500, { cause: error });
         }
-        const command = hookExecutable
-          ? composeWorktreePreRemoveCommand(hookPath, target.path, plan.command)
-          : plan.command;
+        const command = hookExecutable ? composeWorktreePreRemoveCommand(hookPath, target.path, plan.command) : plan.command;
         throwIfAborted(signal);
 
         try {
           this.terminals.closeForCwd(target.path);
         } catch (error) {
-          throw new WorkspaceRemovalError(
-            `Failed to close workspace terminals: ${errorMessage(error)}`,
-            400,
-            { cause: error },
-          );
+          throw new WorkspaceRemovalError(`Failed to close workspace terminals: ${errorMessage(error)}`, 400, { cause: error });
         }
         throwIfAborted(signal);
 
@@ -195,24 +170,19 @@ export class WorkspaceRemovalService {
             },
           });
         } catch (error) {
-          throw new WorkspaceRemovalError(
-            `Failed to start workspace removal: ${errorMessage(error)}`,
-            400,
-            { cause: error },
-          );
+          throw new WorkspaceRemovalError(`Failed to start workspace removal: ${errorMessage(error)}`, 400, { cause: error });
         }
       });
     } catch (error) {
-      const failure = error instanceof WorkspaceRemovalDeadlineError
-        ? new WorkspaceRemovalError(error.message, 504, { cause: error })
-        : error;
-      if (!isAbortError(failure)) this.notices?.record({
-        severity: "error",
-        message: `Workspace removal failed: ${errorMessage(failure)}`,
-        source: workspaceDeleteOperation,
-        scope: { projectId: project.id },
-        context: { targetWorkspaceId: workspaceId },
-      });
+      const failure = error instanceof WorkspaceRemovalDeadlineError ? new WorkspaceRemovalError(error.message, 504, { cause: error }) : error;
+      if (!isAbortError(failure))
+        this.notices?.record({
+          severity: "error",
+          message: `Workspace removal failed: ${errorMessage(failure)}`,
+          source: workspaceDeleteOperation,
+          scope: { projectId: project.id },
+          context: { targetWorkspaceId: workspaceId },
+        });
       throw failure;
     }
   }
@@ -229,22 +199,28 @@ export class WorkspaceRemovalService {
         signal?.removeEventListener("abort", onAbort);
         flight.waiters -= 1;
         callback();
-        if (
-          flight.waiters === 0
-          && !flight.settled
-          && !flight.controller.signal.aborted
-        ) {
+        if (flight.waiters === 0 && !flight.settled && !flight.controller.signal.aborted) {
           flight.controller.abort(new DOMException("Workspace removal request cancelled", "AbortError"));
         }
       };
       const onAbort = (): void => {
-        finish(() => { rejectPromise(abortError(signal)); });
+        finish(() => {
+          rejectPromise(abortError(signal));
+        });
       };
 
       signal?.addEventListener("abort", onAbort, { once: true });
       flight.promise.then(
-        (run) => { finish(() => { resolvePromise(run); }); },
-        (error: unknown) => { finish(() => { rejectPromise(asError(error)); }); },
+        (run) => {
+          finish(() => {
+            resolvePromise(run);
+          });
+        },
+        (error: unknown) => {
+          finish(() => {
+            rejectPromise(asError(error));
+          });
+        },
       );
     });
   }
@@ -282,10 +258,7 @@ function validateCurrentRemoval(
     throw new WorkspaceRemovalError("Workspace removal is not available", 409);
   }
   if (target.removal.precondition !== precondition) {
-    throw new WorkspaceRemovalError(
-      "Workspace removal confirmation is stale; review the current workspace and confirm again",
-      409,
-    );
+    throw new WorkspaceRemovalError("Workspace removal confirmation is stale; review the current workspace and confirm again", 409);
   }
   if (target.isMain) throw new WorkspaceRemovalError("The main workspace cannot be removed");
 
@@ -314,32 +287,34 @@ function validateCurrentRemoval(
   return { target, commandWorkspace };
 }
 
-async function runBoundedRemoval<T>(
-  timeoutMs: number,
-  parentSignal: AbortSignal,
-  operation: (signal: AbortSignal) => T | Promise<T>,
-): Promise<T> {
+async function runBoundedRemoval<T>(timeoutMs: number, parentSignal: AbortSignal, operation: (signal: AbortSignal) => T | Promise<T>): Promise<T> {
   const controller = new AbortController();
-  const abortFromParent = (): void => { controller.abort(abortError(parentSignal)); };
+  const abortFromParent = (): void => {
+    controller.abort(abortError(parentSignal));
+  };
   if (parentSignal.aborted) abortFromParent();
   else parentSignal.addEventListener("abort", abortFromParent, { once: true });
 
-  const timeoutError = new WorkspaceRemovalDeadlineError(
-    `Workspace removal timed out after ${String(timeoutMs)}ms`,
-  );
-  const timeout = setTimeout(() => { controller.abort(timeoutError); }, timeoutMs);
+  const timeoutError = new WorkspaceRemovalDeadlineError(`Workspace removal timed out after ${String(timeoutMs)}ms`);
+  const timeout = setTimeout(() => {
+    controller.abort(timeoutError);
+  }, timeoutMs);
   timeout.unref();
   const deadline = controller.signal.aborted
     ? Promise.reject(abortError(controller.signal))
     : new Promise<never>((_resolve, rejectPromise) => {
         controller.signal.addEventListener(
           "abort",
-          () => { rejectPromise(abortError(controller.signal)); },
+          () => {
+            rejectPromise(abortError(controller.signal));
+          },
           { once: true },
         );
       });
   const result = controller.signal.aborted
-    ? new Promise<T>(() => { /* Parent cancellation already won. */ })
+    ? new Promise<T>(() => {
+        /* Parent cancellation already won. */
+      })
     : Promise.resolve().then(() => operation(controller.signal));
 
   try {

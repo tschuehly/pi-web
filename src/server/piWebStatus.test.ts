@@ -211,7 +211,9 @@ describe("PI WEB status", () => {
     const daemon = daemonWithRuntime(runningSessiondRuntime());
 
     const runtime = await getPiWebRuntime(daemon, {
-      loadConfig: () => { throw new Error("PI WEB config agent.dir must be a host-absolute path or start with ~: /tmp/config.json"); },
+      loadConfig: () => {
+        throw new Error("PI WEB config agent.dir must be a host-absolute path or start with ~: /tmp/config.json");
+      },
     });
 
     expect(runtime.components.web.available).toBe(true);
@@ -228,7 +230,8 @@ describe("PI WEB status", () => {
     Reflect.deleteProperty(process.env, "PI_WEB_SKIP_VERSION_CHECK");
     process.env["PI_WEB_DOCKER_RUNTIME"] = "1";
     process.env["PI_WEB_DOCKER_MODE"] = "runtime";
-    const fetchMock = vi.spyOn(globalThis, "fetch")
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(npmVersionResponse("1.202607.1"))
       .mockResolvedValueOnce(npmVersionResponse("1.202607.2"));
     const daemon = daemonWithRuntime(runningSessiondRuntime("1.202607.0"));
@@ -339,7 +342,9 @@ describe("PI WEB status", () => {
       },
     );
 
-    expect(updateCommand).toBe(`PI_CODING_AGENT_DIR=${shellQuote(dir)} ${shellQuote(process.execPath)} ${shellQuote(join("/tmp/pi-web", "dist", "cli.js"))} update`);
+    expect(updateCommand).toBe(
+      `PI_CODING_AGENT_DIR=${shellQuote(dir)} ${shellQuote(process.execPath)} ${shellQuote(join("/tmp/pi-web", "dist", "cli.js"))} update`,
+    );
   });
 
   it("delegates npm-global updates to the interactive shared CLI", () => {
@@ -378,21 +383,27 @@ describe("PI WEB status", () => {
       { activeAgentProfile: activeProfile("/opt/pi/state"), hasCommand: () => Promise.resolve(false) },
     );
 
-    expect(updateCommand).toBe(`PI_CODING_AGENT_DIR=${shellQuote("/opt/pi/state")} ${shellQuote(process.execPath)} ${shellQuote(join("/tmp/pi web's checkout", "dist", "cli.js"))} update`);
+    expect(updateCommand).toBe(
+      `PI_CODING_AGENT_DIR=${shellQuote("/opt/pi/state")} ${shellQuote(process.execPath)} ${shellQuote(join("/tmp/pi web's checkout", "dist", "cli.js"))} update`,
+    );
   });
 
   it.each([undefined, "relative/pi-web"])("suppresses Pi-package commands without an absolute installation path: %s", (path) => {
-    expect(updateCommandFor(
-      { kind: "pi-package", ...(path === undefined ? {} : { path }) },
-      { activeAgentProfile: activeProfile("/opt/pi/state"), hasCommand: () => Promise.resolve(true) },
-    )).toBeUndefined();
+    expect(
+      updateCommandFor(
+        { kind: "pi-package", ...(path === undefined ? {} : { path }) },
+        { activeAgentProfile: activeProfile("/opt/pi/state"), hasCommand: () => Promise.resolve(true) },
+      ),
+    ).toBeUndefined();
   });
 
   it("preserves the active profile for npm-global updates too", () => {
-    expect(updateCommandFor(
-      { kind: "npm-global", path: "/opt/pi-web" },
-      { activeAgentProfile: activeProfile("/opt/pi/state"), hasCommand: () => Promise.resolve(true) },
-    )).toBe(`PI_CODING_AGENT_DIR=${shellQuote("/opt/pi/state")} ${shellQuote(process.execPath)} ${shellQuote(join("/opt/pi-web", "dist", "cli.js"))} update`);
+    expect(
+      updateCommandFor(
+        { kind: "npm-global", path: "/opt/pi-web" },
+        { activeAgentProfile: activeProfile("/opt/pi/state"), hasCommand: () => Promise.resolve(true) },
+      ),
+    ).toBe(`PI_CODING_AGENT_DIR=${shellQuote("/opt/pi/state")} ${shellQuote(process.execPath)} ${shellQuote(join("/opt/pi-web", "dist", "cli.js"))} update`);
   });
 
   it.skipIf(process.platform !== "linux")("suggests native systemd commands for local development services", async () => {
@@ -409,15 +420,18 @@ describe("PI WEB status", () => {
 
       const status = await getPiWebStatus(daemon);
 
-      expect(status.commands.restart).toBe("systemd-run --user --collect --unit=pi-web-restart -- systemctl --user restart pi-web-ui-dev.service pi-web-sessiond.service");
+      expect(status.commands.restart).toBe(
+        "systemd-run --user --collect --unit=pi-web-restart -- systemctl --user restart pi-web-ui-dev.service pi-web-sessiond.service",
+      );
       expect(status.commands.restartWeb).toBe("systemd-run --user --collect --unit=pi-web-restart-web -- systemctl --user restart pi-web-ui-dev.service");
-      expect(status.commands.restartSessiond).toBe("systemd-run --user --collect --unit=pi-web-restart-sessiond -- systemctl --user restart pi-web-sessiond.service");
-      expect(status.messages.find((message) => message.id === "sessiond-stale")?.command).toBe("systemd-run --user --collect --unit=pi-web-restart-sessiond -- systemctl --user restart pi-web-sessiond.service");
+      expect(status.commands.restartSessiond).toBe(
+        "systemd-run --user --collect --unit=pi-web-restart-sessiond -- systemctl --user restart pi-web-sessiond.service",
+      );
+      expect(status.messages.find((message) => message.id === "sessiond-stale")?.command).toBe(
+        "systemd-run --user --collect --unit=pi-web-restart-sessiond -- systemctl --user restart pi-web-sessiond.service",
+      );
     } finally {
-      await Promise.all([
-        rm(home, { recursive: true, force: true }),
-        rm(binDir, { recursive: true, force: true }),
-      ]);
+      await Promise.all([rm(home, { recursive: true, force: true }), rm(binDir, { recursive: true, force: true })]);
     }
   });
 

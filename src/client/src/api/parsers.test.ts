@@ -1,10 +1,61 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH, ACTIVE_TOOL_EXECUTION_LIMIT, ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH, ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, EXTENSION_DIALOG_TEXT_MAX_LENGTH, SESSION_NOTIFICATION_LIMIT, SESSION_NOTIFICATION_MESSAGE_BYTES, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../../shared/apiTypes";
-import { parseOpenAsks, parseAskUserCloseResponse, parseAskUserOutcome, parseAuthProvidersResponse, parseCommandResult, parseExtensionDialogCloseResponse, parseFileContentResponse, parseFileSuggestion, parseMachineRuntime, parseMessagePage, parseMcpAuthServersResponse, parseOAuthFlowState, parsePiPackageMutationResponse, parsePiPackagesResponse, parsePiWebConfigResponse, parsePiWebPluginsResponse, parsePiWebRuntimeResponse, parsePiWebStatusResponse, parseRealtimeStreamEvent, parseSessionBulkArchiveResponse, parseSessionBulkDeleteArchivedResponse, parseSessionCleanupExecuteResponse, parseSessionCleanupPreviewResponse, parseSessionInfo, parseSessionModelCatalogResponse, parseSessionNotificationInboxEvent, parseSessionNotificationInboxSnapshot, parseSessionStartupProgressEvent, parseSessionStatus, parseSessionStreamEvent, parseSessionStreamSnapshot, parseSessionTreeForkResult, parseSessionTreeNavigateResult, parseSessionTreeSnapshot, parseSessionUnreadCatalogSnapshot, parseSessionUnreadEvent, parseSlashCommand, parseWorkspace, parseWorkspaceProviderResolution } from "./parsers";
+import {
+  ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH,
+  ACTIVE_TOOL_EXECUTION_LIMIT,
+  ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH,
+  ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_TEXT_MAX_LENGTH,
+  EXTENSION_DIALOG_TEXT_MAX_LENGTH,
+  SESSION_NOTIFICATION_LIMIT,
+  SESSION_NOTIFICATION_MESSAGE_BYTES,
+  SESSION_UNREAD_CATALOG_ID_MAX_LENGTH,
+} from "../../../shared/apiTypes";
+import {
+  parseOpenAsks,
+  parseAskUserCloseResponse,
+  parseAskUserOutcome,
+  parseAuthProvidersResponse,
+  parseCommandResult,
+  parseExtensionDialogCloseResponse,
+  parseFileContentResponse,
+  parseFileSuggestion,
+  parseMachineRuntime,
+  parseMessagePage,
+  parseMcpAuthServersResponse,
+  parseOAuthFlowState,
+  parsePiPackageMutationResponse,
+  parsePiPackagesResponse,
+  parsePiWebConfigResponse,
+  parsePiWebPluginsResponse,
+  parsePiWebRuntimeResponse,
+  parsePiWebStatusResponse,
+  parseRealtimeStreamEvent,
+  parseSessionBulkArchiveResponse,
+  parseSessionBulkDeleteArchivedResponse,
+  parseSessionCleanupExecuteResponse,
+  parseSessionCleanupPreviewResponse,
+  parseSessionInfo,
+  parseSessionModelCatalogResponse,
+  parseSessionNotificationInboxEvent,
+  parseSessionNotificationInboxSnapshot,
+  parseSessionStartupProgressEvent,
+  parseSessionStatus,
+  parseSessionStreamEvent,
+  parseSessionStreamSnapshot,
+  parseSessionTreeForkResult,
+  parseSessionTreeNavigateResult,
+  parseSessionTreeSnapshot,
+  parseSessionUnreadCatalogSnapshot,
+  parseSessionUnreadEvent,
+  parseSlashCommand,
+  parseWorkspace,
+  parseWorkspaceProviderResolution,
+} from "./parsers";
 import { KNOWN_THINKING_LEVELS } from "../../../shared/thinkingLevels";
 
 const legacyActivityWarning = {
-  severity: "info", source: "PI-WEB",
+  severity: "info",
+  source: "PI-WEB",
   message: "Recently active in another PI-WEB instance. Avoid working on this session in both instances at once.",
 };
 
@@ -19,21 +70,23 @@ describe("API parsers", () => {
   });
 
   it("preserves OAuth interaction semantics", () => {
-    expect(parseOAuthFlowState({
-      flowId: "flow-1",
-      providerId: "provider",
-      providerName: "Provider",
-      status: "running",
-      auth: {
-        url: "https://example.test/device",
-        instructions: "Enter code",
-        deviceCode: { userCode: "ABCD", intervalSeconds: 5, expiresInSeconds: 900 },
-      },
-      prompt: { requestId: "prompt-1", message: "Secret", promptType: "secret", allowEmpty: false, placeholder: "token" },
-      select: { requestId: "select-1", message: "Choose", options: [{ value: "work", label: "Work", description: "Company account" }] },
-      progress: ["Read the guide"],
-      info: [{ message: "Read the guide", links: [{ url: "https://example.test/docs", label: "Guide" }] }],
-    })).toMatchObject({
+    expect(
+      parseOAuthFlowState({
+        flowId: "flow-1",
+        providerId: "provider",
+        providerName: "Provider",
+        status: "running",
+        auth: {
+          url: "https://example.test/device",
+          instructions: "Enter code",
+          deviceCode: { userCode: "ABCD", intervalSeconds: 5, expiresInSeconds: 900 },
+        },
+        prompt: { requestId: "prompt-1", message: "Secret", promptType: "secret", allowEmpty: false, placeholder: "token" },
+        select: { requestId: "select-1", message: "Choose", options: [{ value: "work", label: "Work", description: "Company account" }] },
+        progress: ["Read the guide"],
+        info: [{ message: "Read the guide", links: [{ url: "https://example.test/docs", label: "Guide" }] }],
+      }),
+    ).toMatchObject({
       auth: { deviceCode: { userCode: "ABCD", intervalSeconds: 5, expiresInSeconds: 900 } },
       prompt: { promptType: "secret", allowEmpty: false },
       select: { options: [{ value: "work", description: "Company account" }] },
@@ -51,7 +104,15 @@ describe("API parsers", () => {
   });
 
   it("preserves MCP operation and cancellation state without treating completion as authentication", () => {
-    const flow = { flowId: "mcp-flow", providerId: "mcp", providerName: "MCP server", status: "complete", progress: ["Pi finished"], target: "mcp", cancelRequested: true };
+    const flow = {
+      flowId: "mcp-flow",
+      providerId: "mcp",
+      providerName: "MCP server",
+      status: "complete",
+      progress: ["Pi finished"],
+      target: "mcp",
+      cancelRequested: true,
+    };
     expect(parseOAuthFlowState(flow)).toEqual(flow);
     expect(() => parseOAuthFlowState({ ...flow, target: "unknown" })).toThrow("Invalid login flow target");
     expect(() => parseOAuthFlowState({ ...flow, cancelRequested: "yes" })).toThrow();
@@ -71,32 +132,80 @@ describe("API parsers", () => {
   });
 
   it("parses PI WEB config responses", () => {
-    expect(parsePiWebConfigResponse({
+    expect(
+      parsePiWebConfigResponse({
+        path: "/tmp/config.json",
+        exists: true,
+        config: {
+          host: "0.0.0.0",
+          port: 8504,
+          allowedHosts: ["example.local"],
+          shortcuts: { "core:view.chat": "mod+1", "core:session.stop": null },
+          plugins: { info: { enabled: false, settings: { compact: true } } },
+          pathAccess: { allowedPaths: ["/tmp"] },
+          uploads: { defaultFolder: "manual/uploads" },
+          attachments: { defaultFolder: "saved/attachments" },
+          maxUploadBytes: 1234,
+          agent: { command: "agent-lab", dir: "~/agent-profiles/lab" },
+        },
+        effectiveConfig: {
+          host: "127.0.0.1",
+          port: 8504,
+          allowedHosts: true,
+          pathAccess: { allowedPaths: ["/tmp"] },
+          uploads: { defaultFolder: ".pi-web/uploads" },
+          attachments: { defaultFolder: ".pi-web/attachments" },
+          agent: { command: "agent-lab", dir: "/Users/dev/agent-profiles/lab" },
+        },
+        envOverrides: { host: true, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
+      }),
+    ).toEqual({
       path: "/tmp/config.json",
       exists: true,
-      config: { host: "0.0.0.0", port: 8504, allowedHosts: ["example.local"], shortcuts: { "core:view.chat": "mod+1", "core:session.stop": null }, plugins: { info: { enabled: false, settings: { compact: true } } }, pathAccess: { allowedPaths: ["/tmp"] }, uploads: { defaultFolder: "manual/uploads" }, attachments: { defaultFolder: "saved/attachments" }, maxUploadBytes: 1234, agent: { command: "agent-lab", dir: "~/agent-profiles/lab" } },
-      effectiveConfig: { host: "127.0.0.1", port: 8504, allowedHosts: true, pathAccess: { allowedPaths: ["/tmp"] }, uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" }, agent: { command: "agent-lab", dir: "/Users/dev/agent-profiles/lab" } },
-      envOverrides: { host: true, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
-    })).toEqual({
-      path: "/tmp/config.json",
-      exists: true,
-      config: { host: "0.0.0.0", port: 8504, allowedHosts: ["example.local"], shortcuts: { "core:view.chat": "mod+1", "core:session.stop": null }, plugins: { info: { enabled: false, settings: { compact: true } } }, pathAccess: { allowedPaths: ["/tmp"] }, uploads: { defaultFolder: "manual/uploads" }, attachments: { defaultFolder: "saved/attachments" }, maxUploadBytes: 1234, agent: { command: "agent-lab", dir: "~/agent-profiles/lab" } },
-      effectiveConfig: { host: "127.0.0.1", port: 8504, allowedHosts: true, pathAccess: { allowedPaths: ["/tmp"] }, uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" }, agent: { command: "agent-lab", dir: "/Users/dev/agent-profiles/lab" } },
+      config: {
+        host: "0.0.0.0",
+        port: 8504,
+        allowedHosts: ["example.local"],
+        shortcuts: { "core:view.chat": "mod+1", "core:session.stop": null },
+        plugins: { info: { enabled: false, settings: { compact: true } } },
+        pathAccess: { allowedPaths: ["/tmp"] },
+        uploads: { defaultFolder: "manual/uploads" },
+        attachments: { defaultFolder: "saved/attachments" },
+        maxUploadBytes: 1234,
+        agent: { command: "agent-lab", dir: "~/agent-profiles/lab" },
+      },
+      effectiveConfig: {
+        host: "127.0.0.1",
+        port: 8504,
+        allowedHosts: true,
+        pathAccess: { allowedPaths: ["/tmp"] },
+        uploads: { defaultFolder: ".pi-web/uploads" },
+        attachments: { defaultFolder: ".pi-web/attachments" },
+        agent: { command: "agent-lab", dir: "/Users/dev/agent-profiles/lab" },
+      },
       envOverrides: { host: true, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
     });
   });
 
   it("preserves archive destinations for config round-trips without a UI control", () => {
     const sessionArchive = { directory: "/external/archives" };
-    const response = { path: "/tmp/config.json", exists: true, config: { sessionArchive }, effectiveConfig: { sessionArchive }, envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false } };
+    const response = {
+      path: "/tmp/config.json",
+      exists: true,
+      config: { sessionArchive },
+      effectiveConfig: { sessionArchive },
+      envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
+    };
     expect(parsePiWebConfigResponse(response)).toMatchObject({ config: { sessionArchive }, effectiveConfig: { sessionArchive } });
   });
 
   it("preserves theme defaults and rejects malformed theme data", () => {
     const defaultTheme = { themeId: "themes:pi-web-light", auto: false };
     const response = {
-      path: "/tmp/config.json", exists: true,
-      config: { defaultTheme }, effectiveConfig: { defaultTheme },
+      path: "/tmp/config.json",
+      exists: true,
+      config: { defaultTheme },
+      effectiveConfig: { defaultTheme },
       envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
     };
     expect(parsePiWebConfigResponse(response)).toMatchObject({ config: { defaultTheme }, effectiveConfig: { defaultTheme } });
@@ -105,7 +214,10 @@ describe("API parsers", () => {
 
   it("preserves optional streaming defaults and rejects invalid values in both config fields", () => {
     const response = {
-      path: "/tmp/config.json", exists: true, config: {}, effectiveConfig: {},
+      path: "/tmp/config.json",
+      exists: true,
+      config: {},
+      effectiveConfig: {},
       envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
     };
     expect(parsePiWebConfigResponse(response)).toMatchObject({ config: {}, effectiveConfig: {} });
@@ -122,11 +234,23 @@ describe("API parsers", () => {
 
   it("preserves naming configuration and rejects malformed naming fields", () => {
     const response = {
-      path: "/tmp/config.json", exists: true, config: {}, effectiveConfig: {},
+      path: "/tmp/config.json",
+      exists: true,
+      config: {},
+      effectiveConfig: {},
       envOverrides: { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false },
     };
     for (const field of ["config", "effectiveConfig"] as const) {
-      for (const sessionNaming of [{}, { model: "openai/gpt-5" }, { maxTokens: 48 }, { timeoutMs: 1 }, { timeoutMs: 10000 }, { timeoutMs: 2147483647 }, { model: "openai/gpt-5", maxTokens: 32, thinkingLevel: "off", timeoutMs: 15000 }, ...KNOWN_THINKING_LEVELS.map((thinkingLevel) => ({ thinkingLevel }))]) {
+      for (const sessionNaming of [
+        {},
+        { model: "openai/gpt-5" },
+        { maxTokens: 48 },
+        { timeoutMs: 1 },
+        { timeoutMs: 10000 },
+        { timeoutMs: 2147483647 },
+        { model: "openai/gpt-5", maxTokens: 32, thinkingLevel: "off", timeoutMs: 15000 },
+        ...KNOWN_THINKING_LEVELS.map((thinkingLevel) => ({ thinkingLevel })),
+      ]) {
         expect(parsePiWebConfigResponse({ ...response, [field]: { sessionNaming } })[field]).toEqual({ sessionNaming });
       }
       for (const sessionNaming of [[], "model", { model: 42 }, { model: "no-provider" }, { maxTokens: 0 }, { maxTokens: -1 }, { maxTokens: 1.5 }]) {
@@ -195,7 +319,13 @@ describe("API parsers", () => {
       checkedAt: "now",
       components: {
         web: { component: "web", label: "Web/UI", available: true, capabilities: [] },
-        sessiond: { component: "sessiond", label: "Session daemon", available: true, capabilities: [], activeAgentProfile: { schemaVersion: 2, dir: "C:\\pi-profiles\\work" } },
+        sessiond: {
+          component: "sessiond",
+          label: "Session daemon",
+          available: true,
+          capabilities: [],
+          activeAgentProfile: { schemaVersion: 2, dir: "C:\\pi-profiles\\work" },
+        },
       },
       capabilities: [],
     });
@@ -237,25 +367,26 @@ describe("API parsers", () => {
       ],
     });
 
-    expect(parsed.deprecatedAgentInputs).toEqual([
-      { source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" },
-    ]);
+    expect(parsed.deprecatedAgentInputs).toEqual([{ source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" }]);
 
-    expect(() => parseMachineRuntime({ machineId: "remote-a", ok: true, checkedAt: "now", deprecatedAgentInputs: "PI_WEB_AGENT_DIR" }))
-      .toThrow("Invalid PI WEB deprecated agent inputs");
+    expect(() => parseMachineRuntime({ machineId: "remote-a", ok: true, checkedAt: "now", deprecatedAgentInputs: "PI_WEB_AGENT_DIR" })).toThrow(
+      "Invalid PI WEB deprecated agent inputs",
+    );
   });
 
   it("rejects config responses missing a required override flag", () => {
     const envOverrides = { host: false, port: false, allowedHosts: false, spawnSessions: false, subsessions: false, askUser: false };
     for (const flag of ["host", "port", "allowedHosts", "spawnSessions", "subsessions", "askUser"] as const) {
       const incomplete = Object.fromEntries(Object.entries(envOverrides).filter(([key]) => key !== flag));
-      expect(() => parsePiWebConfigResponse({
-        path: "/tmp/config.json",
-        exists: true,
-        config: {},
-        effectiveConfig: {},
-        envOverrides: incomplete,
-      })).toThrow(`Expected boolean field: ${flag}`);
+      expect(() =>
+        parsePiWebConfigResponse({
+          path: "/tmp/config.json",
+          exists: true,
+          config: {},
+          effectiveConfig: {},
+          envOverrides: incomplete,
+        }),
+      ).toThrow(`Expected boolean field: ${flag}`);
     }
   });
 
@@ -278,11 +409,15 @@ describe("API parsers", () => {
   it("rejects malformed Pi package responses", () => {
     expect(() => parsePiPackagesResponse({ packages: [{ source: "npm:@acme/tools", scope: "global", filtered: false }] })).toThrow("Invalid Pi package scope");
     expect(() => parsePiPackageMutationResponse({ action: "sync", packages: [] })).toThrow("Invalid Pi package mutation action");
-    expect(() => parsePiPackagesResponse({ packages: [{ source: "npm:@acme/tools", scope: "user", filtered: "no" }] })).toThrow("Expected boolean field: filtered");
+    expect(() => parsePiPackagesResponse({ packages: [{ source: "npm:@acme/tools", scope: "user", filtered: "no" }] })).toThrow(
+      "Expected boolean field: filtered",
+    );
   });
 
   it("parses installable known package suggestions when present and omits the field when absent", () => {
-    const installableKnownPackages = [{ id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" }];
+    const installableKnownPackages = [
+      { id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" },
+    ];
 
     expect(parsePiPackagesResponse({ packages: [], installableKnownPackages })).toEqual({ packages: [], installableKnownPackages });
     expect(parsePiPackagesResponse({ packages: [] })).toEqual({ packages: [] });
@@ -294,7 +429,9 @@ describe("API parsers", () => {
   });
 
   it("rejects malformed installable known package suggestions", () => {
-    expect(() => parsePiPackagesResponse({ packages: [], installableKnownPackages: [{ id: "@acme/known", label: "Known", description: "desc" }] })).toThrow("Expected string field: source");
+    expect(() => parsePiPackagesResponse({ packages: [], installableKnownPackages: [{ id: "@acme/known", label: "Known", description: "desc" }] })).toThrow(
+      "Expected string field: source",
+    );
   });
 
   it("parses Docker PI WEB installation metadata", () => {
@@ -302,8 +439,24 @@ describe("API parsers", () => {
       packageName: "@jmfederico/pi-web",
       generatedAt: "now",
       components: {
-        web: { component: "web", label: "Web/UI", runtimeVersion: "1.0.0", piVersion: "0.84.1", available: true, stale: false, installation: { kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" } },
-        sessiond: { component: "sessiond", label: "Session daemon", runtimeVersion: "1.0.0", piVersion: "0.83.0", available: true, stale: false, installation: { kind: "docker", dockerMode: "dev" } },
+        web: {
+          component: "web",
+          label: "Web/UI",
+          runtimeVersion: "1.0.0",
+          piVersion: "0.84.1",
+          available: true,
+          stale: false,
+          installation: { kind: "docker", path: "/srv/pi-web-docker", dockerMode: "runtime" },
+        },
+        sessiond: {
+          component: "sessiond",
+          label: "Session daemon",
+          runtimeVersion: "1.0.0",
+          piVersion: "0.83.0",
+          available: true,
+          stale: false,
+          installation: { kind: "docker", dockerMode: "dev" },
+        },
       },
       release: { packageName: "@jmfederico/pi-web", updateAvailable: false },
       commands: { restart: "pi-web-docker restart", status: "pi-web-docker status" },
@@ -317,13 +470,15 @@ describe("API parsers", () => {
     expect(parsed.components.web.piVersion).toBe("0.84.1");
     expect(parsed.components.sessiond.piVersion).toBe("0.83.0");
     expect(parsed.commands).toEqual({ restart: "pi-web-docker restart", status: "pi-web-docker status" });
-    expect(() => parsePiWebStatusResponse({
-      ...response,
-      components: {
-        ...response.components,
-        web: { ...response.components.web, installation: { kind: "docker", dockerMode: "hidden" } },
-      },
-    })).toThrow("Invalid PI WEB Docker mode");
+    expect(() =>
+      parsePiWebStatusResponse({
+        ...response,
+        components: {
+          ...response.components,
+          web: { ...response.components.web, installation: { kind: "docker", dockerMode: "hidden" } },
+        },
+      }),
+    ).toThrow("Invalid PI WEB Docker mode");
   });
 
   it("parses desired and active PI WEB plugin lifecycle responses", () => {
@@ -378,57 +533,64 @@ describe("API parsers", () => {
   });
 
   it("rejects malformed plugin lifecycle versions and recovery state", () => {
-    expect(() => parsePiWebPluginsResponse({ lifecycleVersion: 3, plugins: [], diagnostics: [], serverRuntime: {} }))
-      .toThrow("Unsupported PI WEB plugin lifecycle version");
-    expect(() => parsePiWebPluginsResponse({
-      lifecycleVersion: 2,
-      plugins: [],
-      diagnostics: [],
-      serverRuntime: {
-        status: "available",
-        terminalMode: "required",
-        desiredSafeStart: "future",
-        restartRequired: false,
-        recovery: {
-          showSafeStart: "show",
-          bundledOnly: "bundled",
-          noServerPlugins: "none",
-          clearSafeStart: "clear",
+    expect(() => parsePiWebPluginsResponse({ lifecycleVersion: 3, plugins: [], diagnostics: [], serverRuntime: {} })).toThrow(
+      "Unsupported PI WEB plugin lifecycle version",
+    );
+    expect(() =>
+      parsePiWebPluginsResponse({
+        lifecycleVersion: 2,
+        plugins: [],
+        diagnostics: [],
+        serverRuntime: {
+          status: "available",
+          terminalMode: "required",
+          desiredSafeStart: "future",
+          restartRequired: false,
+          recovery: {
+            showSafeStart: "show",
+            bundledOnly: "bundled",
+            noServerPlugins: "none",
+            clearSafeStart: "clear",
+          },
         },
-      },
-    })).toThrow("Invalid desired PI WEB server-plugin safe-start state");
-    expect(() => parsePiWebPluginsResponse({
-      lifecycleVersion: 2,
-      plugins: [],
-      diagnostics: [],
-      serverRuntime: {
-        status: "available",
-        terminalMode: "required",
-        restartRequired: false,
-        recovery: {
-          showSafeStart: "pi-web plugins safe-start show --token secret",
-          bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
-          noServerPlugins: "pi-web plugins safe-start set none --restart",
-          clearSafeStart: "pi-web plugins safe-start clear --restart",
+      }),
+    ).toThrow("Invalid desired PI WEB server-plugin safe-start state");
+    expect(() =>
+      parsePiWebPluginsResponse({
+        lifecycleVersion: 2,
+        plugins: [],
+        diagnostics: [],
+        serverRuntime: {
+          status: "available",
+          terminalMode: "required",
+          restartRequired: false,
+          recovery: {
+            showSafeStart: "pi-web plugins safe-start show --token secret",
+            bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
+            noServerPlugins: "pi-web plugins safe-start set none --restart",
+            clearSafeStart: "pi-web plugins safe-start clear --restart",
+          },
         },
-      },
-    })).toThrow("Invalid PI WEB server plugin recovery commands");
-    expect(() => parsePiWebPluginsResponse({
-      lifecycleVersion: 2,
-      plugins: [],
-      diagnostics: [],
-      serverRuntime: {
-        status: "unavailable",
-        terminalMode: "recovery-disabled",
-        restartRequired: false,
-        recovery: {
-          showSafeStart: "pi-web plugins safe-start show",
-          bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
-          noServerPlugins: "pi-web plugins safe-start set none --restart",
-          clearSafeStart: "pi-web plugins safe-start clear --restart",
+      }),
+    ).toThrow("Invalid PI WEB server plugin recovery commands");
+    expect(() =>
+      parsePiWebPluginsResponse({
+        lifecycleVersion: 2,
+        plugins: [],
+        diagnostics: [],
+        serverRuntime: {
+          status: "unavailable",
+          terminalMode: "recovery-disabled",
+          restartRequired: false,
+          recovery: {
+            showSafeStart: "pi-web plugins safe-start show",
+            bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
+            noServerPlugins: "pi-web plugins safe-start set none --restart",
+            clearSafeStart: "pi-web plugins safe-start clear --restart",
+          },
         },
-      },
-    })).toThrow("Unavailable PI WEB runtime cannot declare Terminal recovery mode");
+      }),
+    ).toThrow("Unavailable PI WEB runtime cannot declare Terminal recovery mode");
   });
 
   it("parses paged message responses and rejects legacy array message pages", () => {
@@ -457,68 +619,90 @@ describe("API parsers", () => {
       catalogRevision: 2,
       sessions: [newest, oldest],
     });
-    expect(parseSessionUnreadEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 3,
-      sessionId: newest.sessionId,
-      cwd: newest.cwd,
-      unread: newest,
-    })).toMatchObject({ type: "sessions.unread", unread: newest });
-    expect(parseSessionUnreadEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 4,
-      sessionId: newest.sessionId,
-      cwd: newest.cwd,
-      unread: null,
-    })).toMatchObject({ type: "sessions.unread", unread: null });
+    expect(
+      parseSessionUnreadEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 3,
+        sessionId: newest.sessionId,
+        cwd: newest.cwd,
+        unread: newest,
+      }),
+    ).toMatchObject({ type: "sessions.unread", unread: newest });
+    expect(
+      parseSessionUnreadEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 4,
+        sessionId: newest.sessionId,
+        cwd: newest.cwd,
+        unread: null,
+      }),
+    ).toMatchObject({ type: "sessions.unread", unread: null });
   });
 
   it("rejects malformed, duplicate, unsorted, and mismatched unread payloads", () => {
     const summary = { sessionId: "session-1", cwd: "/repo", completionOrder: 1, completedAt: "2026-07-20T00:00:01.000Z" };
-    expect(() => parseSessionUnreadCatalogSnapshot({ catalogId: "catalog-a", catalogRevision: 2, sessions: [summary, summary] })).toThrow("Duplicate session unread identity");
-    expect(() => parseSessionUnreadCatalogSnapshot({
-      catalogId: "catalog-a",
-      catalogRevision: 2,
-      sessions: [summary, { ...summary, sessionId: "session-2", completionOrder: 2 }],
-    })).toThrow("not newest-first");
-    expect(() => parseSessionUnreadCatalogSnapshot({ catalogId: "catalog-a", catalogRevision: 1, sessions: [{ ...summary, completedAt: "never" }] })).toThrow("Invalid canonical session unread completion time");
-    expect(() => parseSessionUnreadCatalogSnapshot({ catalogId: "catalog-a", catalogRevision: 1, sessions: [{ ...summary, completedAt: "2026-07-20" }] })).toThrow("Invalid canonical session unread completion time");
-    expect(() => parseSessionUnreadCatalogSnapshot({
-      catalogId: "x".repeat(SESSION_UNREAD_CATALOG_ID_MAX_LENGTH + 1),
-      catalogRevision: 0,
-      sessions: [],
-    })).toThrow("String field exceeds limit: catalogId");
-    expect(() => parseSessionUnreadCatalogSnapshot({
-      catalogId: "catalog-a",
-      catalogRevision: 0,
-      sessions: [summary],
-    })).toThrow("completion order exceeds catalog revision");
-    expect(() => parseSessionUnreadEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 1,
-      sessionId: "session-1",
-      cwd: "/repo",
-      unread: { ...summary, completionOrder: 2 },
-    })).toThrow("completion order exceeds catalog revision");
-    expect(() => parseSessionUnreadEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 1,
-      sessionId: "other-session",
-      cwd: "/repo",
-      unread: summary,
-    })).toThrow("identity mismatch");
-    expect(() => parseSessionUnreadEvent({
-      type: "sessions.unread",
-      catalogId: "catalog-a",
-      catalogRevision: 0,
-      sessionId: "session-1",
-      cwd: "/repo",
-      unread: null,
-    })).toThrow("positive safe integer");
+    expect(() => parseSessionUnreadCatalogSnapshot({ catalogId: "catalog-a", catalogRevision: 2, sessions: [summary, summary] })).toThrow(
+      "Duplicate session unread identity",
+    );
+    expect(() =>
+      parseSessionUnreadCatalogSnapshot({
+        catalogId: "catalog-a",
+        catalogRevision: 2,
+        sessions: [summary, { ...summary, sessionId: "session-2", completionOrder: 2 }],
+      }),
+    ).toThrow("not newest-first");
+    expect(() => parseSessionUnreadCatalogSnapshot({ catalogId: "catalog-a", catalogRevision: 1, sessions: [{ ...summary, completedAt: "never" }] })).toThrow(
+      "Invalid canonical session unread completion time",
+    );
+    expect(() =>
+      parseSessionUnreadCatalogSnapshot({ catalogId: "catalog-a", catalogRevision: 1, sessions: [{ ...summary, completedAt: "2026-07-20" }] }),
+    ).toThrow("Invalid canonical session unread completion time");
+    expect(() =>
+      parseSessionUnreadCatalogSnapshot({
+        catalogId: "x".repeat(SESSION_UNREAD_CATALOG_ID_MAX_LENGTH + 1),
+        catalogRevision: 0,
+        sessions: [],
+      }),
+    ).toThrow("String field exceeds limit: catalogId");
+    expect(() =>
+      parseSessionUnreadCatalogSnapshot({
+        catalogId: "catalog-a",
+        catalogRevision: 0,
+        sessions: [summary],
+      }),
+    ).toThrow("completion order exceeds catalog revision");
+    expect(() =>
+      parseSessionUnreadEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 1,
+        sessionId: "session-1",
+        cwd: "/repo",
+        unread: { ...summary, completionOrder: 2 },
+      }),
+    ).toThrow("completion order exceeds catalog revision");
+    expect(() =>
+      parseSessionUnreadEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 1,
+        sessionId: "other-session",
+        cwd: "/repo",
+        unread: summary,
+      }),
+    ).toThrow("identity mismatch");
+    expect(() =>
+      parseSessionUnreadEvent({
+        type: "sessions.unread",
+        catalogId: "catalog-a",
+        catalogRevision: 0,
+        sessionId: "session-1",
+        cwd: "/repo",
+        unread: null,
+      }),
+    ).toThrow("positive safe integer");
   });
 
   it("parses session startup progress with and without a correlation token", () => {
@@ -538,12 +722,21 @@ describe("API parsers", () => {
   });
 
   it("carries the startup marker so an opening session is not mistaken for a working one", () => {
-    const activity = { sessionId: "session-1", phase: "active", label: "Opening session", detail: "Starting the Pi session", at: "2026-07-20T00:00:01.000Z", startup: true };
+    const activity = {
+      sessionId: "session-1",
+      phase: "active",
+      label: "Opening session",
+      detail: "Starting the Pi session",
+      at: "2026-07-20T00:00:01.000Z",
+      startup: true,
+    };
 
     expect(parseSessionStartupProgressEvent({ type: "session.startup", activity })).toEqual({ type: "session.startup", activity });
     // A malformed marker is dropped like any other malformed field rather than
     // being coerced into "this is startup" or "this is work".
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, startup: "yes" } })).toThrow("Expected optional boolean field: startup");
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, startup: "yes" } })).toThrow(
+      "Expected optional boolean field: startup",
+    );
   });
 
   it("rejects session startup progress that cannot be routed or rendered honestly", () => {
@@ -551,15 +744,27 @@ describe("API parsers", () => {
 
     expect(() => parseSessionStartupProgressEvent({ type: "activity.update", activity })).toThrow("Invalid session startup event type");
     expect(() => parseSessionStartupProgressEvent({ type: "session.startup" })).toThrow("Expected object response");
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", startupToken: 7, activity })).toThrow("Expected optional string field: startupToken");
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", startupToken: 7, activity })).toThrow(
+      "Expected optional string field: startupToken",
+    );
     // An empty token would match nothing but must still be rejected rather than
     // silently carried, so a malformed frame never reaches the routing at all.
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", startupToken: "", activity })).toThrow("Expected non-empty string field: startupToken");
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, phase: "waiting" } })).toThrow("Expected session activity phase field: phase");
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", startupToken: "", activity })).toThrow(
+      "Expected non-empty string field: startupToken",
+    );
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, phase: "waiting" } })).toThrow(
+      "Expected session activity phase field: phase",
+    );
     expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, label: 7 } })).toThrow("Expected string field: label");
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, label: "" } })).toThrow("Expected non-empty string field: label");
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, detail: 7 } })).toThrow("Expected optional string field: detail");
-    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, sessionId: "" } })).toThrow("Expected non-empty string field: sessionId");
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, label: "" } })).toThrow(
+      "Expected non-empty string field: label",
+    );
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, detail: 7 } })).toThrow(
+      "Expected optional string field: detail",
+    );
+    expect(() => parseSessionStartupProgressEvent({ type: "session.startup", activity: { ...activity, sessionId: "" } })).toThrow(
+      "Expected non-empty string field: sessionId",
+    );
   });
 
   it("parses session cleanup preview and execute responses", () => {
@@ -583,8 +788,24 @@ describe("API parsers", () => {
   });
 
   it("rejects malformed session cleanup responses", () => {
-    expect(() => parseSessionCleanupPreviewResponse({ generatedAt: "now", thresholds: {}, projects: [{ cwd: "/repo", archiveCount: "2", deleteCount: 0 }], totals: { archiveCount: 2, deleteCount: 0 } })).toThrow("Expected number field: archiveCount");
-    expect(() => parseSessionCleanupExecuteResponse({ generatedAt: "now", thresholds: {}, projects: [], totals: { archiveCount: 0, deleteCount: 0 }, archivedSessionIds: ["s1"], deletedSessionIds: [1] })).toThrow("Expected string array field: deletedSessionIds");
+    expect(() =>
+      parseSessionCleanupPreviewResponse({
+        generatedAt: "now",
+        thresholds: {},
+        projects: [{ cwd: "/repo", archiveCount: "2", deleteCount: 0 }],
+        totals: { archiveCount: 2, deleteCount: 0 },
+      }),
+    ).toThrow("Expected number field: archiveCount");
+    expect(() =>
+      parseSessionCleanupExecuteResponse({
+        generatedAt: "now",
+        thresholds: {},
+        projects: [],
+        totals: { archiveCount: 0, deleteCount: 0 },
+        archivedSessionIds: ["s1"],
+        deletedSessionIds: [1],
+      }),
+    ).toThrow("Expected string array field: deletedSessionIds");
   });
 
   it("parses bulk session mutation responses", () => {
@@ -604,22 +825,28 @@ describe("API parsers", () => {
   });
 
   it("rejects malformed bulk session mutation responses", () => {
-    expect(() => parseSessionBulkArchiveResponse({ archived: true, archivedSessionIds: ["s1"], failures: [{ sessionId: "s2" }], generatedAt: "now" })).toThrow("Expected string field: error");
-    expect(() => parseSessionBulkDeleteArchivedResponse({ deleted: true, deletedSessionIds: [1], failures: [], generatedAt: "now" })).toThrow("Expected string array field: deletedSessionIds");
+    expect(() => parseSessionBulkArchiveResponse({ archived: true, archivedSessionIds: ["s1"], failures: [{ sessionId: "s2" }], generatedAt: "now" })).toThrow(
+      "Expected string field: error",
+    );
+    expect(() => parseSessionBulkDeleteArchivedResponse({ deleted: true, deletedSessionIds: [1], failures: [], generatedAt: "now" })).toThrow(
+      "Expected string array field: deletedSessionIds",
+    );
   });
 
   it("parses session info including optional persistence signals", () => {
-    expect(parseSessionInfo({
-      id: "s1",
-      path: "/sessions/s1.jsonl",
-      cwd: "/repo",
-      persisted: false,
-      name: "Draft session",
-      created: "2026-01-01T00:00:00.000Z",
-      modified: "2026-01-01T00:01:00.000Z",
-      messageCount: 0,
-      firstMessage: "",
-    })).toEqual({
+    expect(
+      parseSessionInfo({
+        id: "s1",
+        path: "/sessions/s1.jsonl",
+        cwd: "/repo",
+        persisted: false,
+        name: "Draft session",
+        created: "2026-01-01T00:00:00.000Z",
+        modified: "2026-01-01T00:01:00.000Z",
+        messageCount: 0,
+        firstMessage: "",
+      }),
+    ).toEqual({
       id: "s1",
       path: "/sessions/s1.jsonl",
       cwd: "/repo",
@@ -630,7 +857,9 @@ describe("API parsers", () => {
       messageCount: 0,
       firstMessage: "",
     });
-    expect(() => parseSessionInfo({ id: "s1", path: "", cwd: "/repo", persisted: "yes", created: "now", modified: "now", messageCount: 0, firstMessage: "" })).toThrow("Expected optional boolean field: persisted");
+    expect(() =>
+      parseSessionInfo({ id: "s1", path: "", cwd: "/repo", persisted: "yes", created: "now", modified: "now", messageCount: 0, firstMessage: "" }),
+    ).toThrow("Expected optional boolean field: persisted");
   });
 
   it("preserves only positive agent subsession signals and rejects malformed flags", () => {
@@ -643,8 +872,14 @@ describe("API parsers", () => {
 
   describe("session UI metadata", () => {
     const session = {
-      id: "s1", path: "/sessions/s1.jsonl", cwd: "/repo", name: "Relay X leg 3",
-      created: "now", modified: "now", messageCount: 13, firstMessage: "Continue Relay X",
+      id: "s1",
+      path: "/sessions/s1.jsonl",
+      cwd: "/repo",
+      name: "Relay X leg 3",
+      created: "now",
+      modified: "now",
+      messageCount: 13,
+      firstMessage: "Continue Relay X",
     };
     const metadata = {
       "@jmfederico/pi-relay": { version: 1, packetPath: ".pi-web/relays/X", relayName: "X", leg: "3" },
@@ -667,7 +902,8 @@ describe("API parsers", () => {
 
     it.each([parseSessionStreamEvent, parseRealtimeStreamEvent])("preserves metadata on session.created events (%#)", (parse) => {
       expect(parse({ type: "session.created", session: { ...session, metadata } })).toEqual({
-        type: "session.created", session: { ...session, metadata },
+        type: "session.created",
+        session: { ...session, metadata },
       });
     });
 
@@ -686,14 +922,32 @@ describe("API parsers", () => {
   });
 
   it("parses the model catalog with enabled state and natural catalog positions", () => {
-    expect(parseSessionModelCatalogResponse({
+    expect(
+      parseSessionModelCatalogResponse({
+        models: [
+          {
+            provider: "anthropic",
+            id: "claude-opus-4-6",
+            name: "Claude Opus",
+            contextWindow: 200_000,
+            reasoning: { effort: "high" },
+            enabled: true,
+            catalogIndex: 1,
+          },
+          { provider: "anthropic", id: "claude-sonnet-4-5", enabled: false, editable: false, catalogIndex: 0 },
+        ],
+      }),
+    ).toEqual({
       models: [
-        { provider: "anthropic", id: "claude-opus-4-6", name: "Claude Opus", contextWindow: 200_000, reasoning: { effort: "high" }, enabled: true, catalogIndex: 1 },
-        { provider: "anthropic", id: "claude-sonnet-4-5", enabled: false, editable: false, catalogIndex: 0 },
-      ],
-    })).toEqual({
-      models: [
-        { provider: "anthropic", id: "claude-opus-4-6", name: "Claude Opus", contextWindow: 200_000, reasoning: { effort: "high" }, enabled: true, catalogIndex: 1 },
+        {
+          provider: "anthropic",
+          id: "claude-opus-4-6",
+          name: "Claude Opus",
+          contextWindow: 200_000,
+          reasoning: { effort: "high" },
+          enabled: true,
+          catalogIndex: 1,
+        },
         { provider: "anthropic", id: "claude-sonnet-4-5", enabled: false, editable: false, catalogIndex: 0 },
       ],
     });
@@ -703,29 +957,40 @@ describe("API parsers", () => {
     expect(() => parseSessionModelCatalogResponse({ models: [{ id: "m", enabled: true }] })).toThrow("Expected string field: provider");
     expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", enabled: true }] })).toThrow("Expected string field: id");
     expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", enabled: "yes" }] })).toThrow("Expected boolean field: enabled");
-    expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", name: 4, enabled: true }] })).toThrow("Expected optional string field: name");
-    expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", enabled: true, editable: "yes" }] })).toThrow("Invalid PI WEB editable field");
-    expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", enabled: true, catalogIndex: -1 }] })).toThrow("Expected non-negative safe integer field: catalogIndex");
+    expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", name: 4, enabled: true }] })).toThrow(
+      "Expected optional string field: name",
+    );
+    expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", enabled: true, editable: "yes" }] })).toThrow(
+      "Invalid PI WEB editable field",
+    );
+    expect(() => parseSessionModelCatalogResponse({ models: [{ provider: "p", id: "m", enabled: true, catalogIndex: -1 }] })).toThrow(
+      "Expected non-negative safe integer field: catalogIndex",
+    );
     expect(() => parseSessionModelCatalogResponse({})).toThrow("Expected array response");
   });
 
   it("validates session status including optional model and nullable context usage", () => {
-    expect(parseSessionStatus({
-      sessionId: "s1",
-      persisted: true,
-      isStreaming: false,
-      isCompacting: true,
-      isBashRunning: false,
-      pendingMessageCount: 2,
-      queuedMessages: [{ kind: "steer", text: "adjust this" }, { kind: "followUp", text: "then do that" }],
-      messageCount: 7,
-      tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 },
-      cost: 0.12,
-      model: { provider: "p", id: "m", contextWindow: 100, reasoning: { effort: "low" } },
-      contextUsage: { tokens: null, contextWindow: 100, percent: 0.5 },
-      thinkingLevel: "medium",
-      extensionStatuses: { "working-mode": "{\"schemaVersion\":1}" },
-    })).toEqual({
+    expect(
+      parseSessionStatus({
+        sessionId: "s1",
+        persisted: true,
+        isStreaming: false,
+        isCompacting: true,
+        isBashRunning: false,
+        pendingMessageCount: 2,
+        queuedMessages: [
+          { kind: "steer", text: "adjust this" },
+          { kind: "followUp", text: "then do that" },
+        ],
+        messageCount: 7,
+        tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 },
+        cost: 0.12,
+        model: { provider: "p", id: "m", contextWindow: 100, reasoning: { effort: "low" } },
+        contextUsage: { tokens: null, contextWindow: 100, percent: 0.5 },
+        thinkingLevel: "medium",
+        extensionStatuses: { "working-mode": '{"schemaVersion":1}' },
+      }),
+    ).toEqual({
       sessionId: "s1",
       persisted: true,
       recentlyActiveElsewhere: false,
@@ -733,26 +998,31 @@ describe("API parsers", () => {
       isCompacting: true,
       isBashRunning: false,
       pendingMessageCount: 2,
-      queuedMessages: [{ kind: "steer", text: "adjust this" }, { kind: "followUp", text: "then do that" }],
+      queuedMessages: [
+        { kind: "steer", text: "adjust this" },
+        { kind: "followUp", text: "then do that" },
+      ],
       messageCount: 7,
       tokens: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 },
       cost: 0.12,
       model: { provider: "p", id: "m", contextWindow: 100, reasoning: { effort: "low" } },
       contextUsage: { tokens: null, contextWindow: 100, percent: 0.5 },
       thinkingLevel: "medium",
-      extensionStatuses: { "working-mode": "{\"schemaVersion\":1}" },
+      extensionStatuses: { "working-mode": '{"schemaVersion":1}' },
     });
   });
 
   it("parses bounded active tool executions while accepting old daemon statuses without them", () => {
     expect(parseSessionStatus(statusWire()).activeToolExecutions).toBeUndefined();
-    expect(parseSessionStatus({
-      ...statusWire(),
-      activeToolExecutions: [
-        { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
-        { id: "shell:1", kind: "shell", toolName: "shell", label: "Interactive shell" },
-      ],
-    }).activeToolExecutions).toEqual([
+    expect(
+      parseSessionStatus({
+        ...statusWire(),
+        activeToolExecutions: [
+          { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
+          { id: "shell:1", kind: "shell", toolName: "shell", label: "Interactive shell" },
+        ],
+      }).activeToolExecutions,
+    ).toEqual([
       { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" },
       { id: "shell:1", kind: "shell", toolName: "shell", label: "Interactive shell" },
     ]);
@@ -772,24 +1042,48 @@ describe("API parsers", () => {
     const attentionRequest = { id: "attention-1", reason: "Review the release PR" };
     expect(parseSessionStatus(statusWire()).attentionRequest).toBeUndefined();
     expect(parseSessionStatus({ ...statusWire(), attentionRequest }).attentionRequest).toEqual(attentionRequest);
-    expect(() => parseSessionStatus({ ...statusWire(), attentionRequest: { ...attentionRequest, reason: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1) } })).toThrow();
+    expect(() =>
+      parseSessionStatus({ ...statusWire(), attentionRequest: { ...attentionRequest, reason: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1) } }),
+    ).toThrow();
     expect(() => parseSessionStatus({ ...statusWire(), attentionRequest: { ...attentionRequest, id: "" } })).toThrow();
     expect(parseOpenAsks({ pendingAsks: [] })).toEqual({ pendingAsks: [] });
     expect(parseOpenAsks({ pendingAsks: [], attentionRequest })).toEqual({ pendingAsks: [], attentionRequest });
   });
 
   it("keeps a dependent question's showIf and a skipped record, whose question is neither answered nor unanswered", () => {
-    const location = { id: "location", question: "Where?", options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] };
-    const machine = { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } };
+    const location = {
+      id: "location",
+      question: "Where?",
+      options: [
+        { value: "home", label: "Home" },
+        { value: "vps", label: "VPS" },
+      ],
+    };
+    const machine = {
+      id: "machine",
+      question: "Which machine?",
+      options: [{ value: "mini", label: "Mac mini" }],
+      showIf: { question: "location", values: ["home"] },
+    };
     const ask = { askId: "ask-1", askedAt: "now", updatedAt: "now", revision: "r1", turnsSinceUpdate: 0, questions: [location, machine] };
     expect(parseOpenAsks({ pendingAsks: [ask] }).pendingAsks[0]?.questions[1]?.showIf).toEqual({ question: "location", values: ["home"] });
     const outcome = {
-      askId: "ask-1", reason: "submitted", askedAt: "now", closedAt: "now",
-      questions: [{ question: location, answered: true, values: ["vps"] }, { question: machine, answered: false, values: [], skipped: true }],
-      answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1; none left unanswered; skipped (condition not met): machine",
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "now",
+      closedAt: "now",
+      questions: [
+        { question: location, answered: true, values: ["vps"] },
+        { question: machine, answered: false, values: [], skipped: true },
+      ],
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1 of 1; none left unanswered; skipped (condition not met): machine",
     };
     expect(parseAskUserCloseResponse({ result: "closed", outcome, sessionStatus: statusWire() }).outcome?.questions[1]?.skipped).toBe(true);
-    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, unansweredIds: ["machine"] }, sessionStatus: statusWire() })).toThrow("unanswered ids mismatch");
+    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, unansweredIds: ["machine"] }, sessionStatus: statusWire() })).toThrow(
+      "unanswered ids mismatch",
+    );
   });
 
   it("keeps a boolean question's labels", () => {
@@ -801,19 +1095,35 @@ describe("API parsers", () => {
 
   it("rejects malformed or unbounded active tool executions", () => {
     const execution = { id: "tool:call-1", kind: "shell", toolName: "bash", label: "Shell command", startedAt: "2026-09-21T12:00:00.000Z" };
-    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT + 1 }, (_, index) => ({ ...execution, id: `tool:${String(index)}` })) })).toThrow("Array field exceeds limit: activeToolExecutions");
+    expect(() =>
+      parseSessionStatus({
+        ...statusWire(),
+        activeToolExecutions: Array.from({ length: ACTIVE_TOOL_EXECUTION_LIMIT + 1 }, (_, index) => ({ ...execution, id: `tool:${String(index)}` })),
+      }),
+    ).toThrow("Array field exceeds limit: activeToolExecutions");
     expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [execution, execution] })).toThrow("Duplicate active tool execution id");
     expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, kind: "read" }] })).toThrow("Invalid active tool execution kind");
-    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, label: "x".repeat(ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH + 1) }] })).toThrow("String field exceeds limit: label");
-    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, startedAt: "x".repeat(ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH + 1) }] })).toThrow("String field exceeds limit: startedAt");
-    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, startedAt: "eventually" }] })).toThrow("Invalid active tool execution start time");
+    expect(() =>
+      parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, label: "x".repeat(ACTIVE_TOOL_EXECUTION_LABEL_MAX_LENGTH + 1) }] }),
+    ).toThrow("String field exceeds limit: label");
+    expect(() =>
+      parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, startedAt: "x".repeat(ACTIVE_TOOL_EXECUTION_STARTED_AT_MAX_LENGTH + 1) }] }),
+    ).toThrow("String field exceeds limit: startedAt");
+    expect(() => parseSessionStatus({ ...statusWire(), activeToolExecutions: [{ ...execution, startedAt: "eventually" }] })).toThrow(
+      "Invalid active tool execution start time",
+    );
   });
 
   it("rejects malformed or unbounded extension statuses", () => {
     const base = {
-      sessionId: "s1", isStreaming: false, isCompacting: false, isBashRunning: false,
-      pendingMessageCount: 0, queuedMessages: [],
-      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+      sessionId: "s1",
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
     };
     expect(() => parseSessionStatus({ ...base, extensionStatuses: [] })).toThrow("Expected extensionStatuses object");
     expect(() => parseSessionStatus({ ...base, extensionStatuses: { ["x".repeat(129)]: "value" } })).toThrow("Invalid extension status key");
@@ -821,9 +1131,15 @@ describe("API parsers", () => {
   });
 
   it("preserves optional attachment metadata on queued messages", () => {
-    const queuedMessages = [{ kind: "steer", text: "image", hasAttachments: true, attachmentCount: 3 }, { kind: "followUp", text: "plain", hasAttachments: false, attachmentCount: 0 }, { kind: "followUp", text: "legacy" }];
+    const queuedMessages = [
+      { kind: "steer", text: "image", hasAttachments: true, attachmentCount: 3 },
+      { kind: "followUp", text: "plain", hasAttachments: false, attachmentCount: 0 },
+      { kind: "followUp", text: "legacy" },
+    ];
     expect(parseSessionStatus({ ...statusWire(), queuedMessages }).queuedMessages).toEqual(queuedMessages);
-    expect(() => parseSessionStatus({ ...statusWire(), queuedMessages: [{ kind: "steer", text: "invalid", hasAttachments: "yes" }] })).toThrow("Invalid PI WEB hasAttachments field");
+    expect(() => parseSessionStatus({ ...statusWire(), queuedMessages: [{ kind: "steer", text: "invalid", hasAttachments: "yes" }] })).toThrow(
+      "Invalid PI WEB hasAttachments field",
+    );
     for (const attachmentCount of [-1, 1.5, "2", Infinity]) {
       expect(() => parseSessionStatus({ ...statusWire(), queuedMessages: [{ kind: "steer", text: "invalid", attachmentCount }] })).toThrow();
     }
@@ -835,7 +1151,9 @@ describe("API parsers", () => {
       expect(parseSessionStatus({ ...statusWire(), queueMessageActionsUnavailable }).queueMessageActionsUnavailable).toBe(queueMessageActionsUnavailable);
     }
     for (const queueMessageActionsUnavailable of [42, null, false, {}]) {
-      expect(() => parseSessionStatus({ ...statusWire(), queueMessageActionsUnavailable })).toThrow("Expected optional string field: queueMessageActionsUnavailable");
+      expect(() => parseSessionStatus({ ...statusWire(), queueMessageActionsUnavailable })).toThrow(
+        "Expected optional string field: queueMessageActionsUnavailable",
+      );
     }
     expect(parseSessionStatus(statusWire())).not.toHaveProperty("queueChanged");
     expect(parseSessionStatus({ ...statusWire(), queueChanged: true }).queueChanged).toBe(true);
@@ -860,7 +1178,8 @@ describe("API parsers", () => {
     const wire = { ...statusWire(), recentlyActiveElsewhere };
     expect(parseSessionStatus(wire)).toMatchObject({ recentlyActiveElsewhere });
     expect(parseRealtimeStreamEvent({ type: "status.update", status: wire })).toEqual({
-      type: "status.update", status: parseSessionStatus(wire),
+      type: "status.update",
+      status: parseSessionStatus(wire),
     });
     expect(parseSessionStatus(wire).warnings).toBeUndefined();
   });
@@ -929,17 +1248,19 @@ describe("API parsers", () => {
   });
 
   it("rejects a warning with an invalid severity", () => {
-    expect(() => parseSessionStatus({
-      sessionId: "s1",
-      isStreaming: false,
-      isCompacting: false,
-      isBashRunning: false,
-      pendingMessageCount: 0,
-      queuedMessages: [],
-      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      cost: 0,
-      warnings: [{ severity: "fatal", message: "nope" }],
-    })).toThrow("Invalid session warning severity");
+    expect(() =>
+      parseSessionStatus({
+        sessionId: "s1",
+        isStreaming: false,
+        isCompacting: false,
+        isBashRunning: false,
+        pendingMessageCount: 0,
+        queuedMessages: [],
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+        warnings: [{ severity: "fatal", message: "nope" }],
+      }),
+    ).toThrow("Invalid session warning severity");
   });
 
   it("parses workspace effective upload and attachments config without retaining the removed top-level branch alias", () => {
@@ -965,20 +1286,22 @@ describe("API parsers", () => {
   });
 
   it("parses generic workspace provider and removal metadata", () => {
-    expect(parseWorkspace({
-      id: "w1",
-      projectId: "p1",
-      path: "/repo/secondary",
-      label: "secondary",
-      isMain: false,
-      provider: {
-        pluginId: "workspace-provider",
-        capabilities: { remove: true },
-        metadata: { changeId: "abc", nested: [1, true, null] },
-      },
-      removal: { actionLabel: "Remove workspace", confirmation: "Remove secondary?", precondition: "v1.confirmed" },
-      effectiveConfig: {},
-    })).toEqual({
+    expect(
+      parseWorkspace({
+        id: "w1",
+        projectId: "p1",
+        path: "/repo/secondary",
+        label: "secondary",
+        isMain: false,
+        provider: {
+          pluginId: "workspace-provider",
+          capabilities: { remove: true },
+          metadata: { changeId: "abc", nested: [1, true, null] },
+        },
+        removal: { actionLabel: "Remove workspace", confirmation: "Remove secondary?", precondition: "v1.confirmed" },
+        effectiveConfig: {},
+      }),
+    ).toEqual({
       id: "w1",
       projectId: "p1",
       path: "/repo/secondary",
@@ -1029,20 +1352,24 @@ describe("API parsers", () => {
       status: "degraded",
       projectId: "p1",
       ownerPluginId: "replacement",
-      workspaces: [{
-        id: "w1",
-        projectId: "p1",
-        path: "/repo",
-        label: "main",
-        isMain: true,
-        effectiveConfig: {},
-      }],
-      diagnostics: [{
-        code: "claim-conflict",
-        message: "Two primary providers claimed the project",
-        tier: "primary",
-        pluginIds: ["one", "two"],
-      }],
+      workspaces: [
+        {
+          id: "w1",
+          projectId: "p1",
+          path: "/repo",
+          label: "main",
+          isMain: true,
+          effectiveConfig: {},
+        },
+      ],
+      diagnostics: [
+        {
+          code: "claim-conflict",
+          message: "Two primary providers claimed the project",
+          tier: "primary",
+          pluginIds: ["one", "two"],
+        },
+      ],
     });
 
     expect(resolution).toEqual({
@@ -1050,12 +1377,14 @@ describe("API parsers", () => {
       projectId: "p1",
       ownerPluginId: "replacement",
       workspaces: [expect.objectContaining({ id: "w1", projectId: "p1" })],
-      diagnostics: [{
-        code: "claim-conflict",
-        message: "Two primary providers claimed the project",
-        tier: "primary",
-        pluginIds: ["one", "two"],
-      }],
+      diagnostics: [
+        {
+          code: "claim-conflict",
+          message: "Two primary providers claimed the project",
+          tier: "primary",
+          pluginIds: ["one", "two"],
+        },
+      ],
     });
     expect(Object.isFrozen(resolution)).toBe(true);
     expect(Object.isFrozen(resolution.workspaces)).toBe(true);
@@ -1074,68 +1403,80 @@ describe("API parsers", () => {
       effectiveConfig: {},
     };
 
-    expect(() => parseWorkspaceProviderResolution({
-      status: "provider",
-      projectId: "p1",
-      workspaces: [workspace],
-      diagnostics: [],
-    })).toThrow("missing ownerPluginId");
-    expect(() => parseWorkspaceProviderResolution({
-      status: "folder",
-      projectId: "p1",
-      workspaces: [workspace],
-      diagnostics: [{ code: "future", message: "bad", tier: "primary" }],
-    })).toThrow("diagnostic code");
+    expect(() =>
+      parseWorkspaceProviderResolution({
+        status: "provider",
+        projectId: "p1",
+        workspaces: [workspace],
+        diagnostics: [],
+      }),
+    ).toThrow("missing ownerPluginId");
+    expect(() =>
+      parseWorkspaceProviderResolution({
+        status: "folder",
+        projectId: "p1",
+        workspaces: [workspace],
+        diagnostics: [{ code: "future", message: "bad", tier: "primary" }],
+      }),
+    ).toThrow("diagnostic code");
   });
 
   it("rejects removal metadata without a host-issued precondition", () => {
-    expect(() => parseWorkspace({
-      id: "w1",
-      projectId: "p1",
-      path: "/repo/secondary",
-      label: "secondary",
-      isMain: false,
-      removal: { actionLabel: "Remove workspace", confirmation: "Remove secondary?" },
-      effectiveConfig: {},
-    })).toThrow("Expected string field: precondition");
+    expect(() =>
+      parseWorkspace({
+        id: "w1",
+        projectId: "p1",
+        path: "/repo/secondary",
+        label: "secondary",
+        isMain: false,
+        removal: { actionLabel: "Remove workspace", confirmation: "Remove secondary?" },
+        effectiveConfig: {},
+      }),
+    ).toThrow("Expected string field: precondition");
   });
 
   it("rejects empty workspace removal wording", () => {
-    expect(() => parseWorkspace({
-      id: "w1",
-      projectId: "p1",
-      path: "/repo/secondary",
-      label: "secondary",
-      isMain: false,
-      removal: { actionLabel: "", confirmation: "Remove secondary?", precondition: "v1.confirmed" },
-      effectiveConfig: {},
-    })).toThrow("Expected non-empty string field: actionLabel");
+    expect(() =>
+      parseWorkspace({
+        id: "w1",
+        projectId: "p1",
+        path: "/repo/secondary",
+        label: "secondary",
+        isMain: false,
+        removal: { actionLabel: "", confirmation: "Remove secondary?", precondition: "v1.confirmed" },
+        effectiveConfig: {},
+      }),
+    ).toThrow("Expected non-empty string field: actionLabel");
   });
 
   it("rejects non-JSON workspace provider metadata", () => {
-    expect(() => parseWorkspace({
-      id: "w1",
-      projectId: "p1",
-      path: "/repo",
-      label: "main",
-      isMain: true,
-      provider: {
-        pluginId: "workspace-provider",
-        capabilities: { remove: false },
-        metadata: { invalid: undefined },
-      },
-      effectiveConfig: {},
-    })).toThrow("Invalid workspace provider metadata field");
+    expect(() =>
+      parseWorkspace({
+        id: "w1",
+        projectId: "p1",
+        path: "/repo",
+        label: "main",
+        isMain: true,
+        provider: {
+          pluginId: "workspace-provider",
+          capabilities: { remove: false },
+          metadata: { invalid: undefined },
+        },
+        effectiveConfig: {},
+      }),
+    ).toThrow("Invalid workspace provider metadata field");
   });
 
   it("rejects workspace responses without effective config", () => {
-    expect(() => parseWorkspace({
-      id: "w1",
-      projectId: "p1",
-      path: "/repo",
-      label: "main",
-      isMain: true,
-    })).toThrow("Expected workspace effectiveConfig field");
+    expect(() =>
+      parseWorkspace({
+        id: "w1",
+        projectId: "p1",
+        path: "/repo",
+        label: "main",
+        isMain: true,
+      }),
+    ).toThrow("Expected workspace effectiveConfig field");
   });
 
   it("rejects invalid enum-like fields", () => {
@@ -1167,9 +1508,24 @@ describe("API parsers", () => {
     };
 
     expect(parseFileContentResponse(textFile)).toMatchObject({ path: "README.md", language: "markdown", content: "text" });
-    expect(parseFileContentResponse({ ...textFile, path: "logo.png", mediaType: "image", mimeType: "image/png", content: "", binary: true })).toMatchObject({ path: "logo.png", mediaType: "image", mimeType: "image/png" });
-    expect(parseFileContentResponse({ ...textFile, path: "report.html", mediaType: "html", mimeType: "text/html; charset=utf-8", content: "<h1>literal</h1>", binary: false })).toMatchObject({ path: "report.html", mediaType: "html", content: "<h1>literal</h1>" });
-    expect(parseFileContentResponse({ ...textFile, path: "spec.pdf", mediaType: "pdf", mimeType: "application/pdf", content: "", binary: true })).toMatchObject({ path: "spec.pdf", mediaType: "pdf" });
+    expect(parseFileContentResponse({ ...textFile, path: "logo.png", mediaType: "image", mimeType: "image/png", content: "", binary: true })).toMatchObject({
+      path: "logo.png",
+      mediaType: "image",
+      mimeType: "image/png",
+    });
+    expect(
+      parseFileContentResponse({
+        ...textFile,
+        path: "report.html",
+        mediaType: "html",
+        mimeType: "text/html; charset=utf-8",
+        content: "<h1>literal</h1>",
+        binary: false,
+      }),
+    ).toMatchObject({ path: "report.html", mediaType: "html", content: "<h1>literal</h1>" });
+    expect(parseFileContentResponse({ ...textFile, path: "spec.pdf", mediaType: "pdf", mimeType: "application/pdf", content: "", binary: true })).toMatchObject(
+      { path: "spec.pdf", mediaType: "pdf" },
+    );
     expect(parseFileContentResponse({ ...textFile, mediaType: "markdown" })).toMatchObject({ path: "README.md", mediaType: "markdown", content: "text" });
 
     expect(() => parseFileContentResponse({ encoding: "base64" })).toThrow("Invalid file encoding");
@@ -1179,7 +1535,12 @@ describe("API parsers", () => {
   it("parses command result variants", () => {
     const tree = sessionTreeWire();
     expect(parseCommandResult({ type: "unsupported", message: "nope" })).toEqual({ type: "unsupported", message: "nope" });
-    expect(parseCommandResult({ type: "select", requestId: "r1", title: "Pick", options: [{ value: "v", label: "Label", description: "desc" }] })).toEqual({ type: "select", requestId: "r1", title: "Pick", options: [{ value: "v", label: "Label", description: "desc" }] });
+    expect(parseCommandResult({ type: "select", requestId: "r1", title: "Pick", options: [{ value: "v", label: "Label", description: "desc" }] })).toEqual({
+      type: "select",
+      requestId: "r1",
+      title: "Pick",
+      options: [{ value: "v", label: "Label", description: "desc" }],
+    });
     expect(parseCommandResult({ type: "tree", tree })).toEqual({ type: "tree", tree });
     expect(parseCommandResult({ type: "done", message: "ok", promptDraft: "resend me" })).toEqual({ type: "done", message: "ok", promptDraft: "resend me" });
     expect(() => parseCommandResult({ type: "later" })).toThrow("Invalid command result type");
@@ -1192,7 +1553,10 @@ describe("API parsers", () => {
     expect(parseSessionTreeNavigateResult({ cancelled: false })).toEqual({ cancelled: false });
     expect(parseSessionTreeNavigateResult({ cancelled: true, aborted: true })).toEqual({ cancelled: true, aborted: true });
     expect(parseSessionTreeNavigateResult({ cancelled: true })).toEqual({ cancelled: true });
-    expect(parseSessionTreeNavigateResult({ cancelled: false, editorText: "edit this", operationId: "future-metadata" })).toEqual({ cancelled: false, editorText: "edit this" });
+    expect(parseSessionTreeNavigateResult({ cancelled: false, editorText: "edit this", operationId: "future-metadata" })).toEqual({
+      cancelled: false,
+      editorText: "edit this",
+    });
     expect(parseSessionTreeNavigateResult({ cancelled: true, aborted: true, operationId: "future-metadata" })).toEqual({ cancelled: true, aborted: true });
 
     expect(() => parseSessionTreeSnapshot({ ...tree, activeLeafId: undefined })).toThrow("activeLeafId");
@@ -1225,9 +1589,17 @@ describe("API parsers", () => {
       firstMessage: "original prompt",
     };
     expect(parseSessionTreeForkResult({ cancelled: false, session })).toEqual({ cancelled: false, session });
-    expect(parseSessionTreeForkResult({ cancelled: false, session, promptDraft: "resend me" })).toEqual({ cancelled: false, session, promptDraft: "resend me" });
+    expect(parseSessionTreeForkResult({ cancelled: false, session, promptDraft: "resend me" })).toEqual({
+      cancelled: false,
+      session,
+      promptDraft: "resend me",
+    });
     expect(parseSessionTreeForkResult({ cancelled: true })).toEqual({ cancelled: true });
-    expect(parseSessionTreeForkResult({ cancelled: false, session, promptDraft: "resend me", operationId: "future-metadata" })).toEqual({ cancelled: false, session, promptDraft: "resend me" });
+    expect(parseSessionTreeForkResult({ cancelled: false, session, promptDraft: "resend me", operationId: "future-metadata" })).toEqual({
+      cancelled: false,
+      session,
+      promptDraft: "resend me",
+    });
     expect(parseSessionTreeForkResult({ cancelled: true, operationId: "future-metadata" })).toEqual({ cancelled: true });
 
     expect(() => parseSessionTreeForkResult({ cancelled: false })).toThrow("Expected object response");
@@ -1242,21 +1614,25 @@ describe("API parsers", () => {
     const inbox = notificationInboxWire();
 
     expect(parseSessionNotificationInboxSnapshot(inbox)).toEqual(inbox);
-    expect(parseSessionNotificationInboxEvent({
-      type: "notifications.inbox",
-      daemonInstanceId: "daemon-a",
-      catalogRevision: 2,
-      summary: { ...inbox.summary, inboxRevision: 2, retainedCount: 2, highestSeverity: "warning" },
-      dismissThrough: { order: 2, overflowWatermark: 0 },
-      delta: { kind: "added", notification: notificationWire(2, "warning") },
-    })).toMatchObject({ type: "notifications.inbox", delta: { kind: "added", notification: { severity: "warning" } } });
+    expect(
+      parseSessionNotificationInboxEvent({
+        type: "notifications.inbox",
+        daemonInstanceId: "daemon-a",
+        catalogRevision: 2,
+        summary: { ...inbox.summary, inboxRevision: 2, retainedCount: 2, highestSeverity: "warning" },
+        dismissThrough: { order: 2, overflowWatermark: 0 },
+        delta: { kind: "added", notification: notificationWire(2, "warning") },
+      }),
+    ).toMatchObject({ type: "notifications.inbox", delta: { kind: "added", notification: { severity: "warning" } } });
     expect(parseRealtimeStreamEvent({ type: "models.changed", revision: 3 })).toEqual({ type: "models.changed", revision: 3 });
     expect(() => parseRealtimeStreamEvent({ type: "models.changed", revision: -1 })).toThrow("safe integer");
   });
 
   it("rebuilds global workspace invalidations from the validated project id", () => {
-    expect(parseRealtimeStreamEvent({ type: "workspaces.changed", projectId: "project-1", workspaces: [], seq: 3 }))
-      .toEqual({ type: "workspaces.changed", projectId: "project-1" });
+    expect(parseRealtimeStreamEvent({ type: "workspaces.changed", projectId: "project-1", workspaces: [], seq: 3 })).toEqual({
+      type: "workspaces.changed",
+      projectId: "project-1",
+    });
   });
 
   it.each([undefined, null, "", 7, true, {}, []])("rejects a workspace invalidation with projectId %j", (projectId) => {
@@ -1265,36 +1641,63 @@ describe("API parsers", () => {
 
   it("rejects malformed, unsafe, over-cap, and oversized notification payloads", () => {
     const inbox = notificationInboxWire();
-    expect(() => parseSessionNotificationInboxSnapshot({
-      ...inbox,
-      notifications: [{ ...notificationWire(1), severity: "fatal" }],
-    })).toThrow("Invalid notification severity");
-    expect(() => parseSessionNotificationInboxSnapshot({
-      ...inbox,
-      catalogRevision: Number.MAX_SAFE_INTEGER + 1,
-    })).toThrow("safe integer");
-    expect(() => parseSessionNotificationInboxSnapshot({
-      ...inbox,
-      summary: { ...inbox.summary, retainedCount: SESSION_NOTIFICATION_LIMIT },
-      notifications: Array.from({ length: SESSION_NOTIFICATION_LIMIT + 1 }, (_, index) => notificationWire(SESSION_NOTIFICATION_LIMIT + 1 - index)),
-    })).toThrow("exceeds limit");
-    expect(() => parseSessionNotificationInboxSnapshot({
-      ...inbox,
-      notifications: [{ ...notificationWire(1), message: "x".repeat(SESSION_NOTIFICATION_MESSAGE_BYTES + 1) }],
-    })).toThrow("message exceeds byte limit");
-    expect(() => parseSessionNotificationInboxEvent({
-      type: "notifications.inbox",
-      daemonInstanceId: "daemon-a",
-      catalogRevision: 2,
-      summary: { ...inbox.summary, inboxRevision: 2 },
-      dismissThrough: { order: 1, overflowWatermark: 0 },
-      delta: { kind: "cleared", reason: "future-reason" },
-    })).toThrow("Invalid notification clear reason");
+    expect(() =>
+      parseSessionNotificationInboxSnapshot({
+        ...inbox,
+        notifications: [{ ...notificationWire(1), severity: "fatal" }],
+      }),
+    ).toThrow("Invalid notification severity");
+    expect(() =>
+      parseSessionNotificationInboxSnapshot({
+        ...inbox,
+        catalogRevision: Number.MAX_SAFE_INTEGER + 1,
+      }),
+    ).toThrow("safe integer");
+    expect(() =>
+      parseSessionNotificationInboxSnapshot({
+        ...inbox,
+        summary: { ...inbox.summary, retainedCount: SESSION_NOTIFICATION_LIMIT },
+        notifications: Array.from({ length: SESSION_NOTIFICATION_LIMIT + 1 }, (_, index) => notificationWire(SESSION_NOTIFICATION_LIMIT + 1 - index)),
+      }),
+    ).toThrow("exceeds limit");
+    expect(() =>
+      parseSessionNotificationInboxSnapshot({
+        ...inbox,
+        notifications: [{ ...notificationWire(1), message: "x".repeat(SESSION_NOTIFICATION_MESSAGE_BYTES + 1) }],
+      }),
+    ).toThrow("message exceeds byte limit");
+    expect(() =>
+      parseSessionNotificationInboxEvent({
+        type: "notifications.inbox",
+        daemonInstanceId: "daemon-a",
+        catalogRevision: 2,
+        summary: { ...inbox.summary, inboxRevision: 2 },
+        dismissThrough: { order: 1, overflowWatermark: 0 },
+        delta: { kind: "cleared", reason: "future-reason" },
+      }),
+    ).toThrow("Invalid notification clear reason");
   });
 
   it("parses several open asks with their staleness and recommended options", () => {
     const base = pendingAskWire();
-    const fresh = { ...base, askId: "ask-2", updatedAt: "2026-07-21T00:00:00.000Z", revision: "r4", turnsSinceUpdate: 6, questions: [{ id: "q1", question: "Which database?", options: [{ value: "pg", label: "Postgres" }, { value: "sqlite", label: "SQLite" }, { value: "duck", label: "DuckDB", recommended: true }] }] };
+    const fresh = {
+      ...base,
+      askId: "ask-2",
+      updatedAt: "2026-07-21T00:00:00.000Z",
+      revision: "r4",
+      turnsSinceUpdate: 6,
+      questions: [
+        {
+          id: "q1",
+          question: "Which database?",
+          options: [
+            { value: "pg", label: "Postgres" },
+            { value: "sqlite", label: "SQLite" },
+            { value: "duck", label: "DuckDB", recommended: true },
+          ],
+        },
+      ],
+    };
     const parsed = parseSessionStatus({ ...statusWire(), pendingAsks: [pendingAskWire(), fresh] });
 
     expect(parsed.pendingAsks?.map((ask) => [ask.askId, ask.updatedAt, ask.revision, ask.turnsSinceUpdate])).toEqual([
@@ -1307,25 +1710,40 @@ describe("API parsers", () => {
   it("parses the single open ask of an older daemon", () => {
     const parsed = parseSessionStatus({ ...statusWire(), pendingAsk: pendingAskWire() });
 
-    expect(parsed.pendingAsks).toEqual([{
-      askId: "ask-1",
-      askedAt: "2026-07-20T00:00:00.000Z",
-      updatedAt: "2026-07-20T00:00:00.000Z",
-      revision: "",
-      turnsSinceUpdate: 0,
-      questions: [
-        { id: "q1", question: "Which database?", detail: "Pick the primary store", options: [{ value: "pg", label: "Postgres", detail: "Relational" }, { value: "sqlite", label: "SQLite" }] },
-        { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true },
-      ],
-    }]);
+    expect(parsed.pendingAsks).toEqual([
+      {
+        askId: "ask-1",
+        askedAt: "2026-07-20T00:00:00.000Z",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+        revision: "",
+        turnsSinceUpdate: 0,
+        questions: [
+          {
+            id: "q1",
+            question: "Which database?",
+            detail: "Pick the primary store",
+            options: [
+              { value: "pg", label: "Postgres", detail: "Relational" },
+              { value: "sqlite", label: "SQLite" },
+            ],
+          },
+          { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true },
+        ],
+      },
+    ]);
   });
 
   it("parses the ask context on open asks and closed outcomes, and bounds it", () => {
     const context = "## Findings\nThe cache is **stale**.";
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context } }).pendingAsks?.[0]?.context).toBe(context);
-    expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context }, sessionStatus: statusWire() }).outcome?.context).toBe(context);
+    expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context }, sessionStatus: statusWire() }).outcome?.context).toBe(
+      context,
+    );
     expect(parseAskUserCloseResponse({ result: "closed", outcome: askOutcomeWire(), sessionStatus: statusWire() }).outcome).not.toHaveProperty("context");
-    expect(parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context, editedContext: "Mine" }, sessionStatus: statusWire() }).outcome?.editedContext).toBe("Mine");
+    expect(
+      parseAskUserCloseResponse({ result: "closed", outcome: { ...askOutcomeWire(), context, editedContext: "Mine" }, sessionStatus: statusWire() }).outcome
+        ?.editedContext,
+    ).toBe("Mine");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), context, editedContext: "" }).editedContext).toBe("");
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: true } }).pendingAsks?.[0]?.approval).toBe(true);
     // Only an approval set may come without questions.
@@ -1338,16 +1756,24 @@ describe("API parsers", () => {
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: withoutQuestions })).toThrow("Expected array field: questions");
     expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), approval: "yes" } }).pendingAsks?.[0]).not.toHaveProperty("approval");
     expect(parseAskUserOutcome({ ...askOutcomeWire(), approved: true }).approved).toBe(true);
-    const images = [{ target: { kind: "note" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png" }, { target: { kind: "question", id: "note" }, reference: "[PIC_1]", mimeType: "image/png", revision: "r2" }];
+    const images = [
+      { target: { kind: "note" }, reference: "[PIC_1]", mimeType: "image/png", name: "a.png" },
+      { target: { kind: "question", id: "note" }, reference: "[PIC_1]", mimeType: "image/png", revision: "r2" },
+    ];
     expect(parseAskUserOutcome({ ...askOutcomeWire(), images }).images).toEqual(images);
     // 100 kept rows of 16 images plus a final note-only send of 16 (an approval set without questions).
     const most = Array.from({ length: 101 * 16 }, (_, index) => ({ target: { kind: "note" }, reference: `[PIC_${String(index + 1)}]`, mimeType: "image/png" }));
     expect(parseAskUserOutcome({ ...askOutcomeWire(), images: most }).images).toHaveLength(1616);
     expect(() => parseAskUserOutcome({ ...askOutcomeWire(), images: [{ target: { kind: "note" }, reference: "PIC", mimeType: "image/png" }] })).toThrow();
-    expect(() => parseAskUserOutcome({ ...askOutcomeWire(), images: [{ target: "note", reference: "[PIC_1]", mimeType: "image/png" }] })).toThrow("Invalid ask image target");
-    expect(() => parseAskUserOutcome({ ...askOutcomeWire(), editedContext: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow("String field exceeds limit: editedContext");
-    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) } }))
-      .toThrow("String field exceeds limit: context");
+    expect(() => parseAskUserOutcome({ ...askOutcomeWire(), images: [{ target: "note", reference: "[PIC_1]", mimeType: "image/png" }] })).toThrow(
+      "Invalid ask image target",
+    );
+    expect(() => parseAskUserOutcome({ ...askOutcomeWire(), editedContext: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow(
+      "String field exceeds limit: editedContext",
+    );
+    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...pendingAskWire(), context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) } })).toThrow(
+      "String field exceeds limit: context",
+    );
   });
 
   it("omits the pending ask entirely when the field is absent", () => {
@@ -1360,10 +1786,34 @@ describe("API parsers", () => {
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [] } })).toThrow("Pending ask has no questions");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [first, first] } })).toThrow("Duplicate ask question id");
     expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, askId: "" } })).toThrow("Expected non-empty string field: askId");
-    expect(parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "Anything?", options: [] }] } }).pendingAsks?.[0]?.questions[0])
-      .toEqual({ id: "q1", question: "Anything?", options: [] });
-    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "Which?", options: [{ value: "a", label: "A" }, { value: "a", label: "Also A" }] }] } })).toThrow("Duplicate ask option value");
-    expect(() => parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1), options: [{ value: "a", label: "A" }] }] } })).toThrow("String field exceeds limit: question");
+    expect(
+      parseSessionStatus({ ...statusWire(), pendingAsk: { ...ask, questions: [{ id: "q1", question: "Anything?", options: [] }] } }).pendingAsks?.[0]
+        ?.questions[0],
+    ).toEqual({ id: "q1", question: "Anything?", options: [] });
+    expect(() =>
+      parseSessionStatus({
+        ...statusWire(),
+        pendingAsk: {
+          ...ask,
+          questions: [
+            {
+              id: "q1",
+              question: "Which?",
+              options: [
+                { value: "a", label: "A" },
+                { value: "a", label: "Also A" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow("Duplicate ask option value");
+    expect(() =>
+      parseSessionStatus({
+        ...statusWire(),
+        pendingAsk: { ...ask, questions: [{ id: "q1", question: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1), options: [{ value: "a", label: "A" }] }] },
+      }),
+    ).toThrow("String field exceeds limit: question");
   });
 
   it("parses a closed ask response carrying the outcome and recomputed status", () => {
@@ -1395,27 +1845,52 @@ describe("API parsers", () => {
     const outcome = askOutcomeWire();
     expect(() => parseAskUserCloseResponse({ result: "closed", sessionStatus: statusWire() })).toThrow("Ask close response outcome mismatch");
     expect(() => parseAskUserCloseResponse({ result: "stale", outcome, sessionStatus: statusWire() })).toThrow("Ask close response outcome mismatch");
-    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, answeredCount: 2 }, sessionStatus: statusWire() })).toThrow("Ask outcome answered count mismatch");
-    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, unansweredIds: [] }, sessionStatus: statusWire() })).toThrow("Ask outcome unanswered ids mismatch");
-    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, reason: "ignored" }, sessionStatus: statusWire() })).toThrow("Invalid ask close reason");
-    expect(() => parseAskUserCloseResponse({
-      result: "closed",
-      outcome: { ...outcome, questions: [{ ...askAnsweredRecordWire(), answered: false }, askUnansweredRecordWire()] },
-      sessionStatus: statusWire(),
-    })).toThrow("Ask answer contradicts its answered flag");
-    expect(() => parseAskUserCloseResponse({
-      result: "closed",
-      outcome: { ...outcome, questions: [{ ...askAnsweredRecordWire(), values: ["mysql"] }, askUnansweredRecordWire()] },
-      sessionStatus: statusWire(),
-    })).toThrow("Ask answer selected an option the question never offered");
+    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, answeredCount: 2 }, sessionStatus: statusWire() })).toThrow(
+      "Ask outcome answered count mismatch",
+    );
+    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, unansweredIds: [] }, sessionStatus: statusWire() })).toThrow(
+      "Ask outcome unanswered ids mismatch",
+    );
+    expect(() => parseAskUserCloseResponse({ result: "closed", outcome: { ...outcome, reason: "ignored" }, sessionStatus: statusWire() })).toThrow(
+      "Invalid ask close reason",
+    );
+    expect(() =>
+      parseAskUserCloseResponse({
+        result: "closed",
+        outcome: { ...outcome, questions: [{ ...askAnsweredRecordWire(), answered: false }, askUnansweredRecordWire()] },
+        sessionStatus: statusWire(),
+      }),
+    ).toThrow("Ask answer contradicts its answered flag");
+    expect(() =>
+      parseAskUserCloseResponse({
+        result: "closed",
+        outcome: { ...outcome, questions: [{ ...askAnsweredRecordWire(), values: ["mysql"] }, askUnansweredRecordWire()] },
+        sessionStatus: statusWire(),
+      }),
+    ).toThrow("Ask answer selected an option the question never offered");
   });
 
   it("parses open extension dialogs on the session status, oldest first", () => {
     const parsed = parseSessionStatus({ ...statusWire(), pendingDialogs: [confirmDialogWire(), selectDialogWire(), inputDialogWire()] });
 
     expect(parsed.pendingDialogs).toEqual([
-      { dialogId: "dialog-1", kind: "confirm", title: "Delete the build cache?", message: "This cannot be undone", askedAt: "2026-07-20T00:00:00.000Z", runScoped: true },
-      { dialogId: "dialog-2", kind: "select", title: "Pick a database", options: ["Postgres", "SQLite"], askedAt: "2026-07-20T00:01:00.000Z", timeoutAt: "2026-07-20T00:06:00.000Z", runScoped: false },
+      {
+        dialogId: "dialog-1",
+        kind: "confirm",
+        title: "Delete the build cache?",
+        message: "This cannot be undone",
+        askedAt: "2026-07-20T00:00:00.000Z",
+        runScoped: true,
+      },
+      {
+        dialogId: "dialog-2",
+        kind: "select",
+        title: "Pick a database",
+        options: ["Postgres", "SQLite"],
+        askedAt: "2026-07-20T00:01:00.000Z",
+        timeoutAt: "2026-07-20T00:06:00.000Z",
+        runScoped: false,
+      },
       { dialogId: "dialog-3", kind: "input", title: "Name the branch", placeholder: "feature/...", askedAt: "2026-07-20T00:02:00.000Z", runScoped: false },
     ]);
   });
@@ -1428,12 +1903,16 @@ describe("API parsers", () => {
     const dialog = confirmDialogWire();
     expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...dialog, kind: "modal" }] })).toThrow("Invalid extension dialog kind");
     expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...dialog, title: "" }] })).toThrow("Expected non-empty string field: title");
-    expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...dialog, title: "x".repeat(EXTENSION_DIALOG_TEXT_MAX_LENGTH + 1) }] })).toThrow("String field exceeds limit: title");
+    expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...dialog, title: "x".repeat(EXTENSION_DIALOG_TEXT_MAX_LENGTH + 1) }] })).toThrow(
+      "String field exceeds limit: title",
+    );
     expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...dialog, runScoped: "yes" }] })).toThrow("Expected boolean field: runScoped");
     expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...dialog, timeoutAt: "" }] })).toThrow("Expected non-empty string field: timeoutAt");
     expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...selectDialogWire(), options: [] }] })).toThrow("Select dialog has no options");
     expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [{ ...selectDialogWire(), options: ["a", "a"] }] })).toThrow("Duplicate dialog option");
-    expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [dialog, { ...inputDialogWire(), dialogId: "dialog-1" }] })).toThrow("Duplicate dialog id");
+    expect(() => parseSessionStatus({ ...statusWire(), pendingDialogs: [dialog, { ...inputDialogWire(), dialogId: "dialog-1" }] })).toThrow(
+      "Duplicate dialog id",
+    );
   });
 
   it("parses a closed dialog response carrying the outcome and recomputed status", () => {
@@ -1463,10 +1942,18 @@ describe("API parsers", () => {
   it("rejects dialog close responses whose outcome contradicts itself", () => {
     const outcome = dialogOutcomeWire();
     expect(() => parseExtensionDialogCloseResponse({ result: "closed", sessionStatus: statusWire() })).toThrow("Dialog close response outcome mismatch");
-    expect(() => parseExtensionDialogCloseResponse({ result: "stale", outcome, sessionStatus: statusWire() })).toThrow("Dialog close response outcome mismatch");
-    expect(() => parseExtensionDialogCloseResponse({ result: "closed", outcome: { ...outcome, reason: "timeout" }, sessionStatus: statusWire() })).toThrow("Dialog outcome answer mismatch");
-    expect(() => parseExtensionDialogCloseResponse({ result: "closed", outcome: { ...outcome, answer: 1 }, sessionStatus: statusWire() })).toThrow("Invalid extension dialog answer");
-    expect(() => parseExtensionDialogCloseResponse({ result: "closed", outcome: { ...outcome, reason: "ignored" }, sessionStatus: statusWire() })).toThrow("Invalid extension dialog close reason");
+    expect(() => parseExtensionDialogCloseResponse({ result: "stale", outcome, sessionStatus: statusWire() })).toThrow(
+      "Dialog close response outcome mismatch",
+    );
+    expect(() => parseExtensionDialogCloseResponse({ result: "closed", outcome: { ...outcome, reason: "timeout" }, sessionStatus: statusWire() })).toThrow(
+      "Dialog outcome answer mismatch",
+    );
+    expect(() => parseExtensionDialogCloseResponse({ result: "closed", outcome: { ...outcome, answer: 1 }, sessionStatus: statusWire() })).toThrow(
+      "Invalid extension dialog answer",
+    );
+    expect(() => parseExtensionDialogCloseResponse({ result: "closed", outcome: { ...outcome, reason: "ignored" }, sessionStatus: statusWire() })).toThrow(
+      "Invalid extension dialog close reason",
+    );
   });
 });
 
@@ -1488,7 +1975,15 @@ function pendingAskWire() {
     askId: "ask-1",
     askedAt: "2026-07-20T00:00:00.000Z",
     questions: [
-      { id: "q1", question: "Which database?", detail: "Pick the primary store", options: [{ value: "pg", label: "Postgres", detail: "Relational" }, { value: "sqlite", label: "SQLite" }] },
+      {
+        id: "q1",
+        question: "Which database?",
+        detail: "Pick the primary store",
+        options: [
+          { value: "pg", label: "Postgres", detail: "Relational" },
+          { value: "sqlite", label: "SQLite" },
+        ],
+      },
       { id: "q2", question: "Which extras?", options: [{ value: "metrics", label: "Metrics" }], multiple: true },
     ],
   };

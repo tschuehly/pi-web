@@ -13,7 +13,9 @@ export function createCoreActions(): PluginAction[] {
       description: "Open the command palette",
       shortcut: "mod+k",
       group: "General",
-      run: (context) => { context.openActionPalette(); },
+      run: (context) => {
+        context.openActionPalette();
+      },
     },
     {
       id: "prompt.focus",
@@ -21,7 +23,9 @@ export function createCoreActions(): PluginAction[] {
       description: "Move keyboard focus to the message composer",
       shortcut: "mod+g c",
       group: "General",
-      run: (context) => { context.focusPrompt(); },
+      run: (context) => {
+        context.focusPrompt();
+      },
     },
     {
       id: "machine.add",
@@ -79,7 +83,7 @@ export function createCoreActions(): PluginAction[] {
       description: "Choose an MCP server for the selected session and sign in",
       group: "MCP",
       enabled: (context) => hasSelectableSession(context) && context.piWebUnstable?.openMcpAuth !== undefined,
-      disabledReason: (context) => hasSelectableSession(context) ? undefined : "Select a session to authenticate MCP servers.",
+      disabledReason: (context) => (hasSelectableSession(context) ? undefined : "Select a session to authenticate MCP servers."),
       run: (context) => context.piWebUnstable?.openMcpAuth?.("login"),
     },
     {
@@ -88,7 +92,7 @@ export function createCoreActions(): PluginAction[] {
       description: "Remove local MCP credentials without disabling the server or revoking provider access",
       group: "MCP",
       enabled: (context) => hasSelectableSession(context) && context.piWebUnstable?.openMcpAuth !== undefined,
-      disabledReason: (context) => hasSelectableSession(context) ? undefined : "Select a session to authenticate MCP servers.",
+      disabledReason: (context) => (hasSelectableSession(context) ? undefined : "Select a session to authenticate MCP servers."),
       run: (context) => context.piWebUnstable?.openMcpAuth?.("logout"),
     },
     {
@@ -96,7 +100,9 @@ export function createCoreActions(): PluginAction[] {
       title: "Select Theme",
       description: "Choose the PI WEB color theme",
       group: "Preferences",
-      run: (context) => { context.openThemePicker(); },
+      run: (context) => {
+        context.openThemePicker();
+      },
     },
     {
       id: "settings.open",
@@ -104,21 +110,27 @@ export function createCoreActions(): PluginAction[] {
       description: "Manage PI WEB configuration and keyboard shortcuts",
       shortcut: "mod+,",
       group: "Preferences",
-      run: (context) => { context.piWebUnstable?.openSettings?.(); },
+      run: (context) => {
+        context.piWebUnstable?.openSettings?.();
+      },
     },
     {
       id: "app.reload-page",
       title: "Full Page Reload",
       description: "Reload the PI WEB browser page",
       group: "General",
-      run: (context) => { context.reloadPage(); },
+      run: (context) => {
+        context.reloadPage();
+      },
     },
     {
       id: "view.chat",
       title: "Go to Chat",
       shortcut: "mod+1",
       group: "Navigation",
-      run: (context) => { context.focusPrompt(); },
+      run: (context) => {
+        context.focusPrompt();
+      },
     },
     {
       id: "workspace.delete",

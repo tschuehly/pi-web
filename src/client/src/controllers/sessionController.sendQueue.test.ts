@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { emptyTranscriptApi as defaultApi, deferred, emptyPage, FakeSocket, oldSession, replacementSession, sessionLookupId, status, workspace, type AppState, type Deferred, type PromptAttachment, type SessionInfo } from "./sessionController.testSupport";
+import {
+  emptyTranscriptApi as defaultApi,
+  deferred,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  replacementSession,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+  type Deferred,
+  type PromptAttachment,
+  type SessionInfo,
+} from "./sessionController.testSupport";
 
 describe("SessionController send queue", () => {
   it("toggles the per-session sending state around an inline attachment send and forwards attachments", async () => {
@@ -11,14 +25,19 @@ describe("SessionController send queue", () => {
     const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      prompt: (_session, _text, _behavior, _machineId, sentAttachments) => new Promise<{ accepted: true }>((resolve) => {
-        promptArgs = { ...(sentAttachments === undefined ? {} : { attachments: sentAttachments }) };
-        resolvePrompt = () => { resolve({ accepted: true }); };
-      }),
+      prompt: (_session, _text, _behavior, _machineId, sentAttachments) =>
+        new Promise<{ accepted: true }>((resolve) => {
+          promptArgs = { ...(sentAttachments === undefined ? {} : { attachments: sentAttachments }) };
+          resolvePrompt = () => {
+            resolve({ accepted: true });
+          };
+        }),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -39,7 +58,9 @@ describe("SessionController send queue", () => {
     const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api: { ...defaultApi, prompt: () => Promise.reject(new Error("Image conversion failed for [PIC_1]")) }, socket: new FakeSocket() },
@@ -55,11 +76,18 @@ describe("SessionController send queue", () => {
     const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      prompt: () => new Promise<{ accepted: true }>((resolve) => { resolvePrompt = () => { resolve({ accepted: true }); }; }),
+      prompt: () =>
+        new Promise<{ accepted: true }>((resolve) => {
+          resolvePrompt = () => {
+            resolve({ accepted: true });
+          };
+        }),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -85,12 +113,22 @@ describe("SessionController send queue", () => {
     const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      saveAttachments: (_session, sent, _machineId, folder) => { savedCalledWith = sent; savedFolder = folder; return Promise.resolve([{ path: ".pi-web/attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]); },
-      prompt: (_session, text, _behavior, _machineId, sentAttachments) => { promptText = text; promptAttachments = sentAttachments; return Promise.resolve({ accepted: true }); },
+      saveAttachments: (_session, sent, _machineId, folder) => {
+        savedCalledWith = sent;
+        savedFolder = folder;
+        return Promise.resolve([{ path: ".pi-web/attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]);
+      },
+      prompt: (_session, text, _behavior, _machineId, sentAttachments) => {
+        promptText = text;
+        promptAttachments = sentAttachments;
+        return Promise.resolve({ accepted: true });
+      },
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -114,12 +152,20 @@ describe("SessionController send queue", () => {
     const attachments: PromptAttachment[] = [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "QUJD", name: "shot.png" }];
     const api: typeof defaultApi = {
       ...defaultApi,
-      saveAttachments: (_session, _sent, _machineId, folder) => { savedFolder = folder; return Promise.resolve([{ path: "project attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]); },
-      prompt: (_session, text) => { promptText = text; return Promise.resolve({ accepted: true }); },
+      saveAttachments: (_session, _sent, _machineId, folder) => {
+        savedFolder = folder;
+        return Promise.resolve([{ path: "project attachments/shot.png", mimeType: "image/png", size: 3, reference: "[PIC_1]" }]);
+      },
+      prompt: (_session, text) => {
+        promptText = text;
+        return Promise.resolve({ accepted: true });
+      },
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -131,7 +177,7 @@ describe("SessionController send queue", () => {
     await controller.send("check this", undefined, attachments, "folder", "project-attachments");
 
     expect(savedFolder).toBe("project-attachments");
-    expect(promptText).toBe("check this\n\n[PIC_1] @\"project attachments/shot.png\"");
+    expect(promptText).toBe('check this\n\n[PIC_1] @"project attachments/shot.png"');
   });
 
   it("does not set the sending state for plain text messages", async () => {
@@ -139,11 +185,16 @@ describe("SessionController send queue", () => {
     const seen: Record<string, true>[] = [];
     const api: typeof defaultApi = {
       ...defaultApi,
-      prompt: () => { seen.push({ ...state.sendingPrompts }); return Promise.resolve({ accepted: true }); },
+      prompt: () => {
+        seen.push({ ...state.sendingPrompts });
+        return Promise.resolve({ accepted: true });
+      },
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -160,14 +211,19 @@ describe("SessionController send queue", () => {
     const seenDuringCommand: Record<string, true>[] = [];
     const api: typeof defaultApi = {
       ...defaultApi,
-      runCommand: (_session, text) => new Promise((resolve) => {
-        seenDuringCommand.push({ ...state.sendingPrompts });
-        resolveCommand = () => { resolve(text.startsWith("/skill") ? { type: "done" } : { type: "done", message: "stats" }); };
-      }),
+      runCommand: (_session, text) =>
+        new Promise((resolve) => {
+          seenDuringCommand.push({ ...state.sendingPrompts });
+          resolveCommand = () => {
+            resolve(text.startsWith("/skill") ? { type: "done" } : { type: "done", message: "stats" });
+          };
+        }),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -201,7 +257,9 @@ describe("SessionController send queue", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -266,7 +324,9 @@ describe("SessionController send queue", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -301,10 +361,7 @@ describe("SessionController send queue", () => {
       `save:${started.id}:shot.png:project-attachments`,
       `prompt:${started.id}:save\n\n[PIC_1] @.pi-web/attachments/shot.png`,
     ]);
-    expect(promptCalls).toEqual([
-      { text: "look", attachments },
-      { text: "save\n\n[PIC_1] @.pi-web/attachments/shot.png" },
-    ]);
+    expect(promptCalls).toEqual([{ text: "look", attachments }, { text: "save\n\n[PIC_1] @.pi-web/attachments/shot.png" }]);
     expect(state.clientQueuedSessionMessages[started.id]).toBeUndefined();
   });
 
@@ -317,7 +374,9 @@ describe("SessionController send queue", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -364,7 +423,9 @@ describe("SessionController send queue", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

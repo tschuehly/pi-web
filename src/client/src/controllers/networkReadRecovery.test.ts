@@ -12,8 +12,12 @@ afterEach(() => {
 });
 
 function deferred<T>() {
-  let resolve: (value: T) => void = () => { throw new Error("Promise not initialized"); };
-  let reject: (error: unknown) => void = () => { throw new Error("Promise not initialized"); };
+  let resolve: (value: T) => void = () => {
+    throw new Error("Promise not initialized");
+  };
+  let reject: (error: unknown) => void = () => {
+    throw new Error("Promise not initialized");
+  };
   const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
     reject = rejectPromise;
@@ -34,7 +38,8 @@ describe("readWithNetworkRecovery", () => {
 
   it("allows only three retries at 500, 1500, and 3000ms and throws the final failure", async () => {
     const finalFailure = new NetworkRequestError("Still offline", { cause: new TypeError("Offline") });
-    const read = vi.fn<() => Promise<string>>()
+    const read = vi
+      .fn<() => Promise<string>>()
       .mockRejectedValueOnce(new NetworkRequestError("First failure"))
       .mockRejectedValueOnce(new NetworkRequestError("Second failure"))
       .mockRejectedValueOnce(new NetworkRequestError("Third failure"))
@@ -86,7 +91,9 @@ describe("readWithNetworkRecovery", () => {
 
   it("does not retry a synchronous programmer error", async () => {
     const failure = new TypeError("Bug");
-    const read = vi.fn<() => Promise<string>>(() => { throw failure; });
+    const read = vi.fn<() => Promise<string>>(() => {
+      throw failure;
+    });
 
     await expect(readWithNetworkRecovery(read, () => true)).rejects.toBe(failure);
 
@@ -96,9 +103,7 @@ describe("readWithNetworkRecovery", () => {
 
   it("stops retrying if a subsequent attempt has a non-network error", async () => {
     const failure = new HttpRequestError("Service Unavailable", 503);
-    const read = vi.fn<() => Promise<string>>()
-      .mockRejectedValueOnce(new NetworkRequestError("Offline"))
-      .mockRejectedValue(failure);
+    const read = vi.fn<() => Promise<string>>().mockRejectedValueOnce(new NetworkRequestError("Offline")).mockRejectedValue(failure);
     const outcome = expect(readWithNetworkRecovery(read, () => true)).rejects.toBe(failure);
 
     await vi.runAllTimersAsync();
@@ -155,7 +160,8 @@ describe("readWithNetworkRecovery", () => {
   it("discards the final network failure when retired during the last attempt", async () => {
     let current = true;
     const pending = deferred<string>();
-    const read = vi.fn<() => Promise<string>>()
+    const read = vi
+      .fn<() => Promise<string>>()
       .mockRejectedValueOnce(new NetworkRequestError("First failure"))
       .mockRejectedValueOnce(new NetworkRequestError("Second failure"))
       .mockRejectedValueOnce(new NetworkRequestError("Third failure"))

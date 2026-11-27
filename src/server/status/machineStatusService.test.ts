@@ -110,7 +110,10 @@ describe("MachineStatusService", () => {
   });
 
   it("publishes when one child finishes while another session keeps the same cwd working", async () => {
-    const sessions = [{ sessionId: "child-1", cwd: "/repo" }, { sessionId: "child-2", cwd: "/repo" }];
+    const sessions = [
+      { sessionId: "child-1", cwd: "/repo" },
+      { sessionId: "child-2", cwd: "/repo" },
+    ];
     const { service, published } = statusService({
       activity: [{ cwd: "/repo", hasSessionActivity: true, hasTerminalActivity: false }],
       sessions,
@@ -228,12 +231,16 @@ function statusService(scenario: StatusServiceScenario = {}) {
   let failUnreadRead = false;
   let failPublish = false;
 
-  const attribute = vi.fn((cwds: Iterable<string>) => Promise.resolve(
-    new Map([...cwds].flatMap((cwd) => {
-      const attribution = topology[cwd];
-      return attribution === undefined ? [] : [[cwd, attribution] as const];
-    })),
-  ));
+  const attribute = vi.fn((cwds: Iterable<string>) =>
+    Promise.resolve(
+      new Map(
+        [...cwds].flatMap((cwd) => {
+          const attribution = topology[cwd];
+          return attribution === undefined ? [] : [[cwd, attribution] as const];
+        }),
+      ),
+    ),
+  );
 
   const service = new MachineStatusService({
     activity: { snapshot: () => ({ workspaces: [...activity], sessions: [...(scenario.sessions ?? [])] }) },

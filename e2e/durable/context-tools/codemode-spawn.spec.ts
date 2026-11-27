@@ -33,13 +33,21 @@ test("AC-P064 spawn_session: the lead starts an independent Durable Chat that an
   expect(result?.isError, text(result?.content)).not.toBe(true);
   const childId = /Started independent session (\S+) in /.exec(text(result?.content))?.[1];
   expect(childId, text(result?.content)).toBeDefined();
-  await expect(chat(page).getByText(/Started independent session/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/Started independent session/)
+      .first(),
+  ).toBeVisible();
   try {
-    await expect.poll(async () => (await messages(page, childId!)).some((m) => m.role === "assistant" && text(m.content).includes("Child answered."))).toBe(true);
+    await expect
+      .poll(async () => (await messages(page, childId!)).some((m) => m.role === "assistant" && text(m.content).includes("Child answered.")))
+      .toBe(true);
     const child = (await messages(page, childId!)).find((m) => m.role === "user");
     expect(text(child?.content)).toContain(childPrompt);
     // The spawned Chat is a Durable Chat of the same workspace, listed for the browser.
-    await page.goto(`${api()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"]!, session: childId!, view: "chat" })}`);
+    await page.goto(
+      `${api()}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: process.env["PI_WEB_E2E_WORKSPACE_ID"]!, session: childId!, view: "chat" })}`,
+    );
     await expect(chat(page).getByText("Child answered.", { exact: true }).first()).toBeVisible();
     const listed = await page.request.get(`${api()}api/sessions?${new URLSearchParams({ cwd: project() })}`);
     expect(JSON.stringify(await listed.json())).toContain(childId!);

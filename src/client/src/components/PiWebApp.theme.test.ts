@@ -37,11 +37,16 @@ beforeEach(() => {
   vi.spyOn(piPackagesApi, "packages").mockResolvedValue({ packages: [] });
   vi.spyOn(api, "runtime").mockResolvedValue({ machineId: "local", ok: true, checkedAt: "now", capabilities: [] });
   // Layout/transport work is unrelated to preferences; never open real sockets.
-  vi.stubGlobal("WebSocket", class {
-    static readonly CONNECTING = 0;
-    readyState = 1;
-    close(): void { this.readyState = 3; }
-  });
+  vi.stubGlobal(
+    "WebSocket",
+    class {
+      static readonly CONNECTING = 0;
+      readyState = 1;
+      close(): void {
+        this.readyState = 3;
+      }
+    },
+  );
   vi.stubGlobal("requestAnimationFrame", () => 1);
   vi.stubGlobal("cancelAnimationFrame", () => undefined);
 });
@@ -88,7 +93,9 @@ describe("app theme defaults and device overrides", () => {
     selectTheme(panel, "themes:pi-web-dark");
     await panel.updateComplete;
     button(panel, "Set gateway default").click();
-    await vi.waitFor(() => { expect(config.defaultTheme).toEqual({ themeId: "themes:pi-web-dark", auto: false }); });
+    await vi.waitFor(() => {
+      expect(config.defaultTheme).toEqual({ themeId: "themes:pi-web-dark", auto: false });
+    });
     await app.updateComplete;
     expect(document.documentElement.dataset["piWebTheme"]).toBe("themes:classic");
     expect(JSON.parse(localStorage.getItem(THEME_STORAGE_KEY) ?? "null")).toEqual({ themeId: "themes:classic", auto: false });
@@ -138,7 +145,7 @@ function selectTheme(panel: SettingsThemePanel, id: string): void {
 }
 
 function button(panel: SettingsThemePanel, label: string): HTMLButtonElement {
-  const control = [...panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? []].find((element) => element.textContent === label);
+  const control = [...(panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((element) => element.textContent === label);
   if (control === undefined) throw new Error(`Expected ${label}`);
   return control;
 }

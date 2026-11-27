@@ -8,8 +8,13 @@ describe("theme preference data", () => {
     }
   });
 
-  it.each([null, [], "dark", {}, { themeId: "dark", auto: true }, { themeId: "themes:dark" }, { themeId: "themes:dark", auto: "yes" }])("rejects invalid preferences: %j", (value) => {
-    expect(parseThemePreference(value)).toBeUndefined();
-    expect(() => requireDefaultThemePreference(value, "config.json")).toThrow("PI WEB config defaultTheme must contain a qualified themeId and a boolean auto: config.json");
-  });
+  it.each([null, [], "dark", {}, { themeId: "dark", auto: true }, { themeId: "themes:dark" }, { themeId: "themes:dark", auto: "yes" }])(
+    "rejects invalid preferences: %j",
+    (value) => {
+      expect(parseThemePreference(value)).toBeUndefined();
+      expect(() => requireDefaultThemePreference(value, "config.json")).toThrow(
+        "PI WEB config defaultTheme must contain a qualified themeId and a boolean auto: config.json",
+      );
+    },
+  );
 });

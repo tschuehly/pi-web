@@ -38,9 +38,7 @@ describe("session daemon panel notices", () => {
       savedMessage: "",
     });
 
-    expect(notices).toEqual([
-      { type: "error", content: "Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again." },
-    ]);
+    expect(notices).toEqual([{ type: "error", content: "Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again." }]);
   });
 
   it("reports nothing when there is no error or saved confirmation", () => {

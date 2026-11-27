@@ -22,7 +22,9 @@ function delegationDeps() {
     list: vi.fn(() => Promise.resolve([])),
     join: vi.fn(() => Promise.resolve({ subsessions: [], completions: [] })),
     check: vi.fn(() => Promise.resolve({ sessionId: "child-1", cwd: "/workspace", status: "idle" as const, finalText: "", messageCount: 0 })),
-    read: vi.fn(() => Promise.resolve({ sessionId: "child-1", cwd: "/workspace", status: "idle" as const, entries: [], total: 0, matched: 0, start: 0, hasMore: false })),
+    read: vi.fn(() =>
+      Promise.resolve({ sessionId: "child-1", cwd: "/workspace", status: "idle" as const, entries: [], total: 0, matched: 0, start: 0, hasMore: false }),
+    ),
   };
   return { spawn, subsessions, subsessionSpawn };
 }
@@ -90,7 +92,13 @@ describe("delegation tool capability boundary", () => {
     const { spawn, subsessions } = delegationDeps();
     const spawnTool = findTool(createPiWebCustomToolDefinitions("/workspace", true, spawn, subsessions), "spawn_session");
 
-    await spawnTool.execute("call-1", { prompt: "go", model: "openai/gpt-5" }, undefined, undefined, ctxFor("spawner-7", "/sessions/spawner-7.jsonl", dispatchModel));
+    await spawnTool.execute(
+      "call-1",
+      { prompt: "go", model: "openai/gpt-5" },
+      undefined,
+      undefined,
+      ctxFor("spawner-7", "/sessions/spawner-7.jsonl", dispatchModel),
+    );
 
     expect(spawn).toHaveBeenCalledWith({
       spawningCwd: "/workspace",
@@ -106,7 +114,13 @@ describe("delegation tool capability boundary", () => {
     const { spawn, subsessions, subsessionSpawn } = delegationDeps();
     const spawnTool = findTool(createPiWebCustomToolDefinitions("/workspace", true, spawn, subsessions), "spawn_subsession");
 
-    await spawnTool.execute("call-2", { prompt: "go", model: "openai/gpt-5" }, undefined, undefined, ctxFor("parent-9", "/sessions/parent-9.jsonl", dispatchModel));
+    await spawnTool.execute(
+      "call-2",
+      { prompt: "go", model: "openai/gpt-5" },
+      undefined,
+      undefined,
+      ctxFor("parent-9", "/sessions/parent-9.jsonl", dispatchModel),
+    );
 
     expect(subsessionSpawn).toHaveBeenCalledWith({
       spawningCwd: "/workspace",
@@ -120,7 +134,9 @@ describe("delegation tool capability boundary", () => {
 
   it.each(["human-created", "spawn_session-created"])("allows delegation for a %s session without tracked-child provenance", async () => {
     const sessionManager = manager("session-1", undefined);
-    const open = vi.fn(() => { throw new Error("no parent session should be opened"); });
+    const open = vi.fn(() => {
+      throw new Error("no parent session should be opened");
+    });
 
     await expect(sessionAllowsDelegationTools(sessionManager, { open })).resolves.toBe(true);
     expect(open).not.toHaveBeenCalled();
@@ -131,14 +147,26 @@ describe("delegation tool capability boundary", () => {
     tempDirs.push(dir);
     const parentFile = join(dir, "parent.jsonl");
     const childFile = join(dir, "child.jsonl");
-    await writeFile(parentFile, `${JSON.stringify({ type: "session", version: 3, id: "parent-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace" })}\n`, "utf8");
-    await writeFile(childFile, `${JSON.stringify({ type: "session", version: 3, id: "child-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace", parentSession: parentFile })}\n`, "utf8");
+    await writeFile(
+      parentFile,
+      `${JSON.stringify({ type: "session", version: 3, id: "parent-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace" })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      childFile,
+      `${JSON.stringify({ type: "session", version: 3, id: "child-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace", parentSession: parentFile })}\n`,
+      "utf8",
+    );
 
     const childManager = manager("child-1", childFile, [
       { type: "custom", customType: "pi-web.subsession.spawned", data: { version: 1, spawnedBySessionId: "parent-1", spawnedSessionId: "child-1" } },
     ]);
     const parentManager = manager("parent-1", parentFile, [
-      { type: "custom", customType: "pi-web.subsession.link", data: { version: 1, spawnedBySessionId: "parent-1", spawnedSessionId: "child-1", spawnedSessionFile: childFile, cwd: "/workspace" } },
+      {
+        type: "custom",
+        customType: "pi-web.subsession.link",
+        data: { version: 1, spawnedBySessionId: "parent-1", spawnedSessionId: "child-1", spawnedSessionFile: childFile, cwd: "/workspace" },
+      },
     ]);
 
     await expect(sessionAllowsDelegationTools(childManager, { open: () => parentManager })).resolves.toBe(false);
@@ -150,14 +178,26 @@ describe("delegation tool capability boundary", () => {
     const parentFile = join(dir, "parent.jsonl");
     const originalChildFile = join(dir, "original-child.jsonl");
     const copiedChildFile = join(dir, "copied-child.jsonl");
-    await writeFile(parentFile, `${JSON.stringify({ type: "session", version: 3, id: "parent-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace" })}\n`, "utf8");
-    await writeFile(copiedChildFile, `${JSON.stringify({ type: "session", version: 3, id: "child-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace", parentSession: parentFile })}\n`, "utf8");
+    await writeFile(
+      parentFile,
+      `${JSON.stringify({ type: "session", version: 3, id: "parent-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace" })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      copiedChildFile,
+      `${JSON.stringify({ type: "session", version: 3, id: "child-1", timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace", parentSession: parentFile })}\n`,
+      "utf8",
+    );
 
     const copiedChildManager = manager("child-1", copiedChildFile, [
       { type: "custom", customType: "pi-web.subsession.spawned", data: { version: 1, spawnedBySessionId: "parent-1", spawnedSessionId: "child-1" } },
     ]);
     const parentManager = manager("parent-1", parentFile, [
-      { type: "custom", customType: "pi-web.subsession.link", data: { version: 1, spawnedBySessionId: "parent-1", spawnedSessionId: "child-1", spawnedSessionFile: originalChildFile, cwd: "/workspace" } },
+      {
+        type: "custom",
+        customType: "pi-web.subsession.link",
+        data: { version: 1, spawnedBySessionId: "parent-1", spawnedSessionId: "child-1", spawnedSessionFile: originalChildFile, cwd: "/workspace" },
+      },
     ]);
 
     await expect(sessionAllowsDelegationTools(copiedChildManager, { open: () => parentManager })).resolves.toBe(true);

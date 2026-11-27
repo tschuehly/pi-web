@@ -45,17 +45,31 @@ describe("Durable Chat resources", () => {
     await skill(join(pkg, "skills"), "package-skill");
     await mkdir(join(pkg, "extensions"), { recursive: true });
     await writeFile(join(pkg, "extensions", "marker.ts"), "export default function marker() {}\n");
-    await writeFile(join(pkg, "package.json"), JSON.stringify({ name: "fixture-package", version: "1.0.0", pi: { skills: ["./skills"], extensions: ["./extensions"] } }));
+    await writeFile(
+      join(pkg, "package.json"),
+      JSON.stringify({ name: "fixture-package", version: "1.0.0", pi: { skills: ["./skills"], extensions: ["./extensions"] } }),
+    );
     await skill(join(agentDir, "skills"), "user-skill");
     await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: [pkg] }));
 
     const durable = await loadDurableChatResources(cwd, agentDir);
-    const legacy = new DefaultResourceLoader({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir), noThemes: true, noPromptTemplates: true });
+    const legacy = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager: SettingsManager.create(cwd, agentDir),
+      noThemes: true,
+      noPromptTemplates: true,
+    });
     await legacy.reload();
 
     const names = durable.skillList.map((entry) => entry.name).sort();
     expect(names).toEqual(["package-skill", "user-skill"]);
-    expect(names).toEqual(legacy.getSkills().skills.map((entry) => entry.name).sort());
+    expect(names).toEqual(
+      legacy
+        .getSkills()
+        .skills.map((entry) => entry.name)
+        .sort(),
+    );
     expect(legacy.getExtensions().extensions.map((extension) => extension.path)).toEqual([join(pkg, "extensions", "marker.ts")]);
     expect(durable.resources.skills).toContain("<name>package-skill</name>");
   });
@@ -90,7 +104,10 @@ describe("Durable Chat default model", () => {
   it("takes the settings' default model and thinking level", async () => {
     const { root, agentDir } = await hermeticRoot();
     await mkdir(agentDir, { recursive: true });
-    await writeFile(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "anthropic", defaultModel: "claude-opus-5-5", defaultThinkingLevel: "high" }));
+    await writeFile(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ defaultProvider: "anthropic", defaultModel: "claude-opus-5-5", defaultThinkingLevel: "high" }),
+    );
     const model = durableDefaultModel(root, agentDir, {});
     expect(model).toBe("anthropic/claude-opus-5-5");
     expect(durableThinkingLevel(root, agentDir, model)).toBe("high");

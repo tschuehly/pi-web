@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, moveStagedAttachments, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment, type StagedAttachmentStore } from "./promptAttachmentStaging";
+import {
+  clearStagedAttachments,
+  emptyStagedAttachmentDraft,
+  loadStagedAttachmentDraft,
+  moveStagedAttachments,
+  resolveStagedAttachmentKey,
+  saveStagedAttachments,
+  type PendingAttachment,
+  type StagedAttachmentStore,
+} from "./promptAttachmentStaging";
 
-const attachment: PendingAttachment = { id: "attachment-1", kind: "image", reference: "[PIC_3]", name: "shot.png", mimeType: "image/png", data: "aGVsbG8=", size: 5 };
+const attachment: PendingAttachment = {
+  id: "attachment-1",
+  kind: "image",
+  reference: "[PIC_3]",
+  name: "shot.png",
+  mimeType: "image/png",
+  data: "aGVsbG8=",
+  size: 5,
+};
 
 describe("promptAttachmentStaging", () => {
   it("defaults an unstaged draft to its first image reference", () => {

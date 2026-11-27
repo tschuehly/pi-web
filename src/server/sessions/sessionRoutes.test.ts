@@ -3,7 +3,16 @@ import { once } from "node:events";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_ID_MAX_LENGTH, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, EXTENSION_DIALOG_ID_MAX_LENGTH, EXTENSION_DIALOG_INPUT_MAX_LENGTH, SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, SESSION_UNREAD_CATALOG_ID_MAX_LENGTH } from "../../shared/apiTypes.js";
+import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_ID_MAX_LENGTH,
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
+  ASK_USER_QUESTION_LIMIT,
+  EXTENSION_DIALOG_ID_MAX_LENGTH,
+  EXTENSION_DIALOG_INPUT_MAX_LENGTH,
+  SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH,
+  SESSION_UNREAD_CATALOG_ID_MAX_LENGTH,
+} from "../../shared/apiTypes.js";
 import type {
   AskUserCloseResponse,
   AskUserSubmission,
@@ -66,14 +75,23 @@ describe("session routes", () => {
   it("lists one exact session when a session id is given, and keeps no-id listings unchanged", async () => {
     const routeApp = Fastify({ logger: false });
     const listCalls: unknown[][] = [];
-    const row: ClientSession = { id: "s /?", cwd: resolve("/repo"), path: "/sessions/s.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 1, firstMessage: "Hi" };
-    const routeService = new class extends CapturingRouteSessionService {
+    const row: ClientSession = {
+      id: "s /?",
+      cwd: resolve("/repo"),
+      path: "/sessions/s.jsonl",
+      persisted: true,
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-02T00:00:00.000Z",
+      messageCount: 1,
+      firstMessage: "Hi",
+    };
+    const routeService = new (class extends CapturingRouteSessionService {
       override list(...args: [cwd?: string, options?: { sessionId?: string }]): Promise<ClientSession[]> {
         listCalls.push(args);
         const sessionId = args[1]?.sessionId;
         return Promise.resolve(args.length === 1 ? [row, { ...row, id: "other" }] : sessionId === "s /?" ? [row] : []);
       }
-    }();
+    })();
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
 
     try {
@@ -199,10 +217,12 @@ describe("session routes", () => {
       expect(invalid.json()).toEqual({ error: "throughCompletionOrder field must be positive" });
       expect(oversized.statusCode).toBe(400);
       expect(oversized.json()).toEqual({ error: "catalogId field is too long" });
-      expect(routeService.acknowledgeUnreadCalls).toEqual([{
-        sessionId: "session-1",
-        request: { cwd: requestCwd, catalogId: "catalog-test", throughCompletionOrder: 7 },
-      }]);
+      expect(routeService.acknowledgeUnreadCalls).toEqual([
+        {
+          sessionId: "session-1",
+          request: { cwd: requestCwd, catalogId: "catalog-test", throughCompletionOrder: 7 },
+        },
+      ]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -263,14 +283,18 @@ describe("session routes", () => {
 
       expect(dismiss.statusCode).toBe(200);
       expect(dismissAll.statusCode).toBe(200);
-      expect(routeService.dismissNotificationCalls).toEqual([{
-        ref: { id: "session-1", cwd: requestCwd },
-        request: { daemonInstanceId: "daemon-test", notificationId: "notice-1" },
-      }]);
-      expect(routeService.dismissAllNotificationCalls).toEqual([{
-        ref: { id: "session-1", cwd: requestCwd },
-        request: { daemonInstanceId: "daemon-test", throughOrder: 12, throughOverflowWatermark: 3 },
-      }]);
+      expect(routeService.dismissNotificationCalls).toEqual([
+        {
+          ref: { id: "session-1", cwd: requestCwd },
+          request: { daemonInstanceId: "daemon-test", notificationId: "notice-1" },
+        },
+      ]);
+      expect(routeService.dismissAllNotificationCalls).toEqual([
+        {
+          ref: { id: "session-1", cwd: requestCwd },
+          request: { daemonInstanceId: "daemon-test", throughOrder: 12, throughOverflowWatermark: 3 },
+        },
+      ]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -513,9 +537,10 @@ describe("session routes", () => {
     await routeApp.register(fastifyWebsocket);
     const routeService = new CapturingRouteSessionService();
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
-    const base = operation === "navigate"
-      ? { cwd: "/repo", targetId: "entry-2", expectedLeafId: "leaf-1", summary: { mode: "none" } }
-      : { cwd: "/repo", entryId: "entry-2", expectedLeafId: "leaf-1" };
+    const base =
+      operation === "navigate"
+        ? { cwd: "/repo", targetId: "entry-2", expectedLeafId: "leaf-1", summary: { mode: "none" } }
+        : { cwd: "/repo", entryId: "entry-2", expectedLeafId: "leaf-1" };
     const malformed: unknown[] = [null, "true", "false", "", 0, 1, [], {}];
 
     try {
@@ -606,13 +631,20 @@ describe("session routes", () => {
         payload: {
           cwd: "/repo/./",
           askId: "ask-1",
-          answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }],
+          answers: [
+            { id: "db", values: ["pg"] },
+            { id: "cache", values: [], otherText: "redis" },
+            { id: "copies", values: [], value: 3 },
+          ],
           note: "Ship it.",
           revision: "r3",
           partial: true,
           context: "My version",
           approved: true,
-          images: [{ target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" }, { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" }],
+          images: [
+            { target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" },
+            { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" },
+          ],
         },
       });
       const cancelled = await routeApp.inject({
@@ -623,11 +655,28 @@ describe("session routes", () => {
 
       expect(submitted.statusCode).toBe(200);
       expect(submitted.json()).toMatchObject({ result: "closed", sessionStatus: { sessionId: "session-1" } });
-      expect(routeService.submitAskCalls).toEqual([{
-        lookup: { id: "session-1", cwd: resolve("/repo") },
-        askId: "ask-1",
-        submission: { answers: [{ id: "db", values: ["pg"] }, { id: "cache", values: [], otherText: "redis" }, { id: "copies", values: [], value: 3 }], note: "Ship it.", revision: "r3", partial: true, context: "My version", approved: true, images: [{ target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" }, { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" }] },
-      }]);
+      expect(routeService.submitAskCalls).toEqual([
+        {
+          lookup: { id: "session-1", cwd: resolve("/repo") },
+          askId: "ask-1",
+          submission: {
+            answers: [
+              { id: "db", values: ["pg"] },
+              { id: "cache", values: [], otherText: "redis" },
+              { id: "copies", values: [], value: 3 },
+            ],
+            note: "Ship it.",
+            revision: "r3",
+            partial: true,
+            context: "My version",
+            approved: true,
+            images: [
+              { target: { kind: "question", id: "cache" }, mimeType: "image/png", data: "iVBORw0KGgo=", name: "shot.png" },
+              { target: { kind: "note" }, mimeType: "image/jpeg", data: "/9j/" },
+            ],
+          },
+        },
+      ]);
       expect(cancelled.statusCode).toBe(200);
       expect(cancelled.json()).toMatchObject({ result: "stale" });
       expect(routeService.cancelAskCalls).toEqual([{ lookup: { id: "session-1", cwd: resolve("/repo") }, askId: "ask-2" }]);
@@ -643,10 +692,17 @@ describe("session routes", () => {
     const routeService = new CapturingRouteSessionService();
     const forwarded: unknown[][] = [];
     const prompt = routeService.prompt.bind(routeService);
-    routeService.prompt = (...args) => { forwarded.push(args); return prompt(...args); };
+    routeService.prompt = (...args) => {
+      forwarded.push(args);
+      return prompt(...args);
+    };
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
     try {
-      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", text: "hello", operationId: "owner-run:custom", machine: true, source: "owner-run" } });
+      const response = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/prompt",
+        payload: { cwd: "/repo", text: "hello", operationId: "owner-run:custom", machine: true, source: "owner-run" },
+      });
       expect(response.json()).toEqual({ accepted: true });
       expect(forwarded).toEqual([[{ id: "session-1", cwd: resolve("/repo") }, "hello", undefined, undefined, { operationId: "owner-run:custom" }]]);
     } finally {
@@ -660,11 +716,17 @@ describe("session routes", () => {
     await routeApp.register(fastifyWebsocket);
     const routeService = new CapturingRouteSessionService();
     let release!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const prompt = routeService.prompt.bind(routeService);
-    routeService.prompt = async (...args) => { await held; return prompt(...args); };
+    routeService.prompt = async (...args) => {
+      await held;
+      return prompt(...args);
+    };
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
-    const send = (payload: Record<string, unknown>) => routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", ...payload } });
+    const send = (payload: Record<string, unknown>) =>
+      routeApp.inject({ method: "POST", url: "/sessions/session-1/prompt", payload: { cwd: "/repo", ...payload } });
     try {
       // The retry arrives while the first attempt is still in flight: both get its answer, the service runs once.
       const first = send({ text: "hello", operationId: "op-1" });
@@ -697,10 +759,18 @@ describe("session routes", () => {
     const routeService = new CapturingRouteSessionService();
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
     try {
-      const resolved = await routeApp.inject({ method: "POST", url: "/sessions/session-1/effects/resolve", payload: { cwd: "/repo", taskId: "13", resolution: "not-done" } });
+      const resolved = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/effects/resolve",
+        payload: { cwd: "/repo", taskId: "13", resolution: "not-done" },
+      });
       expect(resolved.statusCode).toBe(200);
       expect(routeService.calls).toEqual([{ resolveEffect: { id: "session-1", cwd: resolve("/repo") }, taskId: "13", resolution: "not-done" }]);
-      const invalid = await routeApp.inject({ method: "POST", url: "/sessions/session-1/effects/resolve", payload: { cwd: "/repo", taskId: "13", resolution: "maybe" } });
+      const invalid = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/effects/resolve",
+        payload: { cwd: "/repo", taskId: "13", resolution: "maybe" },
+      });
       expect(invalid.statusCode).toBe(400);
     } finally {
       await routeService.dispose();
@@ -716,13 +786,22 @@ describe("session routes", () => {
     try {
       const upgraded = await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo" } });
       expect(upgraded.statusCode).toBe(200);
-      expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "now" } })).statusCode).toBe(200);
-      expect((await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "later" } })).statusCode).toBe(400);
+      expect(
+        (await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "now" } })).statusCode,
+      ).toBe(200);
+      expect(
+        (await routeApp.inject({ method: "POST", url: "/sessions/session-1/durable-host/upgrade", payload: { cwd: "/repo", mode: "later" } })).statusCode,
+      ).toBe(400);
       const stopped = await routeApp.inject({ method: "POST", url: "/sessions/durable-hosts/stop" });
       expect(stopped.json()).toEqual({ stopped: true });
       const refused = await routeApp.inject({ method: "POST", url: "/sessions/session-1/stop", payload: { cwd: "/repo", ifUnwatched: true } });
       expect(refused.json()).toEqual({ stopped: false, busy: "1 subagent is running; closing ends it." });
-      expect(routeService.calls).toEqual([{ upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } }, { upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") }, mode: "now" }, { stopDurableHosts: true }, { stopIfUnwatched: { id: "session-1", cwd: resolve("/repo") }, confirmed: false }]);
+      expect(routeService.calls).toEqual([
+        { upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") } },
+        { upgradeDurableHost: { id: "session-1", cwd: resolve("/repo") }, mode: "now" },
+        { stopDurableHosts: true },
+        { stopIfUnwatched: { id: "session-1", cwd: resolve("/repo") }, confirmed: false },
+      ]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -762,7 +841,12 @@ describe("session routes", () => {
       { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "note" }, mimeType: "image/bmp", data: "Qk0=" }] },
       { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "note" }, mimeType: "image/png", data: "not base64!" }] },
       { cwd: "/repo", askId: "ask-1", answers: [], images: [{ target: { kind: "note" }, mimeType: "image/png", data: "iVBORw0KGgo" }] },
-      { cwd: "/repo", askId: "ask-1", answers: [], images: new Array<unknown>(17).fill({ target: { kind: "note" }, mimeType: "image/png", data: "iVBORw0KGgo=" }) },
+      {
+        cwd: "/repo",
+        askId: "ask-1",
+        answers: [],
+        images: new Array<unknown>(17).fill({ target: { kind: "note" }, mimeType: "image/png", data: "iVBORw0KGgo=" }),
+      },
     ];
 
     try {
@@ -881,7 +965,11 @@ describe("session routes", () => {
     registerSessionRoutes(routeApp, routeService, eventHub);
 
     try {
-      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/dialogs/answer", payload: { cwd: "/repo", dialogId: "dialog-1", value: true } });
+      const response = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/dialogs/answer",
+        payload: { cwd: "/repo", dialogId: "dialog-1", value: true },
+      });
 
       expect(response.statusCode).toBe(404);
       expect(response.json()).toEqual({ error: "Session not found" });
@@ -946,7 +1034,15 @@ describe("session routes", () => {
         { ref: { id: "session-1", cwd }, defaults: { provider: "anthropic", modelId: "opus" } },
         { ref: { id: "session-1", cwd }, defaults: { thinkingLevel: "max" } },
       ]);
-      for (const defaults of [{}, { provider: "anthropic" }, { modelId: "opus" }, { provider: " ", modelId: "opus" }, { thinkingLevel: "invalid" }, { thinkingLevel: null }, { thinkingLevel: "high", provider: "a", modelId: "b" }]) {
+      for (const defaults of [
+        {},
+        { provider: "anthropic" },
+        { modelId: "opus" },
+        { provider: " ", modelId: "opus" },
+        { thinkingLevel: "invalid" },
+        { thinkingLevel: null },
+        { thinkingLevel: "high", provider: "a", modelId: "b" },
+      ]) {
         const response = await routeApp.inject({ method: "POST", url, payload: { cwd, ...defaults } });
         expect(response.statusCode).toBe(400);
       }
@@ -1023,7 +1119,9 @@ describe("session routes", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ models: routeService.setModelEnabledResponse });
-      expect(routeService.setModelEnabledCalls).toEqual([{ lookup: { id: "session-1", cwd: requestCwd }, provider: "anthropic", modelId: "claude-opus-4-6", enabled: false }]);
+      expect(routeService.setModelEnabledCalls).toEqual([
+        { lookup: { id: "session-1", cwd: requestCwd }, provider: "anthropic", modelId: "claude-opus-4-6", enabled: false },
+      ]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1140,7 +1238,6 @@ describe("session routes", () => {
     }
   });
 
-
   it("omits thinking signatures from browser history without mutating service messages", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1156,7 +1253,15 @@ describe("session routes", () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({
-        messages: [{ role: "assistant", content: [{ type: "thinking", thinking: "private chain", redacted: true }, { type: "text", text: "visible answer" }] }],
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "private chain", redacted: true },
+              { type: "text", text: "visible answer" },
+            ],
+          },
+        ],
         start: 0,
         total: 1,
       });
@@ -1180,7 +1285,11 @@ describe("session routes", () => {
       expect(promptResponse.statusCode).toBe(200);
       expect(routeService.calls.at(-1)).toEqual({ lookup: { id: "session-1", cwd: resolve("/repo") }, text: "look", attachments });
 
-      const saveResponse = await routeApp.inject({ method: "POST", url: "/sessions/session-1/attachments", payload: { cwd: "/repo", attachments, folder: "uploads" } });
+      const saveResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/attachments",
+        payload: { cwd: "/repo", attachments, folder: "uploads" },
+      });
       expect(saveResponse.statusCode).toBe(200);
       expect(saveResponse.json()).toEqual({ attachments: [{ path: "uploads/shot.png", mimeType: "image/png", size: 3 }] });
     } finally {
@@ -1205,7 +1314,10 @@ describe("session routes", () => {
 
       expect(statusResponse.statusCode).toBe(200);
       expect(promptResponse.statusCode).toBe(200);
-      expect(routeService.calls).toEqual([{ id: "session-1", cwd: requestCwd }, { lookup: { id: "session-1", cwd: requestCwd }, text: "hello" }]);
+      expect(routeService.calls).toEqual([
+        { id: "session-1", cwd: requestCwd },
+        { lookup: { id: "session-1", cwd: requestCwd }, text: "hello" },
+      ]);
     } finally {
       await routeService.dispose();
       await routeApp.close();
@@ -1256,7 +1368,11 @@ describe("session routes", () => {
 
     try {
       const requestCwd = resolve("/repo");
-      const acknowledged = await routeApp.inject({ method: "POST", url: "/sessions/session-1/attention/acknowledge", payload: { cwd: requestCwd, requestId: "attention-1" } });
+      const acknowledged = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/attention/acknowledge",
+        payload: { cwd: requestCwd, requestId: "attention-1" },
+      });
       const invalid = await routeApp.inject({ method: "POST", url: "/sessions/session-1/attention/acknowledge", payload: { cwd: requestCwd } });
 
       expect(acknowledged.statusCode).toBe(200);
@@ -1339,7 +1455,9 @@ describe("session routes", () => {
         }
       }
       expect(message.content).toEqual([image, { type: "thinking", thinking: "working", thinkingSignature: "secret" }]);
-    } finally { await routeApp.close(); }
+    } finally {
+      await routeApp.close();
+    }
   });
 
   it("serves private immutable binary media and distinguishes invalid ids, misses, and failures", async () => {
@@ -1358,7 +1476,12 @@ describe("session routes", () => {
       const response = await routeApp.inject({ method: "GET", url });
       expect(response.statusCode).toBe(200);
       expect(response.rawPayload).toEqual(data);
-      expect(response.headers).toMatchObject({ "content-type": "image/png", "content-length": "3", "cache-control": "private, max-age=31536000, immutable", "x-content-type-options": "nosniff" });
+      expect(response.headers).toMatchObject({
+        "content-type": "image/png",
+        "content-length": "3",
+        "cache-control": "private, max-age=31536000, immutable",
+        "x-content-type-options": "nosniff",
+      });
       expect(routeService.mediaCalls).toEqual([{ lookup: { id: "session-1", cwd: resolve("/repo") }, mediaId }]);
       for (const invalid of ["bad", mediaId.toUpperCase(), "0".repeat(63), "0".repeat(65)]) {
         expect((await routeApp.inject({ method: "GET", url: `/sessions/session-1/media/${invalid}?cwd=/repo` })).statusCode).toBe(400);
@@ -1371,7 +1494,9 @@ describe("session routes", () => {
       expect((await routeApp.inject({ method: "GET", url })).statusCode).toBe(404);
       routeService.mediaError = new Error("disk failed");
       expect((await routeApp.inject({ method: "GET", url })).statusCode).toBe(500);
-    } finally { await routeApp.close(); }
+    } finally {
+      await routeApp.close();
+    }
   });
 
   it("negotiates websocket projection from each subscriber's media query", async () => {
@@ -1386,7 +1511,11 @@ describe("session routes", () => {
       const inlineFrame: Promise<unknown[]> = once(inline, "message");
       const referenceFrame: Promise<unknown[]> = once(reference, "message");
       const image = { type: "image", data: "AQID", mimeType: "image/png" };
-      hub.publish("session-1", { type: "tool.end", toolName: "read", toolCallId: "call", text: "[image]", content: [image], isError: false }, { id: "session-1", cwd: "/repo" });
+      hub.publish(
+        "session-1",
+        { type: "tool.end", toolName: "read", toolCallId: "call", text: "[image]", content: [image], isError: false },
+        { id: "session-1", cwd: "/repo" },
+      );
       const [legacyPayload] = await inlineFrame;
       const [referencePayload] = await referenceFrame;
       expect(JSON.parse(String(legacyPayload))).toMatchObject({ content: [image], seq: 1 });
@@ -1426,7 +1555,10 @@ describe("session routes", () => {
     const routeService = new CapturingRouteSessionService();
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
     try {
-      const response = await routeApp.inject({ method: "GET", url: `/sessions/session-1/transcript-snapshot?cwd=${encodeURIComponent(resolve("/repo"))}&limit=25` });
+      const response = await routeApp.inject({
+        method: "GET",
+        url: `/sessions/session-1/transcript-snapshot?cwd=${encodeURIComponent(resolve("/repo"))}&limit=25`,
+      });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({ page: routeService.messagesResponse, status: { sessionId: "session-1" }, seq: 0, partial: null });
       expect(routeService.transcriptSnapshotCalls).toEqual([{ lookup: { id: "session-1", cwd: resolve("/repo") }, page: { limit: 25 } }]);
@@ -1486,7 +1618,6 @@ describe("session routes", () => {
     }
   });
 
-
   it("promotes one exact queued message and all queued messages through atomic queue routes", async () => {
     const routeApp = Fastify({ logger: false });
     await routeApp.register(fastifyWebsocket);
@@ -1496,12 +1627,18 @@ describe("session routes", () => {
 
     try {
       const requestCwd = resolve("/repo");
-      const one = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/promote", payload: { cwd: requestCwd, kind: "followUp", text: "send now" } });
+      const one = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/queue/promote",
+        payload: { cwd: requestCwd, kind: "followUp", text: "send now" },
+      });
       const all = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/promote-all", payload: { cwd: requestCwd } });
 
       expect(one.statusCode).toBe(200);
       expect(all.statusCode).toBe(200);
-      expect(routeService.promoteQueuedMessageCalls).toEqual([{ lookup: { id: "session-1", cwd: requestCwd }, target: { kind: "followUp", text: "send now" } }]);
+      expect(routeService.promoteQueuedMessageCalls).toEqual([
+        { lookup: { id: "session-1", cwd: requestCwd }, target: { kind: "followUp", text: "send now" } },
+      ]);
       expect(routeService.promoteAllQueuedMessagesCalls).toEqual([{ id: "session-1", cwd: requestCwd }]);
     } finally {
       await routeService.dispose();
@@ -1516,7 +1653,11 @@ describe("session routes", () => {
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
 
     try {
-      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/queue/promote", payload: { cwd: "/repo", kind: "later", text: "send now" } });
+      const response = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/queue/promote",
+        payload: { cwd: "/repo", kind: "later", text: "send now" },
+      });
 
       expect(response.statusCode).toBe(400);
       expect(routeService.promoteQueuedMessageCalls).toEqual([]);
@@ -1564,7 +1705,11 @@ describe("session routes", () => {
 
     try {
       const requestCwd = resolve("/repo");
-      const response = await routeApp.inject({ method: "POST", url: "/sessions/session-1/warnings/dismiss", payload: { cwd: requestCwd, dismissId: "anthropicExtraUsage" } });
+      const response = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/session-1/warnings/dismiss",
+        payload: { cwd: requestCwd, dismissId: "anthropicExtraUsage" },
+      });
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({ sessionId: "session-1" });
@@ -1622,8 +1767,16 @@ describe("session routes", () => {
     registerSessionRoutes(routeApp, routeService, eventHub);
 
     try {
-      const previewResponse = await routeApp.inject({ method: "POST", url: "/sessions/cleanup/preview", payload: { archiveIdleDays: 30, deleteArchivedDays: null, projectCwds: ["/repo-a", "/repo-a"] } });
-      const executeResponse = await routeApp.inject({ method: "POST", url: "/sessions/cleanup", payload: { archiveIdleDays: null, deleteArchivedDays: 7, projectCwds: ["/repo-b"] } });
+      const previewResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/cleanup/preview",
+        payload: { archiveIdleDays: 30, deleteArchivedDays: null, projectCwds: ["/repo-a", "/repo-a"] },
+      });
+      const executeResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/cleanup",
+        payload: { archiveIdleDays: null, deleteArchivedDays: 7, projectCwds: ["/repo-b"] },
+      });
 
       expect(previewResponse.statusCode).toBe(200);
       expect(executeResponse.statusCode).toBe(200);
@@ -1663,14 +1816,32 @@ describe("session routes", () => {
 
     try {
       const requestCwd = resolve("/repo");
-      const archiveResponse = await routeApp.inject({ method: "POST", url: "/sessions/bulk/archive", payload: { sessions: [{ id: "s1", cwd: requestCwd }, { id: "s2", cwd: requestCwd }] } });
-      const deleteResponse = await routeApp.inject({ method: "POST", url: "/sessions/bulk/delete-archived", payload: { sessions: [{ id: "s1", cwd: requestCwd }] } });
+      const archiveResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/bulk/archive",
+        payload: {
+          sessions: [
+            { id: "s1", cwd: requestCwd },
+            { id: "s2", cwd: requestCwd },
+          ],
+        },
+      });
+      const deleteResponse = await routeApp.inject({
+        method: "POST",
+        url: "/sessions/bulk/delete-archived",
+        payload: { sessions: [{ id: "s1", cwd: requestCwd }] },
+      });
 
       expect(archiveResponse.statusCode).toBe(200);
       expect(archiveResponse.json()).toMatchObject({ archived: true, archivedSessionIds: ["s1", "s2"], failures: [] });
       expect(deleteResponse.statusCode).toBe(200);
       expect(deleteResponse.json()).toMatchObject({ deleted: true, deletedSessionIds: ["s1"], failures: [] });
-      expect(routeService.bulkArchiveCalls).toEqual([[{ id: "s1", cwd: requestCwd }, { id: "s2", cwd: requestCwd }]]);
+      expect(routeService.bulkArchiveCalls).toEqual([
+        [
+          { id: "s1", cwd: requestCwd },
+          { id: "s2", cwd: requestCwd },
+        ],
+      ]);
       expect(routeService.bulkDeleteCalls).toEqual([[{ id: "s1", cwd: requestCwd }]]);
     } finally {
       await routeService.dispose();
@@ -1685,9 +1856,18 @@ describe("session routes", () => {
     registerSessionRoutes(routeApp, routeService, new SessionEventHub());
     try {
       const cwd = resolve("/repo");
-      const found = await routeApp.inject({ method: "GET", url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:launch-one")}?cwd=${encodeURIComponent(cwd)}` });
-      const wrong = await routeApp.inject({ method: "GET", url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:launch-one")}?cwd=${encodeURIComponent("/other")}` });
-      const missing = await routeApp.inject({ method: "GET", url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:absent")}?cwd=${encodeURIComponent(cwd)}` });
+      const found = await routeApp.inject({
+        method: "GET",
+        url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:launch-one")}?cwd=${encodeURIComponent(cwd)}`,
+      });
+      const wrong = await routeApp.inject({
+        method: "GET",
+        url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:launch-one")}?cwd=${encodeURIComponent("/other")}`,
+      });
+      const missing = await routeApp.inject({
+        method: "GET",
+        url: `/sessions/workstream-launch/${encodeURIComponent("pi-web:absent")}?cwd=${encodeURIComponent(cwd)}`,
+      });
       expect(found.statusCode).toBe(200);
       expect(found.json()).toEqual({ status: "found", sessionId: "session-1", cwd });
       expect(wrong.json()).toEqual({ status: "unknown" });
@@ -1766,7 +1946,10 @@ class CapturingRouteSessionService implements SessionRouteService {
     this.defaultsCalls.push({ ref });
     return Promise.resolve({ defaultThinkingLevel: "high" });
   }
-  setSessionDefaults(ref: SessionRouteRef, defaults: import("../../shared/apiTypes.js").SessionDefaultsUpdate): Promise<import("../../shared/apiTypes.js").SessionDefaults> {
+  setSessionDefaults(
+    ref: SessionRouteRef,
+    defaults: import("../../shared/apiTypes.js").SessionDefaultsUpdate,
+  ): Promise<import("../../shared/apiTypes.js").SessionDefaults> {
     this.defaultsCalls.push({ ref, defaults });
     return Promise.resolve({ defaultThinkingLevel: "high" });
   }
@@ -1803,12 +1986,23 @@ class CapturingRouteSessionService implements SessionRouteService {
   readonly startCalls: { cwd: string; startupToken: string | undefined; runtime?: "legacy" | "durable" }[] = [];
 
   lookupWorkstreamLaunch(token: string, cwd: string): Promise<{ status: "found"; sessionId: string; cwd: string } | { status: "unknown" }> {
-    return Promise.resolve(token === "pi-web:launch-one" && cwd === resolve("/repo")
-      ? { status: "found", sessionId: "session-1", cwd }
-      : { status: "unknown" });
+    return Promise.resolve(
+      token === "pi-web:launch-one" && cwd === resolve("/repo") ? { status: "found", sessionId: "session-1", cwd } : { status: "unknown" },
+    );
   }
   readonly listRecentCalls: number[] = [];
-  readonly recentSessionsResponse: ClientSession[] = [{ id: "recent", cwd: "/repo", path: "/sessions/recent.jsonl", persisted: true, created: "2026-01-01T00:00:00.000Z", modified: "2026-01-02T00:00:00.000Z", messageCount: 1, firstMessage: "Recent" }];
+  readonly recentSessionsResponse: ClientSession[] = [
+    {
+      id: "recent",
+      cwd: "/repo",
+      path: "/sessions/recent.jsonl",
+      persisted: true,
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-02T00:00:00.000Z",
+      messageCount: 1,
+      firstMessage: "Recent",
+    },
+  ];
   askError: Error | undefined;
   dialogError: Error | undefined;
   reloadError: Error | undefined;
@@ -1842,12 +2036,24 @@ class CapturingRouteSessionService implements SessionRouteService {
 
   cleanupPreview(request: NormalizedSessionCleanupRequest): Promise<SessionCleanupPreviewResponse> {
     this.cleanupPreviewCalls.push(request);
-    return Promise.resolve({ generatedAt: "2026-06-25T00:00:00.000Z", thresholds: request.thresholds, projects: [], totals: { archiveCount: 0, deleteCount: 0 } });
+    return Promise.resolve({
+      generatedAt: "2026-06-25T00:00:00.000Z",
+      thresholds: request.thresholds,
+      projects: [],
+      totals: { archiveCount: 0, deleteCount: 0 },
+    });
   }
 
   cleanup(request: NormalizedSessionCleanupRequest): Promise<SessionCleanupExecuteResponse> {
     this.cleanupCalls.push(request);
-    return Promise.resolve({ generatedAt: "2026-06-25T00:00:00.000Z", thresholds: request.thresholds, projects: [], totals: { archiveCount: 0, deleteCount: 0 }, archivedSessionIds: [], deletedSessionIds: [] });
+    return Promise.resolve({
+      generatedAt: "2026-06-25T00:00:00.000Z",
+      thresholds: request.thresholds,
+      projects: [],
+      totals: { archiveCount: 0, deleteCount: 0 },
+      archivedSessionIds: [],
+      deletedSessionIds: [],
+    });
   }
 
   archiveMany(refs: readonly SessionBulkMutationRef[]): Promise<SessionBulkArchiveResponse> {
@@ -1882,16 +2088,12 @@ class CapturingRouteSessionService implements SessionRouteService {
   }
 
   unreadCatalog(): Promise<SessionUnreadCatalogSnapshot> {
-    return this.unreadError === undefined
-      ? Promise.resolve(this.unreadCatalogResponse)
-      : Promise.reject(this.unreadError);
+    return this.unreadError === undefined ? Promise.resolve(this.unreadCatalogResponse) : Promise.reject(this.unreadError);
   }
 
   acknowledgeUnread(sessionId: string, request: SessionUnreadAcknowledgeRequest): Promise<SessionUnreadCatalogSnapshot> {
     this.acknowledgeUnreadCalls.push({ sessionId, request });
-    return this.unreadError === undefined
-      ? Promise.resolve(this.unreadCatalogResponse)
-      : Promise.reject(this.unreadError);
+    return this.unreadError === undefined ? Promise.resolve(this.unreadCatalogResponse) : Promise.reject(this.unreadError);
   }
 
   notificationInbox(ref: SessionRef): SessionNotificationInboxSnapshot {
@@ -1909,7 +2111,9 @@ class CapturingRouteSessionService implements SessionRouteService {
     return notificationSnapshot(ref);
   }
 
-  list(): Promise<ClientSession[]> { return Promise.reject(unusedRouteMethod("list")); }
+  list(): Promise<ClientSession[]> {
+    return Promise.reject(unusedRouteMethod("list"));
+  }
 
   listRecent(limit: number): Promise<ClientSession[]> {
     this.listRecentCalls.push(limit);
@@ -1918,7 +2122,15 @@ class CapturingRouteSessionService implements SessionRouteService {
 
   start(cwd: string, options?: { startupToken?: string; runtime?: "legacy" | "durable" }): Promise<ClientSession> {
     this.startCalls.push({ cwd, startupToken: options?.startupToken, ...(options?.runtime === undefined ? {} : { runtime: options.runtime }) });
-    return Promise.resolve({ id: "session-1", path: "/tmp/session-1.jsonl", cwd, created: "2026-06-25T00:00:00.000Z", modified: "2026-06-25T00:00:00.000Z", messageCount: 0, firstMessage: "" });
+    return Promise.resolve({
+      id: "session-1",
+      path: "/tmp/session-1.jsonl",
+      cwd,
+      created: "2026-06-25T00:00:00.000Z",
+      modified: "2026-06-25T00:00:00.000Z",
+      messageCount: 0,
+      firstMessage: "",
+    });
   }
 
   dismissWarning(lookup: SessionRouteRef, dismissId: string): Promise<SessionStatus> {
@@ -2023,7 +2235,9 @@ class CapturingRouteSessionService implements SessionRouteService {
     return Promise.resolve(this.streamSnapshotResponse);
   }
 
-  availableModels(): Promise<[]> { return Promise.resolve([]); }
+  availableModels(): Promise<[]> {
+    return Promise.resolve([]);
+  }
   modelCatalogCalls: SessionRouteRef[] = [];
   modelCatalogResponse: SessionModelCatalogEntry[] = [];
   modelCatalogError: Error | undefined;
@@ -2048,15 +2262,32 @@ class CapturingRouteSessionService implements SessionRouteService {
     if (this.setModelScopeError !== undefined) return Promise.reject(this.setModelScopeError);
     return Promise.resolve(this.setModelScopeResponse);
   }
-  setModel(): never { throw unusedRouteMethod("setModel"); }
-  cycleModel(): never { throw unusedRouteMethod("cycleModel"); }
-  availableThinkingLevels(): Promise<[]> { return Promise.resolve([]); }
-  setThinkingLevel(): never { throw unusedRouteMethod("setThinkingLevel"); }
-  cycleThinkingLevel(): never { throw unusedRouteMethod("cycleThinkingLevel"); }
-  commands(): Promise<[]> { return Promise.resolve([]); }
+  setModel(): never {
+    throw unusedRouteMethod("setModel");
+  }
+  cycleModel(): never {
+    throw unusedRouteMethod("cycleModel");
+  }
+  availableThinkingLevels(): Promise<[]> {
+    return Promise.resolve([]);
+  }
+  setThinkingLevel(): never {
+    throw unusedRouteMethod("setThinkingLevel");
+  }
+  cycleThinkingLevel(): never {
+    throw unusedRouteMethod("cycleThinkingLevel");
+  }
+  commands(): Promise<[]> {
+    return Promise.resolve([]);
+  }
 
   prompt(lookup: SessionRouteRef, text: unknown, _streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string }): Promise<void> {
-    this.calls.push({ lookup, text, ...(attachments === undefined ? {} : { attachments }), ...(options?.operationId === undefined ? {} : { operationId: options.operationId }) });
+    this.calls.push({
+      lookup,
+      text,
+      ...(attachments === undefined ? {} : { attachments }),
+      ...(options?.operationId === undefined ? {} : { operationId: options.operationId }),
+    });
     return Promise.resolve();
   }
 
@@ -2082,16 +2313,24 @@ class CapturingRouteSessionService implements SessionRouteService {
 
   saveAttachments(_lookup: SessionRouteRef, attachments: unknown, folder?: string) {
     const list = Array.isArray(attachments) ? attachments : [];
-    return Promise.resolve(list.map((attachment: { mimeType: string; data: string; name?: string }) => ({
-      path: `${folder ?? ".pi-web/attachments"}/${attachment.name ?? "file.png"}`,
-      mimeType: attachment.mimeType,
-      size: Buffer.from(attachment.data, "base64").byteLength,
-    })));
+    return Promise.resolve(
+      list.map((attachment: { mimeType: string; data: string; name?: string }) => ({
+        path: `${folder ?? ".pi-web/attachments"}/${attachment.name ?? "file.png"}`,
+        mimeType: attachment.mimeType,
+        size: Buffer.from(attachment.data, "base64").byteLength,
+      })),
+    );
   }
 
-  shell(): never { throw unusedRouteMethod("shell"); }
-  runCommand(): never { throw unusedRouteMethod("runCommand"); }
-  respondToCommand(): never { throw unusedRouteMethod("respondToCommand"); }
+  shell(): never {
+    throw unusedRouteMethod("shell");
+  }
+  runCommand(): never {
+    throw unusedRouteMethod("runCommand");
+  }
+  respondToCommand(): never {
+    throw unusedRouteMethod("respondToCommand");
+  }
   navigateTree(lookup: SessionRouteRef, request: SessionTreeNavigateRequest): Promise<SessionTreeNavigateResult> {
     this.navigateTreeCalls.push({ lookup, request });
     return Promise.resolve({ cancelled: false, editorText: "edit this" });
@@ -2113,13 +2352,25 @@ class CapturingRouteSessionService implements SessionRouteService {
       promptDraft: "draft this",
     });
   }
-  abort(): never { throw unusedRouteMethod("abort"); }
-  stop(): never { throw unusedRouteMethod("stop"); }
-  archive(): never { throw unusedRouteMethod("archive"); }
-  archiveTree(): never { throw unusedRouteMethod("archiveTree"); }
-  restore(): never { throw unusedRouteMethod("restore"); }
+  abort(): never {
+    throw unusedRouteMethod("abort");
+  }
+  stop(): never {
+    throw unusedRouteMethod("stop");
+  }
+  archive(): never {
+    throw unusedRouteMethod("archive");
+  }
+  archiveTree(): never {
+    throw unusedRouteMethod("archiveTree");
+  }
+  restore(): never {
+    throw unusedRouteMethod("restore");
+  }
 
-  detachParent(): never { throw unusedRouteMethod("detachParent"); }
+  detachParent(): never {
+    throw unusedRouteMethod("detachParent");
+  }
 }
 
 class RejectingSessionManager implements PiSessionManagerGateway {

@@ -10,7 +10,15 @@ import { SessionEventHub } from "../realtime/sessionEventHub.js";
 import * as attachmentService from "./attachmentService.js";
 import { createPiSessionManagerGateway } from "./piSessionManagerGateway.js";
 import { PiSessionService } from "./piSessionService.js";
-import { fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 import { SessionArchiveStore } from "./sessionArchiveStore.js";
 import { SessionMediaIndex } from "./sessionMediaIndex.js";
 import { registerSessionRoutes } from "./sessionRoutes.js";
@@ -21,7 +29,9 @@ const idOf = (data: string) => createHash("sha256").update(`image/png\0${data}`)
 let temp: string;
 const services: PiSessionService[] = [];
 
-beforeEach(async () => { temp = await mkdtemp(join(tmpdir(), "pi-web-media-")); });
+beforeEach(async () => {
+  temp = await mkdtemp(join(tmpdir(), "pi-web-media-"));
+});
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(services.splice(0).map((service) => service.dispose()));
@@ -39,16 +49,25 @@ describe("PiSessionService media", () => {
     const fake = fakeRuntime("session-1", { sessionManager: fakeSessionManager("/workspace", { getBranch: () => branch, getEntries: () => entries }) });
     const hub = new SessionEventHub(new SessionMediaIndex({ maxMediaEntries: 1 }));
     const service = new PiSessionService(hub, {
-      agentDir: temp, modelRuntime: testModelRuntime,
+      agentDir: temp,
+      modelRuntime: testModelRuntime,
       archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
-      createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([sessionRecord("session-1")]), heartbeatIntervalMs: 60_000,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("session-1")]),
+      heartbeatIntervalMs: 60_000,
     });
     services.push(service);
     const ref = sessionRef("session-1");
     const page = await service.messages(ref);
     expect(page.messages).toEqual([{ ...message, entryId: "selected" }]); // Service/Pi history stays inline.
     const projected = projectBrowserMessageResponse(page, (block) => hub.mediaIndex.reference(ref, block));
-    expect(projected.messages).toEqual([{ ...message, entryId: "selected", content: [{ type: "image", mediaId: idOf(png), mimeType: "image/png", byteSize: Buffer.from(png, "base64").byteLength, width: 1, height: 1 }] }]);
+    expect(projected.messages).toEqual([
+      {
+        ...message,
+        entryId: "selected",
+        content: [{ type: "image", mediaId: idOf(png), mimeType: "image/png", byteSize: Buffer.from(png, "base64").byteLength, width: 1, height: 1 }],
+      },
+    ]);
     expect(await service.media(ref, idOf(png))).toEqual({ data: Buffer.from(png, "base64"), mimeType: "image/png" });
     expect(await service.media(ref, idOf(other.data))).toEqual({ data: Buffer.from(other.data, "base64"), mimeType: "image/png" });
     expect(hub.mediaIndex.get(ref, idOf(png))).toBeUndefined();
@@ -63,9 +82,12 @@ describe("PiSessionService media", () => {
     const fake = fakeRuntime("session-1", { state });
     const hub = new SessionEventHub();
     const service = new PiSessionService(hub, {
-      agentDir: temp, modelRuntime: testModelRuntime,
+      agentDir: temp,
+      modelRuntime: testModelRuntime,
       archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
-      createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([sessionRecord("session-1")]), heartbeatIntervalMs: 60_000,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("session-1")]),
+      heartbeatIntervalMs: 60_000,
     });
     services.push(service);
     const ref = sessionRef("session-1");
@@ -83,7 +105,12 @@ describe("PiSessionService media", () => {
     fake.session.isStreaming = true;
     fake.emit({ type: "message_start", message: partial });
     const snapshot = projectBrowserTranscriptSnapshot(await service.transcriptSnapshot(ref), (block) => hub.mediaIndex.reference(ref, block));
-    expect(snapshot.partial).toMatchObject({ content: [{ type: "image", mediaId: idOf(png), width: 1, height: 1 }, { type: "thinking", thinking: "working" }] });
+    expect(snapshot.partial).toMatchObject({
+      content: [
+        { type: "image", mediaId: idOf(png), width: 1, height: 1 },
+        { type: "thinking", thinking: "working" },
+      ],
+    });
     expect(JSON.stringify(snapshot)).not.toContain(png);
     expect(JSON.stringify(snapshot)).not.toContain("secret");
     expect(partial.content).toEqual([image(), { type: "thinking", thinking: "working", thinkingSignature: "secret" }]);
@@ -100,10 +127,13 @@ describe("PiSessionService media", () => {
     const refB = sessionRef(refA.id, cwdB);
     const pathA = join(store, "2026-01-01_copied-session.jsonl");
     const pathB = join(store, "2026-01-02_copied-session.jsonl");
-    const transcript = (cwd: string, content: unknown) => [
-      { type: "session", version: 3, id: refA.id, cwd, timestamp: "2026-01-01T00:00:00.000Z" },
-      { type: "message", id: "entry", parentId: null, timestamp: "2026-01-01T00:00:00.000Z", message: { role: "user", content } },
-    ].map((value) => JSON.stringify(value)).join("\n") + "\n";
+    const transcript = (cwd: string, content: unknown) =>
+      [
+        { type: "session", version: 3, id: refA.id, cwd, timestamp: "2026-01-01T00:00:00.000Z" },
+        { type: "message", id: "entry", parentId: null, timestamp: "2026-01-01T00:00:00.000Z", message: { role: "user", content } },
+      ]
+        .map((value) => JSON.stringify(value))
+        .join("\n") + "\n";
     await writeFile(pathA, transcript(cwdA, [image()]));
     await writeFile(pathB, transcript(cwdB, "no image in this copy"));
     const gateway = createPiSessionManagerGateway({ agentDir: temp, env: { PI_CODING_AGENT_SESSION_DIR: store } });
@@ -111,12 +141,18 @@ describe("PiSessionService media", () => {
     expect(await gateway.resolveSessionFile(cwdB, refB.id)).toEqual({ ...refB, path: pathB });
     const readEntries = vi.spyOn(gateway, "readEntries");
     const open = vi.spyOn(gateway, "open");
-    const createAgentRuntime = vi.fn(() => { throw new Error("Media must not open runtimes"); });
+    const createAgentRuntime = vi.fn(() => {
+      throw new Error("Media must not open runtimes");
+    });
     const decode = vi.fn((source: string) => Buffer.from(source, "base64"));
     const hub = new SessionEventHub(new SessionMediaIndex({ decode }));
     const service = new PiSessionService(hub, {
-      agentDir: temp, modelRuntime: testModelRuntime, sessionManager: gateway, createAgentRuntime,
-      archiveStore: new SessionArchiveStore(join(temp, "archives.json")), heartbeatIntervalMs: 60_000,
+      agentDir: temp,
+      modelRuntime: testModelRuntime,
+      sessionManager: gateway,
+      createAgentRuntime,
+      archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
+      heartbeatIntervalMs: 60_000,
     });
     services.push(service);
     const app = Fastify({ logger: false });
@@ -148,7 +184,9 @@ describe("PiSessionService media", () => {
       expect(hub.mediaIndex.get(refB, idOf(png))).toBeUndefined();
       expect(open).not.toHaveBeenCalled();
       expect(createAgentRuntime).not.toHaveBeenCalled();
-    } finally { await app.close(); }
+    } finally {
+      await app.close();
+    }
   });
 
   it("keeps prompt echoes and transient SDK image references lazy, with recoverable eviction misses", async () => {
@@ -156,9 +194,12 @@ describe("PiSessionService media", () => {
     const hub = new SessionEventHub(new SessionMediaIndex({ maxMediaEntries: 1, maxMemoEntries: 1, decode }));
     const fake = fakeRuntime("session-1");
     const service = new PiSessionService(hub, {
-      agentDir: temp, modelRuntime: testModelRuntime,
+      agentDir: temp,
+      modelRuntime: testModelRuntime,
       archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
-      createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: sessionGateway([sessionRecord("session-1")]), heartbeatIntervalMs: 60_000,
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: sessionGateway([sessionRecord("session-1")]),
+      heartbeatIntervalMs: 60_000,
     });
     services.push(service);
     const ref = sessionRef("session-1");
@@ -189,18 +230,38 @@ describe("PiSessionService media", () => {
     await mkdir(store);
     const path = join(store, "2026_session-1.jsonl");
     const block = image();
-    const entry = (id: string, parentId: string | null, content: unknown) => ({ type: "message", id, parentId, timestamp: "2026-01-01T00:00:00.000Z", message: { role: "user", content } });
-    const original = [
-      { type: "session", version: 3, id: "session-1", cwd, timestamp: "2026-01-01T00:00:00.000Z" },
-      entry("root", null, "hello"), entry("abandoned", "root", [block]), entry("selected", "root", "no image here"),
-    ].map((value) => JSON.stringify(value)).join("\n") + "\n";
+    const entry = (id: string, parentId: string | null, content: unknown) => ({
+      type: "message",
+      id,
+      parentId,
+      timestamp: "2026-01-01T00:00:00.000Z",
+      message: { role: "user", content },
+    });
+    const original =
+      [
+        { type: "session", version: 3, id: "session-1", cwd, timestamp: "2026-01-01T00:00:00.000Z" },
+        entry("root", null, "hello"),
+        entry("abandoned", "root", [block]),
+        entry("selected", "root", "no image here"),
+      ]
+        .map((value) => JSON.stringify(value))
+        .join("\n") + "\n";
     await writeFile(path, original);
     const coldService = () => {
-      const createAgentRuntime = vi.fn(() => { throw new Error("Binary reads must not construct runtimes"); });
+      const createAgentRuntime = vi.fn(() => {
+        throw new Error("Binary reads must not construct runtimes");
+      });
       const gateway = createPiSessionManagerGateway({ agentDir: temp, env: { PI_CODING_AGENT_SESSION_DIR: store } });
       const open = vi.spyOn(gateway, "open");
       const hub = new SessionEventHub(new SessionMediaIndex({ maxMediaEntries: 1 }));
-      const service = new PiSessionService(hub, { agentDir: temp, modelRuntime: testModelRuntime, archiveStore: new SessionArchiveStore(join(temp, "archives.json")), createAgentRuntime, sessionManager: gateway, heartbeatIntervalMs: 60_000 });
+      const service = new PiSessionService(hub, {
+        agentDir: temp,
+        modelRuntime: testModelRuntime,
+        archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
+        createAgentRuntime,
+        sessionManager: gateway,
+        heartbeatIntervalMs: 60_000,
+      });
       services.push(service);
       return { service, createAgentRuntime, open };
     };
@@ -216,7 +277,12 @@ describe("PiSessionService media", () => {
     const gateway = createPiSessionManagerGateway({ agentDir: temp, env: { PI_CODING_AGENT_SESSION_DIR: store } });
     const fake = fakeRuntime("session-1", { sessionFile: path, sessionManager: fakeSessionManager(cwd, { getSessionFile: () => path }) });
     const idle = new PiSessionService(new SessionEventHub(new SessionMediaIndex({ maxMediaEntries: 1 })), {
-      agentDir: temp, modelRuntime: testModelRuntime, archiveStore: new SessionArchiveStore(join(temp, "archives.json")), createAgentRuntime: runtimeCreator(fake.runtime), sessionManager: gateway, heartbeatIntervalMs: 60_000,
+      agentDir: temp,
+      modelRuntime: testModelRuntime,
+      archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
+      createAgentRuntime: runtimeCreator(fake.runtime),
+      sessionManager: gateway,
+      heartbeatIntervalMs: 60_000,
     });
     services.push(idle);
     await idle.status(ref);
@@ -230,12 +296,16 @@ describe("PiSessionService media", () => {
   });
 
   it("propagates disk failures rather than reporting false misses, and recovers on retry", async () => {
-    const readEntries = vi.fn<(path: string) => Promise<readonly unknown[] | undefined>>()
+    const readEntries = vi
+      .fn<(path: string) => Promise<readonly unknown[] | undefined>>()
       .mockRejectedValueOnce(new Error("disk failure"))
       .mockResolvedValue([{ type: "message", message: { content: [image()] } }]);
     const service = new PiSessionService(new SessionEventHub(), {
-      agentDir: temp, modelRuntime: testModelRuntime, archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
-      sessionManager: { ...sessionGateway([sessionRecord("session-1")]), readEntries }, heartbeatIntervalMs: 60_000,
+      agentDir: temp,
+      modelRuntime: testModelRuntime,
+      archiveStore: new SessionArchiveStore(join(temp, "archives.json")),
+      sessionManager: { ...sessionGateway([sessionRecord("session-1")]), readEntries },
+      heartbeatIntervalMs: 60_000,
     });
     services.push(service);
     await expect(service.media(sessionRef("session-1"), idOf(png))).rejects.toThrow("disk failure");

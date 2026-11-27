@@ -7,7 +7,10 @@ export interface RequestAttentionToolDeps {
   requestAttention(sessionId: string, reason: string): SessionAttentionRequest;
 }
 
-export interface RequestAttentionToolDetails { request: SessionAttentionRequest; sessionId: string }
+export interface RequestAttentionToolDetails {
+  request: SessionAttentionRequest;
+  sessionId: string;
+}
 
 const RequestAttentionParams = Type.Object({
   reason: Type.String({
@@ -25,8 +28,10 @@ export function createRequestAttentionToolDefinition(deps: RequestAttentionToolD
     name: "request_attention",
     exposure: "model-only",
     label: "Request attention",
-    description: "Notify the user that this Chat needs them and mark it until they look, then return immediately. Use when you need the user but have no decision to ask: finished work that needs their review, a login or credential, a manual check only they can do, or being blocked. Decisions go to ask_user instead.",
-    promptSnippet: "request_attention: notify the user that you need them (review, login or credential, manual check, blocked) without a decision to ask; returns immediately",
+    description:
+      "Notify the user that this Chat needs them and mark it until they look, then return immediately. Use when you need the user but have no decision to ask: finished work that needs their review, a login or credential, a manual check only they can do, or being blocked. Decisions go to ask_user instead.",
+    promptSnippet:
+      "request_attention: notify the user that you need them (review, login or credential, manual check, blocked) without a decision to ask; returns immediately",
     promptGuidelines: [
       "Use request_attention when you need the user but have no decision to ask: finished work that needs their review, a login or credential, a manual check only they can do, or being blocked. Decisions go to ask_user instead. It returns immediately and does not wait.",
       "Do not call request_attention for routine progress or after every turn. Write the reason so the user can act without reading the Chat: what you need from them and why, in one short line.",
@@ -39,7 +44,12 @@ export function createRequestAttentionToolDefinition(deps: RequestAttentionToolD
       const sessionId = ctx.sessionManager.getSessionId();
       const request = deps.requestAttention(sessionId, reason);
       return {
-        content: [{ type: "text", text: "Notified the user that this Chat needs them. This does not wait for a reply: keep working on anything that does not need them, or end your turn." }],
+        content: [
+          {
+            type: "text",
+            text: "Notified the user that this Chat needs them. This does not wait for a reply: keep working on anything that does not need them, or end your turn.",
+          },
+        ],
         details: { request, sessionId },
       };
     },

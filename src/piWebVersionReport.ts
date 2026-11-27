@@ -27,10 +27,7 @@ export interface RunningVersionInfo {
   sessiondError?: string;
 }
 
-export type NpmReleaseCheck =
-  | { status: "available"; latestVersion: string }
-  | { status: "skipped"; reason: string }
-  | { status: "error"; error: string };
+export type NpmReleaseCheck = { status: "available"; latestVersion: string } | { status: "skipped"; reason: string } | { status: "error"; error: string };
 
 export interface PiWebVersionReport extends RunningVersionInfo {
   /** Absent unless an explicit release check was requested. */
@@ -126,23 +123,28 @@ export async function printPiWebVersionReport(options: PiWebVersionReportOptions
 
 async function checkLatestNpmRelease(options: PiWebVersionReportOptions): Promise<NpmReleaseCheck> {
   const env = options.env ?? process.env;
-  const disabledBy = ["PI_WEB_SKIP_VERSION_CHECK", "PI_WEB_OFFLINE", "PI_SKIP_VERSION_CHECK", "PI_OFFLINE"]
-    .filter((key) => env[key] !== undefined && env[key] !== "");
+  const disabledBy = ["PI_WEB_SKIP_VERSION_CHECK", "PI_WEB_OFFLINE", "PI_SKIP_VERSION_CHECK", "PI_OFFLINE"].filter(
+    (key) => env[key] !== undefined && env[key] !== "",
+  );
   if (disabledBy.length > 0) return { status: "skipped", reason: `remote version checks disabled by ${disabledBy.join(", ")}` };
 
   const controller = new AbortController();
   try {
-    const latestVersion = await withTimeout((async () => {
-      const response = await (options.fetch ?? globalThis.fetch)(`https://registry.npmjs.org/${encodeURIComponent(PI_WEB_PACKAGE_NAME)}/latest`, {
-        headers: { accept: "application/json", "user-agent": `${PI_WEB_PACKAGE_NAME}/${packageVersion()}` },
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`npm registry returned HTTP ${String(response.status)}`);
-      const data: unknown = await response.json();
-      const version = isRecord(data) ? data["version"] : undefined;
-      if (typeof version !== "string" || version.trim() === "") throw new Error("npm registry response did not include a version");
-      return version.trim();
-    })(), NPM_RELEASE_TIMEOUT_MS, "npm registry check timed out after 5000 ms");
+    const latestVersion = await withTimeout(
+      (async () => {
+        const response = await (options.fetch ?? globalThis.fetch)(`https://registry.npmjs.org/${encodeURIComponent(PI_WEB_PACKAGE_NAME)}/latest`, {
+          headers: { accept: "application/json", "user-agent": `${PI_WEB_PACKAGE_NAME}/${packageVersion()}` },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`npm registry returned HTTP ${String(response.status)}`);
+        const data: unknown = await response.json();
+        const version = isRecord(data) ? data["version"] : undefined;
+        if (typeof version !== "string" || version.trim() === "") throw new Error("npm registry response did not include a version");
+        return version.trim();
+      })(),
+      NPM_RELEASE_TIMEOUT_MS,
+      "npm registry check timed out after 5000 ms",
+    );
     return { status: "available", latestVersion };
   } catch (error) {
     return { status: "error", error: errorMessage(error) };
@@ -204,10 +206,7 @@ function statusEndpointFor(versionEndpoint: string): string {
   return `${versionEndpoint.slice(0, -PI_WEB_VERSION_ENDPOINT_PATH.length)}${PI_WEB_STATUS_ENDPOINT_PATH}`;
 }
 
-async function fetchPiWebVersionResponse(
-  endpoint: string,
-  fetchImplementation: typeof globalThis.fetch,
-): Promise<PiWebVersionResponse> {
+async function fetchPiWebVersionResponse(endpoint: string, fetchImplementation: typeof globalThis.fetch): Promise<PiWebVersionResponse> {
   const response = await fetchImplementation(endpoint, {
     headers: { accept: "application/json" },
     signal: AbortSignal.timeout(PI_WEB_VERSION_TIMEOUT_MS),
@@ -220,9 +219,7 @@ async function fetchPiWebVersionResponse(
 }
 
 async function collectRunningVersionInfo(options: PiWebVersionReportOptions): Promise<RunningVersionInfo> {
-  const endpoint = options.webEndpointError === undefined
-    ? webVersionEndpoint(options.configEnv)
-    : { error: options.webEndpointError };
+  const endpoint = options.webEndpointError === undefined ? webVersionEndpoint(options.configEnv) : { error: options.webEndpointError };
   const fetchImplementation = options.fetch ?? globalThis.fetch;
   if (endpoint.endpoint !== undefined) {
     try {
@@ -257,11 +254,7 @@ async function runningVersionInfoWithSessiondFallback(base: { webError: string }
 
 async function collectRunningSessiondInfo(): Promise<{ component?: PiWebComponentStatus; error?: string }> {
   try {
-    const response = await withTimeout(
-      new SessionDaemonClient().request("GET", "/health"),
-      PI_WEB_VERSION_TIMEOUT_MS,
-      "session daemon health check timed out",
-    );
+    const response = await withTimeout(new SessionDaemonClient().request("GET", "/health"), PI_WEB_VERSION_TIMEOUT_MS, "session daemon health check timed out");
     if (response.statusCode < 200 || response.statusCode >= 300) throw new Error(`HTTP ${String(response.statusCode)}`);
     const parsed: unknown = response.body === "" ? undefined : JSON.parse(response.body);
     const version = isRecord(parsed) ? parsed["version"] : undefined;
@@ -315,7 +308,7 @@ function printRunningVersionInfo(info: RunningVersionInfo): void {
 }
 
 function printComponentVersion(component: PiWebComponentStatus): void {
-  const icon = component.available ? component.stale ? "!" : "✓" : "?";
+  const icon = component.available ? (component.stale ? "!" : "✓") : "?";
   const status = !component.available ? "unavailable" : component.stale ? "restart needed" : "current";
   console.log(`${icon} ${component.label}: ${status}`);
   if (component.available || component.runtimeVersion !== undefined || component.installedVersion !== undefined) {

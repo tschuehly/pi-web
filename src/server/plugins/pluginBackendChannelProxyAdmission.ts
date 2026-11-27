@@ -48,11 +48,7 @@ export class PluginBackendChannelProxyAdmissionPool {
   private total = 0;
 
   constructor(options: PluginBackendChannelProxyAdmissionPoolOptions = {}) {
-    this.transportConnectTimeoutMs = positiveInteger(
-      options.transportConnectTimeoutMs,
-      PLUGIN_BACKEND_CHANNEL_OPEN_TIMEOUT_MS,
-      "transportConnectTimeoutMs",
-    );
+    this.transportConnectTimeoutMs = positiveInteger(options.transportConnectTimeoutMs, PLUGIN_BACKEND_CHANNEL_OPEN_TIMEOUT_MS, "transportConnectTimeoutMs");
     this.maxTotal = positiveInteger(options.maxTotal, PLUGIN_BACKEND_CHANNEL_MAX_TOTAL, "maxTotal");
   }
 
@@ -94,10 +90,7 @@ export function pluginBackendChannelProxyAdmissionPool(owner: object): PluginBac
 }
 
 /** Send a best-effort attributed rejection, then await immediate physical teardown. */
-export function rejectPluginBackendChannelProxyAdmission(
-  socket: WebSocket,
-  error: PluginBackendChannelProxyAdmissionError,
-): Promise<void> {
+export function rejectPluginBackendChannelProxyAdmission(socket: WebSocket, error: PluginBackendChannelProxyAdmissionError): Promise<void> {
   if (socket.readyState !== WebSocket.OPEN) {
     return closePluginBackendChannelWebSocket(socket, error.closeCode, error.message, { terminateImmediately: true });
   }
@@ -108,8 +101,7 @@ export function rejectPluginBackendChannelProxyAdmission(
       if (teardownStarted) return;
       teardownStarted = true;
       clearTimeout(deadline);
-      void closePluginBackendChannelWebSocket(socket, error.closeCode, error.message, { terminateImmediately: true })
-        .then(resolve, resolve);
+      void closePluginBackendChannelWebSocket(socket, error.closeCode, error.message, { terminateImmediately: true }).then(resolve, resolve);
     }
     const deadline = setTimeout(teardown, PLUGIN_BACKEND_CHANNEL_TEARDOWN_TIMEOUT_MS);
     deadline.unref();

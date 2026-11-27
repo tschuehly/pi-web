@@ -8,7 +8,10 @@ import { controlledChatViewport, manualChatFrames } from "./chatScroll.testSuppo
 import { ExtensionDialogCard } from "./ExtensionDialogCard";
 
 afterEach(() => {
-  document.body.replaceChildren(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("ChatView open extension dialogs", () => {
@@ -18,7 +21,10 @@ describe("ChatView open extension dialogs", () => {
     view.pendingDialogs = [oldest, openDialog("dlg-2", "Pick a region", { kind: "select", options: ["eu", "us"] })];
     await view.updateComplete;
 
-    const card = requiredElement(view.shadowRoot?.querySelector<ExtensionDialogCard>(".chat-content > extension-dialog-card.open-dialog-card"), "open dialog card");
+    const card = requiredElement(
+      view.shadowRoot?.querySelector<ExtensionDialogCard>(".chat-content > extension-dialog-card.open-dialog-card"),
+      "open dialog card",
+    );
     expect(card).toBeInstanceOf(ExtensionDialogCard);
     expect(card.hasAttribute("data-scroll-anchor-id")).toBe(false);
     expect(card.dialog).toBe(oldest);
@@ -38,7 +44,9 @@ describe("ChatView open extension dialogs", () => {
     const flush = manualChatFrames();
     const view = await mountView();
     const { metrics, write } = controlledChatViewport(view);
-    flush(); write.mockClear(); metrics.height = 2600;
+    flush();
+    write.mockClear();
+    metrics.height = 2600;
 
     view.pendingDialogs = [openDialog("dlg-1", "Allow file writes?")];
     await view.updateComplete;
@@ -55,10 +63,21 @@ describe("ChatView open extension dialogs", () => {
     const { metrics, write } = controlledChatViewport(view);
     flush();
     view.onSubmitAsk = vi.fn();
-    view.pendingAsks = [{ askId: "ask", askedAt: "2026-07-20T10:00:00.000Z", updatedAt: "2026-07-20T10:00:00.000Z", revision: "", turnsSinceUpdate: 0, questions: [{ id: "q", question: "Question?", options: [], multiple: false }] }];
-    await view.updateComplete; flush();
+    view.pendingAsks = [
+      {
+        askId: "ask",
+        askedAt: "2026-07-20T10:00:00.000Z",
+        updatedAt: "2026-07-20T10:00:00.000Z",
+        revision: "",
+        turnsSinceUpdate: 0,
+        questions: [{ id: "q", question: "Question?", options: [], multiple: false }],
+      },
+    ];
+    await view.updateComplete;
+    flush();
     view.renderRoot.querySelector<HTMLButtonElement>('[aria-label="Jump to end"]')?.click();
-    write.mockClear(); metrics.height = 3200;
+    write.mockClear();
+    metrics.height = 3200;
     view.pendingDialogs = [openDialog("new-dialog", "Confirm?")];
     await view.updateComplete;
     const ask = requiredElement(view.renderRoot.querySelector(".chat ask-user-card.open-question-card"), "existing ask");

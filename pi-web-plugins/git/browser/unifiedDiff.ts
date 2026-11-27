@@ -27,7 +27,7 @@ interface DiffLinePair {
 const hunkHeaderPattern = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 const maxInlineLineLength = 5_000;
 const maxInlineBlockLines = 20;
-const minInlineSimilarity = 0.20;
+const minInlineSimilarity = 0.2;
 const minPairSimilarity = 0.25;
 const maxInlineMatrixCells = 250_000;
 
@@ -38,9 +38,7 @@ interface CharacterChange {
   removed?: boolean;
 }
 
-const graphemeSegmenter = typeof Intl.Segmenter === "function"
-  ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
-  : undefined;
+const graphemeSegmenter = typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : undefined;
 
 export function parseUnifiedDiff(diff: string): UnifiedDiffLine[] {
   const parsedLines = parseUnifiedDiffLines(diff);
@@ -225,7 +223,7 @@ function lineSimilarity(oldText: string, newText: string): number {
 function similarityFromChanges(changes: CharacterChange[], oldLength: number, newLength: number): number {
   const maxLength = Math.max(oldLength, newLength);
   if (maxLength === 0) return 1;
-  const unchangedLength = changes.reduce((total, change) => change.added === true || change.removed === true ? total : total + change.unitCount, 0);
+  const unchangedLength = changes.reduce((total, change) => (change.added === true || change.removed === true ? total : total + change.unitCount), 0);
   return unchangedLength / maxLength;
 }
 
@@ -244,10 +242,8 @@ function diffTextUnits(oldText: readonly string[], newText: readonly string[]): 
   while (prefixLength < sharedLength && oldText[prefixLength] === newText[prefixLength]) prefixLength += 1;
 
   let suffixLength = 0;
-  while (
-    suffixLength < sharedLength - prefixLength
-    && oldText[oldText.length - suffixLength - 1] === newText[newText.length - suffixLength - 1]
-  ) suffixLength += 1;
+  while (suffixLength < sharedLength - prefixLength && oldText[oldText.length - suffixLength - 1] === newText[newText.length - suffixLength - 1])
+    suffixLength += 1;
 
   const oldMiddle = oldText.slice(prefixLength, oldText.length - suffixLength);
   const newMiddle = newText.slice(prefixLength, newText.length - suffixLength);
@@ -258,7 +254,8 @@ function diffTextUnits(oldText: readonly string[], newText: readonly string[]): 
     appendCharacterChange(changes, oldMiddle, "removed");
     appendCharacterChange(changes, newMiddle, "added");
   } else {
-    for (const change of diffMiddleCharacters(oldMiddle, newMiddle)) appendCharacterChange(changes, splitTextUnits(change.value), change.added === true ? "added" : change.removed === true ? "removed" : undefined);
+    for (const change of diffMiddleCharacters(oldMiddle, newMiddle))
+      appendCharacterChange(changes, splitTextUnits(change.value), change.added === true ? "added" : change.removed === true ? "removed" : undefined);
   }
 
   appendCharacterChange(changes, oldText.slice(oldText.length - suffixLength));
@@ -274,9 +271,10 @@ function diffMiddleCharacters(oldText: readonly string[], newText: readonly stri
   for (let oldIndex = oldText.length - 1; oldIndex >= 0; oldIndex -= 1) {
     for (let newIndex = newText.length - 1; newIndex >= 0; newIndex -= 1) {
       const offset = oldIndex * width + newIndex;
-      matrix[offset] = oldText[oldIndex] === newText[newIndex]
-        ? (matrix[(oldIndex + 1) * width + newIndex + 1] ?? 0) + 1
-        : Math.max(matrix[(oldIndex + 1) * width + newIndex] ?? 0, matrix[oldIndex * width + newIndex + 1] ?? 0);
+      matrix[offset] =
+        oldText[oldIndex] === newText[newIndex]
+          ? (matrix[(oldIndex + 1) * width + newIndex + 1] ?? 0) + 1
+          : Math.max(matrix[(oldIndex + 1) * width + newIndex] ?? 0, matrix[oldIndex * width + newIndex + 1] ?? 0);
     }
   }
 
@@ -288,7 +286,10 @@ function diffMiddleCharacters(oldText: readonly string[], newText: readonly stri
       appendCharacterChange(changes, [oldText[oldIndex] ?? ""]);
       oldIndex += 1;
       newIndex += 1;
-    } else if (newIndex >= newText.length || (oldIndex < oldText.length && (matrix[(oldIndex + 1) * width + newIndex] ?? 0) >= (matrix[oldIndex * width + newIndex + 1] ?? 0))) {
+    } else if (
+      newIndex >= newText.length
+      || (oldIndex < oldText.length && (matrix[(oldIndex + 1) * width + newIndex] ?? 0) >= (matrix[oldIndex * width + newIndex + 1] ?? 0))
+    ) {
       appendCharacterChange(changes, [oldText[oldIndex] ?? ""], "removed");
       oldIndex += 1;
     } else {

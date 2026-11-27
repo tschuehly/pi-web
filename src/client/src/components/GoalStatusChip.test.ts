@@ -18,9 +18,14 @@ const STATE_LABELS: Record<GoalStatusState, string> = {
 
 function sessionStatus(goal?: string): SessionStatus {
   return {
-    sessionId: "session-1", isStreaming: false, isCompacting: false, isBashRunning: false,
-    pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    sessionId: "session-1",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
     ...(goal === undefined ? {} : { extensionStatuses: { [GOAL_STATUS_KEY]: goal } }),
   };
 }
@@ -134,8 +139,12 @@ describe("GoalStatusChip", () => {
     const observed: Element[] = [];
     const disconnect = vi.fn();
     class ResizeObserverStub implements ResizeObserver {
-      constructor(callback: ResizeObserverCallback) { resize = callback; }
-      observe = vi.fn((target: Element) => { observed.push(target); });
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback;
+      }
+      observe = vi.fn((target: Element) => {
+        observed.push(target);
+      });
       unobserve = vi.fn();
       disconnect = disconnect;
       takeRecords = (): ResizeObserverEntry[] => [];
@@ -183,7 +192,9 @@ describe("GoalStatusChip", () => {
     expect(autocompleteStyles.cssText).not.toMatch(/\.menu\s*\{[^}]*position:\s*absolute/);
     expect(GoalStatusChip.styles.cssText).toMatch(/:host\s*\{[^}]*padding:\s*3px 8px 2px;[^}]*border-top:\s*1px solid var\(--pi-border-muted\)/);
     expect(promptEditorStyles.cssText).toMatch(/\.editor-resize-handle\s*\{[^}]*top:\s*-4px/);
-    expect(GoalStatusChip.styles.cssText).toMatch(/\.sheet\s*\{[^}]*max-height:\s*var\(--goal-sheet-max-height, 0px\)[^}]*overflow:\s*auto[^}]*border-radius:\s*9px 9px 0 0/);
+    expect(GoalStatusChip.styles.cssText).toMatch(
+      /\.sheet\s*\{[^}]*max-height:\s*var\(--goal-sheet-max-height, 0px\)[^}]*overflow:\s*auto[^}]*border-radius:\s*9px 9px 0 0/,
+    );
   });
 
   it("matches the Activity dock row without losing state, full objective or keyboard focus", async () => {

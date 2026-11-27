@@ -17,9 +17,7 @@ describe("PiWebApp machine status snapshot refresh", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const local = machineStatusSnapshot({ machine: { "core:working": true } });
     refreshMachines(app, ["local", "remote-1"]);
-    useStatusApi(app, (machineId) => machineId === "local"
-      ? Promise.resolve(local)
-      : Promise.reject(new Error("Not Found")));
+    useStatusApi(app, (machineId) => (machineId === "local" ? Promise.resolve(local) : Promise.reject(new Error("Not Found"))));
 
     await refreshMachineStatusSnapshots(app);
 
@@ -50,7 +48,13 @@ function refreshMachines(app: PiWebApp, machineIds: string[]): void {
 
 /** Drives the app's real controller and state through the controller's api seam. */
 function useStatusApi(app: PiWebApp, machineStatus: (machineId: string) => Promise<MachineStatusSnapshot>): void {
-  const controller = new MachineStatusController(() => appState(app), (patch) => { setAppState(app, patch); }, { api: { machineStatus } });
+  const controller = new MachineStatusController(
+    () => appState(app),
+    (patch) => {
+      setAppState(app, patch);
+    },
+    { api: { machineStatus } },
+  );
   if (!Reflect.set(app, "machineStatus", controller)) throw new Error("Could not replace PiWebApp's MachineStatusController");
 }
 

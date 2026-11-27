@@ -1,4 +1,12 @@
-import { ASK_USER_OTHER_TEXT_MAX_LENGTH, type AskUserAnswer, type AskUserQuestion, type AskUserSubmission, askAnswerSelection, askValueError, hiddenAskQuestionIds } from "../../shared/apiTypes";
+import {
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
+  type AskUserAnswer,
+  type AskUserQuestion,
+  type AskUserSubmission,
+  askAnswerSelection,
+  askValueError,
+  hiddenAskQuestionIds,
+} from "../../shared/apiTypes";
 
 /**
  * What the user has entered for one question but has not submitted yet. Kept in
@@ -82,7 +90,8 @@ function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
       continue;
     }
     const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
-    if (recommended.length > 0) answers.push([question.id, { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) }]);
+    if (recommended.length > 0)
+      answers.push([question.id, { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) }]);
   }
   return Object.fromEntries(answers);
 }
@@ -90,7 +99,9 @@ function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {
   try {
     // An answer the user cleared keeps its entry (it has `asked`), so recommendations do not come back over it.
-    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined || answer.asked !== undefined);
+    const entries = Object.entries(answers).filter(
+      ([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined || answer.asked !== undefined,
+    );
     if (entries.length === 0) storage?.removeItem(draftStorageKey(sessionId, askId));
     else storage?.setItem(draftStorageKey(sessionId, askId), JSON.stringify(Object.fromEntries(entries)));
   } catch {
@@ -272,7 +283,10 @@ function normalizedOtherText(otherText: string | undefined): string | undefined 
  * A typed question's draft as the value it would send and, when that value does not fit the question, why
  * ("must be at most 10"); `undefined` while the field is empty.
  */
-export function typedDraftValue(question: AskUserQuestion, answer: AskDraftAnswer | undefined): { value: boolean | number | string; error?: string } | undefined {
+export function typedDraftValue(
+  question: AskUserQuestion,
+  answer: AskDraftAnswer | undefined,
+): { value: boolean | number | string; error?: string } | undefined {
   const raw = answer?.value;
   if (raw === undefined) return undefined;
   if (typeof raw === "boolean") return question.kind === "boolean" ? { value: raw } : undefined;

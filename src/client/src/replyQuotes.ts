@@ -18,7 +18,11 @@ const SOURCE_LINE = /^> \[msg [^\]]*\]\(#entry:[^)]*\) ?/;
  * Excerpt lines starting with `>` or `[` are escaped so they cannot open a nested quote or a look-alike link.
  */
 export function formatReplyQuote({ entryId, excerpt }: ReplyQuote): string {
-  return excerpt.trim().split(/\r?\n/).map((line, index) => `>${index === 0 ? ` [msg ${entryId}](#entry:${entryId})` : ""}${line === "" ? "" : ` ${line.replace(/^(\s*)([>[])/, "$1\\$2")}`}`).join("\n");
+  return excerpt
+    .trim()
+    .split(/\r?\n/)
+    .map((line, index) => `>${index === 0 ? ` [msg ${entryId}](#entry:${entryId})` : ""}${line === "" ? "" : ` ${line.replace(/^(\s*)([>[])/, "$1\\$2")}`}`)
+    .join("\n");
 }
 
 /** The quote as its own paragraph after `textBefore`, plus a blank line so text typed after it is not pulled into the quote. */
@@ -27,7 +31,11 @@ export function replyQuoteInsertion(textBefore: string, quote: ReplyQuote): stri
   return `${separator}${formatReplyQuote(quote)}\n\n`;
 }
 
-interface QuoteBlock { readonly from: number; readonly to: number; readonly label: string }
+interface QuoteBlock {
+  readonly from: number;
+  readonly to: number;
+  readonly label: string;
+}
 
 function quoteBlocks(doc: Text): QuoteBlock[] {
   const blocks: QuoteBlock[] = [];
@@ -42,7 +50,11 @@ function quoteBlocks(doc: Text): QuoteBlock[] {
       lines.push(next.text.replace(/^> ?/, ""));
       end = next;
     }
-    const words = lines.join(" ").replace(/\\([>[])/g, "$1").replace(/\s+/g, " ").trim();
+    const words = lines
+      .join(" ")
+      .replace(/\\([>[])/g, "$1")
+      .replace(/\s+/g, " ")
+      .trim();
     blocks.push({ from: start.from, to: end.to, label: words.length > LABEL_LENGTH ? `${words.slice(0, LABEL_LENGTH - 1).trimEnd()}…` : words });
     number = end.number;
   }
@@ -53,9 +65,16 @@ const toggleReplyQuote = StateEffect.define<number>();
 
 /** Collapsed: a one-line chevron + label replacing the block. Expanded: a chevron before the editable text. */
 class QuoteToggle extends WidgetType {
-  constructor(readonly expanded: boolean, readonly label: string) { super(); }
+  constructor(
+    readonly expanded: boolean,
+    readonly label: string,
+  ) {
+    super();
+  }
 
-  override eq(other: QuoteToggle): boolean { return other.expanded === this.expanded && other.label === this.label; }
+  override eq(other: QuoteToggle): boolean {
+    return other.expanded === this.expanded && other.label === this.label;
+  }
 
   toDOM(view: EditorView): HTMLElement {
     const toggle = document.createElement("span");
@@ -80,7 +99,11 @@ class QuoteToggle extends WidgetType {
   }
 }
 
-interface QuoteFolds { readonly expanded: readonly number[]; readonly collapsed: DecorationSet; readonly toggles: DecorationSet }
+interface QuoteFolds {
+  readonly expanded: readonly number[];
+  readonly collapsed: DecorationSet;
+  readonly toggles: DecorationSet;
+}
 
 /** Whether `changes` edited the block's own text, as opposed to inserting the whole block or text beside it. */
 function editsInside(changes: ChangeSet | undefined, block: QuoteBlock): boolean {
@@ -99,7 +122,11 @@ function quoteFolds(doc: Text, requested: readonly number[], changes?: ChangeSet
   return {
     expanded,
     collapsed: Decoration.set(collapsed.map((block) => Decoration.replace({ widget: new QuoteToggle(false, block.label) }).range(block.from, block.to))),
-    toggles: Decoration.set(blocks.filter((block) => expanded.includes(block.from)).map((block) => Decoration.widget({ widget: new QuoteToggle(true, block.label), side: -1 }).range(block.from))),
+    toggles: Decoration.set(
+      blocks
+        .filter((block) => expanded.includes(block.from))
+        .map((block) => Decoration.widget({ widget: new QuoteToggle(true, block.label), side: -1 }).range(block.from)),
+    ),
   };
 }
 
@@ -109,7 +136,8 @@ const quoteFoldField = StateField.define<QuoteFolds>({
     // Associate forward so text inserted right before an expanded quote does not inherit its expansion.
     let expanded = folds.expanded.map((from) => tr.changes.mapPos(from, 1));
     for (const effect of tr.effects) {
-      if (effect.is(toggleReplyQuote)) expanded = expanded.includes(effect.value) ? expanded.filter((from) => from !== effect.value) : [...expanded, effect.value];
+      if (effect.is(toggleReplyQuote))
+        expanded = expanded.includes(effect.value) ? expanded.filter((from) => from !== effect.value) : [...expanded, effect.value];
     }
     if (!tr.docChanged && expanded.length === folds.expanded.length && expanded.every((from, index) => from === folds.expanded[index])) return folds;
     return quoteFolds(tr.state.doc, expanded, tr.changes);
@@ -126,7 +154,10 @@ function expandQuoteAtCursor(view: EditorView): boolean {
   const { main } = view.state.selection;
   if (!main.empty) return false;
   let from: number | undefined;
-  view.state.field(quoteFoldField).collapsed.between(main.head, main.head, (start) => { from = start; return false; });
+  view.state.field(quoteFoldField).collapsed.between(main.head, main.head, (start) => {
+    from = start;
+    return false;
+  });
   if (from === undefined) return false;
   view.dispatch({ effects: toggleReplyQuote.of(from) });
   return true;
@@ -140,7 +171,10 @@ const typeBesideCollapsedQuotes = EditorState.transactionFilter.of((tr) => {
   if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.type.compose")) return tr;
   const starts = new Set<number>();
   const ends = new Set<number>();
-  tr.startState.field(quoteFoldField).collapsed.between(0, tr.startState.doc.length, (from, to) => { starts.add(from); ends.add(to); });
+  tr.startState.field(quoteFoldField).collapsed.between(0, tr.startState.doc.length, (from, to) => {
+    starts.add(from);
+    ends.add(to);
+  });
   const breaks: ChangeSpec[] = [];
   tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
     if (fromA !== toA || inserted.length === 0) return;
@@ -181,4 +215,9 @@ export function editOutsideReplyQuotes(text: string, edit: (outside: string) => 
 }
 
 /** Reply quotes render collapsed by default; their text in the document is unchanged either way. */
-export const replyQuoteFolding = [quoteFoldField, typeBesideCollapsedQuotes, composeBesideCollapsedQuotes, Prec.highest(keymap.of([{ key: "Enter", run: expandQuoteAtCursor }]))];
+export const replyQuoteFolding = [
+  quoteFoldField,
+  typeBesideCollapsedQuotes,
+  composeBesideCollapsedQuotes,
+  Prec.highest(keymap.of([{ key: "Enter", run: expandQuoteAtCursor }])),
+];

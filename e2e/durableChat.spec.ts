@@ -22,12 +22,19 @@ async function send(page: Page, text: string, button = "Send message"): Promise<
 
 /** The Chat's rendered text through its shadow roots, without clock times. */
 function transcriptText(page: Page): Promise<string> {
-  return chat(page).first().evaluate((root) => {
-    const walk = (node: Node): string => node.nodeType === Node.TEXT_NODE
-      ? node.textContent ?? ""
-      : [...(node instanceof Element && node.shadowRoot !== null ? node.shadowRoot.childNodes : []), ...node.childNodes].map(walk).join(" ");
-    return walk(root).replace(/\s+/g, " ").replace(/\d+:\d+ [AP]M|[A-Z][a-z]{2} \d+, \d+ at [^·]*/g, "").replace(/Showing messages \S+ – \S+ of \S+ /, "").trim();
-  });
+  return chat(page)
+    .first()
+    .evaluate((root) => {
+      const walk = (node: Node): string =>
+        node.nodeType === Node.TEXT_NODE
+          ? (node.textContent ?? "")
+          : [...(node instanceof Element && node.shadowRoot !== null ? node.shadowRoot.childNodes : []), ...node.childNodes].map(walk).join(" ");
+      return walk(root)
+        .replace(/\s+/g, " ")
+        .replace(/\d+:\d+ [AP]M|[A-Z][a-z]{2} \d+, \d+ at [^·]*/g, "")
+        .replace(/Showing messages \S+ – \S+ of \S+ /, "")
+        .trim();
+    });
 }
 
 test("a Durable Chat streams, runs tools, queues, stops and reloads to the same state", async ({ page }) => {
@@ -42,9 +49,17 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
 
   // Streaming: a partial answer shows while the run is still going.
   await send(page, "gen");
-  await expect(chat(page).getByText(/word3 /).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/word3 /)
+      .first(),
+  ).toBeVisible();
   const partial = await transcriptText(page);
-  await expect(chat(page).getByText(/word119/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/word119/)
+      .first(),
+  ).toBeVisible();
   expect(partial).not.toContain("word119");
 
   // A core tool in the Chat's workspace.
@@ -76,7 +91,17 @@ test("a Durable Chat streams, runs tools, queues, stops and reloads to the same 
 
 const ASK = {
   context: "Two deploy targets match the request.",
-  questions: [{ id: "target", question: "Which target?", detail: "Production serves users; staging is the rehearsal environment. Neither has been deployed yet.", options: [{ value: "prod", label: "Production", recommended: true }, { value: "staging", label: "Staging" }] }],
+  questions: [
+    {
+      id: "target",
+      question: "Which target?",
+      detail: "Production serves users; staging is the rehearsal environment. Neither has been deployed yet.",
+      options: [
+        { value: "prod", label: "Production", recommended: true },
+        { value: "staging", label: "Staging" },
+      ],
+    },
+  ],
 };
 
 test("a Durable Chat keeps Working Mode, answers a question, switches models and reattaches a bash call a host restart interrupted", async ({ page }) => {
@@ -114,7 +139,11 @@ test("a Durable Chat keeps Working Mode, answers a question, switches models and
   await drawer.locator('input[value="staging"]').check();
   await drawer.getByRole("button", { name: "Send answers" }).click();
   await expect(questions).toHaveCount(0);
-  await expect(chat(page).getByText(/ok: The user submitted answers to question set/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/ok: The user submitted answers to question set/)
+      .first(),
+  ).toBeVisible();
 
   // Model switching: a Claude subscription model is stored for the Chat (no request is sent), then back to the scripted one.
   const modelTrigger = page.getByRole("button", { name: /^Model: / });
@@ -169,25 +198,43 @@ test("P051: an unsafe write a host crash interrupted blocks write until the owne
   // Barrier: the call is running (its intent is committed), so the crash interrupts it mid-effect.
   await expect(chat(page).locator("tool-execution-view .tool-card.running")).toHaveCount(1);
   // The host crashes (SIGKILL; found by this Chat's unique session ID): the write's result is never committed.
-  const host = () => { try { return execFileSync("pgrep", ["-f", `chat-host-main\\.ts .*--session-id ${sessionId}`]).toString().trim(); } catch { return ""; } };
+  const host = () => {
+    try {
+      return execFileSync("pgrep", ["-f", `chat-host-main\\.ts .*--session-id ${sessionId}`])
+        .toString()
+        .trim();
+    } catch {
+      return "";
+    }
+  };
   const pid = Number(host().split("\n")[0]);
   expect(pid).toBeGreaterThan(0);
   process.kill(pid, "SIGKILL");
   await expect.poll(host).toBe("");
   // The daemon reopens the store on the next request (paused, with the interrupted call held for the owner).
-  await expect.poll(async () => (await page.request.get(`${base}api/sessions/${encodeURIComponent(sessionId)}/status?${new URLSearchParams({ cwd: project }).toString()}`)).ok()).toBe(true);
+  await expect
+    .poll(async () =>
+      (await page.request.get(`${base}api/sessions/${encodeURIComponent(sessionId)}/status?${new URLSearchParams({ cwd: project }).toString()}`)).ok(),
+    )
+    .toBe(true);
   await page.reload();
   const card = chat(page).locator(".unresolved-effects");
   await expect(card).toContainText("Needs reconciliation");
   await expect(card).toContainText(basename(fifo));
   await card.getByRole("button", { name: "Retry" }).click();
   await expect(card).toHaveCount(0);
-  await expect(chat(page).getByText(/The user resolved the interrupted write call/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/The user resolved the interrupted write call/)
+      .first(),
+  ).toBeVisible();
   await page.reload();
   await expect(chat(page).locator(".unresolved-effects")).toHaveCount(0);
 });
 
-test("a Durable Chat shows the controls its host names, hides unsupported ones, takes /name, marks unread and needs-you on its tab, and refuses archiving", async ({ page }) => {
+test("a Durable Chat shows the controls its host names, hides unsupported ones, takes /name, marks unread and needs-you on its tab, and refuses archiving", async ({
+  page,
+}) => {
   const base = process.env["PI_WEB_E2E_BASE_URL"];
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const project = process.env["PI_WEB_E2E_PROJECT_DIR"];
@@ -209,7 +256,14 @@ test("a Durable Chat shows the controls its host names, hides unsupported ones, 
 
   // /name names the Chat in the catalog.
   await send(page, "/name Release prep");
-  await expect.poll(async () => (await (await page.request.get(`${base}api/sessions?${new URLSearchParams({ cwd: project }).toString()}`)).json() as { id: string; name?: string }[]).find((s) => s.id === first)?.name).toBe("Durable · Release prep");
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (await page.request.get(`${base}api/sessions?${new URLSearchParams({ cwd: project }).toString()}`)).json()) as { id: string; name?: string }[]
+        ).find((s) => s.id === first)?.name,
+    )
+    .toBe("Durable · Release prep");
 
   // A turn that ends and an attention request while another Chat is open: unread, then needs you, on the first Chat's tab.
   await send(page, "gen");
@@ -218,20 +272,42 @@ test("a Durable Chat shows the controls its host names, hides unsupported ones, 
   await expect(page).not.toHaveURL(new RegExp(`session=${first}`));
   // The window is a Grid now: each tile's header dot carries the Chat's status.
   const tab = page.locator(`section.tile[data-session="${first}"] .dot`).first();
-  await expect.poll(async () => (await (await page.request.get(`${base}api/sessions/unread`)).json() as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId)).toContain(first);
+  await expect
+    .poll(async () =>
+      ((await (await page.request.get(`${base}api/sessions/unread`)).json()) as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId),
+    )
+    .toContain(first);
   await expect(tab).toHaveAttribute("data-status", "done");
-  const prompt = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/prompt`, { data: { cwd: project, text: 'call:request_attention {"reason":"Please review the diff"}' } });
+  const prompt = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/prompt`, {
+    data: { cwd: project, text: 'call:request_attention {"reason":"Please review the diff"}' },
+  });
   expect(prompt.ok()).toBe(true);
   await expect(tab).toHaveAttribute("data-status", "needs");
   await page.locator(`section.tile[data-session="${first}"]`).click();
-  await expect.poll(async () => (await (await page.request.get(`${base}api/sessions/${encodeURIComponent(first)}/asks?${new URLSearchParams({ cwd: project }).toString()}`)).json() as { attentionRequest?: unknown }).attentionRequest).toBeUndefined();
+  await expect
+    .poll(
+      async () =>
+        (
+          (await (
+            await page.request.get(`${base}api/sessions/${encodeURIComponent(first)}/asks?${new URLSearchParams({ cwd: project }).toString()}`)
+          ).json()) as { attentionRequest?: unknown }
+        ).attentionRequest,
+    )
+    .toBeUndefined();
   await expect(tab).toHaveAttribute("data-status", "idle");
   // The daemon's unread catalog (PI WEB's list view and the app badge) clears by the exact completion it was shown.
-  const catalog = await (await page.request.get(`${base}api/sessions/unread`)).json() as { catalogId: string; sessions: { sessionId: string; completionOrder: number }[] };
+  const catalog = (await (await page.request.get(`${base}api/sessions/unread`)).json()) as {
+    catalogId: string;
+    sessions: { sessionId: string; completionOrder: number }[];
+  };
   const order = catalog.sessions.find((s) => s.sessionId === first)?.completionOrder ?? 0;
-  const stale = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/unread/acknowledge`, { data: { cwd: project, catalogId: catalog.catalogId, throughCompletionOrder: order - 1 } });
+  const stale = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/unread/acknowledge`, {
+    data: { cwd: project, catalogId: catalog.catalogId, throughCompletionOrder: order - 1 },
+  });
   expect(((await stale.json()) as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId)).toContain(first);
-  const acknowledged = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/unread/acknowledge`, { data: { cwd: project, catalogId: catalog.catalogId, throughCompletionOrder: order } });
+  const acknowledged = await page.request.post(`${base}api/sessions/${encodeURIComponent(first)}/unread/acknowledge`, {
+    data: { cwd: project, catalogId: catalog.catalogId, throughCompletionOrder: order },
+  });
   expect(((await acknowledged.json()) as { sessions: { sessionId: string }[] }).sessions.map((s) => s.sessionId)).not.toContain(first);
 
   // Archiving is not ported (unused): its controls are hidden and the route refuses visibly.
@@ -261,7 +337,11 @@ test("a Durable Chat compacts on /compact and continues after compact_and_contin
 
   // compact_and_continue: the run ends, a second summary is placed, and the next phase starts by itself.
   await send(page, `call:compact_and_continue ${JSON.stringify({ summaryFocus: "Keep the names", nextPhase: "write the docs" })}`);
-  await expect(chat(page).getByText(/ok: Context checkpoint completed/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/ok: Context checkpoint completed/)
+      .first(),
+  ).toBeVisible();
   const checkVisible = async (): Promise<void> => {
     // The continuation is a quiet notice: its first line shows, the next phase sits in its folded body.
     const continuation = chat(page).locator("details.notice").filter({ hasText: "Context checkpoint completed." });
@@ -293,15 +373,34 @@ test("a Durable Chat runs an installed package's tool, shows its pings and its c
   // The monitor tools are a tool group, hidden until enabled, as in legacy Chats.
   await send(page, 'call:tools_enable {"group":"monitor"}');
   await expect(chat(page).getByText("done after tools_enable").first()).toBeVisible();
-  await send(page, `call:monitor ${JSON.stringify({ source: { type: "tail", path: log }, options: { notifyOn: ["DONE"], coalesceSeconds: 0, label: "e2e-job" } })}`);
+  await send(
+    page,
+    `call:monitor ${JSON.stringify({ source: { type: "tail", path: log }, options: { notifyOn: ["DONE"], coalesceSeconds: 0, label: "e2e-job" } })}`,
+  );
   await expect(chat(page).getByText("done after monitor").first()).toBeVisible();
   await appendFile(log, "build DONE\n");
-  await expect(chat(page).getByText(/\[watcher \S+ · e2e-job\] build DONE/).first()).toBeVisible();
-  await expect(chat(page).getByText(/ok: \[watcher/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/\[watcher \S+ · e2e-job\] build DONE/)
+      .first(),
+  ).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/ok: \[watcher/)
+      .first(),
+  ).toBeVisible();
   await send(page, "/monitors");
-  await expect(chat(page).getByText(/\[file\] state=claimed/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/\[file\] state=claimed/)
+      .first(),
+  ).toBeVisible();
   await page.reload();
-  await expect(chat(page).getByText(/\[watcher \S+ · e2e-job\] build DONE/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/\[watcher \S+ · e2e-job\] build DONE/)
+      .first(),
+  ).toBeVisible();
 });
 
 test("a Durable Chat offers the stored ChatGPT and Copilot models, keeps the choice across a reload, and runs /fast", async ({ page }) => {

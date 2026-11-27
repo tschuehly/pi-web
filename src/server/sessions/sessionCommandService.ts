@@ -170,7 +170,8 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
 
   private compact(session: TSession, instructions: string): ClientCommandResult {
     this.lifecycle.onCompactionStart?.(session);
-    void session.compact(instructions === "" ? undefined : instructions)
+    void session
+      .compact(instructions === "" ? undefined : instructions)
       .then(() => {
         this.lifecycle.onCompactionEnd?.(session, "success");
       })
@@ -183,7 +184,8 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
   }
 
   private async reload(session: TSession): Promise<ClientCommandResult> {
-    if (this.hasActiveWork(session)) return { type: "unsupported", message: "Cannot reload while the session is active. Stop current activity before reloading." };
+    if (this.hasActiveWork(session))
+      return { type: "unsupported", message: "Cannot reload while the session is active. Stop current activity before reloading." };
     if (this.lifecycle.reloadSession === undefined) return { type: "unsupported", message: "/reload is not available for this session runtime." };
 
     try {
@@ -192,7 +194,11 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
       const message = error instanceof Error ? error.message : String(error);
       return { type: "unsupported", message: `Reload failed: ${message}` };
     }
-    return { type: "done", message: "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes." };
+    return {
+      type: "done",
+      message:
+        "Session runtime resources reloaded. Extensions, skills, prompt templates, themes, and context/system prompt files are refreshed for this session. Reload the browser page separately for PI WEB browser plugin changes.",
+    };
   }
 
   private async clone(active: CommandActiveSession<TSession>): Promise<ClientCommandResult> {
@@ -264,7 +270,7 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
     const sourceName = normalizedName(active.runtime.session.sessionName);
     let existingNames: readonly string[];
     try {
-      existingNames = await this.naming.listSessionNames?.(active.runtime.cwd) ?? [];
+      existingNames = (await this.naming.listSessionNames?.(active.runtime.cwd)) ?? [];
     } catch {
       existingNames = [];
     }
@@ -282,17 +288,20 @@ export class SessionCommandService<TSession extends CommandSession = CommandSess
   }
 
   private publishSessionName(session: TSession): void {
-    const event = session.sessionName === undefined
-      ? { type: "session.name", sessionId: session.sessionId } as const
-      : { type: "session.name", sessionId: session.sessionId, name: session.sessionName } as const;
+    const event =
+      session.sessionName === undefined
+        ? ({ type: "session.name", sessionId: session.sessionId } as const)
+        : ({ type: "session.name", sessionId: session.sessionId, name: session.sessionName } as const);
     this.events.publish(session.sessionId, event);
     this.events.publishGlobal?.(event);
   }
 
   private isRuntimeCommand(session: TSession, name: string): boolean {
-    return session.extensionRunner.getRegisteredCommands().some((command) => command.invocationName === name)
+    return (
+      session.extensionRunner.getRegisteredCommands().some((command) => command.invocationName === name)
       || session.promptTemplates.some((template) => template.name === name)
-      || session.resourceLoader.getSkills().skills.some((skill) => `skill:${skill.name}` === name);
+      || session.resourceLoader.getSkills().skills.some((skill) => `skill:${skill.name}` === name)
+    );
   }
 }
 
@@ -341,10 +350,12 @@ function extractUserMessageText(message: unknown): string | undefined {
   const content = message["content"];
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return undefined;
-  return content.map((part) => {
-    if (!isRecord(part) || part["type"] !== "text") return "";
-    return typeof part["text"] === "string" ? part["text"] : "";
-  }).join("");
+  return content
+    .map((part) => {
+      if (!isRecord(part) || part["type"] !== "text") return "";
+      return typeof part["text"] === "string" ? part["text"] : "";
+    })
+    .join("");
 }
 
 function normalizedName(name: string | undefined): string | undefined {
@@ -365,7 +376,10 @@ function sessionHasActiveWork(session: CommandSession): boolean {
 }
 
 function forkActiveUnsupported(command: "fork" | "clone"): ClientCommandResult {
-  return { type: "unsupported", message: `Cannot ${command} while the session is active. Stop current activity before ${command === "fork" ? "forking" : "cloning"}.` };
+  return {
+    type: "unsupported",
+    message: `Cannot ${command} while the session is active. Stop current activity before ${command === "fork" ? "forking" : "cloning"}.`,
+  };
 }
 
 function treeUnavailableUnsupported(): ClientCommandResult {

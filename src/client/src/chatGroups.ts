@@ -10,13 +10,21 @@ export type ChatGroupPresentation = "activity" | "thinking" | "history" | "notic
 
 /** A text-only system line such as an extension notice (Disk low, Atelier events, cache misses); errors and history summaries stay full messages. */
 export function isQuietNotice(message: ChatLine): boolean {
-  return message.role === "system" && message.severity !== "error" && message.source === undefined
-    && message.parts.length > 0 && message.parts.every((part) => part.type === "text");
+  return (
+    message.role === "system"
+    && message.severity !== "error"
+    && message.source === undefined
+    && message.parts.length > 0
+    && message.parts.every((part) => part.type === "text")
+  );
 }
 
 /** A notice's first line, shown on its own quiet line, and the rest, shown when expanded. */
 export function splitNoticeText(message: ChatLine): { first: string; rest: string } {
-  const text = message.parts.map((part) => part.type === "text" ? part.displayText ?? part.text : "").join("\n").trim();
+  const text = message.parts
+    .map((part) => (part.type === "text" ? (part.displayText ?? part.text) : ""))
+    .join("\n")
+    .trim();
   const newline = text.indexOf("\n");
   return newline < 0 ? { first: text, rest: "" } : { first: text.slice(0, newline).trim(), rest: text.slice(newline + 1).trim() };
 }
@@ -28,8 +36,7 @@ export type ChatGroup =
   | { kind: "group"; messages: { message: ChatLine; index: number }[]; startIndex: number; endIndex: number; presentation?: ChatGroupPresentation };
 
 export type ChatToolImageOutput = Extract<ChatGroup, { kind: "tool-image" }>;
-export type ChatDisplayGroup = Exclude<ChatGroup, ChatToolImageOutput>
-  | { kind: "tool-images"; outputs: [ChatToolImageOutput, ...ChatToolImageOutput[]] };
+export type ChatDisplayGroup = Exclude<ChatGroup, ChatToolImageOutput> | { kind: "tool-images"; outputs: [ChatToolImageOutput, ...ChatToolImageOutput[]] };
 
 export interface CurrentExchangeGroups<T extends ChatGroup | ChatDisplayGroup> {
   history: T[];
@@ -39,7 +46,12 @@ export interface CurrentExchangeGroups<T extends ChatGroup | ChatDisplayGroup> {
 }
 
 /** Split the transcript at the latest user message, so earlier conversation can fold away. */
-export function currentExchangeGroups<T extends ChatGroup | ChatDisplayGroup>(messages: readonly ChatLine[], groups: T[], messageStart: number, hasMore: boolean): CurrentExchangeGroups<T> {
+export function currentExchangeGroups<T extends ChatGroup | ChatDisplayGroup>(
+  messages: readonly ChatLine[],
+  groups: T[],
+  messageStart: number,
+  hasMore: boolean,
+): CurrentExchangeGroups<T> {
   let localStart = -1;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -65,7 +77,10 @@ function chatDisplayGroupEndIndex(group: ChatGroup | ChatDisplayGroup): number {
 export function groupConsecutiveImageOutputs(groups: readonly ChatGroup[]): ChatDisplayGroup[] {
   const result: ChatDisplayGroup[] = [];
   for (const group of groups) {
-    if (group.kind !== "tool-image") { result.push(group); continue; }
+    if (group.kind !== "tool-image") {
+      result.push(group);
+      continue;
+    }
     const previous = result.at(-1);
     if (previous?.kind === "tool-images") previous.outputs.push(group);
     else result.push({ kind: "tool-images", outputs: [group] });
@@ -79,7 +94,11 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
   const pushGroup = (message: ChatLine, index: number, presentation?: ChatGroupPresentation) => {
     const previous = groups.at(-1);
     // Fold routine activity as it arrives: a later thinking/skill line must not reparent its live DOM node.
-    if (previous?.kind === "group" && previous.presentation === "thinking" && (presentation === "activity" || message.parts.every((part) => part.type === "skillRead"))) {
+    if (
+      previous?.kind === "group"
+      && previous.presentation === "thinking"
+      && (presentation === "activity" || message.parts.every((part) => part.type === "skillRead"))
+    ) {
       previous.messages.push({ message, index });
       previous.endIndex = index;
       return;
@@ -99,13 +118,28 @@ export function groupChatMessages(messages: ChatLine[], indexOffset = 0): ChatGr
       previous.messages.push({ message, index });
       previous.endIndex = index;
     } else if (previous?.kind === "message" && isQuietNotice(previous.message)) {
-      groups[groups.length - 1] = { kind: "group", presentation: "notices", messages: [{ message: previous.message, index: previous.index }, { message, index }], startIndex: previous.index, endIndex: index };
+      groups[groups.length - 1] = {
+        kind: "group",
+        presentation: "notices",
+        messages: [
+          { message: previous.message, index: previous.index },
+          { message, index },
+        ],
+        startIndex: previous.index,
+        endIndex: index,
+      };
     } else groups.push({ kind: "message", message, index });
   };
 
   messages.forEach((message, localIndex) => {
     const index = indexOffset + localIndex;
-    const metadata = { ...(message.streamId === undefined ? {} : { streamId: message.streamId }), ...(message.entryId === undefined ? {} : { entryId: message.entryId }), ...(message.source === undefined ? {} : { source: message.source }), ...(message.severity === undefined ? {} : { severity: message.severity }), ...(message.meta === undefined ? {} : { meta: message.meta }) };
+    const metadata = {
+      ...(message.streamId === undefined ? {} : { streamId: message.streamId }),
+      ...(message.entryId === undefined ? {} : { entryId: message.entryId }),
+      ...(message.source === undefined ? {} : { source: message.source }),
+      ...(message.severity === undefined ? {} : { severity: message.severity }),
+      ...(message.meta === undefined ? {} : { meta: message.meta }),
+    };
     let run: ChatPart[] = [];
     let runKind: ChatGroupPresentation | "event" | "readable" | undefined;
 
@@ -151,10 +185,11 @@ const headerlessPartTypes: ReadonlySet<ChatPart["type"]> = new Set(["askUserReco
 
 /** Whether this slice renders a message header rather than a headerless shell. */
 export function chatMessageHasHeader(message: ChatLine): boolean {
-  return !(message.parts.length > 0 && (
-    (message.role === "tool" && message.parts.every((part) => part.type === "toolExecution"))
-    || message.parts.every((part) => headerlessPartTypes.has(part.type))
-  ));
+  return !(
+    message.parts.length > 0
+    && ((message.role === "tool" && message.parts.every((part) => part.type === "toolExecution"))
+      || message.parts.every((part) => headerlessPartTypes.has(part.type)))
+  );
 }
 
 /** Select rendered slice identities, independent of disclosure and plugin policy. */
@@ -167,7 +202,7 @@ export function canonicalEntryActionHeaders(groups: readonly ChatGroup[]): Reado
       // outrank skill-only slices, so thinking retains history when no reply exists.
       const conversation = message.role === "user" || message.role === "assistant";
       const reply = group.kind !== "group" && message.parts.some((part) => part.type === "text" || part.type === "image");
-      const priority = conversation ? (reply ? 3 : 2) : (group.kind !== "group" ? 1 : 0);
+      const priority = conversation ? (reply ? 3 : 2) : group.kind !== "group" ? 1 : 0;
       const previous = entries.get(message.entryId);
       if (previous === undefined || priority > previous.priority) entries.set(message.entryId, { message, priority });
     }
@@ -176,14 +211,19 @@ export function canonicalEntryActionHeaders(groups: readonly ChatGroup[]): Reado
 }
 
 export function summarizeChatGroup(messages: ChatLine[]): string {
-  if (messages.every((message) => message.source === "compaction")) return `${String(messages.length)} history compaction ${messages.length === 1 ? "summary" : "summaries"}`;
-  if (messages.every((message) => message.source === "branch_summary")) return `${String(messages.length)} branch ${messages.length === 1 ? "summary" : "summaries"}`;
-  if (messages.every((message) => message.source === "compaction" || message.source === "branch_summary")) return `${String(messages.length)} history summaries`;
+  if (messages.every((message) => message.source === "compaction"))
+    return `${String(messages.length)} history compaction ${messages.length === 1 ? "summary" : "summaries"}`;
+  if (messages.every((message) => message.source === "branch_summary"))
+    return `${String(messages.length)} branch ${messages.length === 1 ? "summary" : "summaries"}`;
+  if (messages.every((message) => message.source === "compaction" || message.source === "branch_summary"))
+    return `${String(messages.length)} history summaries`;
   const counts = messages.reduce<Record<string, number>>((acc, message) => {
     acc[message.role] = (acc[message.role] ?? 0) + 1;
     return acc;
   }, {});
-  const details = Object.entries(counts).map(([role, count]) => `${String(count)} ${role}`).join(" · ");
+  const details = Object.entries(counts)
+    .map(([role, count]) => `${String(count)} ${role}`)
+    .join(" · ");
   return `${String(messages.length)} ${messages.length === 1 ? "event" : "events"}${details !== "" ? ` · ${details}` : ""}`;
 }
 
@@ -202,10 +242,36 @@ function chatPartKind(message: ChatLine, part: ChatPart): ChatGroupPresentation 
   if (message.source === "compaction" || message.source === "branch_summary") return "history";
   if (part.type === "thinking") return "thinking";
   if (part.type === "toolCall" && message.severity !== "error") return "activity";
-  if (part.type === "toolExecution" && part.status !== "error" && part.preview?.error === undefined && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, part.preview?.diff)) return "activity";
-  if (part.type === "toolResult" && !part.isError && previewFromDetails(part.details)?.error === undefined && message.severity !== "error" && !isMaterialWrite(part.toolName) && !hasMaterialFileDiff(part.details, previewFromDetails(part.details)?.diff)) return "activity";
-  if (part.type === "skillInvocation" || part.type === "skillRead" || part.type === "image" || part.type === "askUserRecord" || part.type === "goalLifecycle" || part.type === "subagentCompletion" || part.type === "backgroundBash") return "readable";
-  if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash")) return "readable";
+  if (
+    part.type === "toolExecution"
+    && part.status !== "error"
+    && part.preview?.error === undefined
+    && message.severity !== "error"
+    && !isMaterialWrite(part.toolName)
+    && !hasMaterialFileDiff(part.details, part.preview?.diff)
+  )
+    return "activity";
+  if (
+    part.type === "toolResult"
+    && !part.isError
+    && previewFromDetails(part.details)?.error === undefined
+    && message.severity !== "error"
+    && !isMaterialWrite(part.toolName)
+    && !hasMaterialFileDiff(part.details, previewFromDetails(part.details)?.diff)
+  )
+    return "activity";
+  if (
+    part.type === "skillInvocation"
+    || part.type === "skillRead"
+    || part.type === "image"
+    || part.type === "askUserRecord"
+    || part.type === "goalLifecycle"
+    || part.type === "subagentCompletion"
+    || part.type === "backgroundBash"
+  )
+    return "readable";
+  if (part.type === "text" && (message.role === "user" || message.role === "assistant" || message.role === "system" || message.role === "bash"))
+    return "readable";
   return "event";
 }
 

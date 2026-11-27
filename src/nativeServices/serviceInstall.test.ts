@@ -1,14 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  installNativeServiceCandidate,
-  nativeServiceInstallFailureNeedsPathAdvice,
-} from "./serviceInstall.js";
-import type {
-  NativeServiceAuthoritativeProbe,
-  NativeServicePlan,
-  NativeServiceProbeRequest,
-  ProductionNativeServicePlanInput,
-} from "./servicePlan.js";
+import { installNativeServiceCandidate, nativeServiceInstallFailureNeedsPathAdvice } from "./serviceInstall.js";
+import type { NativeServiceAuthoritativeProbe, NativeServicePlan, NativeServiceProbeRequest, ProductionNativeServicePlanInput } from "./servicePlan.js";
 
 const productionInput: ProductionNativeServicePlanInput = {
   backend: { kind: "systemd", label: "systemd user services" },
@@ -52,7 +44,10 @@ function successfulProbe(events: string[]): NativeServiceAuthoritativeProbe {
 describe("native service install orchestration", () => {
   it("resolves and validates the complete plan before writing config or replacing services", async () => {
     const events: string[] = [];
-    const writeInitialConfig = vi.fn(() => { events.push("write-config"); return Promise.resolve(); });
+    const writeInitialConfig = vi.fn(() => {
+      events.push("write-config");
+      return Promise.resolve();
+    });
     const replaceServices = vi.fn((plan: NativeServicePlan) => {
       events.push(`replace:${plan.mode}`);
       return Promise.resolve();
@@ -69,12 +64,7 @@ describe("native service install orchestration", () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(events).toEqual([
-      "probe:executable-selection",
-      "probe:plan-validation",
-      "write-config",
-      "replace:production",
-    ]);
+    expect(events).toEqual(["probe:executable-selection", "probe:plan-validation", "write-config", "replace:production"]);
     expect(writeInitialConfig).toHaveBeenCalledOnce();
     expect(replaceServices).toHaveBeenCalledWith(expect.objectContaining({ mode: "production" }));
   });
@@ -118,14 +108,15 @@ describe("native service install orchestration", () => {
     const writeInitialConfig = vi.fn<() => Promise<void>>(() => Promise.resolve());
     const replaceServices = vi.fn<() => Promise<void>>(() => Promise.resolve());
     const probe: NativeServiceAuthoritativeProbe = {
-      run: (request: NativeServiceProbeRequest) => Promise.resolve({
-        kind: "completed",
-        outcomes: request.prerequisites.map((prerequisite) => ({
-          prerequisiteId: prerequisite.id,
-          status: request.purpose === "plan-validation" ? "unsatisfied" : "satisfied",
-          detail: "not visible in the service manager environment",
-        })),
-      }),
+      run: (request: NativeServiceProbeRequest) =>
+        Promise.resolve({
+          kind: "completed",
+          outcomes: request.prerequisites.map((prerequisite) => ({
+            prerequisiteId: prerequisite.id,
+            status: request.purpose === "plan-validation" ? "unsatisfied" : "satisfied",
+            detail: "not visible in the service manager environment",
+          })),
+        }),
     };
 
     const result = await installNativeServiceCandidate(
@@ -150,11 +141,12 @@ describe("native service install orchestration", () => {
       { mode: "production", input: productionInput },
       {
         probe: {
-          run: () => Promise.resolve({
-            kind: "infrastructure-failure",
-            reason: "timeout",
-            message: "service manager probe timed out",
-          }),
+          run: () =>
+            Promise.resolve({
+              kind: "infrastructure-failure",
+              reason: "timeout",
+              message: "service manager probe timed out",
+            }),
         },
         fileExists: () => true,
         writeInitialConfig,
@@ -166,12 +158,14 @@ describe("native service install orchestration", () => {
       ok: false,
       failure: {
         kind: "plan-resolution",
-        failures: [{
-          kind: "probe-infrastructure",
-          serviceIds: ["sessiond", "web"],
-          reason: "timeout",
-          message: "service manager probe timed out",
-        }],
+        failures: [
+          {
+            kind: "probe-infrastructure",
+            serviceIds: ["sessiond", "web"],
+            reason: "timeout",
+            message: "service manager probe timed out",
+          },
+        ],
       },
     });
     if (result.ok) throw new Error("Expected infrastructure failure");

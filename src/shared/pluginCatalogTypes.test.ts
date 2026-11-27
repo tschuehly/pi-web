@@ -4,9 +4,18 @@ import { PI_WEB_HOST_CATALOG_CAPABILITY } from "./pluginCatalogTypes.js";
 function provider() {
   return {
     version: 1,
-    projects: { list: () => Promise.resolve([{ id: "p", name: "Project", path: "/repo", private: "secret" }]), get: () => Promise.resolve({ id: "p", name: "Project", path: "/repo" }) },
-    workspaces: { list: () => Promise.resolve([]), get: () => Promise.resolve({ id: "w", projectId: "p", path: "/repo", label: "Main", isMain: true, data: { secret: true } }) },
-    sessions: { list: () => Promise.resolve([]), get: () => Promise.resolve({ id: "s", cwd: "/repo", archived: false, runtime: "idle", transcript: "secret", path: "/private/session.jsonl" }) },
+    projects: {
+      list: () => Promise.resolve([{ id: "p", name: "Project", path: "/repo", private: "secret" }]),
+      get: () => Promise.resolve({ id: "p", name: "Project", path: "/repo" }),
+    },
+    workspaces: {
+      list: () => Promise.resolve([]),
+      get: () => Promise.resolve({ id: "w", projectId: "p", path: "/repo", label: "Main", isMain: true, data: { secret: true } }),
+    },
+    sessions: {
+      list: () => Promise.resolve([]),
+      get: () => Promise.resolve({ id: "s", cwd: "/repo", archived: false, runtime: "idle", transcript: "secret", path: "/private/session.jsonl" }),
+    },
   };
 }
 
@@ -17,7 +26,12 @@ describe("catalog public contract", () => {
     source.projects.list = () => Promise.resolve([]);
     expect(await catalog.projects.list()).toEqual([{ id: "p", name: "Project", path: "/repo" }]);
     expect(await catalog.workspaces.get({ projectId: "p", workspaceId: "w" })).toEqual({ id: "w", projectId: "p", path: "/repo", label: "Main", isMain: true });
-    expect(await catalog.sessions.get({ projectId: "p", workspaceId: "w", sessionId: "s" })).toEqual({ id: "s", cwd: "/repo", archived: false, runtime: "idle" });
+    expect(await catalog.sessions.get({ projectId: "p", workspaceId: "w", sessionId: "s" })).toEqual({
+      id: "s",
+      cwd: "/repo",
+      archived: false,
+      runtime: "idle",
+    });
     expect(Object.isFrozen(catalog.projects)).toBe(true);
   });
 

@@ -22,7 +22,9 @@ export function createServerPluginPiSessionEventsCapabilityFactory(options: {
     create(context: ServerPluginHostCapabilityContext) {
       const authority = workspaceFactory.create(context).value;
       const lifetime = new AbortController();
-      const revoke = (): void => { lifetime.abort(new Error("PI session events plugin lifetime ended")); };
+      const revoke = (): void => {
+        lifetime.abort(new Error("PI session events plugin lifetime ended"));
+      };
       if (context.lifetimeSignal.aborted) revoke();
       else context.lifetimeSignal.addEventListener("abort", revoke, { once: true });
       return Object.freeze({

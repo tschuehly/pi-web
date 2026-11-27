@@ -26,7 +26,7 @@ describe("orphan child row indicator", () => {
     const parent = session("parent");
     const list = await renderList({ sessions: [parent, session("nested", { parentSessionPath: parent.path }), orphan()] });
 
-    const markers = [...list.shadowRoot?.querySelectorAll(".tree-marker") ?? []];
+    const markers = [...(list.shadowRoot?.querySelectorAll(".tree-marker") ?? [])];
     expect(markers.map((marker) => marker.textContent)).toEqual(["↳", "↳"]);
     expect(markers.filter((marker) => marker.classList.contains("orphan-marker"))).toHaveLength(1);
   });
@@ -44,8 +44,7 @@ describe("orphan child row indicator", () => {
     const list = await renderList({ sessions: [orphan()] });
 
     await openMenu(list);
-    const labels = [...list.shadowRoot?.querySelectorAll(".action-menu-panel button") ?? []]
-      .map((button) => button.textContent.trim());
+    const labels = [...(list.shadowRoot?.querySelectorAll(".action-menu-panel button") ?? [])].map((button) => button.textContent.trim());
     expect(labels).not.toContain("Go to parent session");
   });
 
@@ -62,7 +61,7 @@ describe("orphan child row indicator", () => {
     const child = session("child", { parentSessionPath: parent.path });
     const list = await renderList({ sessions: [parent, child] });
 
-    const childRow = [...list.shadowRoot?.querySelectorAll(".action-row") ?? []][1];
+    const childRow = [...(list.shadowRoot?.querySelectorAll(".action-row") ?? [])][1];
     expect(childRow?.querySelector(".tree-marker")?.textContent).toBe("↳");
     expect(childRow?.querySelector(".orphan-marker")).toBeNull();
   });
@@ -83,7 +82,7 @@ async function renderList(options: { sessions: SessionInfo[] }): Promise<Session
 }
 
 function row(list: SessionList, index = 0): Element {
-  const found = [...list.shadowRoot?.querySelectorAll(".action-row") ?? []][index];
+  const found = [...(list.shadowRoot?.querySelectorAll(".action-row") ?? [])][index];
   if (found === undefined) throw new Error(`No session row at index ${String(index)}`);
   return found;
 }

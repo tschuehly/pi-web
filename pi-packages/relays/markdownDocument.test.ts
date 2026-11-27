@@ -14,18 +14,7 @@ describe("isMarkdownDocumentPath", () => {
 
 describe("renderRelayDocumentHtml", () => {
   it("renders GFM markdown: headings, emphasis, lists, and code fences", () => {
-    const fragment = fragmentOf(renderRelayDocumentHtml([
-      "# Status",
-      "",
-      "All **good**.",
-      "",
-      "- one",
-      "- two",
-      "",
-      "```sh",
-      "echo hi",
-      "```",
-    ].join("\n")));
+    const fragment = fragmentOf(renderRelayDocumentHtml(["# Status", "", "All **good**.", "", "- one", "- two", "", "```sh", "echo hi", "```"].join("\n")));
 
     expect(fragment.querySelector("h1")?.textContent).toBe("Status");
     expect(fragment.querySelector("strong")?.textContent).toBe("good");
@@ -48,17 +37,21 @@ describe("renderRelayDocumentHtml", () => {
   });
 
   it("strips javascript: URLs from links and images while keeping safe protocols", () => {
-    const fragment = fragmentOf(renderRelayDocumentHtml([
-      "[bad](javascript:alert('xss'))",
-      "",
-      "[web](https://example.com/docs)",
-      "",
-      "[mail](mailto:ops@example.com)",
-      "",
-      "[anchor](#details)",
-      "",
-      "![pic](javascript:alert('xss'))",
-    ].join("\n")));
+    const fragment = fragmentOf(
+      renderRelayDocumentHtml(
+        [
+          "[bad](javascript:alert('xss'))",
+          "",
+          "[web](https://example.com/docs)",
+          "",
+          "[mail](mailto:ops@example.com)",
+          "",
+          "[anchor](#details)",
+          "",
+          "![pic](javascript:alert('xss'))",
+        ].join("\n"),
+      ),
+    );
 
     const links = [...fragment.querySelectorAll("a")];
     expect(links.find((link) => link.textContent === "bad")?.hasAttribute("href")).toBe(false);

@@ -1,4 +1,15 @@
-import { appendText, appendThinking, askUserRecordFromToolDetails, linkEarlierAskImages, normalizeMessage, normalizeMessages, previewFromDetails, summarizeArgs, textMessage, withMessageMeta } from "./chatMessages";
+import {
+  appendText,
+  appendThinking,
+  askUserRecordFromToolDetails,
+  linkEarlierAskImages,
+  normalizeMessage,
+  normalizeMessages,
+  previewFromDetails,
+  summarizeArgs,
+  textMessage,
+  withMessageMeta,
+} from "./chatMessages";
 import type { ChatLine, ToolExecutionPart } from "./chatTypes";
 import { appendShellChunk, finalizeShellMessage, shellStartMessage } from "./shellMessages";
 import type { SessionUiEvent } from "./sessionSocket";
@@ -51,28 +62,34 @@ export function applyTranscriptEvent(messages: ChatLine[], event: SessionUiEvent
   if (event.type === "message.append") return linkEarlierAskImages(appendNewMessage(messages, event.message));
   if (event.type === "assistant.start") return seedStreamingPartial(messages, event.message);
   if (event.type === "assistant.delta" || event.type === "assistant.thinking.delta") {
-    const append = event.type === "assistant.delta"
-      ? (lines: ChatLine[]) => appendText(lines, "assistant", event.text)
-      : (lines: ChatLine[]) => appendThinking(lines, event.text);
+    const append =
+      event.type === "assistant.delta"
+        ? (lines: ChatLine[]) => appendText(lines, "assistant", event.text)
+        : (lines: ChatLine[]) => appendThinking(lines, event.text);
     return appendAssistantStream(messages, event.streamId, append);
   }
   if (event.type === "tool.start") return appendToolExecutionStart(messages, event);
   if (event.type === "tool.update") return updateToolExecution(messages, event.toolCallId, (part) => mergeToolExecutionUpdate(part, event));
   if (event.type === "tool.end") {
-    return finalizeToolExecution(messages, {
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
-      text: event.text,
-      isError: event.isError,
-      content: event.content,
-      details: event.details,
-      presentation: toolResultPresentation({ role: "toolResult", content: event.content }),
-    }, false);
+    return finalizeToolExecution(
+      messages,
+      {
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        text: event.text,
+        isError: event.isError,
+        content: event.content,
+        details: event.details,
+        presentation: toolResultPresentation({ role: "toolResult", content: event.content }),
+      },
+      false,
+    );
   }
   if (event.type === "shell.start") return [...messages, shellStartMessage(event.command, event.excludeFromContext)];
   if (event.type === "shell.chunk") return appendShellChunk(messages, event.chunk);
   if (event.type === "shell.end") return finalizeShellMessage(messages, event);
-  if (event.type === "command.output") return [...messages, event.level === "error" ? { ...textMessage("system", event.message), severity: "error" } : textMessage("tool", event.message)];
+  if (event.type === "command.output")
+    return [...messages, event.level === "error" ? { ...textMessage("system", event.message), severity: "error" } : textMessage("tool", event.message)];
   if (event.type === "session.error") return [...messages, { ...textMessage("system", event.message), severity: "error" }];
   if (event.type === "message.end") {
     const next = event.message === undefined ? undefined : applyFinalMessage(messages, event.message);
@@ -89,8 +106,7 @@ function appendAssistantStream(messages: ChatLine[], streamId: string | undefine
   const line = index < 0 ? { role: "assistant" as const, parts: [], streamId } : messages[index];
   if (line === undefined) return messages;
   const updated = append([line]);
-  return index < 0 ? [...messages, ...updated]
-    : [...messages.slice(0, index), ...updated, ...messages.slice(index + 1)];
+  return index < 0 ? [...messages, ...updated] : [...messages.slice(0, index), ...updated, ...messages.slice(index + 1)];
 }
 
 function applyFinalMessage(messages: ChatLine[], rawMessage: unknown): ChatLine[] | undefined {
@@ -105,9 +121,7 @@ function applyFinalMessage(messages: ChatLine[], rawMessage: unknown): ChatLine[
     }
     return undefined;
   }
-  const displayEnded = ended
-    .map((line) => line.role === "assistant" ? withoutToolCalls(line) : line)
-    .filter((line) => line.parts.length > 0);
+  const displayEnded = ended.map((line) => (line.role === "assistant" ? withoutToolCalls(line) : line)).filter((line) => line.parts.length > 0);
   if (streamId !== undefined && !displayEnded.some((line) => line.role === "assistant" || line.role === "skill")) {
     messages = messages.filter((line) => line.role !== "assistant" || line.streamId !== streamId);
   }
@@ -118,7 +132,8 @@ function applyFinalMessage(messages: ChatLine[], rawMessage: unknown): ChatLine[
 function applyFinalLine(messages: ChatLine[], displayEnded: ChatLine): ChatLine[] {
   if ((displayEnded.role === "assistant" || displayEnded.role === "skill") && displayEnded.streamId !== undefined) {
     const indexes = messages.flatMap((line, index) =>
-      (line.role === "assistant" || line.role === "skill") && line.streamId === displayEnded.streamId ? [index] : []);
+      (line.role === "assistant" || line.role === "skill") && line.streamId === displayEnded.streamId ? [index] : [],
+    );
     // Skill reads have their own provisional tool-call identity. Reconcile
     // those too, without consuming an adjacent, unrelated assistant message.
     indexes.push(...findMatchingSkillReadIndexes(messages, displayEnded));
@@ -131,7 +146,11 @@ function applyFinalLine(messages: ChatLine[], displayEnded: ChatLine): ChatLine[
   if (askUserRecord !== undefined) return reconcileFinalAskUserRecord(messages, displayEnded, askUserRecord);
   const last = messages.at(-1);
   if (last?.role !== displayEnded.role) return [...messages, displayEnded];
-  if ((displayEnded.role === "assistant" && skillReads(last).length === 0) || ((displayEnded.role === "user" || messageText(displayEnded) !== "") && sameMessageText(last, displayEnded))) return [...messages.slice(0, -1), displayEnded];
+  if (
+    (displayEnded.role === "assistant" && skillReads(last).length === 0)
+    || ((displayEnded.role === "user" || messageText(displayEnded) !== "") && sameMessageText(last, displayEnded))
+  )
+    return [...messages.slice(0, -1), displayEnded];
   return [...messages, displayEnded];
 }
 
@@ -164,7 +183,10 @@ function parseSkillReadPath(path: string | undefined): { name: string; path: str
 function appendToolExecutionStart(messages: ChatLine[], event: Extract<SessionUiEvent, { type: "tool.start" }>): ChatLine[] {
   const skillRead = event.toolName === "read" ? parseSkillReadPath(getString(event.args, "path")) : undefined;
   if (skillRead !== undefined) {
-    return appendLine(messages, { role: "skill", parts: [{ type: "skillRead", ...skillRead, ...(event.toolCallId === "" ? {} : { toolCallId: event.toolCallId }) }] });
+    return appendLine(messages, {
+      role: "skill",
+      parts: [{ type: "skillRead", ...skillRead, ...(event.toolCallId === "" ? {} : { toolCallId: event.toolCallId }) }],
+    });
   }
 
   const part: ToolExecutionPart = {
@@ -194,23 +216,36 @@ function mergeToolExecutionUpdate(part: ToolExecutionPart, event: Extract<Sessio
 
 function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate, committed: boolean): ChatLine[] {
   const { toolCallId, toolName, text, isError, content, details, presentation } = result;
-  if (toolCallId !== undefined && toolCallId !== "" && toolName === "read" && !isError && presentation.images.length === 0
-    && getString(details, "diff") === undefined && previewFromDetails(details)?.diff === undefined
-    && messages.some((line) => skillReads(line).some((read) => read.toolCallId === toolCallId))) return messages;
-  const updated = updateToolExecution(messages, toolCallId, (part) => {
-    const preview = previewFromDetails(details) ?? part.preview;
-    const next: ToolExecutionPart = {
-      ...part,
-      status: isError ? "error" : "success",
-      resultText: text,
-      ...(content === undefined ? {} : { content }),
-      ...(details === undefined ? {} : { details }),
-      ...(preview === undefined ? {} : { preview }),
-    };
-    if (committed && content === undefined) delete next.content;
-    if (committed && details === undefined) delete next.details;
-    return next;
-  }, (line) => reconcileToolResultPresentation(line, presentation));
+  if (
+    toolCallId !== undefined
+    && toolCallId !== ""
+    && toolName === "read"
+    && !isError
+    && presentation.images.length === 0
+    && getString(details, "diff") === undefined
+    && previewFromDetails(details)?.diff === undefined
+    && messages.some((line) => skillReads(line).some((read) => read.toolCallId === toolCallId))
+  )
+    return messages;
+  const updated = updateToolExecution(
+    messages,
+    toolCallId,
+    (part) => {
+      const preview = previewFromDetails(details) ?? part.preview;
+      const next: ToolExecutionPart = {
+        ...part,
+        status: isError ? "error" : "success",
+        resultText: text,
+        ...(content === undefined ? {} : { content }),
+        ...(details === undefined ? {} : { details }),
+        ...(preview === undefined ? {} : { preview }),
+      };
+      if (committed && content === undefined) delete next.content;
+      if (committed && details === undefined) delete next.details;
+      return next;
+    },
+    (line) => reconcileToolResultPresentation(line, presentation),
+  );
 
   let finalized = updated;
   if (updated === messages) {
@@ -226,9 +261,17 @@ function finalizeToolExecution(messages: ChatLine[], result: ToolResultUpdate, c
       ...(details === undefined ? {} : { details }),
       ...(preview === undefined ? {} : { preview }),
     };
-    finalized = [...messages, reconcileToolResultPresentation({
-      role: "tool", parts: [part], ...(presentation.entryId === undefined ? {} : { entryId: presentation.entryId }),
-    }, presentation)];
+    finalized = [
+      ...messages,
+      reconcileToolResultPresentation(
+        {
+          role: "tool",
+          parts: [part],
+          ...(presentation.entryId === undefined ? {} : { entryId: presentation.entryId }),
+        },
+        presentation,
+      ),
+    ];
   }
   // tool.end is provisional: a message_end extension can still change the saved
   // result. Only ordinary committed messages may contribute conversation facts.
@@ -248,12 +291,8 @@ function reconcileAskUserToolRecord(messages: ChatLine[], toolName: string, deta
   return [...messages, { role: "tool", parts: [record], ...(meta === undefined ? {} : { meta }) }];
 }
 
-function lineHasAskUserRecord(
-  line: ChatLine | undefined,
-  record: Extract<ChatLine["parts"][number], { type: "askUserRecord" }>,
-): boolean {
-  return line?.parts.some((part) => part.type === "askUserRecord"
-    && JSON.stringify(part.outcome) === JSON.stringify(record.outcome)) === true;
+function lineHasAskUserRecord(line: ChatLine | undefined, record: Extract<ChatLine["parts"][number], { type: "askUserRecord" }>): boolean {
+  return line?.parts.some((part) => part.type === "askUserRecord" && JSON.stringify(part.outcome) === JSON.stringify(record.outcome)) === true;
 }
 
 function updateToolExecution(
@@ -307,7 +346,11 @@ function toolResultFromRawMessage(message: unknown): ToolResultUpdate | undefine
 
 function stringifyToolContent(content: unknown): string {
   if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map(stringifyToolContent).filter((text) => text !== "").join("\n");
+  if (Array.isArray(content))
+    return content
+      .map(stringifyToolContent)
+      .filter((text) => text !== "")
+      .join("\n");
   if (typeof content === "object" && content !== null) {
     const text = getString(content, "text") ?? getString(content, "content") ?? getString(content, "output");
     if (text !== undefined) return text;

@@ -14,7 +14,9 @@ import { mockModels } from "./mockModels/client";
 test.skip(process.env["PI_WEB_E2E_SESSIOND_ENV"] === undefined, "needs PI_WEB_E2E_DURABLE_HOST and PI_WEB_E2E_DURABLE_LAUNCHD=1");
 test.skip(process.env["PI_WEB_E2E_MOCK_URL"] === undefined, "the mock model server is off (PI_WEB_E2E_MOCK_MODELS=0)");
 const mock = mockModels();
-test.beforeEach(async () => { await mock.reset(); });
+test.beforeEach(async () => {
+  await mock.reset();
+});
 
 const editor = (page: Page) => page.locator("chat-view");
 const root = () => dirname(process.env["PI_WEB_E2E_PROJECT_DIR"] ?? "");
@@ -22,7 +24,9 @@ const root = () => dirname(process.env["PI_WEB_E2E_PROJECT_DIR"] ?? "");
 /** The one host process of this Chat's store and its command line, under this fixture's root only. */
 function host(sessionId: string): { pid: number; command: string } {
   const store = join(root(), "data", "durable", sessionId);
-  const lines = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").filter((line) => line.includes(`--store ${store} `));
+  const lines = execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" })
+    .split("\n")
+    .filter((line) => line.includes(`--store ${store} `));
   expect(lines, `exactly one host under ${store}`).toHaveLength(1);
   const [pid, ...command] = lines[0]?.trim().split(/\s+/) ?? [];
   return { pid: Number(pid), command: command.join(" ") };

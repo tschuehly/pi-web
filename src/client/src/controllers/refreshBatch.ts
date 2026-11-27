@@ -7,6 +7,6 @@ export async function completeRefreshBatch(refreshes: readonly Promise<unknown>[
   }
   if (errors.length === 1) throw errors[0];
   if (errors.length > 1) {
-    throw new AggregateError(errors, errors.map((error) => error instanceof Error ? error.message : String(error)).join("; "));
+    throw new AggregateError(errors, errors.map((error) => (error instanceof Error ? error.message : String(error))).join("; "));
   }
 }

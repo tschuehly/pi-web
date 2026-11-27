@@ -38,9 +38,7 @@ export class SessionDirResolver {
     // Session storage override policy: the deprecated PI_WEB_ alias keeps
     // winning when both are set, then the canonical pi SDK name (see
     // AGENT_SESSION_DIR_ENV_KEYS).
-    this.envSessionDir = AGENT_SESSION_DIR_ENV_KEYS
-      .map((key) => options.env[key])
-      .find((value) => value !== undefined && value !== "");
+    this.envSessionDir = AGENT_SESSION_DIR_ENV_KEYS.map((key) => options.env[key]).find((value) => value !== undefined && value !== "");
     const configuredHome = options.env["HOME"];
     this.homeDir = configuredHome !== undefined && configuredHome !== "" && isAbsolute(configuredHome) ? configuredHome : homedir();
   }
@@ -195,7 +193,9 @@ class SettingsAwarePiSessionManagerGateway implements PiSessionManagerGateway {
         if (isNodeErrorWithCode(error, "ENOENT")) return undefined;
         throw error;
       })
-      .finally(() => { this.pendingTranscriptBranches.delete(path); });
+      .finally(() => {
+        this.pendingTranscriptBranches.delete(path);
+      });
     this.pendingTranscriptBranches.set(path, read);
     return read;
   }
@@ -405,7 +405,11 @@ export async function resolveSessionFileInDir(
  * candidate order and header rules of {@link resolveSessionFileInDir} and no
  * cwd filter. Headers without a cwd never match.
  */
-export async function locateSessionInDirs(sessionDirs: readonly string[], sessionId: string, readHeader: SessionHeaderReader): Promise<{ cwd: string } | undefined> {
+export async function locateSessionInDirs(
+  sessionDirs: readonly string[],
+  sessionId: string,
+  readHeader: SessionHeaderReader,
+): Promise<{ cwd: string } | undefined> {
   const sessionFiles = (await Promise.all(sessionDirs.map(listSessionFiles))).flat();
   const match = await findSessionFileByHeader(sessionFiles, sessionId, readHeader, () => true);
   return match === undefined ? undefined : { cwd: canonicalizeStoredCwd(match.header.cwd) };

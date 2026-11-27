@@ -70,9 +70,7 @@ export function routeMatchesWorkspaceIdentity(
   route: Pick<ParsedAppRoute, "machineId" | "projectId" | "workspaceId">,
   identity: WorkspaceRouteIdentity,
 ): boolean {
-  return (route.machineId ?? "local") === identity.machineId
-    && route.projectId === identity.projectId
-    && route.workspaceId === identity.workspaceId;
+  return (route.machineId ?? "local") === identity.machineId && route.projectId === identity.projectId && route.workspaceId === identity.workspaceId;
 }
 
 export function writeRoute(route: ParsedAppRoute, options?: { replace?: boolean | undefined; contributionQuery?: ContributionQuerySnapshot }): void {

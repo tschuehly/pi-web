@@ -51,12 +51,15 @@ describe("Terminal facade", () => {
 
     const handle = await terminal.runCommand({ title: "Build", command: "npm run build", metadata: { source: "task" }, open: true });
 
-    expect(request.mock.calls[0]?.slice(0, 2)).toEqual(["terminal.run", {
-      origin: "actions",
-      title: "Build",
-      command: "npm run build",
-      metadata: { source: "task" },
-    }]);
+    expect(request.mock.calls[0]?.slice(0, 2)).toEqual([
+      "terminal.run",
+      {
+        origin: "actions",
+        title: "Build",
+        command: "npm run build",
+        metadata: { source: "task" },
+      },
+    ]);
     expect(request.mock.calls[0]?.[2]?.signal).toBeInstanceOf(AbortSignal);
     expect(navigateWorkspaceContribution).toHaveBeenCalledWith(workspace, {
       contributionId: "pi-web.terminal:workspace.terminal",
@@ -127,18 +130,27 @@ describe("Terminal facade", () => {
     terminal.open({ terminalId: "selected" });
 
     expect(navigateWorkspaceContribution.mock.calls).toEqual([
-      [workspace, {
-        contributionId: "machine.remote.pi-web.terminal:workspace.terminal",
-        query: { start: "1" },
-      }],
-      [workspace, {
-        contributionId: "machine.remote.pi-web.terminal:workspace.terminal",
-        query: { start: "2" },
-      }],
-      [workspace, {
-        contributionId: "machine.remote.pi-web.terminal:workspace.terminal",
-        query: { terminal: "selected", start: undefined },
-      }],
+      [
+        workspace,
+        {
+          contributionId: "machine.remote.pi-web.terminal:workspace.terminal",
+          query: { start: "1" },
+        },
+      ],
+      [
+        workspace,
+        {
+          contributionId: "machine.remote.pi-web.terminal:workspace.terminal",
+          query: { start: "2" },
+        },
+      ],
+      [
+        workspace,
+        {
+          contributionId: "machine.remote.pi-web.terminal:workspace.terminal",
+          query: { terminal: "selected", start: undefined },
+        },
+      ],
     ]);
   });
 
@@ -147,16 +159,21 @@ describe("Terminal facade", () => {
     const controller = new AbortController();
     const facade = new TerminalFacade();
 
-    await expect(facade.listCommandRuns({
-      peer: peer(request),
-      filter: { statuses: ["running"], metadata: { "pi.operation": "workspace.delete" } },
-      signal: controller.signal,
-    })).resolves.toEqual([runningRun]);
+    await expect(
+      facade.listCommandRuns({
+        peer: peer(request),
+        filter: { statuses: ["running"], metadata: { "pi.operation": "workspace.delete" } },
+        signal: controller.signal,
+      }),
+    ).resolves.toEqual([runningRun]);
 
-    expect(request.mock.calls[0]?.slice(0, 2)).toEqual(["terminal.list-runs", {
-      statuses: ["running"],
-      metadata: { "pi.operation": "workspace.delete" },
-    }]);
+    expect(request.mock.calls[0]?.slice(0, 2)).toEqual([
+      "terminal.list-runs",
+      {
+        statuses: ["running"],
+        metadata: { "pi.operation": "workspace.delete" },
+      },
+    ]);
     const requestSignal = request.mock.calls[0]?.[2]?.signal;
     expect(requestSignal).toBeInstanceOf(AbortSignal);
     expect(requestSignal).not.toBe(controller.signal);
@@ -165,7 +182,9 @@ describe("Terminal facade", () => {
   it("does not re-arm command polling when an in-flight response settles after disposal", async () => {
     vi.useFakeTimers();
     let resolveGetRun: (value: JsonValue) => void = () => undefined;
-    const getRun = new Promise<JsonValue>((resolve) => { resolveGetRun = resolve; });
+    const getRun = new Promise<JsonValue>((resolve) => {
+      resolveGetRun = resolve;
+    });
     const request = vi.fn<NonNullable<PluginPeer["request"]>>((operation): Promise<JsonValue> => {
       if (operation === "terminal.run") return Promise.resolve(runJson(runningRun));
       if (operation === "terminal.get-run") return getRun;
@@ -194,10 +213,19 @@ describe("Terminal facade", () => {
 
   it("aborts an in-flight command-run listing when disposed", async () => {
     let requestSignal: AbortSignal | undefined;
-    const request = vi.fn<NonNullable<PluginPeer["request"]>>((_operation, _input, options): Promise<JsonValue> => new Promise((_resolve, reject) => {
-      requestSignal = options?.signal;
-      requestSignal?.addEventListener("abort", () => { reject(new DOMException("Listing aborted", "AbortError")); }, { once: true });
-    }));
+    const request = vi.fn<NonNullable<PluginPeer["request"]>>(
+      (_operation, _input, options): Promise<JsonValue> =>
+        new Promise((_resolve, reject) => {
+          requestSignal = options?.signal;
+          requestSignal?.addEventListener(
+            "abort",
+            () => {
+              reject(new DOMException("Listing aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+    );
     const facade = new TerminalFacade();
     const listing = facade.listCommandRuns({ peer: peer(request) });
     await Promise.resolve();
@@ -215,7 +243,9 @@ describe("Terminal facade", () => {
       void timeout;
       return timer;
     });
-    const clearTimer = vi.fn((id: ReturnType<typeof globalThis.setTimeout>) => { globalThis.clearTimeout(id); });
+    const clearTimer = vi.fn((id: ReturnType<typeof globalThis.setTimeout>) => {
+      globalThis.clearTimeout(id);
+    });
     const request = vi.fn((operation: string): Promise<JsonValue> => {
       if (operation === "terminal.run") return Promise.resolve(runJson(runningRun));
       return Promise.reject(new Error(`unexpected operation ${operation}`));
@@ -235,20 +265,24 @@ describe("Terminal facade", () => {
 
     await expect(handle.completed).rejects.toMatchObject({ name: "AbortError" });
     expect(clearTimer).toHaveBeenCalledWith(timer);
-    expect(() => { terminal.open(); }).toThrow(expect.objectContaining({ name: "AbortError" }));
+    expect(() => {
+      terminal.open();
+    }).toThrow(expect.objectContaining({ name: "AbortError" }));
     await expect(terminal.runCommand({ title: "Again", command: "true" })).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("fails closed when the peer request capability is absent", () => {
     const facade = new TerminalFacade();
-    expect(() => facade.createWorkspaceTerminal({
-      origin: "actions",
-      registrationPluginId: "pi-web.terminal",
-      workspace,
-      // @ts-expect-error Exercise the runtime guard against a malformed host capability.
-      peer: {},
-      host: { navigateWorkspaceContribution: vi.fn() },
-    })).toThrow("Required Terminal peer request capability is unavailable");
+    expect(() =>
+      facade.createWorkspaceTerminal({
+        origin: "actions",
+        registrationPluginId: "pi-web.terminal",
+        workspace,
+        // @ts-expect-error Exercise the runtime guard against a malformed host capability.
+        peer: {},
+        host: { navigateWorkspaceContribution: vi.fn() },
+      }),
+    ).toThrow("Required Terminal peer request capability is unavailable");
   });
 });
 

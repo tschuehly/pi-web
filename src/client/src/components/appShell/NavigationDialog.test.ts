@@ -18,9 +18,14 @@ it("focuses search, supports button navigation and traps Tab, then restores focu
   document.body.append(opener);
   opener.focus();
   const dialog = new NavigationDialog();
-  dialog.tabs = [{ id: "chat", label: "Chat" }, { id: "tools:files", label: "Files" }];
+  dialog.tabs = [
+    { id: "chat", label: "Chat" },
+    { id: "tools:files", label: "Files" },
+  ];
   dialog.selectedTab = "tools:files";
-  dialog.onClose = () => { dialog.remove(); };
+  dialog.onClose = () => {
+    dialog.remove();
+  };
   const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => undefined);
   document.body.append(dialog);
   await dialog.updateComplete;
@@ -59,7 +64,11 @@ it("focuses search, supports button navigation and traps Tab, then restores focu
 
 it("filters destinations and navigates results from search without changing pins", async () => {
   const dialog = new NavigationDialog();
-  dialog.tabs = [{ id: "chat", label: "Chat" }, { id: "tools:files", label: "Files" }, { id: "tools:find", label: "Find" }];
+  dialog.tabs = [
+    { id: "chat", label: "Chat" },
+    { id: "tools:files", label: "Files" },
+    { id: "tools:find", label: "Find" },
+  ];
   dialog.onSelect = vi.fn();
   dialog.onClose = vi.fn();
   dialog.onPreferencesChange = vi.fn();
@@ -76,7 +85,7 @@ it("filters destinations and navigates results from search without changing pins
     input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, composed: true, cancelable: true }));
     await dialog.updateComplete;
   };
-  const selected = () => dialog.shadowRoot?.querySelector('.destination-button.selected')?.textContent;
+  const selected = () => dialog.shadowRoot?.querySelector(".destination-button.selected")?.textContent;
   const announcement = () => dialog.shadowRoot?.querySelector('[role="status"]')?.textContent;
   await search(" FI ");
   expect(dialog.shadowRoot?.querySelectorAll(".destination-button")).toHaveLength(2);
@@ -86,7 +95,7 @@ it("filters destinations and navigates results from search without changing pins
   await key("ArrowUp");
   expect(selected()).toBe("Find");
   expect(announcement()).toBe("Find, 2 of 2");
-  expect(dialog.shadowRoot?.querySelector('[aria-current]')).toBeNull();
+  expect(dialog.shadowRoot?.querySelector("[aria-current]")).toBeNull();
   await key("ArrowDown");
   expect(selected()).toBe("Files");
   await key("End");
@@ -113,7 +122,10 @@ it("filters destinations and navigates results from search without changing pins
 
 it("offers unpinned destinations and closes after navigating without modifying pins", async () => {
   const dialog = new NavigationDialog();
-  dialog.tabs = [{ id: "chat", label: "Chat" }, { id: "tools:files", label: "Files" }];
+  dialog.tabs = [
+    { id: "chat", label: "Chat" },
+    { id: "tools:files", label: "Files" },
+  ];
   dialog.preferences = { pinnedIds: ["chat", "missing:tool"], mobileCollapsed: true };
   dialog.selectedTab = "tools:files";
   dialog.onSelect = vi.fn();
@@ -134,9 +146,14 @@ it("offers unpinned destinations and closes after navigating without modifying p
 
 it("toggles icon pins and mobile layout independently, resets tabs, and uses shared Escape handling", async () => {
   const dialog = new NavigationDialog();
-  dialog.tabs = [{ id: "chat", label: "Chat" }, { id: "tools:files", label: "Files" }];
+  dialog.tabs = [
+    { id: "chat", label: "Chat" },
+    { id: "tools:files", label: "Files" },
+  ];
   dialog.preferences = { pinnedIds: ["chat", "missing:tool"], mobileCollapsed: true };
-  dialog.onPreferencesChange = (preferences) => { dialog.preferences = preferences; };
+  dialog.onPreferencesChange = (preferences) => {
+    dialog.preferences = preferences;
+  };
   dialog.onClose = vi.fn();
   document.body.append(dialog);
   await dialog.updateComplete;
@@ -144,7 +161,7 @@ it("toggles icon pins and mobile layout independently, resets tabs, and uses sha
   await dialog.updateComplete;
   expect(dialog.preferences).toEqual({ pinnedIds: ["chat", "missing:tool", "tools:files"], mobileCollapsed: true });
   expect(dialog.shadowRoot?.querySelector('button[aria-label="Pin Files"]')?.getAttribute("aria-pressed")).toBe("true");
-  const modes = [...dialog.shadowRoot?.querySelectorAll<HTMLButtonElement>('.mobile-navigation button') ?? []];
+  const modes = [...(dialog.shadowRoot?.querySelectorAll<HTMLButtonElement>(".mobile-navigation button") ?? [])];
   expect(modes.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
   modes[0]?.click();
   await dialog.updateComplete;
@@ -155,7 +172,7 @@ it("toggles icon pins and mobile layout independently, resets tabs, and uses sha
   dialog.shadowRoot?.querySelector<HTMLButtonElement>("footer button")?.click();
   await dialog.updateComplete;
   expect(dialog.preferences).toEqual({ pinnedIds: [], mobileCollapsed: true });
-  expect([...dialog.shadowRoot?.querySelectorAll(".pin-button") ?? []].every((button) => button.getAttribute("aria-pressed") === "true")).toBe(true);
+  expect([...(dialog.shadowRoot?.querySelectorAll(".pin-button") ?? [])].every((button) => button.getAttribute("aria-pressed") === "true")).toBe(true);
   expect(dialog.shadowRoot?.querySelector('input[type="checkbox"]')).toBeNull();
   const surface = dialog.shadowRoot?.querySelector<ModalSurface>("modal-surface");
   if (surface == null) throw new Error("Expected shared modal surface");

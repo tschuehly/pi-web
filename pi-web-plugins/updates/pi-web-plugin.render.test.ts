@@ -2,7 +2,15 @@
 
 import { html, render, svg } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PiWebComponentStatus, PiWebStatusResponse, PluginRuntimeState, TerminalCommandRun, TerminalCommandRunHandle, ApplicationPanelContext, WorkspacePanelTerminal } from "@jmfederico/pi-web/plugin-api";
+import type {
+  PiWebComponentStatus,
+  PiWebStatusResponse,
+  PluginRuntimeState,
+  TerminalCommandRun,
+  TerminalCommandRunHandle,
+  ApplicationPanelContext,
+  WorkspacePanelTerminal,
+} from "@jmfederico/pi-web/plugin-api";
 import plugin from "./pi-web-plugin.js";
 
 function component(overrides: Partial<PiWebComponentStatus> = {}): PiWebComponentStatus {
@@ -56,10 +64,12 @@ function panelContext(state: PluginRuntimeState, terminal?: WorkspacePanelTermin
     state,
     host: { requestRender: noop },
     prompt: { insertText: noop, getText: () => "", getSelection: () => null },
-    ...(terminal === undefined ? {} : {
-      workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
-      terminal,
-    }),
+    ...(terminal === undefined
+      ? {}
+      : {
+          workspace: { id: "workspace-1", projectId: "project-1", path: "/repo", label: "main", isMain: true },
+          terminal,
+        }),
   };
 }
 
@@ -102,23 +112,27 @@ afterEach(() => {
 describe("Updates plugin panel layout", () => {
   it("folds the update notice into one recommended action above the services and optional commands", () => {
     const update = "pi-web update";
-    const container = renderPanel(status({
-      release: { packageName: "@jmfederico/pi-web", updateAvailable: true, latestVersion: "1.202605.9" },
-      commands: {
-        update,
-        restart: "pi-web restart",
-        restartWeb: "pi-web restart-web",
-        restartSessiond: "pi-web restart-sessiond",
-        status: "pi-web status",
-      },
-      messages: [{
-        id: "update-available",
-        severity: "info",
-        title: "PI WEB update available",
-        body: "PI WEB 1.202605.9 is available; installed version is 1.202605.8. Run the update command to update PI WEB and restart its services.",
-        command: update,
-      }],
-    }));
+    const container = renderPanel(
+      status({
+        release: { packageName: "@jmfederico/pi-web", updateAvailable: true, latestVersion: "1.202605.9" },
+        commands: {
+          update,
+          restart: "pi-web restart",
+          restartWeb: "pi-web restart-web",
+          restartSessiond: "pi-web restart-sessiond",
+          status: "pi-web status",
+        },
+        messages: [
+          {
+            id: "update-available",
+            severity: "info",
+            title: "PI WEB update available",
+            body: "PI WEB 1.202605.9 is available; installed version is 1.202605.8. Run the update command to update PI WEB and restart its services.",
+            command: update,
+          },
+        ],
+      }),
+    );
 
     const recommended = container.querySelector(".updates-recommended");
     expect(recommended).not.toBeNull();
@@ -134,20 +148,24 @@ describe("Updates plugin panel layout", () => {
 
   it("keeps notices action-free and defers their commands to the suggested list when nothing is recommended", () => {
     const restartWeb = "systemctl --user restart pi-web-web";
-    const container = renderPanel(status({
-      components: {
-        web: component({ stale: true, installedVersion: "1.202605.9" }),
-        sessiond: component({ component: "sessiond", label: "Session daemon" }),
-      },
-      commands: { restartWeb, status: "systemctl --user status pi-web-web" },
-      messages: [{
-        id: "web-stale",
-        severity: "warning",
-        title: "Web/UI service restart needed",
-        body: "The Web/UI service is running 1.202605.8, but 1.202605.9 is installed. Restart the service to use the installed version.",
-        command: restartWeb,
-      }],
-    }));
+    const container = renderPanel(
+      status({
+        components: {
+          web: component({ stale: true, installedVersion: "1.202605.9" }),
+          sessiond: component({ component: "sessiond", label: "Session daemon" }),
+        },
+        commands: { restartWeb, status: "systemctl --user status pi-web-web" },
+        messages: [
+          {
+            id: "web-stale",
+            severity: "warning",
+            title: "Web/UI service restart needed",
+            body: "The Web/UI service is running 1.202605.8, but 1.202605.9 is installed. Restart the service to use the installed version.",
+            command: restartWeb,
+          },
+        ],
+      }),
+    );
 
     expect(container.querySelector(".updates-recommended")).toBeNull();
     const notice = container.querySelector(".updates-message");
@@ -160,10 +178,12 @@ describe("Updates plugin panel layout", () => {
   });
 
   it("explains confirmation and safe-execution limits rather than promising a seamless update", () => {
-    const container = renderPanel(status({
-      release: { packageName: "@jmfederico/pi-web", updateAvailable: true },
-      commands: { update: "pi-web update" },
-    }));
+    const container = renderPanel(
+      status({
+        release: { packageName: "@jmfederico/pi-web", updateAvailable: true },
+        commands: { update: "pi-web update" },
+      }),
+    );
     expect(container.querySelector(".updates-recommended")?.textContent).toContain("Updates require confirmation in the terminal");
     expect(container.textContent).toContain("if this terminal cannot safely run the update");
     expect(container.textContent).not.toContain("Nothing else is required");
@@ -181,10 +201,12 @@ describe("Updates plugin panel layout", () => {
     const writeText = vi.fn(() => Promise.resolve());
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const command = "PI_CODING_AGENT_DIR='/profiles/active' '/usr/bin/node' '/opt/pi-web/dist/cli.js' update";
-    const container = renderPanel(status({
-      release: { packageName: "@jmfederico/pi-web", updateAvailable: true },
-      commands: { update: command },
-    }));
+    const container = renderPanel(
+      status({
+        release: { packageName: "@jmfederico/pi-web", updateAvailable: true },
+        commands: { update: command },
+      }),
+    );
     const copy = container.querySelector<HTMLButtonElement>(".updates-recommended button");
     expect(copy?.textContent).toBe("Copy");
     copy?.click();
@@ -193,32 +215,37 @@ describe("Updates plugin panel layout", () => {
     expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Run")).toBe(false);
   });
 
-  it.each([
-    "pi-web update",
-    "PI_CODING_AGENT_DIR='/profiles/active' '/usr/bin/node' '/opt/pi-web/dist/cli.js' update",
-  ])("runs the recommended command unchanged in the panel-scoped terminal: %s", (update) => {
-    const runCommand = vi.fn<WorkspacePanelTerminal["runCommand"]>((input) => Promise.resolve(commandRunHandle(input)));
-    const container = renderPanel(status({
-      release: { packageName: "@jmfederico/pi-web", updateAvailable: true, latestVersion: "1.202605.9" },
-      commands: { update, restart: "pi-web-docker restart" },
-      messages: [{
-        id: "update-available",
-        severity: "info",
-        title: "PI WEB update available",
-        body: "PI WEB 1.202605.9 is available. Run the update command to update PI WEB and restart its services.",
+  it.each(["pi-web update", "PI_CODING_AGENT_DIR='/profiles/active' '/usr/bin/node' '/opt/pi-web/dist/cli.js' update"])(
+    "runs the recommended command unchanged in the panel-scoped terminal: %s",
+    (update) => {
+      const runCommand = vi.fn<WorkspacePanelTerminal["runCommand"]>((input) => Promise.resolve(commandRunHandle(input)));
+      const container = renderPanel(
+        status({
+          release: { packageName: "@jmfederico/pi-web", updateAvailable: true, latestVersion: "1.202605.9" },
+          commands: { update, restart: "pi-web-docker restart" },
+          messages: [
+            {
+              id: "update-available",
+              severity: "info",
+              title: "PI WEB update available",
+              body: "PI WEB 1.202605.9 is available. Run the update command to update PI WEB and restart its services.",
+              command: update,
+            },
+          ],
+        }),
+        { open: () => undefined, runCommand },
+      );
+
+      const runButton = [...container.querySelectorAll<HTMLButtonElement>(".updates-recommended button")].find((button) => button.textContent === "Run");
+      if (runButton === undefined) throw new Error("Expected a Run button in the recommended section");
+      runButton.click();
+
+      expect(runCommand).toHaveBeenCalledWith({
+        title: "Update PI WEB",
         command: update,
-      }],
-    }), { open: () => undefined, runCommand });
-
-    const runButton = [...container.querySelectorAll<HTMLButtonElement>(".updates-recommended button")].find((button) => button.textContent === "Run");
-    if (runButton === undefined) throw new Error("Expected a Run button in the recommended section");
-    runButton.click();
-
-    expect(runCommand).toHaveBeenCalledWith({
-      title: "Update PI WEB",
-      command: update,
-      open: true,
-      metadata: { "pi.plugin": "updates" },
-    });
-  });
+        open: true,
+        metadata: { "pi.plugin": "updates" },
+      });
+    },
+  );
 });

@@ -1,15 +1,18 @@
 import type { StylesheetIntegrationCapabilityV1, WorkspacePanelContext } from "@jmfederico/pi-web/plugin-api";
 import { TASKS_CONFIG_PATH, type WorkspaceTask } from "./config.js";
 import { runWorkspaceTaskInTerminal } from "./taskRunner.js";
-import { loadWorkspaceTasksConfig, tasksConfigRefreshHint, tasksConfigUnavailableMessage, type WorkspaceTasksConfigLoadResult } from "./workspaceTasksClient.js";
+import {
+  loadWorkspaceTasksConfig,
+  tasksConfigRefreshHint,
+  tasksConfigUnavailableMessage,
+  type WorkspaceTasksConfigLoadResult,
+} from "./workspaceTasksClient.js";
 
 export const tasksPanelTagName = "pi-web-workspace-tasks-panel";
 
 const configChangedEvent = "pi-web-workspace-tasks-config-changed";
 
-type ConfigState =
-  | { kind: "loading" }
-  | WorkspaceTasksConfigLoadResult;
+type ConfigState = { kind: "loading" } | WorkspaceTasksConfigLoadResult;
 
 interface TaskStatus {
   kind: "info" | "success" | "error";
@@ -143,7 +146,8 @@ export class PiWebTasksPanel extends HTMLElement {
     if (state.kind === "missing") return renderMissingState(state);
     if (state.kind === "unavailable") return renderUnavailableState(state);
 
-    if (state.config.tasks.length === 0) return `<p class="muted">No tasks are defined in ${escapeHtml(state.path)}. Add tasks to the file, then click Refresh.</p>`;
+    if (state.config.tasks.length === 0)
+      return `<p class="muted">No tasks are defined in ${escapeHtml(state.path)}. Add tasks to the file, then click Refresh.</p>`;
     return `
       <p class="muted">Tasks run in a dedicated workspace terminal, then switch to that terminal. Edit ${escapeHtml(state.path)} and click Refresh to reload.</p>
       ${renderTaskGroups(state.config.tasks, this.runningTaskId)}
@@ -163,9 +167,10 @@ export class PiWebTasksPanel extends HTMLElement {
 
     const state = await refreshWorkspaceConfig(context);
     if (!this.isCurrentContext(context)) return;
-    this.status = state.kind === "loaded"
-      ? { kind: "success", message: `Loaded ${String(state.config.tasks.length)} task${state.config.tasks.length === 1 ? "" : "s"}.` }
-      : undefined;
+    this.status =
+      state.kind === "loaded"
+        ? { kind: "success", message: `Loaded ${String(state.config.tasks.length)} task${state.config.tasks.length === 1 ? "" : "s"}.` }
+        : undefined;
     this.render();
   }
 
@@ -257,7 +262,9 @@ function renderUnavailableState(state: Extract<ConfigState, { kind: "unavailable
 }
 
 function renderTaskGroups(tasks: WorkspaceTask[], runningTaskId: string | undefined): string {
-  return `<div class="tasks">${groupTasks(tasks).map((group) => renderTaskGroup(group, runningTaskId)).join("")}</div>`;
+  return `<div class="tasks">${groupTasks(tasks)
+    .map((group) => renderTaskGroup(group, runningTaskId))
+    .join("")}</div>`;
 }
 
 function groupTasks(tasks: WorkspaceTask[]): { title: string | undefined; tasks: WorkspaceTask[] }[] {

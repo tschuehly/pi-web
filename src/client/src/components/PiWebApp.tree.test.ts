@@ -25,7 +25,8 @@ describe("PiWebApp session tree wiring", () => {
     const app = createApp();
     const state = setAppTree(app, tree());
     const controller = appSessionController(app);
-    const navigateTree = vi.spyOn(controller, "navigateTree")
+    const navigateTree = vi
+      .spyOn(controller, "navigateTree")
       .mockResolvedValueOnce({ cancelled: false, editorText: "edit" })
       .mockResolvedValueOnce({ cancelled: true, aborted: true });
     const abortTreeNavigation = vi.spyOn(controller, "abortTreeNavigation").mockResolvedValue(undefined);
@@ -71,7 +72,8 @@ describe("PiWebApp session tree wiring", () => {
     const app = createApp();
     const state = setAppTree(app, tree());
     const controller = appSessionController(app);
-    const forkFromTree = vi.spyOn(controller, "forkFromTree")
+    const forkFromTree = vi
+      .spyOn(controller, "forkFromTree")
       .mockResolvedValueOnce({ cancelled: true })
       .mockResolvedValueOnce({ cancelled: false, session: { ...session(), id: "session-fork" } })
       .mockRejectedValueOnce(new Error("Stop current activity before forking."));

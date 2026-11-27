@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonValue, PluginPeerChannel, PluginPeer } from "@jmfederico/pi-web/plugin-api";
-import { TERMINAL_CHANNEL_DATA_JSON_MAX_BYTES, TerminalPeerClient, parseTerminalCommandRun, parseTerminalServerFrame, terminalChannelFailureMessage, terminalInputFrames } from "./terminalProtocol";
+import {
+  TERMINAL_CHANNEL_DATA_JSON_MAX_BYTES,
+  TerminalPeerClient,
+  parseTerminalCommandRun,
+  parseTerminalServerFrame,
+  terminalChannelFailureMessage,
+  terminalInputFrames,
+} from "./terminalProtocol";
 
 const terminal = {
   id: "terminal-1",
@@ -45,12 +52,16 @@ describe("Terminal peer protocol", () => {
     await expect(client.cancelCommandRun("run-1")).resolves.toEqual(run);
 
     expect(request).toHaveBeenCalledWith("terminal.create", { cols: 120, rows: 40 }, undefined);
-    expect(request).toHaveBeenCalledWith("terminal.run", {
-      origin: "tasks",
-      title: "Build",
-      command: "npm run build",
-      metadata: {},
-    }, undefined);
+    expect(request).toHaveBeenCalledWith(
+      "terminal.run",
+      {
+        origin: "tasks",
+        title: "Build",
+        command: "npm run build",
+        metadata: {},
+      },
+      undefined,
+    );
     expect(JSON.stringify(request.mock.calls)).not.toContain("workspaceId");
   });
 
@@ -67,7 +78,15 @@ describe("Terminal peer protocol", () => {
     const frames: unknown[] = [];
     const client = new TerminalPeerClient({ request: vi.fn(), openChannel });
 
-    await expect(client.attach({ terminalId: "terminal-1", size: { cols: 80, rows: 24 }, onFrame: (frame) => { frames.push(frame); } })).resolves.toBe(channel);
+    await expect(
+      client.attach({
+        terminalId: "terminal-1",
+        size: { cols: 80, rows: 24 },
+        onFrame: (frame) => {
+          frames.push(frame);
+        },
+      }),
+    ).resolves.toBe(channel);
 
     const openCall = openChannel.mock.calls[0];
     expect(openCall?.slice(0, 2)).toEqual(["terminal.attach", { terminalId: "terminal-1", cols: 80, rows: 24 }]);
@@ -78,8 +97,7 @@ describe("Terminal peer protocol", () => {
     expect(parseTerminalServerFrame({ type: "error", message: "pty failed" })).toEqual({ type: "error", message: "pty failed" });
     expect(() => parseTerminalServerFrame({ type: "output", data: "bad" })).toThrow("replay must be a boolean");
     expect(() => parseTerminalServerFrame({ type: "output", data: "bad", replay: true })).toThrow("replayComplete must be a boolean");
-    expect(() => parseTerminalServerFrame({ type: "output", data: "bad", replay: false, replayComplete: true }))
-      .toThrow("must not declare replay completion");
+    expect(() => parseTerminalServerFrame({ type: "output", data: "bad", replay: false, replayComplete: true })).toThrow("must not declare replay completion");
   });
 
   it("splits large Unicode input into ordered JSON-byte-safe channel frames", () => {
@@ -100,14 +118,14 @@ describe("Terminal peer protocol", () => {
   it("rejects malformed command records and attributes channel closure", () => {
     expect(() => parseTerminalCommandRun({ ...run, status: "done" })).toThrow("Invalid Terminal command run status");
     expect(() => parseTerminalCommandRun({ ...run, metadata: { source: 2 } })).toThrow("must be a string");
-    expect(terminalChannelFailureMessage({ code: 1011, reason: "", wasClean: false, error: { code: "plugin-error", message: "failed" } }))
-      .toBe("plugin-error: failed");
+    expect(terminalChannelFailureMessage({ code: 1011, reason: "", wasClean: false, error: { code: "plugin-error", message: "failed" } })).toBe(
+      "plugin-error: failed",
+    );
     expect(terminalChannelFailureMessage({ code: 1000, reason: "done", wasClean: true })).toBeUndefined();
   });
 
   it("fails closed when the peer has no channel capability", async () => {
     const client = new TerminalPeerClient({ request: vi.fn() });
-    await expect(client.attach({ terminalId: "terminal-1", onFrame: vi.fn() }))
-      .rejects.toThrow("Required Terminal peer channel capability is unavailable");
+    await expect(client.attach({ terminalId: "terminal-1", onFrame: vi.fn() })).rejects.toThrow("Required Terminal peer channel capability is unavailable");
   });
 });

@@ -27,9 +27,12 @@ interface ScopeState {
 
 function scopeKey(scope: NavigationOrderScope): string {
   switch (scope.kind) {
-    case "projects": return JSON.stringify([scope.kind, scope.machineId]);
-    case "workspaces": return JSON.stringify([scope.kind, scope.machineId, scope.projectId]);
-    case "sessionPins": return JSON.stringify([scope.kind, scope.machineId, scope.projectId, scope.workspaceId]);
+    case "projects":
+      return JSON.stringify([scope.kind, scope.machineId]);
+    case "workspaces":
+      return JSON.stringify([scope.kind, scope.machineId, scope.projectId]);
+    case "sessionPins":
+      return JSON.stringify([scope.kind, scope.machineId, scope.projectId, scope.workspaceId]);
   }
 }
 
@@ -39,7 +42,10 @@ function scopeKey(scope: NavigationOrderScope): string {
 export class NavigationOrderController {
   private readonly states = new Map<string, ScopeState>();
 
-  constructor(private readonly port: NavigationOrderPort, private readonly options: NavigationOrderControllerOptions = {}) {}
+  constructor(
+    private readonly port: NavigationOrderPort,
+    private readonly options: NavigationOrderControllerOptions = {},
+  ) {}
 
   ids(scope: NavigationOrderScope): readonly string[] {
     return [...(this.state(scope).snapshot?.ids ?? [])];
@@ -56,14 +62,20 @@ export class NavigationOrderController {
     if (state.snapshot) return Promise.resolve();
     const promise = this.load(scope);
     state.ensuring = promise;
-    void promise.finally(() => { state.ensuring = undefined; }).catch(() => undefined);
+    void promise
+      .finally(() => {
+        state.ensuring = undefined;
+      })
+      .catch(() => undefined);
     return promise;
   }
 
   /** Explicit refresh, serialized with writes so a late read cannot replace a save. */
   load(scope: NavigationOrderScope): Promise<void> {
     scope = { ...scope };
-    return this.enqueue(scope, async (state) => { state.snapshot = await this.port.load(scope); });
+    return this.enqueue(scope, async (state) => {
+      state.snapshot = await this.port.load(scope);
+    });
   }
 
   mutate(scope: NavigationOrderScope, mutation: (ids: readonly string[]) => readonly string[]): Promise<void> {

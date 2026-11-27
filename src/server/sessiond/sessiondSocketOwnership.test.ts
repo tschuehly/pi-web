@@ -5,12 +5,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  claimSessiondSocketPath,
-  releaseSessiondSocketPath,
-  SessiondSocketOwnershipError,
-  sessiondSocketIdentity,
-} from "./sessiondSocketOwnership.js";
+import { claimSessiondSocketPath, releaseSessiondSocketPath, SessiondSocketOwnershipError, sessiondSocketIdentity } from "./sessiondSocketOwnership.js";
 
 let root: string;
 let socketPath: string;
@@ -22,12 +17,21 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => { server.close(resolve); })));
+  await Promise.all(
+    servers.splice(0).map(
+      (server) =>
+        new Promise((resolve) => {
+          server.close(resolve);
+        }),
+    ),
+  );
   await rm(root, { recursive: true, force: true });
 });
 
 async function listen(path: string): Promise<Server> {
-  const server = createServer((socket) => { socket.end(); });
+  const server = createServer((socket) => {
+    socket.end();
+  });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(path, resolve);
@@ -39,11 +43,9 @@ async function listen(path: string): Promise<Server> {
 /** A socket file left behind by a daemon that died without closing its listener. */
 function leaveStaleSocket(path: string): void {
   try {
-    execFileSync(process.execPath, [
-      "-e",
-      "require('node:net').createServer().listen(process.argv[1], () => process.kill(process.pid, 'SIGKILL'))",
-      path,
-    ], { stdio: "ignore" });
+    execFileSync(process.execPath, ["-e", "require('node:net').createServer().listen(process.argv[1], () => process.kill(process.pid, 'SIGKILL'))", path], {
+      stdio: "ignore",
+    });
   } catch {
     // The SIGKILL exit is the point: the listener never closes, so its file stays.
   }
@@ -89,7 +91,9 @@ describe("session daemon socket ownership", () => {
     expect(existsSync(socketPath)).toBe(false);
 
     // The first daemon's path was replaced by another instance before it exited.
-    await new Promise((resolve) => { first.close(resolve); });
+    await new Promise((resolve) => {
+      first.close(resolve);
+    });
     await listen(socketPath);
     const replacement = await lstat(socketPath);
 

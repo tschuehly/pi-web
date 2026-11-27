@@ -28,7 +28,9 @@ beforeEach(async () => {
   const client: MachineClient = {
     request,
     requestJson: () => Promise.reject(new Error("JSON requests are not expected")),
-    connectWebSocket: () => { throw new Error("WebSockets are not expected"); },
+    connectWebSocket: () => {
+      throw new Error("WebSockets are not expected");
+    },
   };
   remoteClient = vi.fn<MachineService["remoteClient"]>(() => Promise.resolve(client));
   registerMachineProxyRoutes(app, { remoteClient });
@@ -48,36 +50,39 @@ function expectSafeHeaders(headers: Record<string, unknown>): void {
 }
 
 describe("federated session media response safety", () => {
-  it.each(["image/png", "image/jpeg", "image/gif", "image/webp"])("streams %s with cache metadata but gateway-controlled security headers", async (mimeType) => {
-    const bytes = Buffer.from([0x89, 0x50, 0xff, 0x00, 0xc3, 0x28]);
-    request.mockResolvedValue({
-      statusCode: 200,
-      headers: {
-        ...hostileHeaders,
-        "content-type": mimeType,
-        "content-length": String(bytes.byteLength),
-        "cache-control": "private, max-age=31536000, immutable",
-        "last-modified": "Wed, 05 Aug 2026 10:00:00 GMT",
-        etag: '"media-etag"',
-      },
-      body: Readable.from([bytes.subarray(0, 2), bytes.subarray(2)]),
-    });
+  it.each(["image/png", "image/jpeg", "image/gif", "image/webp"])(
+    "streams %s with cache metadata but gateway-controlled security headers",
+    async (mimeType) => {
+      const bytes = Buffer.from([0x89, 0x50, 0xff, 0x00, 0xc3, 0x28]);
+      request.mockResolvedValue({
+        statusCode: 200,
+        headers: {
+          ...hostileHeaders,
+          "content-type": mimeType,
+          "content-length": String(bytes.byteLength),
+          "cache-control": "private, max-age=31536000, immutable",
+          "last-modified": "Wed, 05 Aug 2026 10:00:00 GMT",
+          etag: '"media-etag"',
+        },
+        body: Readable.from([bytes.subarray(0, 2), bytes.subarray(2)]),
+      });
 
-    const response = await app.inject({ url: mediaPath });
+      const response = await app.inject({ url: mediaPath });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.rawPayload).toEqual(bytes);
-    expect(response.headers["content-type"]).toBe(mimeType);
-    expect(response.headers["content-length"]).toBe(String(bytes.byteLength));
-    expect(response.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
-    expect(response.headers["last-modified"]).toBe("Wed, 05 Aug 2026 10:00:00 GMT");
-    expect(response.headers.etag).toBe('"media-etag"');
-    expectSafeHeaders(response.headers);
-    expect(remoteClient).toHaveBeenCalledWith("remote one");
-    expect(request).toHaveBeenCalledOnce();
-    expect(request.mock.calls[0]?.slice(0, 3)).toEqual(["GET", `/api/sessions/s%201/media/${mediaId}?cwd=%2Frepo`, undefined]);
-    expect(request.mock.calls[0]?.[3]?.signal).toBeInstanceOf(AbortSignal);
-  });
+      expect(response.statusCode).toBe(200);
+      expect(response.rawPayload).toEqual(bytes);
+      expect(response.headers["content-type"]).toBe(mimeType);
+      expect(response.headers["content-length"]).toBe(String(bytes.byteLength));
+      expect(response.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
+      expect(response.headers["last-modified"]).toBe("Wed, 05 Aug 2026 10:00:00 GMT");
+      expect(response.headers.etag).toBe('"media-etag"');
+      expectSafeHeaders(response.headers);
+      expect(remoteClient).toHaveBeenCalledWith("remote one");
+      expect(request).toHaveBeenCalledOnce();
+      expect(request.mock.calls[0]?.slice(0, 3)).toEqual(["GET", `/api/sessions/s%201/media/${mediaId}?cwd=%2Frepo`, undefined]);
+      expect(request.mock.calls[0]?.[3]?.signal).toBeInstanceOf(AbortSignal);
+    },
+  );
 
   it("canonicalizes a supported HTTP MIME and supplies security headers absent upstream", async () => {
     request.mockResolvedValue({ statusCode: 200, headers: { "content-type": "IMAGE/PNG; charset=binary" }, body: Readable.from([Buffer.from([1, 2, 3])]) });
@@ -90,30 +95,37 @@ describe("federated session media response safety", () => {
     expectSafeHeaders(response.headers);
   });
 
-  it.each(["text/html", "application/xhtml+xml", "image/svg+xml", "application/json", "application/octet-stream", undefined])("rejects successful unsafe or missing MIME %s and disposes the unread stream", async (contentType) => {
-    const read = vi.fn(function (this: Readable) {
-      this.push(Buffer.from("<script>alert(document.domain)</script>"));
-      this.push(null);
-    });
-    const upstream = new Readable({ read });
-    request.mockResolvedValue({
-      statusCode: 200,
-      headers: { ...hostileHeaders, "content-type": contentType, "content-length": "99999", "cache-control": "public, max-age=31536000, immutable" },
-      body: upstream,
-    });
+  it.each(["text/html", "application/xhtml+xml", "image/svg+xml", "application/json", "application/octet-stream", undefined])(
+    "rejects successful unsafe or missing MIME %s and disposes the unread stream",
+    async (contentType) => {
+      const read = vi.fn(function (this: Readable) {
+        this.push(Buffer.from("<script>alert(document.domain)</script>"));
+        this.push(null);
+      });
+      const upstream = new Readable({ read });
+      request.mockResolvedValue({
+        statusCode: 200,
+        headers: { ...hostileHeaders, "content-type": contentType, "content-length": "99999", "cache-control": "public, max-age=31536000, immutable" },
+        body: upstream,
+      });
 
-    const response = await app.inject({ url: mediaPath });
+      const response = await app.inject({ url: mediaPath });
 
-    expect(response.statusCode).toBe(502);
-    expect(response.headers["content-type"]).toContain("application/json");
-    expect(response.json()).toMatchObject({ error: "Remote machine unavailable", statusCode: 502, detail: "Remote machine returned an unsupported session image MIME type" });
-    expect(response.body).not.toContain("<script>");
-    expect(response.headers["cache-control"]).toBeUndefined();
-    expect(response.headers["content-length"]).toBe(String(response.rawPayload.byteLength));
-    expectSafeHeaders(response.headers);
-    expect(upstream.destroyed).toBe(true);
-    expect(read).not.toHaveBeenCalled();
-  });
+      expect(response.statusCode).toBe(502);
+      expect(response.headers["content-type"]).toContain("application/json");
+      expect(response.json()).toMatchObject({
+        error: "Remote machine unavailable",
+        statusCode: 502,
+        detail: "Remote machine returned an unsupported session image MIME type",
+      });
+      expect(response.body).not.toContain("<script>");
+      expect(response.headers["cache-control"]).toBeUndefined();
+      expect(response.headers["content-length"]).toBe(String(response.rawPayload.byteLength));
+      expectSafeHeaders(response.headers);
+      expect(upstream.destroyed).toBe(true);
+      expect(read).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([302, 401, 404, 503])("replaces an unsafe upstream page with a safe error while preserving status %i", async (statusCode) => {
     const read = vi.fn(function (this: Readable) {
@@ -189,7 +201,11 @@ describe("federated session media response safety", () => {
   });
 
   it("streams a valid image before upstream completes and releases it when the browser disconnects", async () => {
-    const upstream = new Readable({ read() { /* stays open until the browser disconnects */ } });
+    const upstream = new Readable({
+      read() {
+        /* stays open until the browser disconnects */
+      },
+    });
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     upstream.push(bytes);
     request.mockResolvedValue({ statusCode: 200, headers: { "content-type": "image/png" }, body: upstream });
@@ -204,7 +220,9 @@ describe("federated session media response safety", () => {
     controller.abort();
 
     await expect(reader.read()).rejects.toThrow();
-    await vi.waitFor(() => { expect(upstream.destroyed).toBe(true); });
+    await vi.waitFor(() => {
+      expect(upstream.destroyed).toBe(true);
+    });
     expect(request.mock.calls[0]?.[3]?.signal?.aborted).toBe(true);
   });
 });

@@ -47,7 +47,7 @@ describe("inline theme fallback", () => {
     const declarations = /:root\s*\{([\s\S]*?)\}/u.exec(html)?.[1];
     if (declarations === undefined) throw new Error("Missing :root block in src/client/index.html");
 
-    const githubDark = (bundledThemes()).find((theme) => theme.id === "themes:github-dark");
+    const githubDark = bundledThemes().find((theme) => theme.id === "themes:github-dark");
     if (githubDark === undefined) throw new Error("Missing Workbench default theme themes:github-dark");
     const githubTokens = bundledThemeTokens(githubDark.id);
 

@@ -16,7 +16,11 @@ const terminal = new Terminal({ fontSize: 13, convertEol: true });
 const fit = new FitAddon();
 terminal.loadAddon(fit);
 terminal.open(host);
-const observer = new ResizeObserver(() => { fit.fit(); });
+const observer = new ResizeObserver(() => {
+  fit.fit();
+});
 observer.observe(host);
 fit.fit();
-terminal.write("Last row\r\n".repeat(200), () => { document.body.dataset["ready"] = "true"; });
+terminal.write("Last row\r\n".repeat(200), () => {
+  document.body.dataset["ready"] = "true";
+});

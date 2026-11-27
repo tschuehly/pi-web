@@ -52,7 +52,11 @@ export function registerMachinePluginProxyRoutes(app: FastifyInstance, machines:
     try {
       const response = await client.requestJson("GET", "/pi-web-plugins/manifest.json", undefined, { timeoutMs: MACHINE_PLUGIN_MANIFEST_TIMEOUT_MS });
       if (response.statusCode === 404) {
-        return await sendLifecycleCompatibilityError(reply, request.params.machineId, "The remote machine does not expose a versioned plugin manifest. Update and restart PI WEB on the remote machine.");
+        return await sendLifecycleCompatibilityError(
+          reply,
+          request.params.machineId,
+          "The remote machine does not expose a versioned plugin manifest. Update and restart PI WEB on the remote machine.",
+        );
       }
       if (response.statusCode < 200 || response.statusCode >= 300) return await reply.code(response.statusCode).send(response.body);
       return rewriteRemotePluginManifest(request.params.machineId, parseRemoteManifest(response.body));
@@ -65,7 +69,13 @@ export function registerMachinePluginProxyRoutes(app: FastifyInstance, machines:
   });
 }
 
-export async function proxyMachinePluginAsset(machines: MachinePluginProxyMachines, scopedPluginId: string, assetPath: string, requestUrl: string, reply: FastifyReply): Promise<boolean> {
+export async function proxyMachinePluginAsset(
+  machines: MachinePluginProxyMachines,
+  scopedPluginId: string,
+  assetPath: string,
+  requestUrl: string,
+  reply: FastifyReply,
+): Promise<boolean> {
   const remotePlugin = parseMachineScopedPluginId(scopedPluginId);
   if (remotePlugin === undefined) return false;
 
@@ -101,10 +111,12 @@ function rewriteRemotePluginManifest(machineId: string, manifest: RemotePluginMa
     plugins: manifest.plugins.flatMap((plugin) => {
       const modulePath = remotePluginModulePath(plugin.id, plugin.module);
       if (modulePath === undefined) return [];
-      return [{
-        ...plugin,
-        module: `../../../../pi-web-plugins/${encodeURIComponent(machineScopedManifestPluginId(machineId, plugin.id))}/${modulePath.path}${modulePath.query}`,
-      }];
+      return [
+        {
+          ...plugin,
+          module: `../../../../pi-web-plugins/${encodeURIComponent(machineScopedManifestPluginId(machineId, plugin.id))}/${modulePath.path}${modulePath.query}`,
+        },
+      ];
     }),
   };
 }
@@ -177,8 +189,7 @@ function parseRemoteManifest(value: unknown): RemotePluginManifest {
     }
     const source = typeof entry["source"] === "string" ? entry["source"] : undefined;
     const scope = typeof entry["scope"] === "string" ? entry["scope"] : undefined;
-    if (isReservedPiWebPluginId(entry["id"])
-      && !(isPiWebBundledPluginId(entry["id"]) && source === "bundled" && scope === "bundled")) {
+    if (isReservedPiWebPluginId(entry["id"]) && !(isPiWebBundledPluginId(entry["id"]) && source === "bundled" && scope === "bundled")) {
       throw new Error(`Reserved remote PI WEB plugin id: ${entry["id"]}`);
     }
     const backendRevision = parseRemoteBackendRevision(entry["backendRevision"]);
@@ -195,7 +206,7 @@ function parseRemoteManifest(value: unknown): RemotePluginManifest {
       ...(pairedChannelVersion === undefined ? {} : { pairedChannelVersion }),
       ...(source === undefined ? {} : { source }),
       ...(scope === undefined ? {} : { scope }),
-      ...(parseRemoteMachineSpecific(entry["machineSpecific"])),
+      ...parseRemoteMachineSpecific(entry["machineSpecific"]),
     };
   });
   const ids = new Set<string>();
@@ -206,20 +217,28 @@ function parseRemoteManifest(value: unknown): RemotePluginManifest {
   const terminal = plugins.find(({ id }) => id === REQUIRED_TERMINAL_PLUGIN_ID);
   if (terminalMode === "required") {
     if (terminal === undefined || plugins[0] !== terminal || terminal.machineSpecific !== true) {
-      throw new RemotePluginLifecycleCompatibilityError("The remote required Terminal plugin is missing or out of order. Update and restart PI WEB on the remote machine.");
+      throw new RemotePluginLifecycleCompatibilityError(
+        "The remote required Terminal plugin is missing or out of order. Update and restart PI WEB on the remote machine.",
+      );
     }
     if (terminal.backendRevision === undefined || terminal.pairedRequestVersion !== 1 || terminal.pairedChannelVersion !== 1) {
-      throw new RemotePluginLifecycleCompatibilityError("The remote required Terminal plugin is incompatible. Update and restart PI WEB on the remote machine.");
+      throw new RemotePluginLifecycleCompatibilityError(
+        "The remote required Terminal plugin is incompatible. Update and restart PI WEB on the remote machine.",
+      );
     }
   } else if (terminal !== undefined) {
-    throw new RemotePluginLifecycleCompatibilityError("The remote recovery manifest must not publish Terminal. Update and restart PI WEB on the remote machine.");
+    throw new RemotePluginLifecycleCompatibilityError(
+      "The remote recovery manifest must not publish Terminal. Update and restart PI WEB on the remote machine.",
+    );
   }
   return { lifecycleVersion, terminalMode, plugins };
 }
 
 function parseRemoteTerminalMode(value: unknown): TerminalPluginMode {
   if (value === "required" || value === "recovery-disabled") return value;
-  throw new RemotePluginLifecycleCompatibilityError("The remote plugin manifest has no compatible Terminal mode. Update and restart PI WEB on the remote machine.");
+  throw new RemotePluginLifecycleCompatibilityError(
+    "The remote plugin manifest has no compatible Terminal mode. Update and restart PI WEB on the remote machine.",
+  );
 }
 
 function parseRemoteLifecycleVersion(value: unknown): typeof PI_WEB_PLUGIN_LIFECYCLE_VERSION {
@@ -286,7 +305,17 @@ function sendGatewayError(reply: FastifyReply, machineId: string, error: unknown
 }
 
 function formatUnknownValue(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" || typeof value === "symbol" || typeof value === "function" || value === null || value === undefined) return String(value);
+  if (
+    typeof value === "string"
+    || typeof value === "number"
+    || typeof value === "boolean"
+    || typeof value === "bigint"
+    || typeof value === "symbol"
+    || typeof value === "function"
+    || value === null
+    || value === undefined
+  )
+    return String(value);
   try {
     return JSON.stringify(value);
   } catch {

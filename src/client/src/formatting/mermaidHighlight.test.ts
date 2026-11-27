@@ -49,7 +49,9 @@ it("offers Highlighted, Diagram, and Raw for the same Mermaid source without loa
   await settleDeferredContent(host);
   const highlighted = host.renderRoot.querySelector<TokenHighlightedCode>("pi-web-token-highlighted-code");
   if (highlighted === null) throw new Error("Expected the bundled highlighting renderer");
-  await vi.waitFor(() => { expect(highlighted.renderRoot.querySelector(".hljs-keyword")?.textContent).toBe("flowchart"); });
+  await vi.waitFor(() => {
+    expect(highlighted.renderRoot.querySelector(".hljs-keyword")?.textContent).toBe("flowchart");
+  });
   expect(highlighted.renderRoot.querySelector("code")?.textContent).toBe(text);
   expect(highlighted.renderRoot.querySelector("img, script")).toBeNull();
   expect(fetchEngine).not.toHaveBeenCalled();
@@ -63,7 +65,9 @@ it("offers Highlighted, Diagram, and Raw for the same Mermaid source without loa
   await settleDeferredContent(host);
   const diagram = host.renderRoot.querySelector<MermaidPreview>("pi-web-mermaid-preview");
   if (diagram === null) throw new Error("Expected diagram renderer");
-  await vi.waitFor(() => { expect(diagram.renderRoot.querySelector("iframe")).not.toBeNull(); });
+  await vi.waitFor(() => {
+    expect(diagram.renderRoot.querySelector("iframe")).not.toBeNull();
+  });
   expect(diagram.input?.text).toBe(text);
   expect(diagram.renderRoot.querySelector("iframe")?.getAttribute("sandbox")).toBe("allow-scripts");
   expect(fetchEngine).toHaveBeenCalledOnce();
@@ -81,9 +85,9 @@ it("adds filename-based grammar support without creating extra renderer choices 
   for (const filePath of ["chart.mmd", "chart.MERMAID"]) {
     const request = { machineId: "local", text: "graph TD; A-->B", filePath };
     expect(registry.contentRendering.listRenderers(request).map(({ label }) => label)).toEqual(["Highlighted", "Diagram"]);
-    expect(await registry.syntaxHighlighting.highlight({ ...request, signal: new AbortController().signal })).toEqual(expect.arrayContaining([
-      { from: 0, to: 5, kind: "keyword" },
-    ]));
+    expect(await registry.syntaxHighlighting.highlight({ ...request, signal: new AbortController().signal })).toEqual(
+      expect.arrayContaining([{ from: 0, to: 5, kind: "keyword" }]),
+    );
   }
   enabled = false;
   const request = { machineId: "local", text: "graph TD; A-->B", language: "mermaid" };

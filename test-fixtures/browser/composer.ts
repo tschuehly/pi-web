@@ -14,10 +14,19 @@ style.textContent = `
 document.head.append(style);
 // The Workbench interface scale: CSS zoom on the root (interfaceScale.ts).
 const zoom = params.get("zoom");
-if (zoom !== null) { document.documentElement.style.setProperty("zoom", zoom); document.documentElement.style.setProperty("--pi-interface-scale", zoom); }
+if (zoom !== null) {
+  document.documentElement.style.setProperty("zoom", zoom);
+  document.documentElement.style.setProperty("--pi-interface-scale", zoom);
+}
 
 const status: SessionStatus = {
-  sessionId: "dense-fixture", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], cost: 0,
+  sessionId: "dense-fixture",
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  cost: 0,
   tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   model: { provider: "anthropic", id: "opus-h" },
   contextUsage: { tokens: null, contextWindow: 1_000_000, percent: null },

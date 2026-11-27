@@ -39,7 +39,10 @@ describe("built-in CSS themes", () => {
     }
     for (const prefersLight of [false, true]) {
       const { activeTheme } = resolveThemePreference({
-        themes, themePairs, preference: { themeId: "themes:paper", auto: true }, prefersLight,
+        themes,
+        themePairs,
+        preference: { themeId: "themes:paper", auto: true },
+        prefersLight,
       });
       expect(activeTheme?.id).toBe(`themes:${prefersLight ? "paper" : "graphite"}`);
       expect(activeTheme?.stylesheets?.[0]?.url).toMatch(/\/(paper|graphite)\.css\?no-inline$/);
@@ -73,14 +76,27 @@ describe("built-in CSS themes", () => {
         },
       });
       expect(css).toMatch(/^:root \{/);
-      expect([...declarations.keys()]).toEqual(expect.arrayContaining([
-        "--pi-font", "--pi-mono", "--pi-thinking", "--pi-tool",
-        "--pi-syntax-comment", "--pi-syntax-keyword", "--pi-syntax-string",
-        "--pi-syntax-number", "--pi-syntax-title", "--pi-syntax-deletion",
-        "--pi-chat-conversation-bg", "--pi-chat-conversation-border",
-        "--pi-chat-user-bg", "--pi-chat-user-border", "--pi-chat-system-bg",
-        "--pi-chat-activity-bg", "--pi-chat-compacting-bg",
-      ]));
+      expect([...declarations.keys()]).toEqual(
+        expect.arrayContaining([
+          "--pi-font",
+          "--pi-mono",
+          "--pi-thinking",
+          "--pi-tool",
+          "--pi-syntax-comment",
+          "--pi-syntax-keyword",
+          "--pi-syntax-string",
+          "--pi-syntax-number",
+          "--pi-syntax-title",
+          "--pi-syntax-deletion",
+          "--pi-chat-conversation-bg",
+          "--pi-chat-conversation-border",
+          "--pi-chat-user-bg",
+          "--pi-chat-user-border",
+          "--pi-chat-system-bg",
+          "--pi-chat-activity-bg",
+          "--pi-chat-compacting-bg",
+        ]),
+      );
       expect(declarations.get("--pi-syntax-deletion")).toBe("var(--pi-danger)");
       for (const value of declarations.values()) {
         for (const reference of value.matchAll(/var\((--pi-[\w-]+)/g)) {

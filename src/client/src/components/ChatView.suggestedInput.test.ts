@@ -12,8 +12,13 @@ it("does not display suggested input received in session status", async () => {
   const view = new ChatView();
   view.sessionId = "session-1";
   view.status = {
-    sessionId: view.sessionId, isStreaming: false, isCompacting: false, isBashRunning: false,
-    pendingMessageCount: 0, queuedMessages: [], cost: 0,
+    sessionId: view.sessionId,
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    cost: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     suggestedInput: "Prepared text from an extension",
   };

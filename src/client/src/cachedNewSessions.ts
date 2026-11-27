@@ -92,24 +92,35 @@ function parseCachedSession(value: unknown): CachedNewSessionInfo[] {
   const modified = stringField(value, "modified");
   const firstMessage = stringField(value, "firstMessage");
   const messageCount = numberField(value, "messageCount");
-  if (id === undefined || path === undefined || cwd === undefined || created === undefined || modified === undefined || firstMessage === undefined || messageCount !== 0) return [];
+  if (
+    id === undefined
+    || path === undefined
+    || cwd === undefined
+    || created === undefined
+    || modified === undefined
+    || firstMessage === undefined
+    || messageCount !== 0
+  )
+    return [];
   const name = optionalStringField(value, "name");
   const parentSessionPath = optionalStringField(value, "parentSessionPath");
   const machineId = optionalStringField(value, "machineId") ?? defaultMachineId;
-  return [{
-    id,
-    path,
-    cwd,
-    ...(name === undefined ? {} : { name }),
-    ...(value["agentSubsession"] === true ? { agentSubsession: true } : {}),
-    created,
-    modified,
-    messageCount,
-    firstMessage,
-    ...(parentSessionPath === undefined ? {} : { parentSessionPath }),
-    machineId,
-    browserCachedNew: true,
-  }];
+  return [
+    {
+      id,
+      path,
+      cwd,
+      ...(name === undefined ? {} : { name }),
+      ...(value["agentSubsession"] === true ? { agentSubsession: true } : {}),
+      created,
+      modified,
+      messageCount,
+      firstMessage,
+      ...(parentSessionPath === undefined ? {} : { parentSessionPath }),
+      machineId,
+      browserCachedNew: true,
+    },
+  ];
 }
 
 function hasCachedNewMarker(session: SessionInfo): session is SessionInfo & { browserCachedNew: unknown } {

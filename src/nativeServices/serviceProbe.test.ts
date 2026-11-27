@@ -26,12 +26,14 @@ function request(kind: "systemd" | "launchd" = "systemd"): NativeServiceProbeReq
     },
     environment: { PI_WEB_CONFIG: "/home/user/config with space.json" },
     workingDirectory: "/checkout with space",
-    prerequisites: [{
-      id: "sessiond.command.npm",
-      kind: "command-available",
-      command: "npm",
-      description: "npm is available",
-    }],
+    prerequisites: [
+      {
+        id: "sessiond.command.npm",
+        kind: "command-available",
+        command: "npm",
+        description: "npm is available",
+      },
+    ],
   };
 }
 
@@ -94,11 +96,13 @@ describe("systemd authoritative native-service probe", () => {
     const dependencies = { commandRunner: unsatisfiedRunner, createUniqueId: () => "fixed", commandTimeoutMs: 100 };
     await expect(new SystemdNativeServiceProbe(dependencies).run(request())).resolves.toEqual({
       kind: "completed",
-      outcomes: [{
-        prerequisiteId: "sessiond.command.npm",
-        status: "unsatisfied",
-        detail: "npm did not resolve to an external executable in the native service environment.",
-      }],
+      outcomes: [
+        {
+          prerequisiteId: "sessiond.command.npm",
+          status: "unsatisfied",
+          detail: "npm did not resolve to an external executable in the native service environment.",
+        },
+      ],
     });
 
     const malformedRunner = queuedRunner([completed(0, "no marker here")]);
@@ -109,11 +113,7 @@ describe("systemd authoritative native-service probe", () => {
   });
 
   it("bounds a hung unit, cleans it up, and reports the timeout", async () => {
-    const runner = queuedRunner([
-      { kind: "timeout", stdout: "", stderr: "" },
-      completed(0),
-      completed(0, "not-found\n"),
-    ]);
+    const runner = queuedRunner([{ kind: "timeout", stdout: "", stderr: "" }, completed(0), completed(0, "not-found\n")]);
     const probe = new SystemdNativeServiceProbe({
       commandRunner: runner,
       createUniqueId: () => "fixed",
@@ -128,11 +128,7 @@ describe("systemd authoritative native-service probe", () => {
   });
 
   it("bounds a hung unit and distinguishes cleanup failure", async () => {
-    const runner = queuedRunner([
-      { kind: "timeout", stdout: "", stderr: "" },
-      completed(0),
-      completed(0, "loaded\n", "unit still loaded"),
-    ]);
+    const runner = queuedRunner([{ kind: "timeout", stdout: "", stderr: "" }, completed(0), completed(0, "loaded\n", "unit still loaded")]);
     const probe = new SystemdNativeServiceProbe({
       commandRunner: runner,
       createUniqueId: () => "fixed",
@@ -153,11 +149,7 @@ describe("systemd authoritative native-service probe", () => {
 describe("spawn probe command runner", () => {
   it("bounds captured command output", async () => {
     const runner = new SpawnProbeCommandRunner();
-    const result = await runner.run(
-      process.execPath,
-      ["-e", "process.stdout.write('x'.repeat(2 * 1024 * 1024))"],
-      5_000,
-    );
+    const result = await runner.run(process.execPath, ["-e", "process.stdout.write('x'.repeat(2 * 1024 * 1024))"], 5_000);
 
     expect(result).toMatchObject({ kind: "output-limit" });
     expect(result.stdout.length).toBeLessThanOrEqual(1024 * 1024);
@@ -190,7 +182,10 @@ describe("launchd authoritative native-service probe", () => {
       uid: 501,
       createUniqueId: () => "fixed",
       now: () => now,
-      sleep: (milliseconds) => { now += milliseconds; return Promise.resolve(); },
+      sleep: (milliseconds) => {
+        now += milliseconds;
+        return Promise.resolve();
+      },
       probeTimeoutMs: 500,
       pollIntervalMs: 10,
       commandTimeoutMs: 100,
@@ -201,11 +196,7 @@ describe("launchd authoritative native-service probe", () => {
       ["launchctl", "bootstrap", "gui/501", "/tmp/probe/probe.plist"],
       ["launchctl", "bootout", "gui/501/com.pi-web.authoritative-probe.501.fixed"],
     ]);
-    expect(fileSystem.writeFile).toHaveBeenCalledWith(
-      "/tmp/probe/probe.plist",
-      expect.stringContaining("<string>/bin/zsh</string>"),
-      0o600,
-    );
+    expect(fileSystem.writeFile).toHaveBeenCalledWith("/tmp/probe/probe.plist", expect.stringContaining("<string>/bin/zsh</string>"), 0o600);
     expect(fileSystem.writeFile).toHaveBeenCalledWith(
       "/tmp/probe/probe.plist",
       expect.stringContaining("<key>WorkingDirectory</key>\n  <string>/checkout with space</string>"),
@@ -229,7 +220,10 @@ describe("launchd authoritative native-service probe", () => {
       uid: 502,
       createUniqueId: () => "fixed",
       now: () => now,
-      sleep: (milliseconds) => { now += milliseconds; return Promise.resolve(); },
+      sleep: (milliseconds) => {
+        now += milliseconds;
+        return Promise.resolve();
+      },
       probeTimeoutMs: 20,
       pollIntervalMs: 10,
       commandTimeoutMs: 100,
@@ -294,10 +288,7 @@ describe("launchd authoritative native-service probe", () => {
   });
 
   it("boots out a label when bootstrap itself times out", async () => {
-    const runner = queuedRunner([
-      { kind: "timeout", stdout: "", stderr: "" },
-      completed(0),
-    ]);
+    const runner = queuedRunner([{ kind: "timeout", stdout: "", stderr: "" }, completed(0)]);
     const fileSystem = launchdFileSystem({});
     const probe = new LaunchdNativeServiceProbe({
       commandRunner: runner,
@@ -320,10 +311,7 @@ describe("launchd authoritative native-service probe", () => {
   });
 
   it("treats an explicit not-loaded bootout response as successful cleanup after bootstrap fails", async () => {
-    const runner = queuedRunner([
-      completed(1, "", "bootstrap denied"),
-      completed(3, "", "Could not find service in domain"),
-    ]);
+    const runner = queuedRunner([completed(1, "", "bootstrap denied"), completed(3, "", "Could not find service in domain")]);
     const fileSystem = launchdFileSystem({});
     const probe = new LaunchdNativeServiceProbe({
       commandRunner: runner,
@@ -391,10 +379,7 @@ describe("launchd authoritative native-service probe", () => {
   });
 
   it("reports temporary-file cleanup failures", async () => {
-    const runner = queuedRunner([
-      completed(1, "", "bootstrap denied"),
-      completed(3, "", "Could not find service in domain"),
-    ]);
+    const runner = queuedRunner([completed(1, "", "bootstrap denied"), completed(3, "", "Could not find service in domain")]);
     const fileSystem = launchdFileSystem({});
     fileSystem.removeDirectory.mockRejectedValueOnce(new Error("rm denied"));
     const probe = new LaunchdNativeServiceProbe({
@@ -420,9 +405,9 @@ describe("probe service definitions", () => {
     const commandRequirement = request().prerequisites[0];
     if (commandRequirement === undefined) throw new Error("Expected a command prerequisite");
     const bashCheck = nativeServicePrerequisiteShellCheck("bash", commandRequirement);
-    expect(bashCheck).toContain("case \"$pi_web_probe_executable\" in */*)");
-    expect(bashCheck).toContain("test -f \"$pi_web_probe_executable\"");
-    expect(bashCheck).toContain("test -x \"$pi_web_probe_executable\"");
+    expect(bashCheck).toContain('case "$pi_web_probe_executable" in */*)');
+    expect(bashCheck).toContain('test -f "$pi_web_probe_executable"');
+    expect(bashCheck).toContain('test -x "$pi_web_probe_executable"');
 
     const fishCheck = nativeServicePrerequisiteShellCheck("fish", commandRequirement);
     expect(fishCheck).toContain("string match -q '*/*'");

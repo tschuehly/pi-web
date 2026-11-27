@@ -23,9 +23,14 @@ describe("SessionActivityMarker", () => {
 
   async function contents(): Promise<{ owner: string; updatedAt: number }> {
     const value: unknown = JSON.parse(await readFile(sidecar, "utf8"));
-    if (typeof value !== "object" || value === null ||
-        !("owner" in value) || typeof value.owner !== "string" ||
-        !("updatedAt" in value) || typeof value.updatedAt !== "number") {
+    if (
+      typeof value !== "object"
+      || value === null
+      || !("owner" in value)
+      || typeof value.owner !== "string"
+      || !("updatedAt" in value)
+      || typeof value.updatedAt !== "number"
+    ) {
       throw new Error("Expected a valid activity marker");
     }
     return { owner: value.owner, updatedAt: value.updatedAt };
@@ -128,12 +133,7 @@ describe("SessionActivityMarker", () => {
 
   it("serializes busy transitions and release behind pending writes", async () => {
     const marker = service("owner");
-    await Promise.all([
-      marker.refresh(file, true),
-      marker.refresh(file, false),
-      marker.refresh(file, true),
-      marker.release(file),
-    ]);
+    await Promise.all([marker.refresh(file, true), marker.refresh(file, false), marker.refresh(file, true), marker.release(file)]);
     await expect(stat(sidecar)).rejects.toMatchObject({ code: "ENOENT" });
     expect(marker.isActiveElsewhere(file)).toBe(false);
     await marker.refresh(file, true);
@@ -210,7 +210,9 @@ describe("SessionActivityMarker", () => {
   });
 
   it("does not let a throwing error callback break sessions", async () => {
-    const marker = service("owner", () => { throw new Error("reporter failed"); });
+    const marker = service("owner", () => {
+      throw new Error("reporter failed");
+    });
     await mkdir(sidecar);
     await expect(marker.refresh(file, true)).resolves.toBeUndefined();
     await expect(marker.dispose()).resolves.toBeUndefined();

@@ -64,7 +64,14 @@ describe("WorkspaceActivityService", () => {
     // Startup progress names a phase the daemon is inside; it is not work, so the
     // workspace (and the project indicators and remote machines that read it)
     // must not be reported as busy because of it.
-    service.applySessionActivity("/repo", { sessionId: "s1", phase: "active", label: "Opening session", detail: "Starting the Pi session", at: "now", startup: true });
+    service.applySessionActivity("/repo", {
+      sessionId: "s1",
+      phase: "active",
+      label: "Opening session",
+      detail: "Starting the Pi session",
+      at: "now",
+      startup: true,
+    });
 
     expect(service.snapshot().sessions).toEqual([]);
     expect(service.snapshot().workspaces).toEqual([]);

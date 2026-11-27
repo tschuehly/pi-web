@@ -4,8 +4,13 @@ import type { SessionWarningSeverity } from "../api";
 
 // Internal import bridge; presentation belongs to the base theme, not component behaviour.
 export {
-  appStyles, workspacePanelStyles, listStyles, statusBarStyles,
-  autocompleteStyles, promptEditorStyles, scrollBoundaryShadow,
+  appStyles,
+  workspacePanelStyles,
+  listStyles,
+  statusBarStyles,
+  autocompleteStyles,
+  promptEditorStyles,
+  scrollBoundaryShadow,
 } from "../theme/base/shellStyles";
 
 export function renderSessionWarningIcon(severity: SessionWarningSeverity, className: string): TemplateResult {

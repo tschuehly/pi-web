@@ -38,9 +38,7 @@ describe("builtin extension factories load through DefaultResourceLoader", () =>
 
       // The loader should have resolved builtin extension paths.
       const extensionsResult = loader.getExtensions();
-      const builtinPaths = extensionsResult.extensions
-        .map((ext) => ext.path)
-        .filter((p) => p.startsWith("builtin:"));
+      const builtinPaths = extensionsResult.extensions.map((ext) => ext.path).filter((p) => p.startsWith("builtin:"));
 
       expect(extensionsResult.errors).toEqual([]);
       expect(builtinPaths).toContain("builtin:mcp");
@@ -59,9 +57,13 @@ describe("builtin extension factories load through DefaultResourceLoader", () =>
         agentDir: directory,
         extensionFactories: await getBuiltinExtensionFactories(),
         noExtensions: disablement === "noExtensions",
-        settingsManager: SettingsManager.inMemory(disablement === "settings" ? {
-          extensions: ["-builtin:mcp", "-builtin:codemode", "-builtin:tool-search"],
-        } : {}),
+        settingsManager: SettingsManager.inMemory(
+          disablement === "settings"
+            ? {
+                extensions: ["-builtin:mcp", "-builtin:codemode", "-builtin:tool-search"],
+              }
+            : {},
+        ),
         noSkills: true,
         noPromptTemplates: true,
         noThemes: true,
@@ -70,9 +72,7 @@ describe("builtin extension factories load through DefaultResourceLoader", () =>
       await loader.reload();
       expect(loader.getExtensions().errors).toEqual([]);
       const extensionsResult = loader.getExtensions();
-      const builtinPaths = extensionsResult.extensions
-        .map((ext) => ext.path)
-        .filter((p) => p.startsWith("builtin:"));
+      const builtinPaths = extensionsResult.extensions.map((ext) => ext.path).filter((p) => p.startsWith("builtin:"));
       expect(builtinPaths).toHaveLength(0);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -87,28 +87,46 @@ describe("builtin extension factories load through DefaultResourceLoader", () =>
       await writeFile(join(directory, "mcp.json"), JSON.stringify({ mcpServers: {} }));
       await writeFile(join(directory, "marker.txt"), "pi-1-codemode-marker");
       const settingsManager = SettingsManager.inMemory({
-        defaultTools: ["+codemode", "+tool_search"], codemode: { mode: "only" },
-        retry: { enabled: false }, compaction: { enabled: false },
+        defaultTools: ["+codemode", "+tool_search"],
+        codemode: { mode: "only" },
+        retry: { enabled: false },
+        compaction: { enabled: false },
       });
       const loader = new DefaultResourceLoader({
-        cwd: directory, agentDir: directory, settingsManager,
+        cwd: directory,
+        agentDir: directory,
+        settingsManager,
         extensionFactories: await getBuiltinExtensionFactories(),
-        noSkills: true, noPromptTemplates: true, noThemes: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noThemes: true,
         agentsFilesOverride: () => ({ agentsFiles: [] }),
       });
       await loader.reload();
       expect(loader.getExtensions().errors).toEqual([]);
       const modelRuntime = await createTestModelRuntime();
       await modelRuntime.setRuntimeApiKey("anthropic", "isolated-test-key");
-      const unexpectedRunEndingCall = vi.fn(() => { throw new Error("Run-ending tools must not be called from codemode"); });
+      const unexpectedRunEndingCall = vi.fn(() => {
+        throw new Error("Run-ending tools must not be called from codemode");
+      });
       ({ session } = await createAgentSession({
-        cwd: directory, agentDir: directory, settingsManager, resourceLoader: loader,
-        sessionManager: SessionManager.inMemory(directory), modelRuntime, model: testModel(),
-        customTools: [createAskUserToolDefinition({ open: unexpectedRunEndingCall, update: unexpectedRunEndingCall, withdraw: unexpectedRunEndingCall }),
+        cwd: directory,
+        agentDir: directory,
+        settingsManager,
+        resourceLoader: loader,
+        sessionManager: SessionManager.inMemory(directory),
+        modelRuntime,
+        model: testModel(),
+        customTools: [
+          createAskUserToolDefinition({ open: unexpectedRunEndingCall, update: unexpectedRunEndingCall, withdraw: unexpectedRunEndingCall }),
           ...createSubsessionToolDefinitions(directory, {
-            spawn: unexpectedRunEndingCall, list: unexpectedRunEndingCall, join: unexpectedRunEndingCall,
-            check: unexpectedRunEndingCall, read: unexpectedRunEndingCall,
-          })],
+            spawn: unexpectedRunEndingCall,
+            list: unexpectedRunEndingCall,
+            join: unexpectedRunEndingCall,
+            check: unexpectedRunEndingCall,
+            read: unexpectedRunEndingCall,
+          }),
+        ],
       }));
       await session.bindExtensions({ onError: (error) => errors.push(error) });
       expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["read", "codemode", "tool_search"]));
@@ -119,13 +137,26 @@ describe("builtin extension factories load through DefaultResourceLoader", () =>
         expect(declaredNames).not.toContain("read");
         requests++;
         const message: AssistantMessage = {
-          role: "assistant", api: "anthropic-messages", provider: "anthropic", model: testModel().id,
-          content: requests === 1
-            ? [{ type: "toolCall", id: "codemode-test", name: "codemode", arguments: { code: 'text({askCallable: "ask_user" in tools, yieldCallable: "yield_to_subsessions" in tools}); text(await tools.read({path: "marker.txt"}));' } }]
-            : [{ type: "text", text: "Read completed" }],
-          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
-            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-          stopReason: requests === 1 ? "toolUse" : "stop", timestamp: Date.now(),
+          role: "assistant",
+          api: "anthropic-messages",
+          provider: "anthropic",
+          model: testModel().id,
+          content:
+            requests === 1
+              ? [
+                  {
+                    type: "toolCall",
+                    id: "codemode-test",
+                    name: "codemode",
+                    arguments: {
+                      code: 'text({askCallable: "ask_user" in tools, yieldCallable: "yield_to_subsessions" in tools}); text(await tools.read({path: "marker.txt"}));',
+                    },
+                  },
+                ]
+              : [{ type: "text", text: "Read completed" }],
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          stopReason: requests === 1 ? "toolUse" : "stop",
+          timestamp: Date.now(),
         };
         const stream = createAssistantMessageEventStream();
         stream.push({ type: "done", reason: requests === 1 ? "toolUse" : "stop", message });
@@ -134,9 +165,16 @@ describe("builtin extension factories load through DefaultResourceLoader", () =>
       };
       await session.prompt("Read marker.txt using codemode");
       const result = session.messages.find((message) => message.role === "toolResult");
-      expect(result).toMatchObject({ role: "toolResult", toolName: "codemode", isError: false,
-        nestedCalls: { calls: [expect.objectContaining({ name: "read", status: "ok" })] } });
-      const resultText = result?.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+      expect(result).toMatchObject({
+        role: "toolResult",
+        toolName: "codemode",
+        isError: false,
+        nestedCalls: { calls: [expect.objectContaining({ name: "read", status: "ok" })] },
+      });
+      const resultText = result?.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n");
       expect(resultText).toContain("pi-1-codemode-marker");
       expect(resultText).toContain('"askCallable":false');
       expect(resultText).toContain('"yieldCallable":false');

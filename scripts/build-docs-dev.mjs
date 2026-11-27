@@ -26,14 +26,7 @@ const docsDir = path.resolve(scriptDir, "../docs");
 const outDir = path.join(docsDir, ".deploy/dev");
 const pagesDir = path.join(outDir, "dev");
 
-const excludedEntries = new Set([
-  "_redirects",
-  "404.html",
-  "robots.txt",
-  "sitemap.xml",
-  "wrangler.dev.jsonc",
-  "wrangler.jsonc",
-]);
+const excludedEntries = new Set(["_redirects", "404.html", "robots.txt", "sitemap.xml", "wrangler.dev.jsonc", "wrangler.jsonc"]);
 
 function resolveGitSha() {
   const fromEnv = (process.env.GIT_SHA ?? process.env.GITHUB_SHA ?? "").trim().toLowerCase();
@@ -56,10 +49,10 @@ function bannerHtml(sha, stableUrl) {
     : "the main branch";
   const linkStyle = "color:inherit;text-decoration:underline;font-weight:600;";
   return (
-    `<div style="padding:8px 16px;background:#b45309;color:#fff7ed;text-align:center;` +
-    `font:500 14px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;">` +
-    `Development docs built from ${source} — content may not match the latest release. ` +
-    `<a href="${stableUrl}" style="${linkStyle}">View stable version →</a></div>`
+    `<div style="padding:8px 16px;background:#b45309;color:#fff7ed;text-align:center;`
+    + `font:500 14px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;">`
+    + `Development docs built from ${source} — content may not match the latest release. `
+    + `<a href="${stableUrl}" style="${linkStyle}">View stable version →</a></div>`
   );
 }
 
@@ -82,9 +75,7 @@ function injectDevMarkers(html, banner) {
   if (!/<body[^>]*>/.test(html)) {
     throw new Error("Expected a <body> tag to inject the dev banner.");
   }
-  return html
-    .replace("<head>", '<head>\n    <meta name="robots" content="noindex" />')
-    .replace(/<body[^>]*>/, (bodyTag) => `${bodyTag}\n    ${banner}`);
+  return html.replace("<head>", '<head>\n    <meta name="robots" content="noindex" />').replace(/<body[^>]*>/, (bodyTag) => `${bodyTag}\n    ${banner}`);
 }
 
 rmSync(outDir, { recursive: true, force: true });
@@ -109,6 +100,6 @@ for (const page of htmlPages) {
 writeFileSync(outDir + "/_redirects", "/dev/index.html /dev/ 301\n");
 
 console.log(
-  `Assembled dev docs at ${path.relative(process.cwd(), outDir)} ` +
-    `(${htmlPages.length} pages annotated, source: ${sha ? `main@${sha.slice(0, 7)}` : "unknown"}).`,
+  `Assembled dev docs at ${path.relative(process.cwd(), outDir)} `
+    + `(${htmlPages.length} pages annotated, source: ${sha ? `main@${sha.slice(0, 7)}` : "unknown"}).`,
 );

@@ -89,9 +89,7 @@ export class ProjectLifecycleService {
       this.scheduleCleanup();
       return;
     }
-    await this.dependencies.reconcileUnreadWorkspaces(
-      resolutions.flatMap((resolution) => resolution.workspaces.map((workspace) => workspace.path)),
-    );
+    await this.dependencies.reconcileUnreadWorkspaces(resolutions.flatMap((resolution) => resolution.workspaces.map((workspace) => workspace.path)));
   }
 
   private clearCleanupTimer(): void {

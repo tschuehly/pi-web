@@ -57,7 +57,12 @@ export function buildGitFileList(files: readonly GitStatusFile[], submodules: re
     .map((submodule): GitFileListSubmoduleGroup => {
       const pointer = pointers.get(submodule);
       const inner = grouped.get(submodule) ?? [];
-      return { path: submodule, name: segmentName(submodule), ...(pointer === undefined ? {} : { pointer }), files: [...inner].sort((left, right) => left.relativePath.localeCompare(right.relativePath)) };
+      return {
+        path: submodule,
+        name: segmentName(submodule),
+        ...(pointer === undefined ? {} : { pointer }),
+        files: [...inner].sort((left, right) => left.relativePath.localeCompare(right.relativePath)),
+      };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 

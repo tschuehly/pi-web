@@ -40,7 +40,11 @@ export interface OAuthLoginFlowServiceOptions {
 
 const DEFAULT_TERMINAL_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_RUNNING_TTL_MS = 30 * 60 * 1000;
-const noopLogger: OAuthLoginFlowLogger = { error() { /* no-op */ } };
+const noopLogger: OAuthLoginFlowLogger = {
+  error() {
+    /* no-op */
+  },
+};
 
 /**
  * AuthInteraction transport shared by OAuth and provider-driven API-key login.
@@ -92,7 +96,9 @@ export class OAuthLoginFlowService {
     const interaction: AuthInteraction = {
       signal: abort.signal,
       prompt: (prompt) => this.handlePrompt(record, prompt),
-      notify: (event) => { this.handleEvent(record, event); },
+      notify: (event) => {
+        this.handleEvent(record, event);
+      },
     };
 
     void options.runtime.login(options.providerId, options.authType ?? "oauth", interaction).then(
@@ -159,7 +165,10 @@ export class OAuthLoginFlowService {
     if (!this.isCurrentRunning(record)) return;
     switch (event.type) {
       case "auth_url":
-        this.updateState(record, { ...record.state, auth: { url: event.url, ...(event.instructions === undefined ? {} : { instructions: event.instructions }) } });
+        this.updateState(record, {
+          ...record.state,
+          auth: { url: event.url, ...(event.instructions === undefined ? {} : { instructions: event.instructions }) },
+        });
         return;
       case "device_code":
         this.updateState(record, {
@@ -182,12 +191,14 @@ export class OAuthLoginFlowService {
             ...(record.state.info ?? []),
             {
               message: event.message,
-              ...(event.links === undefined ? {} : {
-                links: event.links.map((link) => ({
-                  url: link.url,
-                  ...(link.label === undefined ? {} : { label: link.label }),
-                })),
-              }),
+              ...(event.links === undefined
+                ? {}
+                : {
+                    links: event.links.map((link) => ({
+                      url: link.url,
+                      ...(link.label === undefined ? {} : { label: link.label }),
+                    })),
+                  }),
             },
           ],
         });
@@ -264,7 +275,9 @@ export class OAuthLoginFlowService {
       if (this.isCurrentRunning(record)) this.updateState(record, withoutInteraction(record.state));
       pending.reject(new Error("Prompt cancelled"));
     };
-    pending.cleanup = () => { signal.removeEventListener("abort", onAbort); };
+    pending.cleanup = () => {
+      signal.removeEventListener("abort", onAbort);
+    };
     signal.addEventListener("abort", onAbort, { once: true });
     if (signal.aborted) {
       onAbort();
@@ -288,10 +301,7 @@ export class OAuthLoginFlowService {
     try {
       await onComplete?.();
     } catch (error) {
-      this.logErrorNoThrow(
-        { err: error, flowId: record.flowId, providerId: record.state.providerId },
-        "login completion callback failed",
-      );
+      this.logErrorNoThrow({ err: error, flowId: record.flowId, providerId: record.state.providerId }, "login completion callback failed");
     }
     if (!this.isCurrent(record)) return;
     const completed = withoutInteraction(record.state);
@@ -330,7 +340,9 @@ export class OAuthLoginFlowService {
       this.expireRunningFlow(record);
       return;
     }
-    this.setTimer(record, this.runningTtlMs, () => { this.expireRunningFlow(record); });
+    this.setTimer(record, this.runningTtlMs, () => {
+      this.expireRunningFlow(record);
+    });
   }
 
   private scheduleTerminalEviction(record: OAuthFlowRecord): void {
@@ -383,20 +395,24 @@ function cloneState(state: OAuthFlowState): OAuthFlowState {
   return {
     ...state,
     progress: [...state.progress],
-    ...(state.auth === undefined ? {} : {
-      auth: {
-        ...state.auth,
-        ...(state.auth.deviceCode === undefined ? {} : { deviceCode: { ...state.auth.deviceCode } }),
-      },
-    }),
+    ...(state.auth === undefined
+      ? {}
+      : {
+          auth: {
+            ...state.auth,
+            ...(state.auth.deviceCode === undefined ? {} : { deviceCode: { ...state.auth.deviceCode } }),
+          },
+        }),
     ...(state.prompt === undefined ? {} : { prompt: { ...state.prompt } }),
     ...(state.select === undefined ? {} : { select: { ...state.select, options: state.select.options.map((option) => ({ ...option })) } }),
-    ...(state.info === undefined ? {} : {
-      info: state.info.map((item) => ({
-        ...item,
-        ...(item.links === undefined ? {} : { links: item.links.map((link) => ({ ...link })) }),
-      })),
-    }),
+    ...(state.info === undefined
+      ? {}
+      : {
+          info: state.info.map((item) => ({
+            ...item,
+            ...(item.links === undefined ? {} : { links: item.links.map((link) => ({ ...link })) }),
+          })),
+        }),
   };
 }
 

@@ -22,7 +22,11 @@ export function browserSessionStorage(): KeyValueStorage | undefined {
 export class PersistentValueMap<T> {
   private readonly values = new Map<string, T>();
 
-  constructor(private readonly storageKey: string, parseValue: StorageValueParser<T>, private readonly storage = browserSessionStorage()) {
+  constructor(
+    private readonly storageKey: string,
+    parseValue: StorageValueParser<T>,
+    private readonly storage = browserSessionStorage(),
+  ) {
     for (const [key, value] of loadEntries(storageKey, parseValue, storage)) this.values.set(key, value);
   }
 

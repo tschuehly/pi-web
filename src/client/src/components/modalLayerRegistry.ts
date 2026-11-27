@@ -32,7 +32,9 @@ const modalListeners = new Set<(ownerDocument: Document) => void>();
 /** Subscribe while a transient surface needs proactive modality updates. */
 export function subscribeModalChanges(listener: (ownerDocument: Document) => void): () => void {
   modalListeners.add(listener);
-  return () => { modalListeners.delete(listener); };
+  return () => {
+    modalListeners.delete(listener);
+  };
 }
 
 /** The actual interaction owner, including framework-neutral plugin dialogs. */
@@ -43,8 +45,9 @@ export function activeModalElement(ownerDocument: Document): HTMLElement | undef
 /** Prefer :modal so an ordinary dialog.show() does not acquire modality. */
 function isNativeModal(dialog: HTMLDialogElement): boolean {
   if (!dialog.open || !dialog.isConnected) return false;
-  try { return dialog.matches(":modal"); }
-  catch {
+  try {
+    return dialog.matches(":modal");
+  } catch {
     // Older engines cannot distinguish show() from showModal(); fail closed.
     return true;
   }
@@ -56,20 +59,31 @@ const observedRoots = new WeakSet<Document | ShadowRoot>();
 export function observeModalRoot(root: Document | ShadowRoot): void {
   if (observedRoots.has(root)) return;
   observedRoots.add(root);
-  root.addEventListener("beforetoggle", (event) => {
-    const dialog = event.target;
-    if (!(dialog instanceof HTMLDialogElement)) return;
-    if ("newState" in event && event.newState === "open") {
-      nativeLayers.set(dialog, {
-        layer: { element: dialog, focus: () => { dialog.focus(); } },
-        order: ++modalLayerOrder,
-        restorationPath: [],
+  root.addEventListener(
+    "beforetoggle",
+    (event) => {
+      const dialog = event.target;
+      if (!(dialog instanceof HTMLDialogElement)) return;
+      if ("newState" in event && event.newState === "open") {
+        nativeLayers.set(dialog, {
+          layer: {
+            element: dialog,
+            focus: () => {
+              dialog.focus();
+            },
+          },
+          order: ++modalLayerOrder,
+          restorationPath: [],
+        });
+      }
+      // showModal has not established :modal during beforetoggle. Wait until the
+      // native operation finishes, rather than mistaking dialog.show() for it.
+      queueMicrotask(() => {
+        notifyModalLayers(dialog.ownerDocument);
       });
-    }
-    // showModal has not established :modal during beforetoggle. Wait until the
-    // native operation finishes, rather than mistaking dialog.show() for it.
-    queueMicrotask(() => { notifyModalLayers(dialog.ownerDocument); });
-  }, true);
+    },
+    true,
+  );
 }
 
 function nativeModalLayers(root: Document | ShadowRoot): RegisteredModalLayer[] {
@@ -80,7 +94,16 @@ function nativeModalLayers(root: Document | ShadowRoot): RegisteredModalLayer[] 
       if (isNativeModal(element)) {
         let layer = nativeLayers.get(element);
         if (layer === undefined) {
-          layer = { layer: { element, focus: () => { element.focus(); } }, order: ++modalLayerOrder, restorationPath: [] };
+          layer = {
+            layer: {
+              element,
+              focus: () => {
+                element.focus();
+              },
+            },
+            order: ++modalLayerOrder,
+            restorationPath: [],
+          };
           nativeLayers.set(element, layer);
         }
         layers.push(layer);
@@ -107,9 +130,7 @@ export function registerRenderedModal(layer: RenderedModalLayer): RenderedModalR
   const registered: RegisteredModalLayer = {
     layer,
     order: ++modalLayerOrder,
-    restorationPath: previous instanceof HTMLElement
-      ? [previous, ...(lowerLayer?.restorationPath ?? [])]
-      : [],
+    restorationPath: previous instanceof HTMLElement ? [previous, ...(lowerLayer?.restorationPath ?? [])] : [],
   };
   let active = true;
 
@@ -133,8 +154,7 @@ export function registerRenderedModal(layer: RenderedModalLayer): RenderedModalR
 
 /** True while a rendered app layer or native modal owns interaction. */
 export function hasRenderedModal(ownerDocument: Document | undefined): boolean {
-  return ownerDocument !== undefined
-    && topModalLayer(ownerDocument) !== undefined;
+  return ownerDocument !== undefined && topModalLayer(ownerDocument) !== undefined;
 }
 
 /**
@@ -195,8 +215,12 @@ function topModalLayer(ownerDocument: Document): RegisteredModalLayer | undefine
 function containingModalLayer(ownerDocument: Document, node: Element): RegisteredModalLayer | undefined {
   let top: RegisteredModalLayer | undefined;
   for (const registered of registeredModalLayers) {
-    if (registered.layer.element.ownerDocument !== ownerDocument || !isNativeModal(registered.layer.element)
-      || !composedContains(registered.layer.element, node)) continue;
+    if (
+      registered.layer.element.ownerDocument !== ownerDocument
+      || !isNativeModal(registered.layer.element)
+      || !composedContains(registered.layer.element, node)
+    )
+      continue;
     registered.order = nativeLayers.get(registered.layer.element)?.order ?? registered.order;
     if (top === undefined || registered.order > top.order) top = registered;
   }

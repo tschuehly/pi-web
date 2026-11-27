@@ -107,7 +107,15 @@ function parseStoredMachine(value: unknown): StoredMachine {
   const baseUrl = value["baseUrl"];
   const createdAt = value["createdAt"];
   const updatedAt = value["updatedAt"];
-  if (typeof id !== "string" || typeof name !== "string" || kind !== "remote" || typeof baseUrl !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string") throw new Error("Invalid machine");
+  if (
+    typeof id !== "string"
+    || typeof name !== "string"
+    || kind !== "remote"
+    || typeof baseUrl !== "string"
+    || typeof createdAt !== "string"
+    || typeof updatedAt !== "string"
+  )
+    throw new Error("Invalid machine");
   const token = optionalString(value["token"], "token");
   const headers = optionalStringRecord(value["headers"], "headers");
   return { id, name, kind, baseUrl, createdAt, updatedAt, ...(token === undefined ? {} : { token }), ...(headers === undefined ? {} : { headers }) };
@@ -122,10 +130,12 @@ function optionalString(value: unknown, key: string): string | undefined {
 function optionalStringRecord(value: unknown, key: string): Record<string, string> | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Invalid machine ${key}`);
-  return Object.fromEntries(Object.entries(value).map(([header, headerValue]) => {
-    if (typeof headerValue !== "string") throw new Error(`Invalid machine ${key}`);
-    return [header, headerValue];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([header, headerValue]) => {
+      if (typeof headerValue !== "string") throw new Error(`Invalid machine ${key}`);
+      return [header, headerValue];
+    }),
+  );
 }
 
 async function restrictMachineStorePermissions(path: string): Promise<void> {

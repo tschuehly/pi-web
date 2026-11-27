@@ -3,11 +3,7 @@ import type { ServerNoticeDismissRequest } from "../../shared/apiTypes.js";
 import type { ServerNoticeRouteService } from "./serverNoticeService.js";
 
 /** Internal sessiond HTTP adapter for the server-owned current notice snapshot. */
-export function registerServerNoticeRoutes(
-  app: FastifyInstance,
-  notices: ServerNoticeRouteService,
-  prefix = "",
-): void {
+export function registerServerNoticeRoutes(app: FastifyInstance, notices: ServerNoticeRouteService, prefix = ""): void {
   app.get(`${prefix}/notices`, () => notices.snapshot());
 
   app.post<{ Body: unknown }>(`${prefix}/notices/dismiss`, (request, reply) => {

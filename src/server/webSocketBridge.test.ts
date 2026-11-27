@@ -70,10 +70,7 @@ describe("plugin backend channel upgrade payload limit", () => {
       "/api/paired-plugin-backends/pi-web.terminal/projects/p/workspaces/w/channels/terminal.attach?admission=denied",
       "/api/machines/remote-one/paired-plugin-backends/pi-web.terminal/projects/p/workspaces/w/channels/terminal.attach",
     ];
-    const unrelatedPaths = [
-      "/plugin-backends/pi-web.terminal/projects/p/workspaces/w/channels/terminal.attach",
-      "/api/sessions/session-1/socket",
-    ];
+    const unrelatedPaths = ["/plugin-backends/pi-web.terminal/projects/p/workspaces/w/channels/terminal.attach", "/api/sessions/session-1/socket"];
     const socketServer = new WebSocketServer({ host: "127.0.0.1", port: 0, maxPayload: defaultMaxPayload });
     servers.add(socketServer);
     const pairedPathSet = new Set(pairedPaths);
@@ -102,10 +99,8 @@ describe("plugin backend channel upgrade payload limit", () => {
       await closed;
     }
 
-    expect(pairedPaths.map((path) => receiverLimits.get(path)))
-      .toEqual(pairedPaths.map(() => PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES));
-    expect(unrelatedPaths.map((path) => receiverLimits.get(path)))
-      .toEqual(unrelatedPaths.map(() => defaultMaxPayload));
+    expect(pairedPaths.map((path) => receiverLimits.get(path))).toEqual(pairedPaths.map(() => PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES));
+    expect(unrelatedPaths.map((path) => receiverLimits.get(path))).toEqual(unrelatedPaths.map(() => defaultMaxPayload));
   });
 });
 
@@ -136,7 +131,9 @@ describe("bounded plugin backend channel bridge", () => {
     const second = serializePluginBackendChannelDataEnvelope({ sequence: 2 });
 
     upstreamSide.peerSocket.send(first);
-    upstreamSide.peerSocket.send(second, () => { upstreamSide.peerSocket.close(1000, "complete"); });
+    upstreamSide.peerSocket.send(second, () => {
+      upstreamSide.peerSocket.close(1000, "complete");
+    });
 
     await expect(messages.next()).resolves.toBe(first);
     await expect(messages.next()).resolves.toBe(second);
@@ -225,7 +222,9 @@ describe("bounded plugin backend channel bridge", () => {
     const send = createBoundedTextWebSocketSender(client, { maxFrames: 1, maxBytes: 1024, onOverflow });
 
     send("first");
-    expect(() => { send("second"); }).toThrow("queue limit");
+    expect(() => {
+      send("second");
+    }).toThrow("queue limit");
     expect(onOverflow).toHaveBeenCalledOnce();
   });
 });
@@ -247,10 +246,18 @@ describe("createBufferedSender", () => {
     send(Buffer.from("queued-before-open"), false);
 
     const serverSocket = await connected;
-    await expect(new Promise<{ text: string; binary: boolean }>((resolve) => {
-      serverSocket.once("message", (data, binary) => { resolve({ text: rawDataToString(data), binary }); });
-    })).resolves.toEqual({ text: "queued-before-open", binary: false });
-    const next = new Promise<boolean>((resolve) => { serverSocket.once("message", (_data, binary) => { resolve(binary); }); });
+    await expect(
+      new Promise<{ text: string; binary: boolean }>((resolve) => {
+        serverSocket.once("message", (data, binary) => {
+          resolve({ text: rawDataToString(data), binary });
+        });
+      }),
+    ).resolves.toEqual({ text: "queued-before-open", binary: false });
+    const next = new Promise<boolean>((resolve) => {
+      serverSocket.once("message", (_data, binary) => {
+        resolve(binary);
+      });
+    });
     send(Buffer.from("binary"), true);
     await expect(next).resolves.toBe(true);
     closeSocket(client);
@@ -297,7 +304,9 @@ function closeSocket(socket: WebSocket): void {
 
 function closeSocketServer(socketServer: WebSocketServer): Promise<void> {
   return new Promise<void>((resolve) => {
-    socketServer.close(() => { resolve(); });
+    socketServer.close(() => {
+      resolve();
+    });
   });
 }
 
@@ -332,7 +341,9 @@ function nextOpen(socket: WebSocket): Promise<void> {
 function nextClose(socket: WebSocket): Promise<void> {
   if (socket.readyState === WebSocket.CLOSED) return Promise.resolve();
   return new Promise((resolve) => {
-    socket.once("close", () => { resolve(); });
+    socket.once("close", () => {
+      resolve();
+    });
   });
 }
 
@@ -345,7 +356,11 @@ function nextCloseEvent(socket: WebSocket): Promise<{ code: number; reason: stri
 }
 
 function nextFrame(socket: WebSocket): Promise<{ text: string; binary: boolean }> {
-  return new Promise((resolve) => { socket.once("message", (data, binary) => { resolve({ text: rawDataToString(data), binary }); }); });
+  return new Promise((resolve) => {
+    socket.once("message", (data, binary) => {
+      resolve({ text: rawDataToString(data), binary });
+    });
+  });
 }
 
 function nextMessage(socket: WebSocket): Promise<string> {
@@ -369,7 +384,9 @@ function socketMessages(socket: WebSocket): { next(): Promise<string> } {
     next: () => {
       const value = queued.shift();
       return value === undefined
-        ? new Promise<string>((resolve) => { waiters.push(resolve); })
+        ? new Promise<string>((resolve) => {
+            waiters.push(resolve);
+          })
         : Promise.resolve(value);
     },
   };
@@ -377,9 +394,7 @@ function socketMessages(socket: WebSocket): { next(): Promise<string> } {
 
 function webSocketReceiverMaxPayload(socket: WebSocket): number {
   const receiver: unknown = Reflect.get(socket, "_receiver");
-  const maxPayload: unknown = typeof receiver === "object" && receiver !== null
-    ? Reflect.get(receiver, "_maxPayload")
-    : undefined;
+  const maxPayload: unknown = typeof receiver === "object" && receiver !== null ? Reflect.get(receiver, "_maxPayload") : undefined;
   if (typeof maxPayload !== "number") throw new Error("Expected ws receiver payload limit");
   return maxPayload;
 }

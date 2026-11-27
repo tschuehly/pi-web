@@ -35,7 +35,12 @@ export interface DurableContributedResources {
   promptPaths: { path: string; extensionPath: string }[];
 }
 
-export interface DurablePromptTemplate { name: string; description?: string; argumentHint?: string; content: string }
+export interface DurablePromptTemplate {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  content: string;
+}
 
 /**
  * Load a Durable Chat's resources the way a legacy Chat's session does: Pi's `DefaultResourceLoader` for the
@@ -49,15 +54,19 @@ export async function loadDurableChatResources(cwd: string, agentDir: string, co
   const trustedSettings = SettingsManager.create(cwd, agentDir, { projectTrusted: trusted });
   const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager: trustedSettings, noExtensions: true, noThemes: true });
   await loader.reload();
-  if (contributed !== undefined) loader.extendResources({ skillPaths: contributed.skillPaths.map(extensionResource), promptPaths: contributed.promptPaths.map(extensionResource) });
+  if (contributed !== undefined)
+    loader.extendResources({ skillPaths: contributed.skillPaths.map(extensionResource), promptPaths: contributed.promptPaths.map(extensionResource) });
   const agentsFiles = loader.getAgentsFiles().agentsFiles;
   const skills = loader.getSkills().skills;
   const addendum = [...loader.getAppendSystemPrompt(), OWNER_RUN_ADDENDUM].join("\n\n");
   // Pi's system-prompt.js `renderProjectContext`, which the package does not export.
-  const projectContext = agentsFiles.length === 0 ? undefined : [
-    "Project-specific instructions and guidelines:",
-    ...agentsFiles.map(({ path, content }) => `<project_instructions path="${path}">\n${content}\n</project_instructions>`),
-  ].join("\n\n");
+  const projectContext =
+    agentsFiles.length === 0
+      ? undefined
+      : [
+          "Project-specific instructions and guidelines:",
+          ...agentsFiles.map(({ path, content }) => `<project_instructions path="${path}">\n${content}\n</project_instructions>`),
+        ].join("\n\n");
   const skillsPrompt = formatSkillsForPrompt(skills, "read").trim();
   const hash = (content: string) => createHash("sha256").update(content).digest("hex");
   return {
@@ -71,9 +80,15 @@ export async function loadDurableChatResources(cwd: string, agentDir: string, co
       ],
     },
     compaction: trustedSettings.getCompactionSettings(),
-    skillList: skills.map((skill) => ({ name: skill.name, filePath: skill.filePath, baseDir: skill.baseDir, ...(skill.description === "" ? {} : { description: skill.description }) })),
+    skillList: skills.map((skill) => ({
+      name: skill.name,
+      filePath: skill.filePath,
+      baseDir: skill.baseDir,
+      ...(skill.description === "" ? {} : { description: skill.description }),
+    })),
     promptList: loader.getPrompts().prompts.map((template) => ({
-      name: template.name, content: template.content,
+      name: template.name,
+      content: template.content,
       ...(template.description === "" ? {} : { description: template.description }),
       ...(template.argumentHint === undefined ? {} : { argumentHint: template.argumentHint }),
     })),
@@ -87,7 +102,15 @@ When the user's task needs a command your sandbox cannot run (it writes outside 
 
 /** Pi's `buildExtensionResourcePaths` for one contributed path. */
 function extensionResource(entry: { path: string; extensionPath: string }) {
-  return { path: entry.path, metadata: { source: `extension:${basename(entry.extensionPath).replace(/\.(ts|js)$/, "")}`, scope: "temporary" as const, origin: "top-level" as const, baseDir: dirname(entry.extensionPath) } };
+  return {
+    path: entry.path,
+    metadata: {
+      source: `extension:${basename(entry.extensionPath).replace(/\.(ts|js)$/, "")}`,
+      scope: "temporary" as const,
+      origin: "top-level" as const,
+      baseDir: dirname(entry.extensionPath),
+    },
+  };
 }
 
 /** A new Durable Chat's model: `PI_WEB_DURABLE_MODEL`, else Pi's default model from the settings, else Claude Sonnet. */
@@ -125,11 +148,15 @@ function parseCommandArgs(argsString: string): string[] {
     if (inQuote !== undefined) {
       if (char === inQuote) inQuote = undefined;
       else current += char;
-    } else if (char === "\"" || char === "'") {
+    } else if (char === '"' || char === "'") {
       inQuote = char;
       hasToken = true;
     } else if (/\s/.test(char)) {
-      if (hasToken) { args.push(current); current = ""; hasToken = false; }
+      if (hasToken) {
+        args.push(current);
+        current = "";
+        hasToken = false;
+      }
     } else {
       current += char;
       hasToken = true;
@@ -142,18 +169,21 @@ function parseCommandArgs(argsString: string): string[] {
 /** Pi's `substituteArgs`: $1, $@, $ARGUMENTS, ${N:-default}, ${@:-default}, ${@:N}, ${@:N:L}; no recursive substitution. */
 function substituteArgs(content: string, args: string[]): string {
   const all = args.join(" ");
-  return content.replace(/\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g, (_match, defaultTarget: string | undefined, defaultValue: string, sliceStart: string | undefined, sliceLength: string | undefined, simple: string) => {
-    if (defaultTarget !== undefined) {
-      const value = defaultTarget === "@" || defaultTarget === "ARGUMENTS" ? all : args[Number.parseInt(defaultTarget, 10) - 1];
-      return value !== undefined && value !== "" ? value : defaultValue;
-    }
-    if (sliceStart !== undefined) {
-      const start = Math.max(0, Number.parseInt(sliceStart, 10) - 1);
-      return (sliceLength === undefined ? args.slice(start) : args.slice(start, start + Number.parseInt(sliceLength, 10))).join(" ");
-    }
-    if (simple === "ARGUMENTS" || simple === "@") return all;
-    return args[Number.parseInt(simple, 10) - 1] ?? "";
-  });
+  return content.replace(
+    /\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g,
+    (_match, defaultTarget: string | undefined, defaultValue: string, sliceStart: string | undefined, sliceLength: string | undefined, simple: string) => {
+      if (defaultTarget !== undefined) {
+        const value = defaultTarget === "@" || defaultTarget === "ARGUMENTS" ? all : args[Number.parseInt(defaultTarget, 10) - 1];
+        return value !== undefined && value !== "" ? value : defaultValue;
+      }
+      if (sliceStart !== undefined) {
+        const start = Math.max(0, Number.parseInt(sliceStart, 10) - 1);
+        return (sliceLength === undefined ? args.slice(start) : args.slice(start, start + Number.parseInt(sliceLength, 10))).join(" ");
+      }
+      if (simple === "ARGUMENTS" || simple === "@") return all;
+      return args[Number.parseInt(simple, 10) - 1] ?? "";
+    },
+  );
 }
 
 /**

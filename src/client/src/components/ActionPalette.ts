@@ -28,7 +28,9 @@ export class ActionPalette extends LitElement {
         .onClose=${() => this.onCancel?.()}
         .initialFocus=${"input"}
         .label=${"Action palette"}
-        @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.handleKeyDown(event);
+        }}
       >
         <header class="ui-dialog-header">
           <input class="ui-dialog-search" aria-label="Search actions"
@@ -44,19 +46,26 @@ export class ActionPalette extends LitElement {
           <button class="ui-button ui-button--icon" title="Close" aria-label="Close" @click=${() => this.onCancel?.()}>×</button>
         </header>
         <div class="options ui-selection-list">
-          ${actions.length === 0 ? html`<div class="empty ui-dialog-empty">No actions found.</div>` : actions.map((action, index) => {
-            const hasDescription = action.description !== undefined && action.description !== "";
-            const group = action.group !== undefined && action.group !== ""
-              ? html`<small class="group ui-selection-detail">${action.group}</small>` : nothing;
-            return html`
+          ${
+            actions.length === 0
+              ? html`<div class="empty ui-dialog-empty">No actions found.</div>`
+              : actions.map((action, index) => {
+                  const hasDescription = action.description !== undefined && action.description !== "";
+                  const group =
+                    action.group !== undefined && action.group !== "" ? html`<small class="group ui-selection-detail">${action.group}</small>` : nothing;
+                  return html`
             <button
               class=${`ui-button ui-selection-option ${index === this.selectedIndex ? "selected" : ""} ${action.enabled === false ? "disabled" : ""}`}
               ?disabled=${action.enabled === false}
               title=${action.disabledReason ?? action.title}
               aria-current=${index === this.selectedIndex ? "true" : nothing}
               ${scrollWhenSelected(index === this.selectedIndex, action.id)}
-              @focus=${() => { this.selectedIndex = index; }}
-              @click=${() => { this.run(action); }}
+              @focus=${() => {
+                this.selectedIndex = index;
+              }}
+              @click=${() => {
+                this.run(action);
+              }}
             >
               <span class="heading">
                 <strong>${action.title}</strong>
@@ -67,7 +76,8 @@ export class ActionPalette extends LitElement {
               ${action.enabled === false && action.disabledReason !== undefined ? html`<small class="disabled-reason ui-selection-detail">${action.disabledReason}</small>` : nothing}
             </button>
           `;
-          })}
+                })
+          }
         </div>
       </modal-surface>
     `;
@@ -107,14 +117,18 @@ export class ActionPalette extends LitElement {
     this.onRun?.(action);
   }
 
-  static override styles = [uiDialogStyles, uiSelectionStyles, css`
+  static override styles = [
+    uiDialogStyles,
+    uiSelectionStyles,
+    css`
     .heading, .details { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
     strong { flex: 1 1 12ch; min-width: 0; }
     .description { flex: 1 1 24ch; min-width: 0; font: inherit; }
     .disabled-reason { color: var(--pi-warning); }
     .group { flex: 0 1 auto; min-width: 0; max-width: 100%; margin: 0 0 0 auto; text-align: right; font-size: 12px; }
     kbd { flex: 0 1 auto; max-width: 100%; margin-inline-start: auto; align-self: center; border: 1px solid var(--pi-border); border-radius: 6px; background: var(--pi-surface); color: var(--pi-muted); padding: 2px 6px; font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); white-space: normal; }
-  `];
+  `,
+  ];
 }
 
 export function filterActionPaletteActions(actions: readonly AppAction[], queryText: string): AppAction[] {

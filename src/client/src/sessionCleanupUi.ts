@@ -7,9 +7,7 @@ export interface SessionCleanupDraft {
   deleteArchivedDays: string;
 }
 
-export type SessionCleanupDraftValidation =
-  | { ok: true; request: SessionCleanupRequest }
-  | { ok: false; error: string };
+export type SessionCleanupDraftValidation = { ok: true; request: SessionCleanupRequest } | { ok: false; error: string };
 
 export const DEFAULT_SESSION_CLEANUP_DRAFT: SessionCleanupDraft = {
   archiveIdleEnabled: true,
@@ -68,23 +66,32 @@ export function sessionCleanupPreviewHasTargets(preview: Pick<SessionCleanupPrev
   return preview.totals.archiveCount > 0 || preview.totals.deleteCount > 0;
 }
 
-export function selectedSessionCleanupProjectCwds(preview: Pick<SessionCleanupPreviewResponse, "projects">, selectedProjectCwds: readonly string[] | undefined): string[] {
+export function selectedSessionCleanupProjectCwds(
+  preview: Pick<SessionCleanupPreviewResponse, "projects">,
+  selectedProjectCwds: readonly string[] | undefined,
+): string[] {
   const previewCwds = preview.projects.map((project) => project.cwd);
   if (selectedProjectCwds === undefined) return previewCwds;
   const selected = new Set(selectedProjectCwds);
   return previewCwds.filter((cwd) => selected.has(cwd));
 }
 
-export function sessionCleanupPreviewForSelectedProjects(preview: SessionCleanupPreviewResponse, selectedProjectCwds: readonly string[] | undefined): SessionCleanupPreviewResponse {
+export function sessionCleanupPreviewForSelectedProjects(
+  preview: SessionCleanupPreviewResponse,
+  selectedProjectCwds: readonly string[] | undefined,
+): SessionCleanupPreviewResponse {
   const selected = new Set(selectedSessionCleanupProjectCwds(preview, selectedProjectCwds));
   const projects = preview.projects.filter((project) => selected.has(project.cwd));
   return {
     ...preview,
     projects,
-    totals: projects.reduce((totals, project) => ({
-      archiveCount: totals.archiveCount + project.archiveCount,
-      deleteCount: totals.deleteCount + project.deleteCount,
-    }), { archiveCount: 0, deleteCount: 0 }),
+    totals: projects.reduce(
+      (totals, project) => ({
+        archiveCount: totals.archiveCount + project.archiveCount,
+        deleteCount: totals.deleteCount + project.deleteCount,
+      }),
+      { archiveCount: 0, deleteCount: 0 },
+    ),
   };
 }
 

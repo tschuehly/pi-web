@@ -58,8 +58,7 @@ export interface PendingAskUpdateInput extends PendingAskOpenInput {
  */
 export type PendingAskCloseResult =
   /** `ask` is present after a partial send: the ask stays open with its remaining questions. */
-  | { status: "closed"; outcome: AskUserOutcome; ask?: PendingAskUser }
-  | { status: "stale" };
+  { status: "closed"; outcome: AskUserOutcome; ask?: PendingAskUser } | { status: "stale" };
 
 /** Rejected input: a question set is malformed, or an answer does not fit its question. */
 export class PendingAskValidationError extends Error {
@@ -129,7 +128,16 @@ export class PendingAskStore {
     if (input.questions === undefined && approval !== true) throw new PendingAskValidationError("questions are required for a new question set");
     const questions = validateQuestions(input.questions ?? [], approval);
     const askedAt = this.timestamp();
-    const ask: PendingAskUser = { askId: this.distinctAskId(sessionId), askedAt, updatedAt: askedAt, revision: this.createRevision(), turnsSinceUpdate: 0, context, ...(approval === undefined ? {} : { approval }), questions };
+    const ask: PendingAskUser = {
+      askId: this.distinctAskId(sessionId),
+      askedAt,
+      updatedAt: askedAt,
+      revision: this.createRevision(),
+      turnsSinceUpdate: 0,
+      context,
+      ...(approval === undefined ? {} : { approval }),
+      questions,
+    };
     this.setAsk(sessionId, ask);
     return cloneAsk(ask);
   }
@@ -145,9 +153,17 @@ export class PendingAskStore {
     // Given, approval replaces the set's; absent, it stays. Either way only an approval set may have no questions.
     const approved = input.approval === undefined ? ask.approval : approval;
     // Only replacement questions are validated: the open ones may follow a parent an earlier partial send already took.
-    if (input.questions === undefined && ask.questions.length === 0 && approved !== true) throw new PendingAskValidationError("An ask must contain at least one question");
+    if (input.questions === undefined && ask.questions.length === 0 && approved !== true)
+      throw new PendingAskValidationError("An ask must contain at least one question");
     const questions = input.questions === undefined ? ask.questions : validateQuestions(input.questions, approved);
-    const updated: PendingAskUser = { ...ask, updatedAt: this.timestamp(), revision: this.createRevision(), turnsSinceUpdate: 0, ...(context === undefined ? {} : { context }), questions };
+    const updated: PendingAskUser = {
+      ...ask,
+      updatedAt: this.timestamp(),
+      revision: this.createRevision(),
+      turnsSinceUpdate: 0,
+      ...(context === undefined ? {} : { context }),
+      questions,
+    };
     // The agent supplied this context, even when its text equals the user's earlier edit.
     if (supplied !== undefined) delete updated.contextEdited;
     // Given, approval replaces the set's; absent, it stays.
@@ -269,7 +285,18 @@ export class PendingAskStore {
     this.openBySessionId.set(sessionId, asks);
   }
 
-  private close(sessionId: string, askId: string, reason: AskUserCloseReason, answers: RecordedAnswers, record?: RecordOutcome, note?: string, skipped: ReadonlySet<string> = new Set(), editedContext?: string, approved = false, images: AskUserOutcomeImage[] = []): AskUserOutcome | undefined {
+  private close(
+    sessionId: string,
+    askId: string,
+    reason: AskUserCloseReason,
+    answers: RecordedAnswers,
+    record?: RecordOutcome,
+    note?: string,
+    skipped: ReadonlySet<string> = new Set(),
+    editedContext?: string,
+    approved = false,
+    images: AskUserOutcomeImage[] = [],
+  ): AskUserOutcome | undefined {
     const asks = this.openBySessionId.get(sessionId);
     const ask = asks?.get(askId);
     if (asks === undefined || ask === undefined) return undefined;
@@ -296,15 +323,35 @@ function closed(outcome: AskUserOutcome | undefined): PendingAskCloseResult {
  * unanswered questions as plainly as the answered ones.
  */
 export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
-  const lead = outcome.partial === true
-    ? `The user answered ${outcome.answeredCount === 1 ? "one question" : `${outcome.answeredCount.toString()} questions`} of question set ${outcome.askId}; its other questions stay open.`
-    : outcome.reason === "submitted"
-    ? `The user submitted answers to question set ${outcome.askId}.`
-    : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
+  const lead =
+    outcome.partial === true
+      ? `The user answered ${outcome.answeredCount === 1 ? "one question" : `${outcome.answeredCount.toString()} questions`} of question set ${outcome.askId}; its other questions stay open.`
+      : outcome.reason === "submitted"
+        ? `The user submitted answers to question set ${outcome.askId}.`
+        : `Question set ${outcome.askId} was closed (${outcome.reason}) before it was fully answered.`;
   const noteImages = imagesLine(outcome, { kind: "note" });
-  const note = outcome.note === undefined && noteImages.length === 0 ? [] : ["", outcome.note === undefined ? "Note from the user: images only" : `Note from the user: ${JSON.stringify(outcome.note)}`, ...noteImages];
-  const edited = outcome.editedContext === undefined ? [] : outcome.editedContext === "" ? ["The user cleared the context.", ""] : ["The user edited the context:", fenced(outcome.editedContext), ""];
-  return [...(outcome.approved === true ? ["The user approved the context."] : []), lead, "", ...edited, ...outcome.questions.map((record) => [...questionLines(outcome.askId, record), ...imagesLine(outcome, { kind: "question", id: record.question.id })]).flat(), ...note, "", outcome.summary].join("\n");
+  const note =
+    outcome.note === undefined && noteImages.length === 0
+      ? []
+      : ["", outcome.note === undefined ? "Note from the user: images only" : `Note from the user: ${JSON.stringify(outcome.note)}`, ...noteImages];
+  const edited =
+    outcome.editedContext === undefined
+      ? []
+      : outcome.editedContext === ""
+        ? ["The user cleared the context.", ""]
+        : ["The user edited the context:", fenced(outcome.editedContext), ""];
+  return [
+    ...(outcome.approved === true ? ["The user approved the context."] : []),
+    lead,
+    "",
+    ...edited,
+    ...outcome.questions
+      .map((record) => [...questionLines(outcome.askId, record), ...imagesLine(outcome, { kind: "question", id: record.question.id })])
+      .flat(),
+    ...note,
+    "",
+    outcome.summary,
+  ].join("\n");
 }
 
 /**
@@ -313,7 +360,10 @@ export function renderAskUserAnswersText(outcome: AskUserOutcome): string {
  */
 export function renderAskUserFollowUp(outcome: AskUserOutcome, openAsks: readonly PendingAskUser[]): string {
   const text = [renderAskUserAnswersText(outcome), renderOpenAsksReminder(openAsks)].filter((part) => part !== "").join("\n\n");
-  return appendInlineImageReferenceMapping(text, (outcome.images ?? []).map((image) => image.reference));
+  return appendInlineImageReferenceMapping(
+    text,
+    (outcome.images ?? []).map((image) => image.reference),
+  );
 }
 
 /** `  Images: [PIC_1], [PIC_2]` under an answer or the note; the placeholders never join the answer itself, so its length limits hold. */
@@ -340,7 +390,12 @@ function outcomeImages(ask: PendingAskUser, answers: RecordedAnswers, submission
     } else if (!answers.has(target.id) || ask.questions.find((question) => question.id === target.id)?.kind !== "text") {
       throw new PendingAskValidationError(`Image ${String(index + 1)} belongs to no answered text question: ${target.id}`);
     }
-    return { target: image.target, reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, ...(image.name === undefined ? {} : { name: image.name }) };
+    return {
+      target: image.target,
+      reference: `[PIC_${String(index + 1)}]`,
+      mimeType: image.mimeType,
+      ...(image.name === undefined ? {} : { name: image.name }),
+    };
   });
 }
 
@@ -352,7 +407,10 @@ export function renderOpenAsksReminder(asks: readonly PendingAskUser[]): string 
   if (asks.length === 0) return "";
   return [
     "Question sets still open for the user (answers arrive as a follow-up message):",
-    ...asks.map((ask) => `- ${ask.askId} (${ask.questions.length === 0 ? "approval of the context" : ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}; updated ${ask.updatedAt}, ${ask.turnsSinceUpdate.toString()} turns ago): ${ask.questions[0]?.question ?? ask.context?.split("\n")[0] ?? ""}`),
+    ...asks.map(
+      (ask) =>
+        `- ${ask.askId} (${ask.questions.length === 0 ? "approval of the context" : ask.questions.map((question) => askQuestionRef(ask.askId, question.id)).join(", ")}; updated ${ask.updatedAt}, ${ask.turnsSinceUpdate.toString()} turns ago): ${ask.questions[0]?.question ?? ask.context?.split("\n")[0] ?? ""}`,
+    ),
     "If one no longer matches the situation and ask_user is available, update or withdraw it; otherwise leave it.",
   ].join("\n");
 }
@@ -367,13 +425,25 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
   const header = `- ${askQuestionRef(askId, record.question.id)}: ${record.question.question}`;
   const condition = record.question.showIf;
   if (record.skipped === true && condition !== undefined) {
-    return [header, `  Skipped, not shown: it applies only when ${askQuestionRef(askId, condition.question)} is ${condition.values.join(" or ")}, which was not picked.`];
+    return [
+      header,
+      `  Skipped, not shown: it applies only when ${askQuestionRef(askId, condition.question)} is ${condition.values.join(" or ")}, which was not picked.`,
+    ];
   }
   if (!record.answered) return [header, "  Unanswered."];
   const { value, question } = record;
   if (value !== undefined) {
     // An agent's labels are quoted like text; the default Yes/No read as plain words.
-    const shown = typeof value === "boolean" ? (question.labels === undefined ? (value ? "yes" : "no") : JSON.stringify(askBooleanLabel(question, value))) : question.kind === "text" ? JSON.stringify(value) : String(value);
+    const shown =
+      typeof value === "boolean"
+        ? question.labels === undefined
+          ? value
+            ? "yes"
+            : "no"
+          : JSON.stringify(askBooleanLabel(question, value))
+        : question.kind === "text"
+          ? JSON.stringify(value)
+          : String(value);
     // A typed field starts on its default (a boolean on false); say when the user left it so.
     return [header, `  Answered: ${shown}${value === (question.default ?? (question.kind === "boolean" ? false : undefined)) ? " (default, unchanged)" : ""}`];
   }
@@ -382,7 +452,11 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
   // The card preselects the recommended options (the first one for single choice); say when the user left them as they were.
   const recommended = record.question.options.filter((option) => option.recommended === true).map((option) => option.value);
   const preselected = record.question.multiple === true ? recommended : recommended.slice(0, 1);
-  const unchanged = preselected.length > 0 && record.otherText === undefined && record.values.length === preselected.length && preselected.every((value) => record.values.includes(value));
+  const unchanged =
+    preselected.length > 0
+    && record.otherText === undefined
+    && record.values.length === preselected.length
+    && preselected.every((value) => record.values.includes(value));
   return [header, `  Answered: ${parts.join("; ")}${unchanged ? " (recommended, unchanged)" : ""}`];
 }
 
@@ -418,16 +492,26 @@ function askUserOutcome(
  * earlier partial records closed, in `order` (the set's question ids; others keep send order), counts and summary
  * over all of them; `contextEdited` is the closed set's flag of that name. The transcript and the model keep each send's own record.
  */
-export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly AskUserOutcome[], order: readonly string[] = [], contextEdited = false): AskUserOutcome {
+export function withEarlierAnswers(
+  outcome: AskUserOutcome,
+  earlier: readonly AskUserOutcome[],
+  order: readonly string[] = [],
+  contextEdited = false,
+): AskUserOutcome {
   // shortcut: past the record limit the oldest earlier answers drop out (each send's own record keeps them; the summary
   // counts them and says how many are not shown), page the record if sets get revised that often.
   // Each earlier send's rows carry its revision, as its images do, so a question id a revision reused stays apart.
-  const all = earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => each.questions.map((record) => each.revision === undefined ? record : { ...record, revision: each.revision }));
+  const all = earlier
+    .filter((each) => each.askId === outcome.askId && each.partial === true)
+    .flatMap((each) => each.questions.map((record) => (each.revision === undefined ? record : { ...record, revision: each.revision })));
   const cut = Math.max(0, all.length + outcome.questions.length - ASK_USER_RECORD_QUESTION_LIMIT);
   const records = all.slice(cut);
   const hidden = all.slice(0, cut);
   if (outcome.partial === true || records.length === 0) return outcome;
-  const rank = (record: AskUserQuestionRecord) => { const index = order.indexOf(record.question.id); return index < 0 ? order.length : index; };
+  const rank = (record: AskUserQuestionRecord) => {
+    const index = order.indexOf(record.question.id);
+    return index < 0 ? order.length : index;
+  };
   const questions = [...records, ...outcome.questions].sort((a, b) => rank(a) - rank(b));
   const answeredCount = questions.filter((record) => record.answered).length;
   const skipped = questions.filter((record) => record.skipped === true).length;
@@ -441,16 +525,43 @@ export function withEarlierAnswers(outcome: AskUserOutcome, earlier: readonly As
   // send's images carry that send's revision, naming the answers entry that holds their bytes (as the Durable host's wholeRecord).
   const sendKey = (revision: string | undefined, id: string) => JSON.stringify([revision ?? null, id]);
   const shown = new Set(questions.map((record) => sendKey(record.revision, record.question.id)));
-  const sentImages = (each: AskUserOutcome, revision?: string): AskUserOutcomeImage[] => (each.images ?? []).map((image) => revision === undefined ? image : { ...image, revision });
-  const images = [...earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => sentImages(each, each.revision)), ...sentImages(outcome)]
-    .filter((image) => image.target.kind === "note" || shown.has(sendKey(image.revision, image.target.id)));
-  return { ...outcome, ...(editedContext === undefined ? {} : { editedContext }), ...(images.length === 0 ? {} : { images }), questions, answeredCount, unansweredIds, summary: summaryLine(questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length, answeredCount + hidden.filter((record) => record.answered).length, unansweredIds) + skippedSummary(questions)
-      + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`) };
+  const sentImages = (each: AskUserOutcome, revision?: string): AskUserOutcomeImage[] =>
+    (each.images ?? []).map((image) => (revision === undefined ? image : { ...image, revision }));
+  const images = [
+    ...earlier.filter((each) => each.askId === outcome.askId && each.partial === true).flatMap((each) => sentImages(each, each.revision)),
+    ...sentImages(outcome),
+  ].filter((image) => image.target.kind === "note" || shown.has(sendKey(image.revision, image.target.id)));
+  return {
+    ...outcome,
+    ...(editedContext === undefined ? {} : { editedContext }),
+    ...(images.length === 0 ? {} : { images }),
+    questions,
+    answeredCount,
+    unansweredIds,
+    summary:
+      summaryLine(
+        questions.length + hidden.length - skipped - hidden.filter((record) => record.skipped === true).length,
+        answeredCount + hidden.filter((record) => record.answered).length,
+        unansweredIds,
+      )
+      + skippedSummary(questions)
+      + (hidden.length === 0 ? "" : `; ${hidden.length.toString()} earlier ${hidden.length === 1 ? "answer" : "answers"} not shown`),
+  };
 }
 
 /** The record of a partial send: only the answered questions, plus the revision the ask continues under. */
-function partialOutcome(ask: PendingAskUser, answers: RecordedAnswers, skipped: ReadonlySet<string>, remaining: readonly AskUserQuestion[], revision: string, closedAt: string, editedContext?: string): AskUserOutcome {
-  const questions = ask.questions.filter((question) => answers.has(question.id) || skipped.has(question.id)).map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));
+function partialOutcome(
+  ask: PendingAskUser,
+  answers: RecordedAnswers,
+  skipped: ReadonlySet<string>,
+  remaining: readonly AskUserQuestion[],
+  revision: string,
+  closedAt: string,
+  editedContext?: string,
+): AskUserOutcome {
+  const questions = ask.questions
+    .filter((question) => answers.has(question.id) || skipped.has(question.id))
+    .map((question) => questionRecord(question, answers.get(question.id), skipped.has(question.id)));
   return {
     askId: ask.askId,
     reason: "submitted",
@@ -527,10 +638,12 @@ function validateShowIf(showIf: AskUserShowIf, id: string, earlier: ReadonlyMap<
   if (parent === undefined) throw new PendingAskValidationError(`showIf of question ${id} must name an earlier question of this set, not ${showIf.question}`);
   if (showIf.values.length === 0) throw new PendingAskValidationError(`showIf of question ${id} must list at least one option value of question ${parent.id}`);
   const kind = parent.kind ?? "choice";
-  if (kind !== "choice" && kind !== "boolean") throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} is a ${kind} question; showIf needs a choice or boolean question`);
+  if (kind !== "choice" && kind !== "boolean")
+    throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} is a ${kind} question; showIf needs a choice or boolean question`);
   const offered = new Set(kind === "boolean" ? ["true", "false"] : parent.options.map((option) => option.value));
   const unknown = showIf.values.find((value) => !offered.has(value));
-  if (unknown !== undefined && kind === "boolean") throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} is a boolean; use "true" or "false", not ${unknown}`);
+  if (unknown !== undefined && kind === "boolean")
+    throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} is a boolean; use "true" or "false", not ${unknown}`);
   if (unknown !== undefined) throw new PendingAskValidationError(`showIf of question ${id}: question ${parent.id} has no option ${unknown}`);
   return { question: parent.id, values: [...new Set(showIf.values)] };
 }
@@ -565,15 +678,30 @@ function validateTyped(question: AskUserQuestion, id: string): Partial<AskUserQu
   if (labels !== undefined && kind !== "boolean") throw new PendingAskValidationError(`labels of question ${id} need kind boolean, not ${kind}`);
   if (kind === "choice") return {};
   if (!ASK_USER_QUESTION_KINDS.includes(kind)) throw new PendingAskValidationError(`Question ${id} has unknown kind ${kind}`);
-  if (question.options.length > 0 || question.multiple === true) throw new PendingAskValidationError(`Question ${id} of kind ${kind} takes no options or multiple`);
+  if (question.options.length > 0 || question.multiple === true)
+    throw new PendingAskValidationError(`Question ${id} of kind ${kind} takes no options or multiple`);
   const { minLength, maxLength, minimum, maximum } = question;
-  const typed: Partial<AskUserQuestion> = kind === "text"
-    ? { kind, ...(question.multiline === true ? { multiline: true } : {}), ...(minLength === undefined ? {} : { minLength }), ...(maxLength === undefined ? {} : { maxLength }) }
-    : kind === "number"
-    ? { kind, ...(minimum === undefined ? {} : { minimum }), ...(maximum === undefined ? {} : { maximum }), ...(question.integer === true ? { integer: true } : {}) }
-    : kind === "boolean" && labels !== undefined ? { kind, labels: validateLabels(labels, id) } : { kind };
+  const typed: Partial<AskUserQuestion> =
+    kind === "text"
+      ? {
+          kind,
+          ...(question.multiline === true ? { multiline: true } : {}),
+          ...(minLength === undefined ? {} : { minLength }),
+          ...(maxLength === undefined ? {} : { maxLength }),
+        }
+      : kind === "number"
+        ? {
+            kind,
+            ...(minimum === undefined ? {} : { minimum }),
+            ...(maximum === undefined ? {} : { maximum }),
+            ...(question.integer === true ? { integer: true } : {}),
+          }
+        : kind === "boolean" && labels !== undefined
+          ? { kind, labels: validateLabels(labels, id) }
+          : { kind };
   for (const [field, bound] of Object.entries({ minLength: typed.minLength, maxLength: typed.maxLength })) {
-    if (bound !== undefined && !(Number.isInteger(bound) && bound >= 0 && bound <= ASK_USER_OTHER_TEXT_MAX_LENGTH)) throw new PendingAskValidationError(`${field} of question ${id} must be a whole number from 0 to ${ASK_USER_OTHER_TEXT_MAX_LENGTH.toString()}`);
+    if (bound !== undefined && !(Number.isInteger(bound) && bound >= 0 && bound <= ASK_USER_OTHER_TEXT_MAX_LENGTH))
+      throw new PendingAskValidationError(`${field} of question ${id} must be a whole number from 0 to ${ASK_USER_OTHER_TEXT_MAX_LENGTH.toString()}`);
   }
   for (const [field, bound] of Object.entries({ minimum: typed.minimum, maximum: typed.maximum })) {
     if (bound !== undefined && !Number.isFinite(bound)) throw new PendingAskValidationError(`${field} of question ${id} must be a number`);
@@ -588,8 +716,12 @@ function validateTyped(question: AskUserQuestion, id: string): Partial<AskUserQu
 
 /** A boolean question's [true, false] labels, each one non-blank line of at most ASK_USER_BOOLEAN_LABEL_MAX_LENGTH characters. */
 function validateLabels(labels: unknown, id: string): [string, string] {
-  const fits = (label: unknown): label is string => typeof label === "string" && label.trim() !== "" && !/[\r\n]/u.test(label) && label.length <= ASK_USER_BOOLEAN_LABEL_MAX_LENGTH;
-  if (!Array.isArray(labels) || labels.length !== 2 || !fits(labels[0]) || !fits(labels[1])) throw new PendingAskValidationError(`labels of question ${id} must be two one-line texts of at most ${ASK_USER_BOOLEAN_LABEL_MAX_LENGTH.toString()} characters, [true, false]`);
+  const fits = (label: unknown): label is string =>
+    typeof label === "string" && label.trim() !== "" && !/[\r\n]/u.test(label) && label.length <= ASK_USER_BOOLEAN_LABEL_MAX_LENGTH;
+  if (!Array.isArray(labels) || labels.length !== 2 || !fits(labels[0]) || !fits(labels[1]))
+    throw new PendingAskValidationError(
+      `labels of question ${id} must be two one-line texts of at most ${ASK_USER_BOOLEAN_LABEL_MAX_LENGTH.toString()} characters, [true, false]`,
+    );
   return [labels[0], labels[1]];
 }
 
@@ -597,7 +729,8 @@ function validateOption(option: AskUserQuestionOption, value: string, questionId
   const detail = option.detail;
   const label = requireText(option.label, `label of option ${value} in question ${questionId}`);
   // The panel adds its own Custom choice; an agent's second one could never be picked as Custom.
-  if (/^custom$|\(custom\)$/iu.test(label.trim())) throw new PendingAskValidationError(`Option ${value} is labelled Custom; a Custom choice is always added, so drop this option`);
+  if (/^custom$|\(custom\)$/iu.test(label.trim()))
+    throw new PendingAskValidationError(`Option ${value} is labelled Custom; a Custom choice is always added, so drop this option`);
   return {
     value,
     label,
@@ -629,7 +762,8 @@ function validateAnswer(question: AskUserQuestion, answer: AskUserAnswer): AskUs
       if (answer.values.length > 0 || answer.value !== undefined) throw new PendingAskValidationError(`Question ${question.id} accepts a single answer`);
       return { id: question.id, values: [], otherText: words };
     }
-    if (answer.values.length > 0 || (answer.otherText !== undefined && question.kind !== "boolean")) throw new PendingAskValidationError(`Question ${question.id} takes a value, not options`);
+    if (answer.values.length > 0 || (answer.otherText !== undefined && question.kind !== "boolean"))
+      throw new PendingAskValidationError(`Question ${question.id} takes a value, not options`);
     // Blank reads as untouched; other text is kept as typed (Markdown indentation, a default left unchanged).
     const value = typeof answer.value === "string" && question.kind !== "text" ? answer.value.trim() : answer.value;
     if (value === undefined || (typeof value === "string" && value.trim() === "")) return undefined;
@@ -688,7 +822,11 @@ function cloneAsk(ask: PendingAskUser): PendingAskUser {
 }
 
 function cloneQuestion(question: AskUserQuestion): AskUserQuestion {
-  return { ...question, options: question.options.map((option) => ({ ...option })), ...(question.showIf === undefined ? {} : { showIf: { ...question.showIf, values: [...question.showIf.values] } }) };
+  return {
+    ...question,
+    options: question.options.map((option) => ({ ...option })),
+    ...(question.showIf === undefined ? {} : { showIf: { ...question.showIf, values: [...question.showIf.values] } }),
+  };
 }
 
 function requireSessionId(sessionId: string): string {

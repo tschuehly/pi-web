@@ -47,8 +47,12 @@ describe("navigation preference API", () => {
 
   it.each(paths)("forwards GET and PUT to the selected server for %s", async (path) => {
     const { app } = appTestContext;
-    const remote = (await app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } })).json<{ id: string }>();
-    const request = vi.fn(() => Promise.resolve({ statusCode: 200, headers: { "content-type": "application/json" }, body: Readable.from(['{"ids":["remote-id"],"revision":1}']) }));
+    const remote = (await app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } })).json<{
+      id: string;
+    }>();
+    const request = vi.fn(() =>
+      Promise.resolve({ statusCode: 200, headers: { "content-type": "application/json" }, body: Readable.from(['{"ids":["remote-id"],"revision":1}']) }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     for (const method of ["GET", "PUT"] as const) {
       const payload = method === "PUT" ? { ids: ["remote-id"], revision: 0 } : undefined;

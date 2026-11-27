@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CLASSIC_THEME_ID, DEFAULT_THEME_PREFERENCE, effectiveThemePreference, findThemePairForTheme, resolveThemePreference } from "./theme";
 import type { QualifiedContributionId, QualifiedThemeContribution, QualifiedThemePairContribution, ThemeColorScheme } from "./plugins/types";
 
-const themes = [
-  theme("pi-web-dark", "PI WEB Dark", "dark"),
-  theme("pi-web-light", "PI WEB Light", "light"),
-  theme("classic", "PI WEB Classic", "dark"),
-];
+const themes = [theme("pi-web-dark", "PI WEB Dark", "dark"), theme("pi-web-light", "PI WEB Light", "light"), theme("classic", "PI WEB Classic", "dark")];
 
 const themePairs: QualifiedThemePairContribution[] = [
   {
@@ -35,13 +31,15 @@ describe("effectiveThemePreference", () => {
 
 describe("resolveThemePreference", () => {
   it("resolves the default auto preference to the dark member when the system is dark", () => {
-    expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: false }).activeTheme?.id)
-      .toBe("themes:pi-web-dark");
+    expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: false }).activeTheme?.id).toBe(
+      "themes:pi-web-dark",
+    );
   });
 
   it("resolves the default auto preference to the light member when the system is light", () => {
-    expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: true }).activeTheme?.id)
-      .toBe("themes:pi-web-light");
+    expect(resolveThemePreference({ themes, themePairs, preference: DEFAULT_THEME_PREFERENCE, prefersLight: true }).activeTheme?.id).toBe(
+      "themes:pi-web-light",
+    );
   });
 
   it("keeps an unpaired theme selected when auto is enabled", () => {
@@ -89,12 +87,16 @@ describe("resolveThemePreference", () => {
   it("re-resolves a plugin default after its theme becomes available without changing the preference", () => {
     const preference = { themeId: "themes:custom", auto: false };
     expect(resolveThemePreference({ themes, themePairs, preference, prefersLight: true }).activeTheme?.id).toBe(CLASSIC_THEME_ID);
-    expect(resolveThemePreference({ themes: [...themes, theme("custom", "Custom", "dark")], themePairs, preference, prefersLight: true }).activeTheme?.id).toBe("themes:custom");
+    expect(resolveThemePreference({ themes: [...themes, theme("custom", "Custom", "dark")], themePairs, preference, prefersLight: true }).activeTheme?.id).toBe(
+      "themes:custom",
+    );
     expect(preference).toEqual({ themeId: "themes:custom", auto: false });
   });
 
   it("keeps a paired theme fixed when Auto is off", () => {
-    expect(resolveThemePreference({ themes, themePairs, preference: { themeId: "themes:pi-web-dark", auto: false }, prefersLight: true }).activeTheme?.id).toBe("themes:pi-web-dark");
+    expect(resolveThemePreference({ themes, themePairs, preference: { themeId: "themes:pi-web-dark", auto: false }, prefersLight: true }).activeTheme?.id).toBe(
+      "themes:pi-web-dark",
+    );
   });
 
   it("can look up a pair from either member theme", () => {

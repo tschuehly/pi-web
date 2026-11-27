@@ -77,7 +77,8 @@ export function parsePluginBackendScopeSelection(value: Record<string, unknown>)
   if (scope === undefined && projectId === undefined && workspaceId === undefined) return {};
   if (scope !== "machine" && scope !== "project" && scope !== "workspace") throw new Error("Plugin backend scope must be machine, project, or workspace");
   for (const id of [projectId, workspaceId]) {
-    if (id !== undefined && (typeof id !== "string" || id === "" || id.length > 512)) throw new Error("Plugin backend scope ids must be non-empty strings of at most 512 characters");
+    if (id !== undefined && (typeof id !== "string" || id === "" || id.length > 512))
+      throw new Error("Plugin backend scope ids must be non-empty strings of at most 512 characters");
   }
   if (scope === "machine" && (projectId !== undefined || workspaceId !== undefined)) throw new Error("Machine scope cannot contain project or workspace ids");
   if (scope === "project" && workspaceId !== undefined) throw new Error("Project scope cannot contain a workspace id");
@@ -88,9 +89,12 @@ export function pluginBackendScopeFromRoute(selection: PluginBackendScopeSelecti
   const scope = selection.workspaceId !== undefined ? "workspace" : selection.projectId !== undefined ? "project" : "machine";
   if (wire === undefined) return scope;
   if (scope !== "workspace" && wire.scope === undefined) throw new Error("Scoped plugin backend calls require an explicit scope");
-  if ((wire.scope !== undefined && wire.scope !== scope)
+  if (
+    (wire.scope !== undefined && wire.scope !== scope)
     || (wire.projectId !== undefined && wire.projectId !== selection.projectId)
-    || (wire.workspaceId !== undefined && wire.workspaceId !== selection.workspaceId)) throw new Error("Plugin backend wire scope does not match route authority");
+    || (wire.workspaceId !== undefined && wire.workspaceId !== selection.workspaceId)
+  )
+    throw new Error("Plugin backend wire scope does not match route authority");
   return scope;
 }
 
@@ -146,7 +150,9 @@ export function isPluginBackendOperation(value: string): boolean {
 
 export function requirePluginBackendOperation(value: string): string {
   if (!isPluginBackendOperation(value)) {
-    throw new Error(`Plugin backend operation must match ${String(OPERATION_PATTERN)} and be at most ${String(PLUGIN_BACKEND_OPERATION_MAX_LENGTH)} characters`);
+    throw new Error(
+      `Plugin backend operation must match ${String(OPERATION_PATTERN)} and be at most ${String(PLUGIN_BACKEND_OPERATION_MAX_LENGTH)} characters`,
+    );
   }
   return value;
 }
@@ -159,11 +165,7 @@ export function requirePluginBackendRevision(value: unknown): string {
 }
 
 /** Clone and freeze a runtime value after enforcing the JSON and byte contract. */
-export function cloneBoundedPluginBackendJson(
-  value: unknown,
-  label: string,
-  maxBytes = PLUGIN_BACKEND_JSON_MAX_BYTES,
-): JsonValue {
+export function cloneBoundedPluginBackendJson(value: unknown, label: string, maxBytes = PLUGIN_BACKEND_JSON_MAX_BYTES): JsonValue {
   const cloned = cloneJsonValue(value, new Set<object>(), label, 0);
   const serialized = JSON.stringify(cloned);
   if (utf8ByteLength(serialized) > maxBytes) {
@@ -172,19 +174,11 @@ export function cloneBoundedPluginBackendJson(
   return cloned;
 }
 
-export function serializeBoundedPluginBackendJson(
-  value: unknown,
-  label: string,
-  maxBytes = PLUGIN_BACKEND_JSON_MAX_BYTES,
-): string {
+export function serializeBoundedPluginBackendJson(value: unknown, label: string, maxBytes = PLUGIN_BACKEND_JSON_MAX_BYTES): string {
   return JSON.stringify(cloneBoundedPluginBackendJson(value, label, maxBytes));
 }
 
-export function parseBoundedPluginBackendJson(
-  text: string,
-  label: string,
-  maxBytes = PLUGIN_BACKEND_JSON_MAX_BYTES,
-): JsonValue {
+export function parseBoundedPluginBackendJson(text: string, label: string, maxBytes = PLUGIN_BACKEND_JSON_MAX_BYTES): JsonValue {
   if (utf8ByteLength(text) > maxBytes) {
     throw new Error(`${label} exceeds the ${String(maxBytes)} byte limit`);
   }
@@ -207,13 +201,17 @@ export function parsePluginBackendRequestEnvelope(value: unknown): PluginBackend
 }
 
 export function serializePluginBackendChannelOpenEnvelope(revision: unknown, input: unknown, selection: PluginBackendScopeSelection = {}): string {
-  return serializePluginBackendChannelEnvelope({
-    version: 1,
-    kind: "open",
-    ...parsePluginBackendScopeSelection({ ...selection }),
-    revision: requirePluginBackendRevision(revision),
-    input: cloneBoundedPluginBackendJson(input, "Plugin backend channel open input", PLUGIN_BACKEND_JSON_MAX_BYTES),
-  }, "Plugin backend channel open envelope", PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES);
+  return serializePluginBackendChannelEnvelope(
+    {
+      version: 1,
+      kind: "open",
+      ...parsePluginBackendScopeSelection({ ...selection }),
+      revision: requirePluginBackendRevision(revision),
+      input: cloneBoundedPluginBackendJson(input, "Plugin backend channel open input", PLUGIN_BACKEND_JSON_MAX_BYTES),
+    },
+    "Plugin backend channel open envelope",
+    PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES,
+  );
 }
 
 export function serializePluginBackendChannelReadyEnvelope(): string {
@@ -221,17 +219,25 @@ export function serializePluginBackendChannelReadyEnvelope(): string {
 }
 
 export function serializePluginBackendChannelDataEnvelope(data: unknown): string {
-  return serializePluginBackendChannelEnvelope({
-    version: 1,
-    kind: "data",
-    data: cloneBoundedPluginBackendJson(data, "Plugin backend channel data", PLUGIN_BACKEND_CHANNEL_DATA_JSON_MAX_BYTES),
-  }, "Plugin backend channel data envelope", PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES);
+  return serializePluginBackendChannelEnvelope(
+    {
+      version: 1,
+      kind: "data",
+      data: cloneBoundedPluginBackendJson(data, "Plugin backend channel data", PLUGIN_BACKEND_CHANNEL_DATA_JSON_MAX_BYTES),
+    },
+    "Plugin backend channel data envelope",
+    PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES,
+  );
 }
 
 export function serializePluginBackendChannelErrorEnvelope(code: unknown, message: unknown): string {
   const parsedCode = requirePluginBackendChannelErrorCode(code);
   const parsedMessage = requirePluginBackendChannelErrorMessage(message);
-  return serializePluginBackendChannelEnvelope({ version: 1, kind: "error", code: parsedCode, message: parsedMessage }, "Plugin backend channel error envelope", PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES);
+  return serializePluginBackendChannelEnvelope(
+    { version: 1, kind: "error", code: parsedCode, message: parsedMessage },
+    "Plugin backend channel error envelope",
+    PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES,
+  );
 }
 
 export function parsePluginBackendChannelClientEnvelope(text: string): PluginBackendChannelClientEnvelope {

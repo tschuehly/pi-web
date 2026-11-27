@@ -84,11 +84,9 @@ describe("ServerNoticesController", () => {
 
   it("keeps scoped projections isolated by selected machine", async () => {
     const api = fakeApi();
-    api.snapshot.mockImplementation((machineId) => Promise.resolve(snapshot(
-      1,
-      [{ ...notice(`${machineId}-notice`), scope: { projectId: `${machineId}-project` } }],
-      `${machineId}-daemon`,
-    )));
+    api.snapshot.mockImplementation((machineId) =>
+      Promise.resolve(snapshot(1, [{ ...notice(`${machineId}-notice`), scope: { projectId: `${machineId}-project` } }], `${machineId}-daemon`)),
+    );
     const controller = new ServerNoticesController({ api });
 
     await Promise.all([controller.refresh("local"), controller.refresh("remote-a")]);
@@ -118,14 +116,14 @@ describe("ServerNoticesController", () => {
 
   it("refreshes when a realtime frame belongs to another daemon instance", async () => {
     const api = fakeApi();
-    api.snapshot
-      .mockResolvedValueOnce(snapshot(1, [notice("old")], "daemon-a"))
-      .mockResolvedValueOnce(snapshot(0, [notice("new")], "daemon-b"));
+    api.snapshot.mockResolvedValueOnce(snapshot(1, [notice("old")], "daemon-a")).mockResolvedValueOnce(snapshot(0, [notice("new")], "daemon-b"));
     const controller = new ServerNoticesController({ api });
 
     await controller.refresh("local");
     controller.applyEvent("local", event(snapshot(1, [notice("new")], "daemon-b")));
-    await vi.waitFor(() => { expect(api.snapshot).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(api.snapshot).toHaveBeenCalledTimes(2);
+    });
 
     expect(controller.projection("local")).toMatchObject({ status: "fresh", daemonInstanceId: "daemon-b", revision: 0, notices: [notice("new")] });
   });
@@ -169,7 +167,9 @@ function fakeApi(): { snapshot: ReturnType<typeof vi.fn<ServerNoticesApi["snapsh
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
   return {
     promise,
     resolve: (value) => {

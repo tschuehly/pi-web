@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  SessionNotification,
-  SessionNotificationInboxEvent,
-  SessionNotificationInboxSnapshot,
-  SessionNotificationSummary,
-} from "../../shared/apiTypes";
+import type { SessionNotification, SessionNotificationInboxEvent, SessionNotificationInboxSnapshot, SessionNotificationSummary } from "../../shared/apiTypes";
 import {
   applySelectedNotificationEvent,
   installSelectedNotificationSnapshot,
@@ -48,7 +43,10 @@ function summary(overrides: Partial<SessionNotificationSummary> = {}): SessionNo
   };
 }
 
-function snapshot(notifications: SessionNotification[] = [notification(1)], overrides: Partial<SessionNotificationInboxSnapshot> = {}): SessionNotificationInboxSnapshot {
+function snapshot(
+  notifications: SessionNotification[] = [notification(1)],
+  overrides: Partial<SessionNotificationInboxSnapshot> = {},
+): SessionNotificationInboxSnapshot {
   return {
     daemonInstanceId: "daemon-a",
     catalogRevision: 1,
@@ -127,13 +125,14 @@ describe("selected notification projection", () => {
   });
 
   it("applies optimistic individual and cutoff dismissals while preserving newer arrivals", () => {
-    const base = installSelectedNotificationSnapshot(undefined, target, snapshot(
-      [notification(5, "error"), notification(4, "warning"), notification(3)],
-      {
+    const base = installSelectedNotificationSnapshot(
+      undefined,
+      target,
+      snapshot([notification(5, "error"), notification(4, "warning"), notification(3)], {
         summary: summary({ inboxRevision: 5, retainedCount: 3, discardedCount: 2, highestSeverity: "error" }),
         dismissThrough: { order: 5, overflowWatermark: 2 },
-      },
-    ));
+      }),
+    );
     const optimistic = {
       ...base,
       notifications: [notification(6), ...base.notifications],

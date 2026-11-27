@@ -6,7 +6,18 @@
 // lives in pi-web-plugin.ts.
 
 import type { TemplateResult } from "lit";
-import type { ApplicationPanelContext, HtmlTemplateTag, MachineKind, PiWebComponentStatus, PiWebInstallationInfo, PiWebReleaseStatus, PiWebStatusResponse, PluginMachine, PluginRuntimeContext, Workspace } from "@jmfederico/pi-web/plugin-api";
+import type {
+  ApplicationPanelContext,
+  HtmlTemplateTag,
+  MachineKind,
+  PiWebComponentStatus,
+  PiWebInstallationInfo,
+  PiWebReleaseStatus,
+  PiWebStatusResponse,
+  PluginMachine,
+  PluginRuntimeContext,
+  Workspace,
+} from "@jmfederico/pi-web/plugin-api";
 
 export type ComponentHealth = "current" | "restart needed" | "unavailable";
 
@@ -39,9 +50,7 @@ export function machineKindLabel(kind: MachineKind): string {
 
 export function releaseSummary(release: PiWebReleaseStatus): string {
   if (release.updateAvailable) {
-    return release.latestVersion === undefined || release.latestVersion === ""
-      ? "Update available"
-      : `Update available: ${release.latestVersion}`;
+    return release.latestVersion === undefined || release.latestVersion === "" ? "Update available" : `Update available: ${release.latestVersion}`;
   }
   if (release.error !== undefined && release.error !== "") return `Update check failed: ${release.error}`;
   if (release.skipped === true) return "Update check skipped";

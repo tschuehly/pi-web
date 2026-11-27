@@ -1,6 +1,11 @@
 import { promptSlashMentions } from "../../shared/promptSlashMentions";
 
-export interface PromptCompletionTrigger { kind: "command"; query: string; from: number; to: number }
+export interface PromptCompletionTrigger {
+  kind: "command";
+  query: string;
+  from: number;
+  to: number;
+}
 
 export function detectPromptCompletionTrigger(draft: string, cursor = draft.length, knownNames?: ReadonlySet<string>): PromptCompletionTrigger | undefined {
   const beforeCursor = draft.slice(0, cursor);

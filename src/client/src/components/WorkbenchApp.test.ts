@@ -26,7 +26,14 @@ import { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
 import { WorkbenchChatPane } from "./WorkbenchChatPane";
 import type { WorkbenchQuestionChips } from "./WorkbenchQuestionChips";
 import { SessionController } from "../controllers/sessionController";
-import { WorkbenchWindowController, WINDOW_CHANNEL, WINDOW_HEARTBEAT_KEY, WINDOW_ID_LOCK_PREFIX, WINDOW_STORE_KEY, WINDOW_STORE_LOCK } from "../controllers/workbenchWindowController";
+import {
+  WorkbenchWindowController,
+  WINDOW_CHANNEL,
+  WINDOW_HEARTBEAT_KEY,
+  WINDOW_ID_LOCK_PREFIX,
+  WINDOW_STORE_KEY,
+  WINDOW_STORE_LOCK,
+} from "../controllers/workbenchWindowController";
 import { WorkbenchChatSession, WorkbenchSessionFocus } from "../controllers/workbenchSessionFocus";
 import { FakeLocks } from "../controllers/webLocks.testSupport";
 import { emptyWindow, focusChat, moveChats, openChat, parseWindowStore, type WorkbenchWindow } from "../workbenchWindows";
@@ -37,7 +44,11 @@ installNativeDialogFake();
 // Browser plugin modules load by URL import; serve the bundled Mermaid source instead.
 vi.mock("../plugins/external", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../plugins/external")>();
-  return { ...actual, loadExternalPlugins: (url: string, options: Parameters<typeof actual.loadExternalPlugins>[1] = {}) => actual.loadExternalPlugins(url, { ...options, moduleLoader: () => import("../../../../pi-web-plugins/mermaid/pi-web-plugin") }) };
+  return {
+    ...actual,
+    loadExternalPlugins: (url: string, options: Parameters<typeof actual.loadExternalPlugins>[1] = {}) =>
+      actual.loadExternalPlugins(url, { ...options, moduleLoader: () => import("../../../../pi-web-plugins/mermaid/pi-web-plugin") }),
+  };
 });
 
 /** happy-dom has no Web Locks; windows share their store only with them, as in a secure-context browser. */
@@ -50,19 +61,28 @@ beforeEach(() => {
   vi.spyOn(api, "projects").mockResolvedValue([]);
   // Session selection loads one transcript snapshot; compose it from the per-test messages/status/stream mocks.
   vi.spyOn(api, "transcriptSnapshot").mockImplementation(async (selected, options, machineId) => {
-    const [page, status, stream] = await Promise.all([api.messages(selected, options, machineId), api.status(selected, machineId), api.streamSnapshot(selected, machineId)]);
+    const [page, status, stream] = await Promise.all([
+      api.messages(selected, options, machineId),
+      api.status(selected, machineId),
+      api.streamSnapshot(selected, machineId),
+    ]);
     return { page, status, generation: "test-host", ...stream };
   });
-  vi.spyOn(api, "notificationInbox").mockImplementation((selected) => Promise.resolve({
-    daemonInstanceId: "daemon",
-    catalogRevision: 0,
-    summary: { sessionId: selected.id, cwd: selected.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 },
-    notifications: [],
-    dismissThrough: { order: 0, overflowWatermark: 0 },
-  }));
-  vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(url.endsWith("/plugins")
-    ? pluginLifecycleResponse()
-    : new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }))));
+  vi.spyOn(api, "notificationInbox").mockImplementation((selected) =>
+    Promise.resolve({
+      daemonInstanceId: "daemon",
+      catalogRevision: 0,
+      summary: { sessionId: selected.id, cwd: selected.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 },
+      notifications: [],
+      dismissThrough: { order: 0, overflowWatermark: 0 },
+    }),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) =>
+      Promise.resolve(url.endsWith("/plugins") ? pluginLifecycleResponse() : new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 })),
+    ),
+  );
   vi.stubGlobal("WebSocket", SilentWebSocket);
   window.history.replaceState({}, "", "/");
 });
@@ -74,7 +94,9 @@ function storedHeartbeats(): object {
 
 /** Plain-http origins lack crypto.randomUUID; ids then come from getRandomValues, filled here with `byte`. */
 function plainHttpRandomKey(byte: number): string {
-  vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => { throw new TypeError("crypto.randomUUID is not a function"); });
+  vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+    throw new TypeError("crypto.randomUUID is not a function");
+  });
   vi.spyOn(globalThis.crypto, "getRandomValues").mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
     if (array instanceof Uint8Array) array.fill(byte);
     return array;
@@ -97,7 +119,9 @@ const stubSelectedChat = () => {
   return vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
 };
 const openFromWorkstream = (app: WorkbenchApp, detail: Record<string, unknown>) => {
-  app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("open-workstream-session", { detail: { workstreamId: "workstream", directories: [], ...detail } }));
+  app.shadowRoot
+    ?.querySelector("workstream-chooser")
+    ?.dispatchEvent(new CustomEvent("open-workstream-session", { detail: { workstreamId: "workstream", directories: [], ...detail } }));
 };
 
 const paneText = (pane: WorkbenchFilesPane | null | undefined): string | undefined => {
@@ -148,22 +172,53 @@ describe("Chat in a folder", () => {
   it("shows the associated Workstream through a registered workspace without registering the Chat folder", async () => {
     const current = { ...session("adhoc", "Investigate", "Nested chat"), cwd: "/outside/nested" };
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, ({ operation }) => operation === "watch"
-      ? { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } }
-      : operation === "list" ? { ok: true, value: [{ id: "learning" }] }
-      : { ok: true, value: { id: "learning", title: "Source learning", revision: 1, sessions: [{ id: current.id, status: "active" }], humanTasks: [], links: [], overview: null, closed: false } }, undefined, true);
+    stubWorkstreamService(
+      calls,
+      ({ operation }) =>
+        operation === "watch"
+          ? { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } }
+          : operation === "list"
+            ? { ok: true, value: [{ id: "learning" }] }
+            : {
+                ok: true,
+                value: {
+                  id: "learning",
+                  title: "Source learning",
+                  revision: 1,
+                  sessions: [{ id: current.id, status: "active" }],
+                  humanTasks: [],
+                  links: [],
+                  overview: null,
+                  closed: false,
+                },
+              },
+      undefined,
+      true,
+    );
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: current.cwd });
     vi.spyOn(api, "sessions").mockResolvedValue([current]);
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: current.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
     vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
     window.history.replaceState({}, "", `/?session=${current.id}&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(shownWorkstream(app)).toBe("Source learning"); });
+    await vi.waitFor(() => {
+      expect(shownWorkstream(app)).toBe("Source learning");
+    });
     expect(tabsRoot(app).querySelector(".solo")?.classList.contains("tinted")).toBe(true);
     expect(getState(app).selectedProject).toBeUndefined();
     expect(getState(app).selectedWorkspace?.path).toBe(current.cwd);
@@ -183,13 +238,26 @@ describe("Chat in a folder", () => {
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: current.cwd });
     vi.spyOn(api, "sessions").mockResolvedValue([current]);
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: current.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
     vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
     window.history.replaceState({}, "", `/?session=${current.id}&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(Reflect.get(app, "currentWorkstreamError")).toContain("registered project"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "currentWorkstreamError")).toContain("registered project");
+      expect(Reflect.get(app, "currentWorkstream")).toBeNull();
+    });
     await app.updateComplete;
     expect(shownWorkstream(app)).toBeUndefined();
     expect(tabsRoot(app).querySelector(".tinted")).toBeNull();
@@ -202,24 +270,42 @@ describe("Chat in a folder", () => {
     vi.spyOn(api, "startSession").mockResolvedValue(started);
     vi.spyOn(api, "sessions").mockResolvedValue([]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/anywhere/notes" });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "adhoc", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "adhoc",
+      persisted: false,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     window.piWebNative = { pickDirectory: () => Promise.resolve("/anywhere/notes"), notify: () => Promise.resolve() };
 
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('button[aria-label="New Chat without a project"] svg')).not.toBeNull();
     expect(app.shadowRoot?.querySelector('button[aria-label="Add project…"] svg')).not.toBeNull();
-    app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.dispatchEvent(new MouseEvent("click", { altKey: true }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("adhoc"); });
+    app.shadowRoot
+      ?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')
+      ?.dispatchEvent(new MouseEvent("click", { altKey: true }));
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("adhoc");
+    });
     expect(getState(app).selectedWorkspace?.path).toBe("/anywhere/notes");
     expect(window.location.search).toMatch(/^\?win=[^&]+&session=adhoc&view=chat$/u);
 
     document.body.replaceChildren();
     const reopened = new WorkbenchApp();
     document.body.append(reopened);
-    await vi.waitFor(() => { expect(getState(reopened).selectedSession?.id).toBe("adhoc"); });
+    await vi.waitFor(() => {
+      expect(getState(reopened).selectedSession?.id).toBe("adhoc");
+    });
     expect(getState(reopened).selectedWorkspace?.path).toBe("/anywhere/notes");
     delete window.piWebNative;
   });
@@ -228,16 +314,33 @@ describe("Chat in a folder", () => {
     const started = { ...session("ideas", ""), cwd: "/Users/me/IdeaProjects" };
     const start = vi.spyOn(api, "startSession").mockResolvedValue(started);
     vi.spyOn(api, "sessions").mockResolvedValue([]);
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "ideas", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
-    vi.spyOn(api, "projectDirectories").mockResolvedValue([{ path: "/Users/me/IdeaProjects-old/", kind: "other" }, { path: "/Users/me/IdeaProjects/", kind: "other" }]);
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "ideas",
+      persisted: false,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
+    vi.spyOn(api, "projectDirectories").mockResolvedValue([
+      { path: "/Users/me/IdeaProjects-old/", kind: "other" },
+      { path: "/Users/me/IdeaProjects/", kind: "other" },
+    ]);
     const pickDirectory = vi.fn(() => Promise.resolve("/elsewhere"));
     window.piWebNative = { pickDirectory, notify: () => Promise.resolve() };
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("ideas"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("ideas");
+    });
     expect(start.mock.calls[0]?.[0]).toBe("/Users/me/IdeaProjects");
     expect(pickDirectory).not.toHaveBeenCalled();
     delete window.piWebNative;
@@ -245,13 +348,20 @@ describe("Chat in a folder", () => {
 
   it("explains a folder panel that never opened instead of failing silently", async () => {
     vi.spyOn(api, "projectDirectories").mockResolvedValue([]);
-    window.piWebNative = { pickDirectory: () => Promise.reject(new Error("WKWebView API client did not respond to this postMessage")), notify: () => Promise.resolve() };
+    window.piWebNative = {
+      pickDirectory: () => Promise.reject(new Error("WKWebView API client did not respond to this postMessage")),
+      notify: () => Promise.resolve(),
+    };
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="New Chat without a project"]')?.click();
-    await vi.waitFor(() => { expect(getState(app).error).toContain("Quit and reopen Pi Workbench"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("Quit and reopen Pi Workbench");
+    });
     delete window.piWebNative;
   });
 });
@@ -266,7 +376,17 @@ describe("session info", () => {
   it("shows the known transcript path of a new Chat, and trusts live status over the stale row", () => {
     const fresh = { ...session("abc", ""), cwd: "/work", path: "/store/abc.jsonl", persisted: false };
     expect(sessionInfoText(fresh)).toContain("Transcript: /store/abc.jsonl (written after the first reply)");
-    const written: SessionStatus = { sessionId: "abc", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    const written: SessionStatus = {
+      sessionId: "abc",
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    };
     expect(sessionInfoText(fresh, written)).toBe("Session: abc\nFolder: /work\nTranscript: /store/abc.jsonl");
   });
 });
@@ -286,7 +406,10 @@ describe("Workbench Chat chooser", () => {
     const shown: FakeBrowserNotification[] = [];
     class ClickNotification extends FakeBrowserNotification {
       static override permission: NotificationPermission = "granted";
-      constructor() { super(); shown.push(this); }
+      constructor() {
+        super();
+        shown.push(this);
+      }
     }
     vi.stubGlobal("Notification", ClickNotification);
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
@@ -295,7 +418,16 @@ describe("Workbench Chat chooser", () => {
     const app = await mountChooser([first, second]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "sessions").mockResolvedValue([first, second]);
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "first", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "first",
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     setState(app, { ...getState(app), selectedSession: first });
     const controller: unknown = Reflect.get(app, "desktopNotifications");
     if (!(controller instanceof DesktopNotificationController)) throw new Error("Notification controller unavailable");
@@ -304,7 +436,9 @@ describe("Workbench Chat chooser", () => {
     expect(shown).toHaveLength(1);
     setState(app, { ...getState(app), selectedSession: second });
     shown[0]?.onclick?.(new Event("click"));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("first"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("first");
+    });
     expect(window.location.search).toContain("session=first");
     expect(Reflect.get(app, "revealTarget")).toBeUndefined();
   });
@@ -312,7 +446,10 @@ describe("Workbench Chat chooser", () => {
     const shown: FakeBrowserNotification[] = [];
     class ClickNotification extends FakeBrowserNotification {
       static override permission: NotificationPermission = "granted";
-      constructor() { super(); shown.push(this); }
+      constructor() {
+        super();
+        shown.push(this);
+      }
     }
     vi.stubGlobal("Notification", ClickNotification);
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
@@ -321,17 +458,34 @@ describe("Workbench Chat chooser", () => {
     const app = await mountChooser([first, second]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "sessions").mockResolvedValue([first, second]);
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "second", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "second",
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     setState(app, { ...getState(app), selectedSession: first });
     const receive: unknown = Reflect.get(app, "handleRealtimeEvent");
     if (typeof receive !== "function") throw new Error("Global event handler unavailable");
-    Reflect.apply(receive, app, [{ type: "session.attention", sessionId: "second", cwd: workspace.path, sessionName: "Second Chat", kind: "ask", id: "ask-1", detail: "Continue?" }]);
+    Reflect.apply(receive, app, [
+      { type: "session.attention", sessionId: "second", cwd: workspace.path, sessionName: "Second Chat", kind: "ask", id: "ask-1", detail: "Continue?" },
+    ]);
     expect(shown).toHaveLength(1);
     shown[0]?.onclick?.(new Event("click"));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("second"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("second");
+    });
     expect(window.location.search).toContain("session=second");
     await app.updateComplete;
-    expect(app.shadowRoot?.querySelector<ChatView>('.tile[data-focused="true"] chat-view')?.revealTarget).toEqual({ machineId: "local", sessionId: "second", anchor: "ask:ask-1" });
+    expect(app.shadowRoot?.querySelector<ChatView>('.tile[data-focused="true"] chat-view')?.revealTarget).toEqual({
+      machineId: "local",
+      sessionId: "second",
+      anchor: "ask:ask-1",
+    });
   });
 
   it("reveals a notification's message from the opening URL once, and from the native app without a reload", async () => {
@@ -339,21 +493,36 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "sessions").mockResolvedValue([first]);
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "first", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "first",
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
     window.history.replaceState({}, "", "/?session=first&message=entry%3Areply-1");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("first"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("first");
+    });
     await app.updateComplete;
     const view = app.shadowRoot?.querySelector<ChatView>("chat-view");
     expect(view?.revealTarget).toEqual({ machineId: "local", sessionId: "first", anchor: "entry:reply-1" });
     expect(window.location.search).not.toContain("message");
 
     window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId: "first", message: "dialog:d-1" } }));
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toEqual({ machineId: "local", sessionId: "first", anchor: "dialog:d-1" }); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toEqual({ machineId: "local", sessionId: "first", anchor: "dialog:d-1" });
+    });
     window.dispatchEvent(new CustomEvent("pi-web:notification-open", { detail: { machineId: "local", sessionId: "first", message: "bad anchor" } }));
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toBeUndefined(); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector<ChatView>("chat-view")?.revealTarget).toBeUndefined();
+    });
   });
 
   it("offers notification permission through an explicit accessible gesture and hides the control after denial", async () => {
@@ -364,7 +533,9 @@ describe("Workbench Chat chooser", () => {
 
     expect(button?.title).toBe("Enable desktop notifications");
     button?.click();
-    await vi.waitFor(() => { expect(FakeBrowserNotification.requestPermission).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(FakeBrowserNotification.requestPermission).toHaveBeenCalledOnce();
+    });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('button[aria-label="Enable desktop notifications"]')).toBeNull();
     expect(app.shadowRoot?.querySelector('[role="alert"]')?.textContent).toContain("browser's site settings");
@@ -422,7 +593,9 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([session("human", "Plan the release")]);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedWorkspace?.id).toBe(workspace.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
+    });
     await app.updateComplete;
 
     const tab = app.shadowRoot?.querySelector<HTMLButtonElement>('button[role="tab"][aria-selected="true"]');
@@ -441,14 +614,32 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "sessions").mockResolvedValue([current]);
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    const status = vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    const status = vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: current.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
-    const notifications = vi.spyOn(api, "notificationInbox").mockResolvedValue({ daemonInstanceId: "daemon", catalogRevision: 0, summary: { sessionId: current.id, cwd: current.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 }, notifications: [], dismissThrough: { order: 0, overflowWatermark: 0 } });
+    const notifications = vi.spyOn(api, "notificationInbox").mockResolvedValue({
+      daemonInstanceId: "daemon",
+      catalogRevision: 0,
+      summary: { sessionId: current.id, cwd: current.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 },
+      notifications: [],
+      dismissThrough: { order: 0, overflowWatermark: 0 },
+    });
     vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
     window.history.replaceState({}, "", `/?project=${project.id}&workspace=${workspace.id}&session=${current.id}&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(current.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(current.id);
+    });
     const statusCalls = status.mock.calls.length;
     const notificationCalls = notifications.mock.calls.length;
 
@@ -457,8 +648,12 @@ describe("Workbench Chat chooser", () => {
 
     expect(getState(app).selectedSession?.id).toBe(current.id);
     expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).toBeNull();
-    await vi.waitFor(() => { expect(status.mock.calls.length).toBeGreaterThan(statusCalls); });
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(status.mock.calls.length).toBeGreaterThan(statusCalls);
+    });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     expect(getState(app).selectedSession?.id).toBe(current.id);
     expect(app.shadowRoot?.querySelector('[data-view="chat"]')).not.toBeNull();
     expect(notifications.mock.calls.length).toBeGreaterThan(notificationCalls);
@@ -470,20 +665,40 @@ describe("Workbench Chat chooser", () => {
     const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "sessions").mockResolvedValue([current]);
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: current.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
-    vi.spyOn(api, "notificationInbox").mockResolvedValue({ daemonInstanceId: "daemon", catalogRevision: 0, summary: { sessionId: current.id, cwd: current.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 }, notifications: [], dismissThrough: { order: 0, overflowWatermark: 0 } });
+    vi.spyOn(api, "notificationInbox").mockResolvedValue({
+      daemonInstanceId: "daemon",
+      catalogRevision: 0,
+      summary: { sessionId: current.id, cwd: current.cwd, inboxRevision: 0, retainedCount: 0, discardedCount: 0 },
+      notifications: [],
+      dismissThrough: { order: 0, overflowWatermark: 0 },
+    });
     vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
     window.history.replaceState({}, "", `/?project=${project.id}&workspace=${workspace.id}&session=${current.id}&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(current.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(current.id);
+    });
 
     workspaces.mockResolvedValue([]);
     app.remove();
     document.body.append(app);
 
-    await vi.waitFor(() => { expect(getState(app).error).toContain("workspace is no longer available"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("workspace is no longer available");
+    });
     expect(getState(app).selectedSession).toBeUndefined();
     expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
   });
@@ -492,11 +707,23 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "sessions").mockResolvedValue([]);
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "fresh", persisted: false, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "fresh",
+      persisted: false,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     window.history.replaceState({}, "", `/?project=${project.id}&workspace=${workspace.id}&session=fresh&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     expect(getState(app).error).not.toContain("no longer available");
     expect(getState(app).selectedSession?.id).toBe("fresh");
   });
@@ -505,7 +732,11 @@ describe("Workbench Chat chooser", () => {
     const current = session("human", "See image");
     const app = await mountChooser([current]);
     const mediaId = "a".repeat(64);
-    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "user", parts: [{ type: "image", mediaId, mimeType: "image/png", byteSize: 3 }] }] });
+    setState(app, {
+      ...getState(app),
+      selectedSession: current,
+      messages: [{ role: "user", parts: [{ type: "image", mediaId, mimeType: "image/png", byteSize: 3 }] }],
+    });
     await app.updateComplete;
     const chat = app.shadowRoot?.querySelector<ChatView>("chat-view");
     if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
@@ -564,9 +795,27 @@ describe("Workbench Chat chooser", () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
-    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "See [notes](docs/notes.md), [ledger](/repo/.scratch/LEDGER.md), [outside](/elsewhere/x.md) and [site](https://example.com)." }] }] });
+    setState(app, {
+      ...getState(app),
+      selectedSession: current,
+      messages: [
+        {
+          role: "assistant",
+          parts: [
+            {
+              type: "text",
+              text: "See [notes](docs/notes.md), [ledger](/repo/.scratch/LEDGER.md), [outside](/elsewhere/x.md) and [site](https://example.com).",
+            },
+          ],
+        },
+      ],
+    });
     await app.updateComplete;
-    const read = vi.spyOn(api, "workspaceFile").mockImplementation((_project, _workspace, path) => Promise.resolve({ path, encoding: "utf8", size: 5, modifiedAt: "now", version: "v1", content: `body of ${path}`, truncated: false, binary: false }));
+    const read = vi
+      .spyOn(api, "workspaceFile")
+      .mockImplementation((_project, _workspace, path) =>
+        Promise.resolve({ path, encoding: "utf8", size: 5, modifiedAt: "now", version: "v1", content: `body of ${path}`, truncated: false, binary: false }),
+      );
     const anchors = await chatAnchors(app);
     expect(anchors.map((anchor) => anchor.getAttribute("data-workspace-file"))).toEqual(["docs/notes.md", ".scratch/LEDGER.md", null, null]);
     expect(anchors[3]?.getAttribute("href")).toBe("https://example.com");
@@ -576,37 +825,59 @@ describe("Workbench Chat chooser", () => {
       return event;
     };
     expect(click(anchors[0]).defaultPrevented).toBe(true);
-    await vi.waitFor(() => { expect(paneText(app.shadowRoot?.querySelector("workbench-files-pane"))).toBe("body of docs/notes.md"); });
+    await vi.waitFor(() => {
+      expect(paneText(app.shadowRoot?.querySelector("workbench-files-pane"))).toBe("body of docs/notes.md");
+    });
     expect(read).toHaveBeenCalledWith(project.id, workspace.id, "docs/notes.md", machine.id);
     const pane = app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
     if (pane === undefined || pane === null) throw new Error("Files pane was not mounted");
     const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
     click(anchors[1]);
-    await vi.waitFor(() => { expect(canClose).toHaveBeenCalled(); });
+    await vi.waitFor(() => {
+      expect(canClose).toHaveBeenCalled();
+    });
     expect(read).toHaveBeenCalledTimes(1);
     canClose.mockReturnValue(true);
     click(anchors[1]);
-    await vi.waitFor(() => { expect(paneText(pane)).toBe("body of .scratch/LEDGER.md"); });
+    await vi.waitFor(() => {
+      expect(paneText(pane)).toBe("body of .scratch/LEDGER.md");
+    });
     expect(anchors[2]?.getAttribute("data-outside-file")).toBe("/elsewhere/x.md");
     expect(click(anchors[2]).defaultPrevented).toBe(true);
-    await vi.waitFor(() => { expect(paneText(pane)).toBe("body of x.md"); });
+    await vi.waitFor(() => {
+      expect(paneText(pane)).toBe("body of x.md");
+    });
     expect(read).toHaveBeenLastCalledWith("", "folder:/elsewhere", "x.md", machine.id);
   });
 
   it("offers the enabled Mermaid plugin for mermaid fences in Chat", async () => {
     // Chat Markdown formats on a later frame; without a viewport, format without waiting for visibility.
     vi.stubGlobal("IntersectionObserver", undefined);
-    const manifest = { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [
-      { id: "mermaid", module: "/pi-web-plugins/mermaid/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
-      { id: "files", module: "/pi-web-plugins/files/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
-    ] };
-    const fetchMock = vi.fn((url: string) => Promise.resolve(url.endsWith("/pi-web-plugins/manifest.json")
-      ? new Response(JSON.stringify(manifest), { status: 200 })
-      : url.endsWith("/plugins") ? pluginLifecycleResponse() : new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 })));
+    const manifest = {
+      lifecycleVersion: 2,
+      terminalMode: "recovery-disabled",
+      plugins: [
+        { id: "mermaid", module: "/pi-web-plugins/mermaid/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
+        { id: "files", module: "/pi-web-plugins/files/browser/pi-web-plugin.js", source: "bundled", scope: "bundled", machineSpecific: false },
+      ],
+    };
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        url.endsWith("/pi-web-plugins/manifest.json")
+          ? new Response(JSON.stringify(manifest), { status: 200 })
+          : url.endsWith("/plugins")
+            ? pluginLifecycleResponse()
+            : new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }),
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const current = session("human", "Draw");
     const app = await mountChooser([current]);
-    setState(app, { ...getState(app), selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "```mermaid\nflowchart LR\n  A --> B\n```" }] }] });
+    setState(app, {
+      ...getState(app),
+      selectedSession: current,
+      messages: [{ role: "assistant", parts: [{ type: "text", text: "```mermaid\nflowchart LR\n  A --> B\n```" }] }],
+    });
     await app.updateComplete;
     const chat = app.shadowRoot?.querySelector<ChatView>("chat-view");
     if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
@@ -629,24 +900,49 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "workspaces").mockImplementation((projectId) => Promise.resolve(projectId === sibling.id ? [siblingWorkspace] : [workspace]));
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
-    setState(app, { ...getState(app), projects: [project, sibling], selectedSession: current, messages: [{ role: "assistant", parts: [{ type: "text", text: "See [generator](../pi-web.installed/src/server/sessions/sessionNameGenerator.ts) and [loose](../loose/notes.md)." }] }] });
+    setState(app, {
+      ...getState(app),
+      projects: [project, sibling],
+      selectedSession: current,
+      messages: [
+        {
+          role: "assistant",
+          parts: [{ type: "text", text: "See [generator](../pi-web.installed/src/server/sessions/sessionNameGenerator.ts) and [loose](../loose/notes.md)." }],
+        },
+      ],
+    });
     await app.updateComplete;
-    const read = vi.spyOn(api, "workspaceFile").mockImplementation((_project, _workspace, path) => Promise.resolve({ path, encoding: "utf8", size: 5, modifiedAt: "now", version: "v1", content: `body of ${path}`, truncated: false, binary: false }));
+    const read = vi
+      .spyOn(api, "workspaceFile")
+      .mockImplementation((_project, _workspace, path) =>
+        Promise.resolve({ path, encoding: "utf8", size: 5, modifiedAt: "now", version: "v1", content: `body of ${path}`, truncated: false, binary: false }),
+      );
     const anchors = await chatAnchors(app);
-    expect(anchors.map((anchor) => anchor.getAttribute("data-outside-file"))).toEqual(["/pi-web.installed/src/server/sessions/sessionNameGenerator.ts", "/loose/notes.md"]);
+    expect(anchors.map((anchor) => anchor.getAttribute("data-outside-file"))).toEqual([
+      "/pi-web.installed/src/server/sessions/sessionNameGenerator.ts",
+      "/loose/notes.md",
+    ]);
 
     anchors[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 }));
-    await vi.waitFor(() => { expect(read).toHaveBeenCalledWith(sibling.id, siblingWorkspace.id, "src/server/sessions/sessionNameGenerator.ts", machine.id); });
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledWith(sibling.id, siblingWorkspace.id, "src/server/sessions/sessionNameGenerator.ts", machine.id);
+    });
     const pane = () => app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-    await vi.waitFor(() => { expect(paneText(pane())).toBe("body of src/server/sessions/sessionNameGenerator.ts"); });
+    await vi.waitFor(() => {
+      expect(paneText(pane())).toBe("body of src/server/sessions/sessionNameGenerator.ts");
+    });
     expect(pane()?.workspace).toBe(siblingWorkspace);
 
     anchors[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, button: 0 }));
-    await vi.waitFor(() => { expect(read).toHaveBeenLastCalledWith("", "folder:/loose", "notes.md", machine.id); });
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenLastCalledWith("", "folder:/loose", "notes.md", machine.id);
+    });
 
     const toggle = app.shadowRoot?.querySelector<HTMLButtonElement>(".files-toggle");
-    toggle?.click(); await app.updateComplete;
-    toggle?.click(); await app.updateComplete;
+    toggle?.click();
+    await app.updateComplete;
+    toggle?.click();
+    await app.updateComplete;
     expect(pane()?.workspace).toBe(workspace);
   });
 
@@ -664,24 +960,45 @@ describe("Workbench Chat chooser", () => {
     window.dispatchEvent(ctrl);
     expect(ctrl.defaultPrevented).toBe(false);
     const pane = () => app.shadowRoot?.querySelector<WorkbenchFilesPane>("workbench-files-pane");
-    await vi.waitFor(() => { expect(pane()?.shadowRoot?.querySelector(".pane.tree-open")).not.toBeNull(); });
-    await vi.waitFor(() => { expect(tree.mock.calls[0]?.slice(0, 4)).toEqual([project.id, workspace.id, "", "local"]); });
-    await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
+    await vi.waitFor(() => {
+      expect(pane()?.shadowRoot?.querySelector(".pane.tree-open")).not.toBeNull();
+    });
+    await vi.waitFor(() => {
+      expect(tree.mock.calls[0]?.slice(0, 4)).toEqual([project.id, workspace.id, "", "local"]);
+    });
+    await vi.waitFor(() => {
+      expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]'));
+    });
     expect(app.shadowRoot?.querySelector("chat-view")).toBe(chat);
     // Search lives in the Files pane toolbar, not the Chat header.
     expect(app.shadowRoot?.querySelector('header button[aria-label="Search files"]')).toBeNull();
     // happy-dom's ShadowRoot.activeElement throws while focus sits in another nested shadow root.
     pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
     pane()?.shadowRoot?.querySelector<HTMLButtonElement>('.bar button[aria-label="Search files"]')?.click();
-    await vi.waitFor(() => { expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]')); });
+    await vi.waitFor(() => {
+      expect(pane()?.shadowRoot?.activeElement).toBe(pane()?.shadowRoot?.querySelector('input[aria-label="Filter files"]'));
+    });
     pane()?.shadowRoot?.querySelector<HTMLInputElement>('input[aria-label="Filter files"]')?.blur();
   });
 
   it("shows only this Chat's open questions as chips above its composer, answering through the session, with no Questions button or pane", async () => {
     const current = session("human", "Edit notes");
     const app = await mountChooser([current]);
-    const openAsk = (askId: string) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, context: "Why", questions: [{ id: "db", question: "Which database?", options: [] }] });
-    setState(app, { ...getState(app), selectedSession: current, pendingAsks: [openAsk("abc-1"), openAsk("def-2")], sessionStatuses: { other: { ...idleStatus("other"), pendingAsks: [openAsk("xyz-9")] } } });
+    const openAsk = (askId: string) => ({
+      askId,
+      askedAt: "2026-10-19T10:00:00.000Z",
+      updatedAt: "2026-10-19T10:00:00.000Z",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      context: "Why",
+      questions: [{ id: "db", question: "Which database?", options: [] }],
+    });
+    setState(app, {
+      ...getState(app),
+      selectedSession: current,
+      pendingAsks: [openAsk("abc-1"), openAsk("def-2")],
+      sessionStatuses: { other: { ...idleStatus("other"), pendingAsks: [openAsk("xyz-9")] } },
+    });
     await app.updateComplete;
     const chips = app.shadowRoot?.querySelector<WorkbenchQuestionChips>(".chat-column > .composer-area > workbench-question-chips");
 
@@ -697,7 +1014,11 @@ describe("Workbench Chat chooser", () => {
     const chat = app.shadowRoot?.querySelector("chat-view");
     // A host attribute, not `:has([open])`: WebKit never restyles `:has(...)::part(...)`, so the room stayed taken after answering.
     const collapsed = ".chat-column[question-drawer-open] > chat-view";
-    const settle = async () => { await chips?.updateComplete; await app.updateComplete; await app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.updateComplete; };
+    const settle = async () => {
+      await chips?.updateComplete;
+      await app.updateComplete;
+      await app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.updateComplete;
+    };
     expect(await chips?.openQuestion("abc-1", 0)).toBe(true);
     await settle();
     expect(app.shadowRoot?.querySelector(collapsed)).toBe(chat);
@@ -709,7 +1030,12 @@ describe("Workbench Chat chooser", () => {
 
     const submit = vi.spyOn(api, "submitAsk").mockResolvedValue({ result: "closed", sessionStatus: idleStatus(current.id) });
     await chips?.onSubmit?.("def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" });
-    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ id: current.id }), "def-2", { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" }, "local");
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ id: current.id }),
+      "def-2",
+      { answers: [{ id: "db", values: [], otherText: "Postgres" }], revision: "r1" },
+      "local",
+    );
 
     setState(app, { ...getState(app), pendingAsks: [] });
     await settle();
@@ -726,7 +1052,10 @@ describe("Workbench Chat chooser", () => {
     if (!container) throw new Error("Missing Chat container");
     Object.defineProperty(container, "clientWidth", { configurable: true, value: 1000 });
     const $ = (selector: string) => app.shadowRoot?.querySelector(selector) ?? null;
-    const click = async (selector: string) => { app.shadowRoot?.querySelector<HTMLButtonElement>(selector)?.click(); await app.updateComplete; };
+    const click = async (selector: string) => {
+      app.shadowRoot?.querySelector<HTMLButtonElement>(selector)?.click();
+      await app.updateComplete;
+    };
 
     await click(".files-toggle");
     expect($("workbench-files-pane")).not.toBeNull();
@@ -766,7 +1095,8 @@ describe("Workbench Chat chooser", () => {
     divider.hasPointerCapture = vi.fn(() => true);
     const releaseCapture = vi.fn();
     divider.releasePointerCapture = releaseCapture;
-    const pointer = (type: string, clientX: number, pointerId = 1) => divider.dispatchEvent(new PointerEvent(type, { pointerId, button: 0, clientX, bubbles: true, cancelable: true }));
+    const pointer = (type: string, clientX: number, pointerId = 1) =>
+      divider.dispatchEvent(new PointerEvent(type, { pointerId, button: 0, clientX, bubbles: true, cancelable: true }));
     expect(divider.getAttribute("role")).toBe("separator");
     expect(divider.tabIndex).toBe(0);
     expect(divider.getAttribute("aria-orientation")).toBe("vertical");
@@ -794,7 +1124,8 @@ describe("Workbench Chat chooser", () => {
     await app.updateComplete;
     expect(divider.getAttribute("aria-valuenow")).toBe("264");
     expect(releaseCapture).toHaveBeenCalledTimes(2);
-    const key = (name: string, shiftKey = false) => divider.dispatchEvent(new KeyboardEvent("keydown", { key: name, shiftKey, bubbles: true, cancelable: true }));
+    const key = (name: string, shiftKey = false) =>
+      divider.dispatchEvent(new KeyboardEvent("keydown", { key: name, shiftKey, bubbles: true, cancelable: true }));
     expect(key("ArrowLeft")).toBe(false);
     await app.updateComplete;
     expect(divider.getAttribute("aria-valuenow")).toBe("288");
@@ -836,9 +1167,21 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "recent").mockResolvedValue([recent]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: recent.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: recent.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     const app = await mountChooser([]);
-    const allTab = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>('button[role="tab"]') ?? [])].find((button) => button.textContent === "All sessions");
+    const allTab = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>('button[role="tab"]') ?? [])].find(
+      (button) => button.textContent === "All sessions",
+    );
     if (allTab === undefined) throw new Error("All sessions tab was not rendered");
 
     allTab.click();
@@ -847,7 +1190,9 @@ describe("Workbench Chat chooser", () => {
     if (chooser === undefined || chooser === null) throw new Error("All sessions chooser was not rendered");
     chooser.dispatchEvent(new CustomEvent("open-session", { detail: recent, bubbles: true, composed: true }));
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(recent.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(recent.id);
+    });
     expect(getState(app).selectedWorkspace?.path).toBe(recent.cwd);
   });
 
@@ -855,15 +1200,29 @@ describe("Workbench Chat chooser", () => {
     const sessions = vi.spyOn(api, "sessions").mockResolvedValue([]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "continued", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "continued",
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     const app = await mountChooser([]);
     sessions.mockClear();
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("open-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "continued", directories: [] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("open-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "continued", directories: [] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("continued"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("continued");
+    });
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
     expect(sessions.mock.calls).toEqual([[workspace.path, "local", { sessionId: "continued" }]]);
   });
@@ -878,7 +1237,9 @@ describe("Workbench Chat chooser", () => {
 
     openFromWorkstream(app, { sessionId: archived.id });
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(archived.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(archived.id);
+    });
     await app.updateComplete;
     expect(getState(app).selectedSession).toEqual(archived);
     expect(listed).toHaveBeenCalledWith(workspace.path, "local", { sessionId: archived.id });
@@ -891,15 +1252,23 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const first = deferred<SessionInfo[]>();
     const secondRow = session("second-open", "Newer choice");
-    const listed = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machine, options) => options?.sessionId === "first-open" ? first.promise : Promise.resolve([secondRow]));
+    const listed = vi
+      .spyOn(api, "sessions")
+      .mockImplementation((_cwd, _machine, options) => (options?.sessionId === "first-open" ? first.promise : Promise.resolve([secondRow])));
     stubSelectedChat();
 
     openFromWorkstream(app, { sessionId: "first-open", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(listed).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "first-open" }); });
+    await vi.waitFor(() => {
+      expect(listed).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "first-open" });
+    });
     openFromWorkstream(app, { sessionId: secondRow.id, projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(secondRow.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(secondRow.id);
+    });
     first.resolve([session("first-open", "Superseded choice")]);
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     expect(getState(app).selectedSession?.id).toBe(secondRow.id);
   });
 
@@ -911,12 +1280,16 @@ describe("Workbench Chat chooser", () => {
     const locate = vi.spyOn(api, "locate").mockReturnValue(located.promise);
 
     openFromWorkstream(app, { sessionId: "old-open" });
-    await vi.waitFor(() => { expect(locate).toHaveBeenCalledWith("old-open", "local"); });
+    await vi.waitFor(() => {
+      expect(locate).toHaveBeenCalledWith("old-open", "local");
+    });
     const choose: unknown = Reflect.get(app, "chooseMachine");
     if (typeof choose !== "function") throw new Error("chooseMachine missing");
     await Reflect.apply(choose, app, [remote.id]);
     located.reject(new Error("Old machine lookup failed"));
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     expect(getState(app).selectedMachine?.id).toBe(remote.id);
     expect(getState(app).error).toBe("");
   });
@@ -926,13 +1299,27 @@ describe("Workbench Chat chooser", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([{ ...session("rebound", "Rebound"), cwd: worktree.path }]);
     const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: worktree.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace, worktree]);
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: "rebound", persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: "rebound",
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     const app = await mountChooser([]);
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("open-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "rebound", directories: [worktree.path] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("open-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "rebound", directories: [worktree.path] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("rebound"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("rebound");
+    });
     expect(locate).toHaveBeenCalledWith("rebound", "local");
     expect(getState(app).selectedProject?.id).toBe(project.id);
     expect(getState(app).selectedWorkspace?.id).toBe(worktree.id);
@@ -943,48 +1330,64 @@ describe("Workbench Chat chooser", () => {
     const protocol: string[] = [];
     const calls: WorkstreamServiceCall[] = [];
     let inspectCount = 0;
-    stubWorkstreamService(calls, (body) => {
-      if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 70 : 71, sessions: [], humanTasks: [] } };
-      if (body.operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 71 } };
-      protocol.push("append");
-      return { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } };
-    }, protocol);
+    stubWorkstreamService(
+      calls,
+      (body) => {
+        if (body.operation === "inspect")
+          return { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 70 : 71, sessions: [], humanTasks: [] } };
+        if (body.operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 71 } };
+        protocol.push("append");
+        return { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } };
+      },
+      protocol,
+    );
     const key = plainHttpRandomKey(1);
-    const startSession = vi.spyOn(api, "startSession").mockImplementation(() => { protocol.push("start"); return Promise.resolve(started); });
+    const startSession = vi.spyOn(api, "startSession").mockImplementation(() => {
+      protocol.push("start");
+      return Promise.resolve(started);
+    });
     const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const prompt = vi.spyOn(api, "prompt").mockResolvedValue({ accepted: true });
     const command = vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
+    });
     const [pending, confirmed] = calls.filter((call) => call.operation === "append").map((call) => call.input);
     expect(protocol).toEqual(["inspect", "append", "start", "inspect", "append"]);
     expect(pending).toEqual({
       workstreamId: "workstream",
       expectedRevision: 70,
       idempotencyKey: `pi-web:${key}:pending`,
-      records: [{
-        type: "session.pending",
-        producer: "pi-web",
-        sourceSessionId: "previous",
-        payload: { associationKey: `pi-web:${key}`, derivationKind: "checkpoint", machineId: "local", projectId: "project", workspaceId: "workspace" },
-      }],
+      records: [
+        {
+          type: "session.pending",
+          producer: "pi-web",
+          sourceSessionId: "previous",
+          payload: { associationKey: `pi-web:${key}`, derivationKind: "checkpoint", machineId: "local", projectId: "project", workspaceId: "workspace" },
+        },
+      ],
     });
     expect(confirmed).toEqual({
       workstreamId: "workstream",
       expectedRevision: 71,
       idempotencyKey: `pi-web:${key}:confirmed`,
-      records: [{
-        type: "session.confirmed",
-        producer: "pi-web",
-        sourceSessionId: "new-session",
-        payload: { sessionId: "new-session", associationKey: `pi-web:${key}`, machineId: "local", projectId: "project", workspaceId: "workspace" },
-      }],
+      records: [
+        {
+          type: "session.confirmed",
+          producer: "pi-web",
+          sourceSessionId: "new-session",
+          payload: { sessionId: "new-session", associationKey: `pi-web:${key}`, machineId: "local", projectId: "project", workspaceId: "workspace" },
+        },
+      ],
     });
     expect(startSession).toHaveBeenCalledWith(workspace.path, "local", `pi-web:${key}`);
     expect(prompt).not.toHaveBeenCalled();
@@ -998,22 +1401,44 @@ describe("Workbench Chat chooser", () => {
 
   it("sends a new Workstream Chat's first request with an orientation for it", async () => {
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", title: "Release", revision: 2, sessions: [{ id: "previous", status: "active", latestCheckpoint: null }, { id: "new-session", status: "active", latestCheckpoint: null }], humanTasks: [] } }
-      : body.operation === "list" ? { ok: true, value: [{ id: "workstream", title: "Release", revision: 2 }] } : { ok: true, value: { acceptedRevision: 2 } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? {
+            ok: true,
+            value: {
+              id: "workstream",
+              title: "Release",
+              revision: 2,
+              sessions: [
+                { id: "previous", status: "active", latestCheckpoint: null },
+                { id: "new-session", status: "active", latestCheckpoint: null },
+              ],
+              humanTasks: [],
+            },
+          }
+        : body.operation === "list"
+          ? { ok: true, value: [{ id: "workstream", title: "Release", revision: 2 }] }
+          : { ok: true, value: { acceptedRevision: 2 } },
+    );
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "startSession").mockResolvedValue(session("new-session", ""));
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
     const command = vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
-    }));
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.orientFirstRequest).toBe(true); });
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector<WorkbenchChatPane>("workbench-chat-pane")?.orientFirstRequest).toBe(true);
+    });
     await promptEditor(app).onSend?.("Add a hover count");
     // A skill runs as a command, which the agent receives expanded.
-    await vi.waitFor(() => { expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session" }), "/skill:orient request\n\nAdd a hover count", "local"); });
+    await vi.waitFor(() => {
+      expect(command).toHaveBeenCalledWith(expect.objectContaining({ id: "new-session" }), "/skill:orient request\n\nAdd a hover count", "local");
+    });
   });
 
   it("rejects a temporary Workstream directory before recording a pending launch", async () => {
@@ -1023,11 +1448,15 @@ describe("Workbench Chat chooser", () => {
     const startSession = vi.spyOn(api, "startSession");
     const app = await mountChooser([]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", directories: ["/private/tmp/pi-context-views-20260909"] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", directories: ["/private/tmp/pi-context-views-20260909"] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(getState(app).error).toContain("temporary directory"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("temporary directory");
+    });
     expect(startSession).not.toHaveBeenCalled();
     expect(calls.filter((call) => call.operation === "append")).toHaveLength(0);
   });
@@ -1035,20 +1464,26 @@ describe("Workbench Chat chooser", () => {
   it("continues a stale temporary Workstream checkpoint explicitly in the selected workspace", async () => {
     const calls: WorkstreamServiceCall[] = [];
     let inspectCount = 0;
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: 2 } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? { ok: true, value: { id: "workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
+        : { ok: true, value: { acceptedRevision: 2 } },
+    );
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const locate = vi.spyOn(api, "locate");
     const start = vi.spyOn(api, "startSession").mockResolvedValue(session("new-session", ""));
     vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [], useSelectedWorkspace: true },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "previous", directories: [], useSelectedWorkspace: true },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
+    });
     expect(locate).not.toHaveBeenCalled();
     expect(start).toHaveBeenCalledWith(workspace.path, "local", expect.stringMatching(/^pi-web:/));
     expect(getState(app).selectedWorkspace?.path).toBe(workspace.path);
@@ -1058,9 +1493,11 @@ describe("Workbench Chat chooser", () => {
     const started = session("first-session", "");
     const calls: WorkstreamServiceCall[] = [];
     let inspectCount = 0;
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "empty-workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? { ok: true, value: { id: "empty-workstream", revision: inspectCount++ === 0 ? 1 : 2, sessions: [], humanTasks: [] } }
+        : { ok: true, value: { acceptedRevision: typeof body.input["expectedRevision"] === "number" ? body.input["expectedRevision"] + 1 : 0 } },
+    );
     const key = plainHttpRandomKey(3);
     const locate = vi.spyOn(api, "locate");
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
@@ -1068,23 +1505,33 @@ describe("Workbench Chat chooser", () => {
     const command = vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "empty-workstream", directories: [] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "empty-workstream", directories: [] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
+    });
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     expect(command).not.toHaveBeenCalled();
     expect(loadDraft(machineSessionKey("local", "first-session"))).toBe("");
     expect(locate).not.toHaveBeenCalled();
     expect(startSession).toHaveBeenCalledWith(workspace.path, "local", `pi-web:${key}`);
     expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
-      records: [{ payload: {
-        associationKey: `pi-web:${key}`,
-        machineId: "local",
-        projectId: project.id,
-        workspaceId: workspace.id,
-      } }],
+      records: [
+        {
+          payload: {
+            associationKey: `pi-web:${key}`,
+            machineId: "local",
+            projectId: project.id,
+            workspaceId: workspace.id,
+          },
+        },
+      ],
     });
     const records: unknown = calls.find((call) => call.operation === "append")?.input["records"];
     if (!Array.isArray(records)) throw new Error("pending records missing");
@@ -1094,18 +1541,24 @@ describe("Workbench Chat chooser", () => {
 
   it("does not start an empty Workstream when a session appeared after the card loaded", async () => {
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "empty-workstream", revision: 2, sessions: [{ id: "existing", status: "active", latestCheckpoint: null }], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: 3 } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? { ok: true, value: { id: "empty-workstream", revision: 2, sessions: [{ id: "existing", status: "active", latestCheckpoint: null }], humanTasks: [] } }
+        : { ok: true, value: { acceptedRevision: 3 } },
+    );
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const startSession = vi.spyOn(api, "startSession");
     const app = await mountChooser([]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "empty-workstream", directories: [] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "empty-workstream", directories: [] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(getState(app).error).toContain("already has a session"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("already has a session");
+    });
     expect(startSession).not.toHaveBeenCalled();
     expect(calls.filter((call) => call.operation === "append")).toHaveLength(0);
   });
@@ -1114,77 +1567,123 @@ describe("Workbench Chat chooser", () => {
     const started = session("new-session", "");
     const other = session("other-session", "Other");
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", revision: 4, sessions: [], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: 5 } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? { ok: true, value: { id: "workstream", revision: 4, sessions: [], humanTasks: [] } }
+        : { ok: true, value: { acceptedRevision: 5 } },
+    );
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "startSession").mockResolvedValue(started);
     vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     let resolveStatus: ((value: Awaited<ReturnType<typeof api.status>>) => void) | undefined;
-    vi.spyOn(api, "status").mockImplementation(() => new Promise((resolve) => { resolveStatus = resolve; }));
+    vi.spyOn(api, "status").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
     const otherDraftKey = machineSessionKey("local", other.id);
     saveDraft(otherDraftKey, "Keep this draft");
     const app = await mountChooser([other]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
-    }));
-    await vi.waitFor(() => { expect(resolveStatus).toBeTypeOf("function"); });
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(resolveStatus).toBeTypeOf("function");
+    });
     setState(app, { ...getState(app), selectedSession: other });
     await app.updateComplete;
     await promptEditor(app).updateComplete;
-    resolveStatus?.({ sessionId: started.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
-    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    resolveStatus?.({
+      sessionId: started.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
+    });
 
     expect(getState(app).selectedSession?.id).toBe(other.id);
-    await vi.waitFor(() => { expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft"); });
+    await vi.waitFor(() => {
+      expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft");
+    });
   });
 
   it("leaves a different selected Chat's draft alone after an ambiguous failed launch", async () => {
     const other = session("other-session", "Other");
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", revision: 8, sessions: [], humanTasks: [] } }
-      : { ok: true, value: { acceptedRevision: 9 } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? { ok: true, value: { id: "workstream", revision: 8, sessions: [], humanTasks: [] } }
+        : { ok: true, value: { acceptedRevision: 9 } },
+    );
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     let rejectStart: ((reason: Error) => void) | undefined;
-    vi.spyOn(api, "startSession").mockImplementation(() => new Promise((_resolve, reject) => { rejectStart = reject; }));
+    vi.spyOn(api, "startSession").mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectStart = reject;
+        }),
+    );
     const otherDraftKey = machineSessionKey("local", other.id);
     saveDraft(otherDraftKey, "Keep this draft");
     const app = await mountChooser([other]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
-    }));
-    await vi.waitFor(() => { expect(rejectStart).toBeTypeOf("function"); });
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(rejectStart).toBeTypeOf("function");
+    });
     setState(app, { ...getState(app), selectedSession: other });
     await app.updateComplete;
     await promptEditor(app).updateComplete;
     rejectStart?.(new Error("start uncertain"));
-    await vi.waitFor(() => { expect(getState(app).error).toContain("Chat creation failed"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("Chat creation failed");
+    });
 
     expect(getState(app).error).not.toContain("reconciliation");
-    await vi.waitFor(() => { expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft"); });
+    await vi.waitFor(() => {
+      expect(promptEditor(app).view?.state.doc.toString()).toBe("Keep this draft");
+    });
   });
 
   it("does not create a Chat when the anchorless pending append fails", async () => {
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => body.operation === "inspect"
-      ? { ok: true, value: { id: "workstream", revision: 12, sessions: [], humanTasks: [] } }
-      : { ok: false, error: { message: "store unavailable" } });
+    stubWorkstreamService(calls, (body) =>
+      body.operation === "inspect"
+        ? { ok: true, value: { id: "workstream", revision: 12, sessions: [], humanTasks: [] } }
+        : { ok: false, error: { message: "store unavailable" } },
+    );
     const key = plainHttpRandomKey(2);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: "/loose/folder" });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const startSession = vi.spyOn(api, "startSession");
     const app = await mountChooser([]);
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", {
-      detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
-    }));
+    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(
+      new CustomEvent("start-workstream-session", {
+        detail: { workstreamId: "workstream", sessionId: "previous", directories: [] },
+      }),
+    );
 
-    await vi.waitFor(() => { expect(getState(app).error).toContain("no Chat was started"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("no Chat was started");
+    });
     expect(startSession).not.toHaveBeenCalled();
     expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
       expectedRevision: 12,
@@ -1216,14 +1715,21 @@ describe("Workbench request waterfalls", () => {
 
     openFromWorkstream(app, { sessionId: "anchored", projectId: project.id, workspaceId: workspace.id });
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("anchored"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("anchored");
+    });
     await app.updateComplete;
     expect(getState(app).selectedSession).toEqual(archived);
     expect(status).not.toHaveBeenCalled();
     expect(locate).not.toHaveBeenCalled();
     expect(workspaces.mock.calls).toEqual([[project.id, "local"]]);
     // The targeted row opens the Chat; the whole catalog follows behind it.
-    await vi.waitFor(() => { expect(sessions.mock.calls).toEqual([[workspace.path, "local", { sessionId: "anchored" }], [workspace.path, "local"]]); });
+    await vi.waitFor(() => {
+      expect(sessions.mock.calls).toEqual([
+        [workspace.path, "local", { sessionId: "anchored" }],
+        [workspace.path, "local"],
+      ]);
+    });
     expect(getState(app).selectedProject?.id).toBe(project.id);
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
     expect(promptEditor(app).disabled).toBe(true);
@@ -1238,7 +1744,9 @@ describe("Workbench request waterfalls", () => {
 
     openFromWorkstream(app, { sessionId: "blank", projectId: project.id, workspaceId: workspace.id });
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("blank"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("blank");
+    });
     expect(locate).not.toHaveBeenCalled();
     expect(status.mock.calls[0]).toEqual([{ id: "blank", cwd: workspace.path }, "local"]);
     expect(getState(app).selectedWorkspace?.id).toBe(workspace.id);
@@ -1248,18 +1756,24 @@ describe("Workbench request waterfalls", () => {
     const remote: Machine = { ...machine, id: "remote", name: "Remote", kind: "remote" };
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const targeted = deferred<SessionInfo[]>();
-    const sessions = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? Promise.resolve([]) : targeted.promise);
+    const sessions = vi
+      .spyOn(api, "sessions")
+      .mockImplementation((_cwd, _machineId, options) => (options?.sessionId === undefined ? Promise.resolve([]) : targeted.promise));
     stubSelectedChat();
     const app = await mountChooser([]);
     setState(app, { ...getState(app), machines: [machine, remote] });
 
     openFromWorkstream(app, { sessionId: "anchored", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(sessions).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "anchored" }); });
+    await vi.waitFor(() => {
+      expect(sessions).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "anchored" });
+    });
     const chooseMachine: unknown = Reflect.get(app, "chooseMachine");
     if (typeof chooseMachine !== "function") throw new Error("chooseMachine missing");
     await Reflect.apply(chooseMachine, app, [remote.id]);
     targeted.resolve([session("anchored", "Local work")]);
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
 
     expect(getState(app).selectedMachine?.id).toBe(remote.id);
     expect(getState(app).selectedSession).toBeUndefined();
@@ -1277,10 +1791,15 @@ describe("Workbench request waterfalls", () => {
 
     openFromWorkstream(app, { sessionId: "archived", projectId: project.id, workspaceId: workspace.id });
 
-    await vi.waitFor(() => { expect(getState(app).error).toContain("unavailable"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("unavailable");
+    });
     expect(getState(app).selectedSession).toBeUndefined();
     expect(status).not.toHaveBeenCalled();
-    expect(sessions.mock.calls).toEqual([[workspace.path, "local", { sessionId: "archived" }], [workspace.path, "local", { sessionId: "archived" }]]);
+    expect(sessions.mock.calls).toEqual([
+      [workspace.path, "local", { sessionId: "archived" }],
+      [workspace.path, "local", { sessionId: "archived" }],
+    ]);
   });
 
   it("UI-001: opens an anchored Chat that moved from its located folder's targeted row, archived and read-only", async () => {
@@ -1288,13 +1807,17 @@ describe("Workbench request waterfalls", () => {
     const moved: SessionInfo = { ...session("moved", "Old work"), cwd: worktree.path, archived: true };
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace, worktree]);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: worktree.path });
-    vi.spyOn(api, "sessions").mockImplementation((cwd) => cwd === worktree.path ? Promise.resolve([moved]) : Promise.reject(new HttpRequestError("Session not found", 404)));
+    vi.spyOn(api, "sessions").mockImplementation((cwd) =>
+      cwd === worktree.path ? Promise.resolve([moved]) : Promise.reject(new HttpRequestError("Session not found", 404)),
+    );
     const status = stubSelectedChat();
     const app = await mountChooser([]);
 
     openFromWorkstream(app, { sessionId: "moved", projectId: project.id, workspaceId: workspace.id });
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession).toEqual(moved); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession).toEqual(moved);
+    });
     await app.updateComplete;
     expect(getState(app).selectedWorkspace?.id).toBe(worktree.id);
     expect(status).not.toHaveBeenCalled();
@@ -1310,12 +1833,16 @@ describe("Workbench request waterfalls", () => {
     const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: worktree.path });
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace, worktree]);
     vi.spyOn(api, "sessions").mockResolvedValue([session("other", "Wrong Chat")]);
-    stubSelectedChat().mockImplementation((ref) => ref.cwd === worktree.path ? Promise.resolve(idleStatus(ref.id)) : Promise.reject(new Error("Session not found")));
+    stubSelectedChat().mockImplementation((ref) =>
+      ref.cwd === worktree.path ? Promise.resolve(idleStatus(ref.id)) : Promise.reject(new Error("Session not found")),
+    );
     const app = await mountChooser([]);
 
     openFromWorkstream(app, { sessionId: "moved", projectId, workspaceId });
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("moved"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("moved");
+    });
     expect(locate).toHaveBeenCalledWith("moved", "local");
     expect(getState(app).selectedSession?.cwd).toBe(worktree.path);
     expect(getState(app).selectedWorkspace?.id).toBe(worktree.id);
@@ -1340,17 +1867,21 @@ describe("Workbench request waterfalls", () => {
 
     openFromWorkstream(app, { sessionId: "unanchored" });
 
-    await vi.waitFor(() => { expect(workspaces).toHaveBeenCalledTimes(3); });
+    await vi.waitFor(() => {
+      expect(workspaces).toHaveBeenCalledTimes(3);
+    });
     listings.get(project.id)?.resolve([workspace]);
     listings.get(outer.id)?.resolve([{ ...shared, projectId: outer.id }]);
     listings.get(inner.id)?.resolve([shared]);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("unanchored"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("unanchored");
+    });
     expect(getState(app).selectedProject?.id).toBe(inner.id);
   });
 
   // Targeted rows answer immediately; the whole-workspace catalog is held back so the Chat can only open from the targeted row.
   const splitSessions = (targeted: (id: string) => Promise<SessionInfo[]>, catalog: () => Promise<SessionInfo[]>) =>
-    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog() : targeted(options.sessionId));
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => (options?.sessionId === undefined ? catalog() : targeted(options.sessionId)));
   // Counted explicitly, so a query change cannot pass a held-back full catalog off as a targeted request.
   const catalogCalls = (sessions: ReturnType<typeof splitSessions>) => sessions.mock.calls.filter((call) => call[2]?.sessionId === undefined).length;
   const targetedCalls = (sessions: ReturnType<typeof splitSessions>) => sessions.mock.calls.filter((call) => call[2]?.sessionId !== undefined).length;
@@ -1364,7 +1895,10 @@ describe("Workbench request waterfalls", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const catalog = deferred<SessionInfo[]>();
     // An older daemon ignores the id and answers the targeted request with its whole catalog.
-    const sessions = splitSessions(() => Promise.resolve(daemon === "older" ? [session("other", "Wrong Chat"), row] : [row]), () => catalog.promise);
+    const sessions = splitSessions(
+      () => Promise.resolve(daemon === "older" ? [session("other", "Wrong Chat"), row] : [row]),
+      () => catalog.promise,
+    );
     const status = stubSelectedChat();
     const effects = [
       vi.spyOn(api, "prompt").mockResolvedValue({ accepted: true }),
@@ -1377,7 +1911,9 @@ describe("Workbench request waterfalls", () => {
     const app = new WorkbenchApp();
     document.body.append(app);
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession).toEqual(row); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession).toEqual(row);
+    });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('[data-view="chat"]')).not.toBeNull();
     expect(promptEditor(app).disabled).toBe(row.archived === true);
@@ -1390,7 +1926,13 @@ describe("Workbench request waterfalls", () => {
     }
 
     catalog.resolve([session("other", "Wrong Chat"), row]);
-    await vi.waitFor(() => { expect(getState(app).sessions.map((candidate) => candidate.id).sort()).toEqual(["listed", "other"]); });
+    await vi.waitFor(() => {
+      expect(
+        getState(app)
+          .sessions.map((candidate) => candidate.id)
+          .sort(),
+      ).toEqual(["listed", "other"]);
+    });
     expect(getState(app).selectedSession).toEqual(row);
     expect(catalogCalls(sessions)).toBe(1);
   });
@@ -1398,12 +1940,17 @@ describe("Workbench request waterfalls", () => {
   it("UI-002: opens a project-less Chat URL from its located folder's targeted row before that folder's catalog", async () => {
     const row: SessionInfo = { ...session("adhoc", "Notes"), cwd: "/anywhere/notes", archived: true };
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: row.cwd });
-    const sessions = splitSessions(() => Promise.resolve([row]), () => deferred<SessionInfo[]>().promise);
+    const sessions = splitSessions(
+      () => Promise.resolve([row]),
+      () => deferred<SessionInfo[]>().promise,
+    );
     const status = stubSelectedChat();
     window.history.replaceState({}, "", `/?session=${row.id}&view=chat`);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession).toEqual(row); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession).toEqual(row);
+    });
     expect(getState(app).selectedWorkspace?.path).toBe(row.cwd);
     expect(status).not.toHaveBeenCalled();
     expect(catalogCalls(sessions)).toBe(1);
@@ -1412,12 +1959,17 @@ describe("Workbench request waterfalls", () => {
   it("UI-002: reports a current daemon's explicit not-found without bootstrapping the Chat from status", async () => {
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    splitSessions(() => Promise.reject(new HttpRequestError("Session not found", 404)), () => Promise.resolve([]));
+    splitSessions(
+      () => Promise.reject(new HttpRequestError("Session not found", 404)),
+      () => Promise.resolve([]),
+    );
     const status = stubSelectedChat();
     window.history.replaceState({}, "", chatUrl("gone"));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).error).toContain("no longer available"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("no longer available");
+    });
     expect(getState(app).selectedSession).toBeUndefined();
     expect(status).not.toHaveBeenCalled();
   });
@@ -1427,18 +1979,25 @@ describe("Workbench request waterfalls", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const blank: SessionInfo = { ...session("blank", ""), path: "", persisted: false, messageCount: 0 };
     const catalog = deferred<SessionInfo[]>();
-    splitSessions(() => Promise.resolve([blank]), () => catalog.promise);
+    splitSessions(
+      () => Promise.resolve([blank]),
+      () => catalog.promise,
+    );
     stubSelectedChat();
     window.history.replaceState({}, "", chatUrl(blank.id));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(blank.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(blank.id);
+    });
     expect(promptEditor(app).disabled).toBe(false);
     const live = { ...blank, name: "Live title" };
-    setState(app, { ...getState(app), sessions: getState(app).sessions.map((candidate) => candidate.id === blank.id ? live : candidate) });
+    setState(app, { ...getState(app), sessions: getState(app).sessions.map((candidate) => (candidate.id === blank.id ? live : candidate)) });
 
     catalog.resolve([session("other", "Older Chat")]);
-    await vi.waitFor(() => { expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["blank", "other"]); });
+    await vi.waitFor(() => {
+      expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["blank", "other"]);
+    });
     expect(getState(app).sessions[0]).toEqual(live);
     expect(getState(app).selectedSession?.id).toBe(blank.id);
   });
@@ -1448,19 +2007,26 @@ describe("Workbench request waterfalls", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const row = session("listed", "Keep going");
     const catalog = deferred<SessionInfo[]>();
-    splitSessions(() => Promise.resolve([row]), () => catalog.promise);
+    splitSessions(
+      () => Promise.resolve([row]),
+      () => catalog.promise,
+    );
     stubSelectedChat();
     window.history.replaceState({}, "", chatUrl(row.id));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(row.id);
+    });
     const blank: SessionInfo = { ...session("new-blank", ""), path: "", persisted: false, messageCount: 0 };
     const stale = session("deleted", "Gone");
     saveDraft(machineSessionKey("local", blank.id), "Unsent idea");
     setState(app, { ...getState(app), sessions: [blank, stale, ...getState(app).sessions] });
 
     catalog.resolve([row, session("other", "Older Chat")]);
-    await vi.waitFor(() => { expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["new-blank", "listed", "other"]); });
+    await vi.waitFor(() => {
+      expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["new-blank", "listed", "other"]);
+    });
     expect(getState(app).sessions[0]).toEqual(blank);
     expect(loadDraft(machineSessionKey("local", blank.id))).toBe("Unsent idea");
     expect(getState(app).selectedSession?.id).toBe(row.id);
@@ -1471,12 +2037,17 @@ describe("Workbench request waterfalls", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const row = session("listed", "Keep going", "Old title");
     const catalog = deferred<SessionInfo[]>();
-    splitSessions(() => Promise.resolve([row]), () => catalog.promise);
+    splitSessions(
+      () => Promise.resolve([row]),
+      () => catalog.promise,
+    );
     stubSelectedChat();
     window.history.replaceState({}, "", chatUrl(row.id));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(row.id);
+    });
     await app.updateComplete;
     expect(promptEditor(app).disabled).toBe(false);
     const live = { ...row, name: "Live title" };
@@ -1484,7 +2055,9 @@ describe("Workbench request waterfalls", () => {
     setState(app, { ...getState(app), sessions: [live], selectedSession: live });
 
     catalog.resolve([{ ...row, archived: true, archivedAt: "2026-09-01T00:00:00.000Z" }]);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.archived).toBe(true); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.archived).toBe(true);
+    });
     await app.updateComplete;
     const archivedLive = { ...live, archived: true, archivedAt: "2026-09-01T00:00:00.000Z" };
     expect(getState(app).sessions).toEqual([archivedLive]);
@@ -1499,19 +2072,28 @@ describe("Workbench request waterfalls", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace, feature]);
     const late = deferred<SessionInfo[]>();
     const row = session("listed", "Keep going");
-    vi.spyOn(api, "sessions").mockImplementation((cwd, _machineId, options) => options?.sessionId !== undefined ? Promise.resolve([row])
-      : cwd === workspace.path ? late.promise : Promise.resolve([{ ...session("feature-chat", "Feature"), cwd: feature.path }]));
+    vi.spyOn(api, "sessions").mockImplementation((cwd, _machineId, options) =>
+      options?.sessionId !== undefined
+        ? Promise.resolve([row])
+        : cwd === workspace.path
+          ? late.promise
+          : Promise.resolve([{ ...session("feature-chat", "Feature"), cwd: feature.path }]),
+    );
     stubSelectedChat();
     window.history.replaceState({}, "", chatUrl(row.id));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(row.id);
+    });
 
     const chooseWorkspace: unknown = Reflect.get(app, "chooseWorkspace");
     if (typeof chooseWorkspace !== "function") throw new Error("chooseWorkspace missing");
     await Reflect.apply(chooseWorkspace, app, [feature.id]);
     late.resolve([row, session("stale", "Stale")]);
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     expect(getState(app).selectedWorkspace?.id).toBe(feature.id);
     expect(getState(app).sessions.map((candidate) => candidate.id)).toEqual(["feature-chat"]);
   });
@@ -1520,12 +2102,17 @@ describe("Workbench request waterfalls", () => {
     // Plain-http windows have independent sessionStorage, even though this DOM harness hosts them in one document.
     Reflect.deleteProperty(navigator, "locks");
     const tabStorage = vi.spyOn(window, "sessionStorage", "get").mockReturnValue(new Storage());
-    onTestFinished(() => { tabStorage.mockRestore(); });
+    onTestFinished(() => {
+      tabStorage.mockRestore();
+    });
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const first = deferred<SessionInfo[]>();
     const second = session("second", "Second");
-    splitSessions((id) => id === "first" ? first.promise : Promise.resolve([second]), () => Promise.resolve([session("first", "First"), second]));
+    splitSessions(
+      (id) => (id === "first" ? first.promise : Promise.resolve([second])),
+      () => Promise.resolve([session("first", "First"), second]),
+    );
     stubSelectedChat();
     window.history.replaceState({}, "", chatUrl("first"));
     const app = new WorkbenchApp();
@@ -1534,15 +2121,25 @@ describe("Workbench request waterfalls", () => {
     tabStorage.mockReturnValue(new Storage());
     const other = new WorkbenchApp();
     document.body.append(other);
-    await vi.waitFor(() => { expect(getState(other).selectedSession?.id).toBe(second.id); });
+    await vi.waitFor(() => {
+      expect(getState(other).selectedSession?.id).toBe(second.id);
+    });
     window.dispatchEvent(new PopStateEvent("popstate"));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(second.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(second.id);
+    });
 
     first.resolve([session("first", "First")]);
-    await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); });
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     expect(getState(app).selectedSession?.id).toBe(second.id);
     expect(getState(other).selectedSession?.id).toBe(second.id);
-    expect(getState(app).sessions.map((candidate) => candidate.id).sort()).toEqual(["first", "second"]);
+    expect(
+      getState(app)
+        .sessions.map((candidate) => candidate.id)
+        .sort(),
+    ).toEqual(["first", "second"]);
   });
 
   it("UI-002: reports a complete Chat URL that neither status nor the list can serve", async () => {
@@ -1553,7 +2150,9 @@ describe("Workbench request waterfalls", () => {
     window.history.replaceState({}, "", chatUrl("missing"));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).error).toContain("no longer available"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("no longer available");
+    });
     expect(getState(app).selectedSession).toBeUndefined();
   });
 
@@ -1565,7 +2164,10 @@ describe("Workbench request waterfalls", () => {
     const sessions = vi.spyOn(api, "sessions").mockResolvedValue([]);
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedWorkspace?.id).toBe(feature.id); expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedWorkspace?.id).toBe(feature.id);
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     expect(sessions.mock.calls).toEqual([[feature.path, "local"]]);
   });
 
@@ -1573,25 +2175,38 @@ describe("Workbench request waterfalls", () => {
     const sibling: Project = { ...project, id: "sibling", name: "Sibling", path: "/sibling" };
     const protocol: string[] = [];
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => {
-      if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: 1, sessions: [], humanTasks: [] } };
-      protocol.push(body.operation);
-      return { ok: true, value: body.operation === "watch" ? { mode: "replay", events: [], nextSequence: 1 } : { acceptedRevision: 2 } };
-    }, protocol);
+    stubWorkstreamService(
+      calls,
+      (body) => {
+        if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: 1, sessions: [], humanTasks: [] } };
+        protocol.push(body.operation);
+        return { ok: true, value: body.operation === "watch" ? { mode: "replay", events: [], nextSequence: 1 } : { acceptedRevision: 2 } };
+      },
+      protocol,
+    );
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    vi.spyOn(api, "startSession").mockImplementation(() => { protocol.push("start"); return Promise.resolve(session("new-session", "")); });
+    vi.spyOn(api, "startSession").mockImplementation(() => {
+      protocol.push("start");
+      return Promise.resolve(session("new-session", ""));
+    });
     vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
     setState(app, { ...getState(app), projects: [project, sibling] });
     workspaces.mockClear();
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", { detail: { workstreamId: "workstream", sessionId: "previous", directories: [] } }));
+    app.shadowRoot
+      ?.querySelector("workstream-chooser")
+      ?.dispatchEvent(new CustomEvent("start-workstream-session", { detail: { workstreamId: "workstream", sessionId: "previous", directories: [] } }));
 
-    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
+    });
     expect(workspaces).not.toHaveBeenCalled();
     expect(protocol.slice(0, 3)).toEqual(["inspect", "append", "start"]);
-    expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({ records: [{ payload: { machineId: "local", projectId: project.id, workspaceId: workspace.id } }] });
+    expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
+      records: [{ payload: { machineId: "local", projectId: project.id, workspaceId: workspace.id } }],
+    });
     expect(getState(app).selectedProject?.id).toBe(project.id);
   });
 
@@ -1600,30 +2215,53 @@ describe("Workbench request waterfalls", () => {
     const siblingWorkspace: Workspace = { ...workspace, id: "sibling-main", projectId: sibling.id, path: sibling.path };
     const protocol: string[] = [];
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, (body) => {
-      if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: 1, sessions: [], humanTasks: [] } };
-      protocol.push(body.operation);
-      return { ok: true, value: body.operation === "watch" ? { mode: "replay", events: [], nextSequence: 1 } : { acceptedRevision: 2 } };
-    }, protocol);
+    stubWorkstreamService(
+      calls,
+      (body) => {
+        if (body.operation === "inspect") return { ok: true, value: { id: "workstream", revision: 1, sessions: [], humanTasks: [] } };
+        protocol.push(body.operation);
+        return { ok: true, value: body.operation === "watch" ? { mode: "replay", events: [], nextSequence: 1 } : { acceptedRevision: 2 } };
+      },
+      protocol,
+    );
     vi.spyOn(api, "workspaces").mockImplementation((projectId) => Promise.resolve(projectId === sibling.id ? [siblingWorkspace] : [workspace]));
-    const start = vi.spyOn(api, "startSession").mockImplementation(() => { protocol.push("start"); return Promise.resolve({ ...session("new-session", ""), cwd: sibling.path }); });
+    const start = vi.spyOn(api, "startSession").mockImplementation(() => {
+      protocol.push("start");
+      return Promise.resolve({ ...session("new-session", ""), cwd: sibling.path });
+    });
     vi.spyOn(api, "runCommand").mockResolvedValue({ type: "done" });
     const app = await mountChooser([]);
     setState(app, { ...getState(app), projects: [project, sibling] });
 
-    app.shadowRoot?.querySelector("workstream-chooser")?.dispatchEvent(new CustomEvent("start-workstream-session", { detail: { workstreamId: "workstream", directories: [sibling.path], sessionId: "previous" } }));
+    app.shadowRoot
+      ?.querySelector("workstream-chooser")
+      ?.dispatchEvent(
+        new CustomEvent("start-workstream-session", { detail: { workstreamId: "workstream", directories: [sibling.path], sessionId: "previous" } }),
+      );
 
-    await vi.waitFor(() => { expect(calls.filter((call) => call.operation === "append")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.operation === "append")).toHaveLength(2);
+    });
     expect(protocol.slice(0, 3)).toEqual(["inspect", "append", "start"]);
     expect(start).toHaveBeenCalledWith(sibling.path, "local", expect.stringMatching(/^pi-web:/));
-    expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({ records: [{ payload: { projectId: sibling.id, workspaceId: siblingWorkspace.id } }] });
+    expect(calls.find((call) => call.operation === "append")?.input).toMatchObject({
+      records: [{ payload: { projectId: sibling.id, workspaceId: siblingWorkspace.id } }],
+    });
   });
 
   it("UI-009: returns through browser Back to another Chat without reloading machines, projects, or the realtime socket", async () => {
     const first = session("first", "First");
     const second = session("second", "Second");
     const opened: string[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); opened.push(url); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          opened.push(url);
+        }
+      },
+    );
     const projects = vi.spyOn(api, "projects").mockResolvedValue([project]);
     const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "sessions").mockResolvedValue([first, second]);
@@ -1631,7 +2269,10 @@ describe("Workbench request waterfalls", () => {
     window.history.replaceState({}, "", chatUrl(first.id));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(first.id); expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(first.id);
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     const realtimeSockets = () => opened.filter((url) => url.endsWith("/api/machines/local/events")).length;
     expect(realtimeSockets()).toBe(1);
     const machines = vi.mocked(api.machines);
@@ -1642,7 +2283,10 @@ describe("Workbench request waterfalls", () => {
     window.history.pushState({}, "", chatUrl(second.id));
     window.dispatchEvent(new PopStateEvent("popstate"));
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(second.id); expect(Reflect.get(app, "loading")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(second.id);
+      expect(Reflect.get(app, "loading")).toBe(false);
+    });
     expect(machines).not.toHaveBeenCalled();
     expect(projects).not.toHaveBeenCalled();
     expect(workspaces).toHaveBeenCalledOnce();
@@ -1652,7 +2296,15 @@ describe("Workbench request waterfalls", () => {
   it("catches a retained Chat up on window resume with one snapshot instead of replaying its queued frames", async () => {
     const chat = session("long", "Long");
     const sessionSockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (!url.endsWith("/api/machines/local/events")) sessionSockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (!url.endsWith("/api/machines/local/events")) sessionSockets.push(this);
+        }
+      },
+    );
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "sessions").mockResolvedValue([chat]);
@@ -1660,26 +2312,50 @@ describe("Workbench request waterfalls", () => {
     window.history.replaceState({}, "", chatUrl(chat.id));
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(chat.id); expect(Reflect.get(app, "loading")).toBe(false); expect(sessionSockets).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(chat.id);
+      expect(Reflect.get(app, "loading")).toBe(false);
+      expect(sessionSockets).toHaveLength(1);
+    });
     const focused: unknown = Reflect.get(app, "focused");
     if (!(focused instanceof WorkbenchSessionFocus) || focused.current === undefined) throw new Error("Chat runtime unavailable");
     const transitions = vi.spyOn(focused.current, "patch");
     const snapshot = vi.mocked(api.transcriptSnapshot);
     const reads = snapshot.mock.calls.length;
     let answer: (value: Awaited<ReturnType<typeof api.transcriptSnapshot>>) => void = () => undefined;
-    snapshot.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
+    snapshot.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
     const lines = Array.from({ length: 50 }, (_, index) => ({ role: "assistant", content: `step ${String(index + 1)}` }));
-    const frame = (index: number) => { sessionSockets[0]?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "message.append", message: lines[index], generation: "test-host", seq: index + 1 }) })); };
+    const frame = (index: number) => {
+      sessionSockets[0]?.onmessage?.(
+        new MessageEvent("message", { data: JSON.stringify({ type: "message.append", message: lines[index], generation: "test-host", seq: index + 1 }) }),
+      );
+    };
 
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new Event("focus"));
-    await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(reads + 1); });
+    await vi.waitFor(() => {
+      expect(snapshot).toHaveBeenCalledTimes(reads + 1);
+    });
     // Frames the suspended window queued arrive around and after the catch-up snapshot that already covers them.
     for (let index = 0; index < 25; index += 1) frame(index);
-    answer({ generation: "test-host", page: { messages: lines, start: 0, total: lines.length }, status: idleStatus(chat.id), seq: lines.length, partial: null });
-    await vi.waitFor(() => { expect(getState(app).messages).toHaveLength(50); });
+    answer({
+      generation: "test-host",
+      page: { messages: lines, start: 0, total: lines.length },
+      status: idleStatus(chat.id),
+      seq: lines.length,
+      partial: null,
+    });
+    await vi.waitFor(() => {
+      expect(getState(app).messages).toHaveLength(50);
+    });
     for (let index = 25; index < 50; index += 1) frame(index);
-    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
 
     expect(snapshot).toHaveBeenCalledTimes(reads + 1);
     expect(transitions.mock.calls.filter(([patch]) => patch.messages !== undefined).map(([patch]) => patch.messages?.length)).toEqual([50]);
@@ -1691,19 +2367,48 @@ describe("Workbench request waterfalls", () => {
     let nextSequence = 5;
     let events: unknown[] = [];
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, ({ operation }) => operation === "watch"
-      ? { ok: true, value: { mode: "replay", events, nextSequence } }
-      : operation === "list" ? { ok: true, value: [{ id: "mine" }] }
-      : { ok: true, value: { id: "mine", title: "Mine", revision: 1, sessions: [{ id: current.id, status: "active" }], humanTasks: [], links: [], overview: null, closed: false } }, undefined, true);
+    stubWorkstreamService(
+      calls,
+      ({ operation }) =>
+        operation === "watch"
+          ? { ok: true, value: { mode: "replay", events, nextSequence } }
+          : operation === "list"
+            ? { ok: true, value: [{ id: "mine" }] }
+            : {
+                ok: true,
+                value: {
+                  id: "mine",
+                  title: "Mine",
+                  revision: 1,
+                  sessions: [{ id: current.id, status: "active" }],
+                  humanTasks: [],
+                  links: [],
+                  overview: null,
+                  closed: false,
+                },
+              },
+      undefined,
+      true,
+    );
     stubSelectedChat();
     const app = await mountChooser([current]);
     app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
-    await vi.waitFor(() => { expect(Reflect.get(app, "currentWorkstream")).toMatchObject({ id: "mine" }); });
-    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "currentWorkstream")).toMatchObject({ id: "mine" });
+    });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined();
+    });
     const timer: unknown = Reflect.get(app, "workstreamWatchTimer");
     if (typeof timer === "number") window.clearTimeout(timer);
     const reloads = () => calls.filter((call) => call.operation === "list").length;
-    const event = (sequence: number, workstreamId: string, records: unknown[] = [{ type: "title.set" }]) => ({ sequence, workstreamId, revision: sequence, records, recordedAt: "2026-10-05T00:00:00.000Z" });
+    const event = (sequence: number, workstreamId: string, records: unknown[] = [{ type: "title.set" }]) => ({
+      sequence,
+      workstreamId,
+      revision: sequence,
+      records,
+      recordedAt: "2026-10-05T00:00:00.000Z",
+    });
     const loaded = reloads();
     vi.useFakeTimers();
     try {
@@ -1725,7 +2430,10 @@ describe("Workbench request waterfalls", () => {
       nextSequence = 8;
       await vi.advanceTimersByTimeAsync(30_000);
       expect(reloads()).toBe(loaded + 2);
-    } finally { app.remove(); vi.useRealTimers(); }
+    } finally {
+      app.remove();
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1733,14 +2441,21 @@ describe("Workbench request waterfalls", () => {
 describe("Workstream open versus in-flight navigation", () => {
   const remote: Machine = { ...machine, id: "remote", name: "Remote", kind: "remote" };
   const chatUrl = (id: string) => `/?project=${project.id}&workspace=${workspace.id}&session=${id}&view=chat`;
-  const flush = async () => { for (let i = 0; i < 5; i += 1) await new Promise<void>((resolve) => { window.setTimeout(resolve, 0); }); };
+  const flush = async () => {
+    for (let i = 0; i < 5; i += 1)
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+  };
   const call = async (app: WorkbenchApp, name: string, ...args: unknown[]): Promise<void> => {
     const fn: unknown = Reflect.get(app, name);
     if (typeof fn !== "function") throw new Error(`${name} missing`);
     await Promise.resolve(Reflect.apply(fn, app, args));
   };
   const loadingText = (app: WorkbenchApp) => app.shadowRoot?.querySelector('p[role="status"]')?.textContent ?? null;
-  const back = (app: WorkbenchApp) => { app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("window-home")); };
+  const back = (app: WorkbenchApp) => {
+    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("window-home"));
+  };
   const blankRow = (id: string, cwd = workspace.path): SessionInfo => ({ ...session(id, ""), cwd, path: "", persisted: false, messageCount: 0 });
   const ids = (app: WorkbenchApp) => getState(app).sessions.map((candidate) => candidate.id);
   const isLoading = (app: WorkbenchApp): unknown => Reflect.get(app, "loading");
@@ -1755,12 +2470,20 @@ describe("Workstream open versus in-flight navigation", () => {
     const status = vi.spyOn(api, "status").mockResolvedValue(idleStatus("old-open"));
     const workspaces = vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     openFromWorkstream(app, { sessionId: "old-open" });
-    await vi.waitFor(() => { expect(api.locate).toHaveBeenCalledWith("old-open", "local"); });
+    await vi.waitFor(() => {
+      expect(api.locate).toHaveBeenCalledWith("old-open", "local");
+    });
     await call(app, "chooseMachine", remote.id);
-    sessions.mockClear(); status.mockClear(); workspaces.mockClear();
+    sessions.mockClear();
+    status.mockClear();
+    workspaces.mockClear();
     located.resolve({ cwd: workspace.path });
     await flush();
-    expect({ sessions: sessions.mock.calls, status: status.mock.calls, workspaces: workspaces.mock.calls }).toEqual({ sessions: [], status: [], workspaces: [] });
+    expect({ sessions: sessions.mock.calls, status: status.mock.calls, workspaces: workspaces.mock.calls }).toEqual({
+      sessions: [],
+      status: [],
+      workspaces: [],
+    });
     expect(getState(app).selectedSession).toBeUndefined();
     expect(getState(app).selectedMachine?.id).toBe(remote.id);
     expect(getState(app).error).toBe("");
@@ -1776,7 +2499,9 @@ describe("Workstream open versus in-flight navigation", () => {
     const status = vi.spyOn(api, "status").mockResolvedValue(idleStatus("held"));
     const locate = vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     openFromWorkstream(app, { sessionId: "held", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(api.workspaces).toHaveBeenCalled(); });
+    await vi.waitFor(() => {
+      expect(api.workspaces).toHaveBeenCalled();
+    });
     await call(app, "chooseMachine", remote.id);
     listed.resolve([workspace]);
     await flush();
@@ -1798,7 +2523,9 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "sessions").mockReturnValue(legacy.promise);
     const status = vi.spyOn(api, "status").mockResolvedValue(idleStatus("blank"));
     openFromWorkstream(app, { sessionId: "blank", ...detail });
-    await vi.waitFor(() => { expect(api.sessions).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "blank" }); });
+    await vi.waitFor(() => {
+      expect(api.sessions).toHaveBeenCalledWith(workspace.path, "local", { sessionId: "blank" });
+    });
     await call(app, "chooseMachine", remote.id);
     legacy.resolve([]);
     await flush();
@@ -1809,7 +2536,12 @@ describe("Workstream open versus in-flight navigation", () => {
   });
 
   it("a superseded unanchored open starts no further old-machine project batch", async () => {
-    const extra = Array.from({ length: 5 }, (_, index): Project => ({ ...project, id: `p${String(index)}`, name: `P${String(index)}`, path: `/p${String(index)}` }));
+    const extra = Array.from({ length: 5 }, (_, index): Project => ({
+      ...project,
+      id: `p${String(index)}`,
+      name: `P${String(index)}`,
+      path: `/p${String(index)}`,
+    }));
     const app = await mountChooser([]);
     setState(app, { ...getState(app), machines: [machine, remote], projects: extra });
     vi.spyOn(api, "projects").mockResolvedValue([]);
@@ -1818,7 +2550,9 @@ describe("Workstream open versus in-flight navigation", () => {
     const firstBatch = deferred<Workspace[]>();
     const workspaces = vi.spyOn(api, "workspaces").mockReturnValue(firstBatch.promise);
     openFromWorkstream(app, { sessionId: "far" });
-    await vi.waitFor(() => { expect(workspaces).toHaveBeenCalledTimes(4); });
+    await vi.waitFor(() => {
+      expect(workspaces).toHaveBeenCalledTimes(4);
+    });
     await call(app, "chooseMachine", remote.id);
     firstBatch.resolve([]);
     await flush();
@@ -1835,7 +2569,9 @@ describe("Workstream open versus in-flight navigation", () => {
     const row = deferred<SessionInfo[]>();
     vi.spyOn(api, "sessions").mockReturnValue(row.promise);
     openFromWorkstream(app, { sessionId: "err-open" });
-    await vi.waitFor(() => { expect(api.sessions).toHaveBeenCalled(); });
+    await vi.waitFor(() => {
+      expect(api.sessions).toHaveBeenCalled();
+    });
     await call(app, "chooseMachine", remote.id);
     row.reject(new HttpRequestError("boom", 500));
     await flush();
@@ -1849,12 +2585,20 @@ describe("Workstream open versus in-flight navigation", () => {
     const located = deferred<{ cwd: string }>();
     vi.spyOn(api, "locate").mockReturnValue(located.promise);
     const newer = session("newer", "Newer");
-    const sessions = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => Promise.resolve(options?.sessionId === "newer" ? [newer] : [session(options?.sessionId ?? "catalog", "Old")]));
+    const sessions = vi
+      .spyOn(api, "sessions")
+      .mockImplementation((_cwd, _machineId, options) =>
+        Promise.resolve(options?.sessionId === "newer" ? [newer] : [session(options?.sessionId ?? "catalog", "Old")]),
+      );
     stubSelectedChat();
     openFromWorkstream(app, { sessionId: "older" });
-    await vi.waitFor(() => { expect(api.locate).toHaveBeenCalledWith("older", "local"); });
+    await vi.waitFor(() => {
+      expect(api.locate).toHaveBeenCalledWith("older", "local");
+    });
     openFromWorkstream(app, { sessionId: "newer", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("newer"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("newer");
+    });
     located.resolve({ cwd: workspace.path });
     await flush();
     expect(getState(app).selectedSession?.id).toBe("newer");
@@ -1870,9 +2614,13 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([session("newer", "Newer")]);
     stubSelectedChat();
     openFromWorkstream(app, { sessionId: "older" });
-    await vi.waitFor(() => { expect(api.locate).toHaveBeenCalled(); });
+    await vi.waitFor(() => {
+      expect(api.locate).toHaveBeenCalled();
+    });
     openFromWorkstream(app, { sessionId: "newer", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("newer"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("newer");
+    });
     located.reject(new Error("old failed"));
     await flush();
     expect(getState(app).error).toBe("");
@@ -1886,10 +2634,15 @@ describe("Workstream open versus in-flight navigation", () => {
     const sessions = vi.spyOn(api, "sessions").mockRejectedValue(new HttpRequestError("Session not found", 404));
     const status = vi.spyOn(api, "status");
     openFromWorkstream(app, { sessionId: "gone", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).error).toContain("unavailable"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("unavailable");
+    });
     expect(status).not.toHaveBeenCalled();
     expect(getState(app).selectedSession).toBeUndefined();
-    expect(sessions.mock.calls).toEqual([[workspace.path, "local", { sessionId: "gone" }], ["/elsewhere", "local", { sessionId: "gone" }]]);
+    expect(sessions.mock.calls).toEqual([
+      [workspace.path, "local", { sessionId: "gone" }],
+      ["/elsewhere", "local", { sessionId: "gone" }],
+    ]);
   });
 
   it("keeps a current daemon's 404 authoritative for an unanchored open, without status", async () => {
@@ -1899,7 +2652,9 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "sessions").mockRejectedValue(new HttpRequestError("Session not found", 404));
     const status = vi.spyOn(api, "status");
     openFromWorkstream(app, { sessionId: "gone" });
-    await vi.waitFor(() => { expect(getState(app).error).toContain("unavailable"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("unavailable");
+    });
     expect(status).not.toHaveBeenCalled();
   });
 
@@ -1911,10 +2666,12 @@ describe("Workstream open versus in-flight navigation", () => {
     const app = await mountChooser([]);
     vi.spyOn(api, "workspaces").mockResolvedValue(registered);
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: located });
-    vi.spyOn(api, "sessions").mockImplementation((cwd) => cwd === located ? Promise.resolve([archived]) : Promise.reject(new HttpRequestError("boom", 500)));
+    vi.spyOn(api, "sessions").mockImplementation((cwd) => (cwd === located ? Promise.resolve([archived]) : Promise.reject(new HttpRequestError("boom", 500))));
     const status = stubSelectedChat();
     openFromWorkstream(app, { sessionId: "arch", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("arch"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("arch");
+    });
     await app.updateComplete;
     expect(getState(app).selectedSession?.archived).toBe(true);
     expect(status).not.toHaveBeenCalled();
@@ -1928,7 +2685,9 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([]);
     const status = stubSelectedChat();
     openFromWorkstream(app, { sessionId: "blank", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("blank"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("blank");
+    });
     expect(status).toHaveBeenCalled();
     expect(locate).not.toHaveBeenCalled();
     expect(getState(app).selectedSession?.archived).toBeUndefined();
@@ -1939,12 +2698,18 @@ describe("Workstream open versus in-flight navigation", () => {
     const catalog = deferred<SessionInfo[]>();
     const row = session("ws-chat", "Workstream chat");
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    const sessions = vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.resolve([row]));
+    const sessions = vi
+      .spyOn(api, "sessions")
+      .mockImplementation((_cwd, _machineId, options) => (options?.sessionId === undefined ? catalog.promise : Promise.resolve([row])));
     stubSelectedChat();
     void call(app, "chooseWorkspace", workspace.id);
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(true);
+    });
     openFromWorkstream(app, { sessionId: row.id, projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(row.id);
+    });
     expect(Reflect.get(app, "loading")).toBe(false);
     catalog.resolve([row, session("other", "Other")]);
     await flush();
@@ -1952,7 +2717,11 @@ describe("Workstream open versus in-flight navigation", () => {
     await app.updateComplete;
     await flush();
     await app.updateComplete;
-    expect({ loading: isLoading(app), text: loadingText(app), sessions: ids(app).sort() }).toEqual({ loading: false, text: null, sessions: ["other", "ws-chat"] });
+    expect({ loading: isLoading(app), text: loadingText(app), sessions: ids(app).sort() }).toEqual({
+      loading: false,
+      text: null,
+      sessions: ["other", "ws-chat"],
+    });
     // The chooser's own catalog request and the open's catalog behind; no queued stale request after that.
     expect(sessions.mock.calls.filter(([, , options]) => options?.sessionId === undefined)).toHaveLength(2);
   });
@@ -1962,11 +2731,17 @@ describe("Workstream open versus in-flight navigation", () => {
     const catalog = deferred<SessionInfo[]>();
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     vi.spyOn(api, "locate").mockRejectedValue(new HttpRequestError("Session x was not found", 404));
-    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.reject(new HttpRequestError("Session not found", 404)));
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) =>
+      options?.sessionId === undefined ? catalog.promise : Promise.reject(new HttpRequestError("Session not found", 404)),
+    );
     void call(app, "chooseWorkspace", workspace.id);
-    await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "loading")).toBe(true);
+    });
     openFromWorkstream(app, { sessionId: "missing", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).error).not.toBe(""); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).not.toBe("");
+    });
     catalog.resolve([session("existing", "Existing")]);
     await flush();
     await app.updateComplete;
@@ -1989,13 +2764,21 @@ describe("Workstream open versus in-flight navigation", () => {
     projects.resolve([remoteProject]);
     await flush();
     await app.updateComplete;
-    expect({ projects: getState(app).projects.map((candidate) => candidate.id), loading: isLoading(app) }).toEqual({ projects: ["remote-project"], loading: false });
+    expect({ projects: getState(app).projects.map((candidate) => candidate.id), loading: isLoading(app) }).toEqual({
+      projects: ["remote-project"],
+      loading: false,
+    });
   });
 
   it("the Other tab reaches Workstreams through a registered workspace when no project is selected", async () => {
     const app = await mountChooser([]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    setState(app, { ...getState(app), projects: [project], selectedProject: undefined, selectedWorkspace: { ...workspace, id: "adhoc", projectId: "", path: "/adhoc" } });
+    setState(app, {
+      ...getState(app),
+      projects: [project],
+      selectedProject: undefined,
+      selectedWorkspace: { ...workspace, id: "adhoc", projectId: "", path: "/adhoc" },
+    });
     Reflect.set(app, "chooserView", "other");
     await app.updateComplete;
     await vi.waitFor(() => {
@@ -2007,8 +2790,15 @@ describe("Workstream open versus in-flight navigation", () => {
   it("the Other tab skips a project whose workspaces fail to resolve and borrows the next one", async () => {
     const app = await mountChooser([]);
     const broken: Project = { ...project, id: "broken", path: "/broken" };
-    vi.spyOn(api, "workspaces").mockImplementation((projectId) => projectId === broken.id ? Promise.reject(new Error("unreachable")) : Promise.resolve([workspace]));
-    setState(app, { ...getState(app), projects: [broken, project], selectedProject: undefined, selectedWorkspace: { ...workspace, id: "adhoc", projectId: "", path: "/adhoc" } });
+    vi.spyOn(api, "workspaces").mockImplementation((projectId) =>
+      projectId === broken.id ? Promise.reject(new Error("unreachable")) : Promise.resolve([workspace]),
+    );
+    setState(app, {
+      ...getState(app),
+      projects: [broken, project],
+      selectedProject: undefined,
+      selectedWorkspace: { ...workspace, id: "adhoc", projectId: "", path: "/adhoc" },
+    });
     Reflect.set(app, "chooserView", "other");
     await app.updateComplete;
     await vi.waitFor(() => {
@@ -2030,7 +2820,9 @@ describe("Workstream open versus in-flight navigation", () => {
     stubSelectedChat();
     void call(app, "chooseMachine", remote.id);
     openFromWorkstream(app, { sessionId: "remote-chat" });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("remote-chat"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("remote-chat");
+    });
     expect(Reflect.get(app, "loading")).toBe(false);
     projects.resolve([remoteProject]);
     await flush();
@@ -2050,7 +2842,9 @@ describe("Workstream open versus in-flight navigation", () => {
     window.history.replaceState({}, "", "/?session=arch3&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("arch3"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("arch3");
+    });
     await app.updateComplete;
     expect(getState(app).selectedSession?.archived).toBe(true);
     expect(status).not.toHaveBeenCalled();
@@ -2064,13 +2858,17 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "sessions").mockImplementation((cwd, _machineId, options) => Promise.resolve([{ ...session(options?.sessionId ?? "x", "T"), cwd }]));
     stubSelectedChat();
     openFromWorkstream(app, { sessionId: "reg" });
-    await vi.waitFor(() => { expect(window.location.search).toContain("session=reg"); });
+    await vi.waitFor(() => {
+      expect(window.location.search).toContain("session=reg");
+    });
     expect(window.location.search).toContain(`project=${project.id}`);
     expect(window.location.search).toContain(`workspace=${workspace.id}`);
     back(app);
     await app.updateComplete;
     openFromWorkstream(app, { sessionId: "unreg" });
-    await vi.waitFor(() => { expect(window.location.search).toContain("session=unreg"); });
+    await vi.waitFor(() => {
+      expect(window.location.search).toContain("session=unreg");
+    });
     expect(window.location.search).not.toContain("project=");
   });
 
@@ -2081,13 +2879,17 @@ describe("Workstream open versus in-flight navigation", () => {
     const row = session("y", "Y");
     const catalog = deferred<SessionInfo[]>();
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.resolve([row]));
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => (options?.sessionId === undefined ? catalog.promise : Promise.resolve([row])));
     stubSelectedChat();
     openFromWorkstream(app, { sessionId: "y", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("y"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("y");
+    });
     expect(ids(app)).toEqual(["blank-z", "y"]);
     catalog.resolve([row, session("other", "Other")]);
-    await vi.waitFor(() => { expect(ids(app)).toEqual(["blank-z", "y", "other"]); });
+    await vi.waitFor(() => {
+      expect(ids(app)).toEqual(["blank-z", "y", "other"]);
+    });
     expect(getState(app).sessions[0]).toEqual(blank);
     expect(loadDraft(machineSessionKey("local", blank.id))).toBe("Unsent idea");
   });
@@ -2100,7 +2902,9 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "sessions").mockResolvedValue([row]);
     stubSelectedChat();
     openFromWorkstream(app, { sessionId: "f", projectId: project.id, workspaceId: feature.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("f"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("f");
+    });
     await flush();
     expect(ids(app)).toEqual(["blank-feature", "f"]);
   });
@@ -2118,11 +2922,13 @@ describe("Workstream open versus in-flight navigation", () => {
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
     const row = session("listed", "Listed");
     const catalog = deferred<SessionInfo[]>();
-    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => options?.sessionId === undefined ? catalog.promise : Promise.resolve([row]));
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => (options?.sessionId === undefined ? catalog.promise : Promise.resolve([row])));
     stubSelectedChat();
     window.history.pushState({}, "", chatUrl(row.id));
     window.dispatchEvent(new PopStateEvent("popstate"));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(row.id); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(row.id);
+    });
     expect(ids(app)).toEqual(kept ? ["blank", "listed"] : ["listed"]);
     catalog.resolve([row]);
     await flush();
@@ -2143,7 +2949,9 @@ describe("Workstream open versus in-flight navigation", () => {
     });
     stubSelectedChat();
     openFromWorkstream(app, { sessionId: "ua", projectId: project.id, workspaceId: workspace.id });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("ua"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("ua");
+    });
     catalog.resolve([session("ua", "Stored")]);
     await flush();
     expect(getState(app).selectedSession?.archived).toBe(true);
@@ -2153,84 +2961,174 @@ describe("Workstream open versus in-flight navigation", () => {
   });
 });
 
-interface Deferred<T> { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void }
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+}
 
 function deferred<T>(): Deferred<T> {
   let resolve: (value: T) => void = () => undefined;
   let reject: (reason: unknown) => void = () => undefined;
-  const promise = new Promise<T>((settle, fail) => { resolve = settle; reject = fail; });
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle;
+    reject = fail;
+  });
   return { promise, resolve, reject };
 }
 
 function idleStatus(sessionId: string): Awaited<ReturnType<typeof api.status>> {
-  return { sessionId, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+  return {
+    sessionId,
+    persisted: true,
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+  };
 }
 
-interface WorkstreamServiceCall { operation: string; input: Record<string, unknown> }
+interface WorkstreamServiceCall {
+  operation: string;
+  input: Record<string, unknown>;
+}
 
 function pluginLifecycleResponse(): Response {
-  return new Response(JSON.stringify({
-    lifecycleVersion: 2,
-    plugins: [{ id: "pi-workbench", source: "test", scope: "user", machineSpecific: true, enabled: true, discovered: true, conflict: false, server: { state: "active", activeRevision: "revision-1", staleRevision: false, restartRequired: false, disableCommand: "pi-web plugins disable pi-workbench --restart" } }],
-    diagnostics: [],
-    serverRuntime: { status: "available", terminalMode: "required", restartRequired: false, recovery: { showSafeStart: "pi-web plugins safe-start show", bundledOnly: "pi-web plugins safe-start set bundled-only --restart", noServerPlugins: "pi-web plugins safe-start set none --restart", clearSafeStart: "pi-web plugins safe-start clear --restart" } },
-  }), { status: 200 });
+  return new Response(
+    JSON.stringify({
+      lifecycleVersion: 2,
+      plugins: [
+        {
+          id: "pi-workbench",
+          source: "test",
+          scope: "user",
+          machineSpecific: true,
+          enabled: true,
+          discovered: true,
+          conflict: false,
+          server: {
+            state: "active",
+            activeRevision: "revision-1",
+            staleRevision: false,
+            restartRequired: false,
+            disableCommand: "pi-web plugins disable pi-workbench --restart",
+          },
+        },
+      ],
+      diagnostics: [],
+      serverRuntime: {
+        status: "available",
+        terminalMode: "required",
+        restartRequired: false,
+        recovery: {
+          showSafeStart: "pi-web plugins safe-start show",
+          bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
+          noServerPlugins: "pi-web plugins safe-start set none --restart",
+          clearSafeStart: "pi-web plugins safe-start clear --restart",
+        },
+      },
+    }),
+    { status: 200 },
+  );
 }
 
-function stubWorkstreamService(calls: WorkstreamServiceCall[], respond: (body: WorkstreamServiceCall) => unknown, protocol?: string[], handleList = false): void {
-  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-    if (url.endsWith("/plugins")) return Promise.resolve(pluginLifecycleResponse());
-    if (typeof init?.body !== "string") throw new Error("missing Workstream request body");
-    const envelope = JSON.parse(init.body) as { input: Record<string, unknown> }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
-    const body = { operation: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)), input: envelope.input };
-    if (body.operation === "list" && !handleList) return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
-    calls.push(body);
-    if (body.operation === "inspect") protocol?.push("inspect");
-    return Promise.resolve(new Response(JSON.stringify(respond(body)), { status: 200 }));
-  }));
+function stubWorkstreamService(
+  calls: WorkstreamServiceCall[],
+  respond: (body: WorkstreamServiceCall) => unknown,
+  protocol?: string[],
+  handleList = false,
+): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init?: RequestInit) => {
+      if (url.endsWith("/plugins")) return Promise.resolve(pluginLifecycleResponse());
+      if (typeof init?.body !== "string") throw new Error("missing Workstream request body");
+      const envelope = JSON.parse(init.body) as { input: Record<string, unknown> }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- decoded test request
+      const body = { operation: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)), input: envelope.input };
+      if (body.operation === "list" && !handleList) return Promise.resolve(new Response(JSON.stringify({ ok: true, value: [] }), { status: 200 }));
+      calls.push(body);
+      if (body.operation === "inspect") protocol?.push("inspect");
+      return Promise.resolve(new Response(JSON.stringify(respond(body)), { status: 200 }));
+    }),
+  );
 }
 
 describe("window tabs", () => {
-  const workstreams: Record<string, { id: string; title: string }> = { a1: { id: "release", title: "Release" }, a2: { id: "release", title: "Release" }, b1: { id: "docs", title: "Docs" } };
+  const workstreams: Record<string, { id: string; title: string }> = {
+    a1: { id: "release", title: "Release" },
+    a2: { id: "release", title: "Release" },
+    b1: { id: "docs", title: "Docs" },
+  };
 
   /** `durable` Chats list with a Durable Chat's `durable:<id>` path. */
   async function mountWithWorkstreamChats(durable: readonly string[] = []): Promise<WorkbenchApp> {
-    const rows = [session("a1", "Plan", "Plan the release"), session("a2", "Notes", "Release notes"), session("b1", "Guide", "Install guide")]
-      .map((row) => durable.includes(row.id) ? { ...row, path: `durable:${row.id}` } : row);
-    stubWorkstreamService([], ({ operation, input }) => {
-      if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } };
-      const sessionId = typeof input["sessionId"] === "string" ? input["sessionId"] : "";
-      if (operation === "list") return { ok: true, value: workstreams[sessionId] === undefined ? [] : [{ id: workstreams[sessionId].id }] };
-      const owner = Object.values(workstreams).find((candidate) => candidate.id === input["workstreamId"]);
-      return { ok: true, value: { id: owner?.id, title: owner?.title, revision: 1, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
-    }, undefined, true);
+    const rows = [session("a1", "Plan", "Plan the release"), session("a2", "Notes", "Release notes"), session("b1", "Guide", "Install guide")].map((row) =>
+      durable.includes(row.id) ? { ...row, path: `durable:${row.id}` } : row,
+    );
+    stubWorkstreamService(
+      [],
+      ({ operation, input }) => {
+        if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: 1 } };
+        const sessionId = typeof input["sessionId"] === "string" ? input["sessionId"] : "";
+        if (operation === "list") return { ok: true, value: workstreams[sessionId] === undefined ? [] : [{ id: workstreams[sessionId].id }] };
+        const owner = Object.values(workstreams).find((candidate) => candidate.id === input["workstreamId"]);
+        return { ok: true, value: { id: owner?.id, title: owner?.title, revision: 1, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
+      },
+      undefined,
+      true,
+    );
     vi.spyOn(api, "projects").mockResolvedValue([project]);
     vi.spyOn(api, "workspaces").mockResolvedValue([workspace]);
-    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) => Promise.resolve(rows.filter((row) => options?.sessionId === undefined || row.id === options.sessionId)));
+    vi.spyOn(api, "sessions").mockImplementation((_cwd, _machineId, options) =>
+      Promise.resolve(rows.filter((row) => options?.sessionId === undefined || row.id === options.sessionId)),
+    );
     stubSelectedChat();
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a1&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(async () => { await app.updateComplete; expect(chatTabs(app)).toEqual(["Plan the release"]); });
-    for (const [title, sessionId] of [["Release notes", "a2"], ["Install guide", "b1"]] as const) {
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(chatTabs(app)).toEqual(["Plan the release"]);
+    });
+    for (const [title, sessionId] of [
+      ["Release notes", "a2"],
+      ["Install guide", "b1"],
+    ] as const) {
       tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
-      await vi.waitFor(() => { expect(sessionTitles(app)).toContain(title); });
+      await vi.waitFor(() => {
+        expect(sessionTitles(app)).toContain(title);
+      });
       [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => button.textContent.includes(title))?.click();
       // Docs holds one Chat, so its only tab is the Workstream tab on top.
-      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(sessionId); });
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe(sessionId);
+      });
       // A second Chat turns the window into a Grid; these tests start from Tabs.
       if (sessionId === "a2") {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
-        await vi.waitFor(async () => { await app.updateComplete; expect(tabsRoot(app).querySelector("button.add")).not.toBeNull(); });
+        await vi.waitFor(async () => {
+          await app.updateComplete;
+          expect(tabsRoot(app).querySelector("button.add")).not.toBeNull();
+        });
       }
     }
-    await vi.waitFor(async () => { await app.updateComplete; expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
+    });
     // Restore the working set with only its selected tab loaded. Tests can then hold genuine first-open requests.
     app.remove();
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
     const restored = new WorkbenchApp();
     document.body.append(restored);
-    await vi.waitFor(() => { expect(getState(restored).selectedSession?.id).toBe("b1"); });
+    await vi.waitFor(() => {
+      expect(getState(restored).selectedSession?.id).toBe("b1");
+    });
     await settled(restored);
     return restored;
   }
@@ -2238,21 +3136,33 @@ describe("window tabs", () => {
   it("keeps the full chooser catalog after closing onto a warm tile and reopening one from Home", async () => {
     const app = await mountWithWorkstreamChats();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
-    await vi.waitFor(() => { expect(paneChats(app)).toHaveLength(3); });
+    await vi.waitFor(() => {
+      expect(paneChats(app)).toHaveLength(3);
+    });
     app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] .tile-actions button[title="Close"]')?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
-    await vi.waitFor(() => { expect(sessionTitles(app)).toHaveLength(3); });
-    [...app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? []].find((button) => button.textContent.includes("Plan the release"))?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await vi.waitFor(() => {
+      expect(sessionTitles(app)).toHaveLength(3);
+    });
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => button.textContent.includes("Plan the release"))?.click();
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a1");
+    });
     tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
-    await vi.waitFor(() => { expect(sessionTitles(app)).toHaveLength(3); });
+    await vi.waitFor(() => {
+      expect(sessionTitles(app)).toHaveLength(3);
+    });
   });
 
   it("keeps window status aggregates when a warm Chat receives its first focused stream update", async () => {
     const app = await mountWithWorkstreamChats();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
-    await vi.waitFor(() => { expect(paneChats(app)).toHaveLength(3); });
+    await vi.waitFor(() => {
+      expect(paneChats(app)).toHaveLength(3);
+    });
     await settled(app);
     const catalog = deferred<SessionInfo[]>();
     vi.mocked(api.sessions).mockReturnValue(catalog.promise);
@@ -2265,20 +3175,33 @@ describe("window tabs", () => {
     if (!(warm instanceof WorkbenchChatPane) || warm.runtime === undefined) throw new Error("Warm Chat unavailable");
     try {
       warm.promptEditor?.focusInput();
-      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("a1");
+      });
       warm.runtime.sessions.applySessionStatus(idleStatus("a1"));
       expect(getState(app).sessionStatuses["b1"]).toEqual(outside);
-    } finally { catalog.resolve([session("a1", "Plan"), session("a2", "Notes"), session("b1", "Guide")]); }
+    } finally {
+      catalog.resolve([session("a1", "Plan"), session("a2", "Notes"), session("b1", "Guide")]);
+    }
   });
 
   it("keeps an unavailable tile local to its slot, with a close action, while the rest of Grid stays usable", async () => {
     const app = await mountWithWorkstreamChats();
-    vi.mocked(api.sessions).mockImplementation((_cwd, _machineId, options) => options?.sessionId === "a2" ? Promise.reject(new HttpRequestError("Session not found", 404)) : Promise.resolve([session("a1", "Plan"), session("b1", "Guide")]));
+    vi.mocked(api.sessions).mockImplementation((_cwd, _machineId, options) =>
+      options?.sessionId === "a2"
+        ? Promise.reject(new HttpRequestError("Session not found", 404))
+        : Promise.resolve([session("a1", "Plan"), session("b1", "Guide")]),
+    );
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll(".grid > .tile")).toHaveLength(3); expect(app.shadowRoot?.querySelector('.tile[data-session="a2"]')?.textContent).toContain("no longer available"); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelectorAll(".grid > .tile")).toHaveLength(3);
+      expect(app.shadowRoot?.querySelector('.tile[data-session="a2"]')?.textContent).toContain("no longer available");
+    });
     expect(getState(app).selectedSession?.id).toBe("b1");
     app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-session="a2"] .tile-actions button[title="Close"]')?.click();
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelectorAll(".grid > .tile")).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelectorAll(".grid > .tile")).toHaveLength(2);
+    });
     expect(getState(app).selectedSession?.id).toBe("b1");
   });
 
@@ -2288,10 +3211,13 @@ describe("window tabs", () => {
     if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
     const extra = [session("extra-1", "Extra 1"), session("extra-2", "Extra 2")];
     const rows = [...getState(app).sessions, ...extra];
-    vi.mocked(api.sessions).mockImplementation((_cwd, _machineId, options) => Promise.resolve(rows.filter((row) => options?.sessionId === undefined || row.id === options.sessionId)));
+    vi.mocked(api.sessions).mockImplementation((_cwd, _machineId, options) =>
+      Promise.resolve(rows.filter((row) => options?.sessionId === undefined || row.id === options.sessionId)),
+    );
     await windows.update((store, id) => {
       let next = store;
-      for (const row of extra) next = openChat(next, id, { sessionId: row.id, title: row.firstMessage, machineId: "local", projectId: project.id, workspaceId: workspace.id });
+      for (const row of extra)
+        next = openChat(next, id, { sessionId: row.id, title: row.firstMessage, machineId: "local", projectId: project.id, workspaceId: workspace.id });
       const window = next[id];
       if (window === undefined) throw new Error("Window missing");
       return { ...next, [id]: { ...window, focused: "b1" } };
@@ -2300,34 +3226,53 @@ describe("window tabs", () => {
     vi.spyOn(api, "startSession").mockReturnValue(created.promise);
     const snapshot = deferred<Awaited<ReturnType<typeof api.messages>>>();
     let loading = false;
-    vi.mocked(api.messages).mockImplementation((row) => { if (row.id === "a1") { loading = true; return snapshot.promise; } return Promise.resolve({ messages: [], start: 0, total: 0 }); });
+    vi.mocked(api.messages).mockImplementation((row) => {
+      if (row.id === "a1") {
+        loading = true;
+        return snapshot.promise;
+      }
+      return Promise.resolve({ messages: [], start: 0, total: 0 });
+    });
     tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
     await settled(app);
     app.shadowRoot?.querySelector<HTMLButtonElement>("button.primary")?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toMatch(/^creating:/u); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toMatch(/^creating:/u);
+    });
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
-    await vi.waitFor(() => { expect(paneChats(app)).toContain("extra-2"); expect(paneChats(app)).toHaveLength(2); });
+    await vi.waitFor(() => {
+      expect(paneChats(app)).toContain("extra-2");
+      expect(paneChats(app)).toHaveLength(2);
+    });
     await settled(app);
     const pane = app.shadowRoot?.querySelector('.tile[data-focused="true"] workbench-chat-pane');
     if (!(pane instanceof WorkbenchChatPane) || pane.runtime === undefined) throw new Error("Pending Chat unavailable");
     const runtime = pane.runtime;
     const editor = pane.promptEditor;
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a1" } }));
-    await vi.waitFor(() => { expect(loading).toBe(true); });
+    await vi.waitFor(() => {
+      expect(loading).toBe(true);
+    });
     const row = { ...session("created", ""), persisted: false, messageCount: 0 };
     if (creationFirst) {
       created.resolve(row);
-      await vi.waitFor(() => { expect(runtime.state.selectedSession?.id).toBe(row.id); });
+      await vi.waitFor(() => {
+        expect(runtime.state.selectedSession?.id).toBe(row.id);
+      });
       await settled(app);
       expect(pane.isConnected).toBe(true);
       expect(pane.promptEditor).toBe(editor);
     }
     snapshot.resolve({ messages: [], start: 0, total: 0 });
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a1");
+    });
     if (!creationFirst) {
       expect(runtime.pending).toBe(true);
       created.resolve(row);
-      await vi.waitFor(() => { expect(runtime.state.selectedSession?.id).toBe(row.id); });
+      await vi.waitFor(() => {
+        expect(runtime.state.selectedSession?.id).toBe(row.id);
+      });
     }
     await settled(app);
     expect(promptEditor(app).sessionId).toBe("a1");
@@ -2338,20 +3283,27 @@ describe("window tabs", () => {
   it("forks into its own Chat, closes the original tree dialog, and rejoins the retained original file", async () => {
     const app = await mountWithWorkstreamChats();
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }));
-    await vi.waitFor(() => { expect(paneChats(app)).toHaveLength(3); });
+    await vi.waitFor(() => {
+      expect(paneChats(app)).toHaveLength(3);
+    });
     await settled(app);
     const original = app.shadowRoot?.querySelector('.tile[data-session="b1"] workbench-chat-pane');
     if (!(original instanceof WorkbenchChatPane) || original.runtime === undefined) throw new Error("Original Chat unavailable");
     const view = original.chatView;
     expect(view).toBeDefined();
-    vi.spyOn(api, "runCommand").mockResolvedValue({ type: "tree", tree: { nodes: [{ id: "entry", parentId: null, kind: "assistant", summary: "Reply" }], activeLeafId: "entry", activePathIds: ["entry"] } });
+    vi.spyOn(api, "runCommand").mockResolvedValue({
+      type: "tree",
+      tree: { nodes: [{ id: "entry", parentId: null, kind: "assistant", summary: "Reply" }], activeLeafId: "entry", activePathIds: ["entry"] },
+    });
     vi.spyOn(api, "forkTree").mockResolvedValue({ cancelled: false, session: session("forked", "Fork") });
     original.promptEditor?.focusInput();
     await original.runtime.sessions.runCommand("/tree");
     await settled(app);
     original.querySelector("session-tree-navigator")?.shadowRoot?.querySelector<HTMLButtonElement>("button")?.focus();
     window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a1" } }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a1");
+    });
     await settled(app);
     expect(getState(app).selectedSession?.id).toBe("a1");
     const tree = original.runtime.state.treeDialog;
@@ -2359,20 +3311,26 @@ describe("window tabs", () => {
     expect(hasRenderedModal(document)).toBe(false);
     promptEditor(app).focusInput();
     window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "b1" } }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("b1");
+    });
     await settled(app);
     const retainedDialog = original.querySelector("session-tree-navigator");
     if (retainedDialog === null) throw new Error("Retained tree dialog unavailable");
     expect(composedContains(retainedDialog, deepActiveElement(document) ?? document.body)).toBe(true);
     window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a1" } }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a1");
+    });
     await settled(app);
     original.runtime.patch({ treeDialog: undefined });
     await settled(app);
     expect(getState(app).selectedSession?.id).toBe("a1");
     original.runtime.patch({ treeDialog: tree });
     window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "b1" } }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("b1");
+    });
     await settled(app);
     expect(hasRenderedModal(document)).toBe(true);
     const navigator = original.querySelector("session-tree-navigator");
@@ -2392,46 +3350,84 @@ describe("window tabs", () => {
     expect(getState(app).selectedSession?.id).toBe("b1");
 
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     await app.updateComplete;
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
     expect(window.location.search).toContain("win=w1");
     expect(window.location.search).toContain("session=a2");
 
     workstreamTab(app, "Docs").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("b1");
+    });
     workstreamTab(app, "Release").dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
   });
 
   // An open socket does not prove the view current (a reply before subscribe, a failed tree-change refresh, a host restart reusing ids): refocus always reads a snapshot.
   it("refocusing a retained Chat whose socket stayed open still reads one snapshot", async () => {
     const sessionSockets = new Map<string, SilentWebSocket>();
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); const id = /sessions\/([^/?]+)/.exec(url)?.[1]; if (id !== undefined && !url.endsWith("/api/machines/local/events")) sessionSockets.set(id, this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          const id = /sessions\/([^/?]+)/.exec(url)?.[1];
+          if (id !== undefined && !url.endsWith("/api/machines/local/events")) sessionSockets.set(id, this);
+        }
+      },
+    );
     const app = await mountWithWorkstreamChats();
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sessionSockets.has("a2")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+      expect(sessionSockets.has("a2")).toBe(true);
+    });
     await settled(app);
-    for (const id of ["a2", "b1"]) { const socket = sessionSockets.get(id); if (socket === undefined) throw new Error(`no socket for ${id}`); socket.readyState = SilentWebSocket.OPEN; socket.onopen?.(); }
+    for (const id of ["a2", "b1"]) {
+      const socket = sessionSockets.get(id);
+      if (socket === undefined) throw new Error(`no socket for ${id}`);
+      socket.readyState = SilentWebSocket.OPEN;
+      socket.onopen?.();
+    }
     await settled(app);
     const snapshot = vi.mocked(api.transcriptSnapshot);
     snapshot.mockClear();
 
     workstreamTab(app, "Docs").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("b1");
+    });
     snapshot.mockClear();
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
-    await vi.waitFor(() => { expect(snapshot.mock.calls.map(([row]) => row.id)).toEqual(["a2"]); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
+    await vi.waitFor(() => {
+      expect(snapshot.mock.calls.map(([row]) => row.id)).toEqual(["a2"]);
+    });
   });
 
   it("counts each Chat's open questions on its tab, live from this window and from status another window caused", async () => {
     const app = await mountWithWorkstreamChats();
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]); });
+    await vi.waitFor(() => {
+      expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
+    });
     const selected = getState(app).selectedSession?.id;
     const other = selected === "a1" ? "a2" : "a1";
-    const ask = (askId: string, questions: number) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: Array.from({ length: questions }, (_, index) => ({ id: `q${String(index)}`, question: `Question ${String(index)}?`, options: [] })) });
+    const ask = (askId: string, questions: number) => ({
+      askId,
+      askedAt: "2026-10-19T10:00:00.000Z",
+      updatedAt: "2026-10-19T10:00:00.000Z",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      questions: Array.from({ length: questions }, (_, index) => ({ id: `q${String(index)}`, question: `Question ${String(index)}?`, options: [] })),
+    });
     const count = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"] .questions`)?.textContent ?? null;
     const receive = (event: unknown) => {
       // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- private handler
@@ -2439,34 +3435,75 @@ describe("window tabs", () => {
     };
 
     receive({ type: "status.update", status: { ...idleStatus(other), pendingAsks: [ask("abc-1", 2), ask("def-2", 1)] } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBe("3"); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(count(other)).toBe("3");
+    });
     expect(count(selected ?? "")).toBeNull();
 
     // The selected Chat's own stream keeps its live asks, as an ask.opened frame does.
     setState(app, { ...getState(app), pendingAsks: [ask("ghi-3", 1)] });
-    await vi.waitFor(async () => { await app.updateComplete; expect(count(selected ?? "")).toBe("1"); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(count(selected ?? "")).toBe("1");
+    });
 
     receive({ type: "status.update", status: { ...idleStatus(other), pendingAsks: [ask("def-2", 1)] } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBe("1"); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(count(other)).toBe("1");
+    });
     receive({ type: "status.update", status: idleStatus(other) });
-    await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBeNull(); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(count(other)).toBeNull();
+    });
   });
 
   it("reads each restored Chat's open asks as the window connects without ever opening it, and the count survives later selections", async () => {
     await mountWithWorkstreamChats();
     document.body.replaceChildren();
-    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
-    const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "a", question: "A?", options: [] }, { id: "b", question: "B?", options: [] }] };
+    await vi.waitFor(async () => {
+      expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`);
+    });
+    const ask = {
+      askId: "abc-1",
+      askedAt: "2026-10-19T10:00:00.000Z",
+      updatedAt: "2026-10-19T10:00:00.000Z",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      questions: [
+        { id: "a", question: "A?", options: [] },
+        { id: "b", question: "B?", options: [] },
+      ],
+    };
     vi.clearAllMocks();
     const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
-    let answerA1: (asks: { pendingAsks: typeof ask[] }) => void = () => undefined;
-    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id === "a1" ? new Promise((resolve) => { answerA1 = resolve; }) : Promise.resolve({ pendingAsks: [] }));
+    let answerA1: (asks: { pendingAsks: (typeof ask)[] }) => void = () => undefined;
+    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) =>
+      ref.id === "a1"
+        ? new Promise((resolve) => {
+            answerA1 = resolve;
+          })
+        : Promise.resolve({ pendingAsks: [] }),
+    );
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+      expect(sockets.length).toBeGreaterThan(0);
+    });
     const count = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"] .questions`)?.textContent ?? null;
     expect(count("a1")).toBeNull();
     openAsks.mockClear();
@@ -2475,66 +3512,125 @@ describe("window tabs", () => {
     const realtime = sockets.at(-1);
     realtime?.onopen?.();
     daemonJoined(realtime);
-    await vi.waitFor(() => { expect(openAsks).toHaveBeenCalled(); });
+    await vi.waitFor(() => {
+      expect(openAsks).toHaveBeenCalled();
+    });
     realtime?.onopen?.();
     daemonJoined(realtime);
     const asked = () => openAsks.mock.calls.map(([ref]) => ref.id).sort();
-    await vi.waitFor(() => { expect(asked()).toEqual(["a1", "b1", "b1"]); });
+    await vi.waitFor(() => {
+      expect(asked()).toEqual(["a1", "b1", "b1"]);
+    });
     // A selection that lands as the answer arrives does not drop it.
     answerA1({ pendingAsks: [ask] });
-    await vi.waitFor(() => { expect(asked()).toEqual(["a1", "a1", "b1", "b1"]); });
+    await vi.waitFor(() => {
+      expect(asked()).toEqual(["a1", "a1", "b1", "b1"]);
+    });
     workstreamTab(app, "Docs").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("b1");
+    });
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
-    await vi.waitFor(async () => { await app.updateComplete; expect(count("a1")).toBe("2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(count("a1")).toBe("2");
+    });
     // Status and transcript reads open a cold Chat in the daemon, which would replay its recorded answers.
-    for (const read of [status, vi.mocked(api.messages), vi.mocked(api.transcriptSnapshot), vi.mocked(api.streamSnapshot)]) expect(read.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
+    for (const read of [status, vi.mocked(api.messages), vi.mocked(api.transcriptSnapshot), vi.mocked(api.streamSnapshot)])
+      expect(read.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
   });
 
   it("restores a background Chat's unacknowledged attention request as needs you after a reload", async () => {
     await mountWithWorkstreamChats();
     document.body.replaceChildren();
-    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    await vi.waitFor(async () => {
+      expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`);
+    });
     vi.clearAllMocks();
     vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
-    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the release PR" } } : { pendingAsks: [] }));
+    vi.spyOn(api, "openAsks").mockImplementation((ref) =>
+      Promise.resolve(ref.id === "a1" ? { pendingAsks: [], attentionRequest: { id: "attention-1", reason: "Review the release PR" } } : { pendingAsks: [] }),
+    );
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+      expect(sockets.length).toBeGreaterThan(0);
+    });
     const dot = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"]`)?.getAttribute("data-status");
 
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
 
-    await vi.waitFor(async () => { await app.updateComplete; expect(dot("a1")).toBe("needs"); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(dot("a1")).toBe("needs");
+    });
     expect(dot("a2")).not.toBe("needs");
   });
 
   it("reads a restored Chat after the daemon joins, not during the proxy gap, without opening it", async () => {
     await mountWithWorkstreamChats();
     document.body.replaceChildren();
-    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    await vi.waitFor(async () => {
+      expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`);
+    });
     vi.clearAllMocks();
     const status = vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
     let aligned = false;
-    const workingMode = () => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
-    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: workingMode(), workingModeVersion: aligned ? 2 : 1 } : { pendingAsks: [] }));
+    const workingMode = () =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
+    const openAsks = vi
+      .spyOn(api, "openAsks")
+      .mockImplementation((ref) =>
+        Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: workingMode(), workingModeVersion: aligned ? 2 : 1 } : { pendingAsks: [] }),
+      );
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+      expect(sockets.length).toBeGreaterThan(0);
+    });
     const dashed = (sessionId: string) => tabsRoot(app).querySelector(`[data-session="${sessionId}"]`)?.hasAttribute("data-unaligned");
 
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
 
-    await vi.waitFor(async () => { await app.updateComplete; expect(dashed("a1")).toBe(true); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(dashed("a1")).toBe(true);
+    });
     expect(dashed("a2")).toBe(false);
 
     // On reconnect the Chat is aligned after browser open but before the proxy subscribes. No live event is replayed.
@@ -2542,61 +3638,134 @@ describe("window tabs", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     aligned = true;
     daemonJoined(sockets.at(-1));
-    await vi.waitFor(() => { expect(dashed("a1")).toBe(false); });
+    await vi.waitFor(() => {
+      expect(dashed("a1")).toBe(false);
+    });
     expect(openAsks.mock.calls.filter(([ref]) => ref.id === "a1")).toHaveLength(2);
     expect(status.mock.calls.map(([ref]) => ref.id)).not.toContain("a1");
   });
 
   it("lets the connect read after a reconnect replace a Chat's status cached before it, and a status received later replace the read", async () => {
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     const app = await mountWithWorkstreamChats();
-    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
-    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const receive = (event: unknown) => {
+      Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
+    }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 1 } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(dashed()).toBe(true);
+    });
 
     // The Chat was aligned while the window was offline; the read on reconnect knows it (a higher version), the cached status does not.
-    vi.spyOn(api, "openAsks").mockImplementation((ref) => Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 } : { pendingAsks: [] }));
+    vi.spyOn(api, "openAsks").mockImplementation((ref) =>
+      Promise.resolve(ref.id === "a1" ? { pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 } : { pendingAsks: [] }),
+    );
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
-    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(false); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(dashed()).toBe(false);
+    });
 
     receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(false) }, workingModeVersion: 3 } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(dashed()).toBe(true); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(dashed()).toBe(true);
+    });
   });
 
   it("does not draw an Alignment border from an unnumbered host status", async () => {
     const app = await mountWithWorkstreamChats();
-    const mode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Focused", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
+    const mode = JSON.stringify({
+      schemaVersion: 2,
+      phase: "applied",
+      selected: { alignment: "Align", attention: "Focused", checking: "Default", orchestration: "Main" },
+      applied: null,
+      aligned: false,
+    });
     const receive = Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
     Reflect.apply(receive, app, [{ type: "status.update", status: { ...idleStatus("b1"), extensionStatuses: { "working-mode": mode } } }]);
     const tab = () => tabsRoot(app).querySelector('[data-session="b1"]');
-    await vi.waitFor(() => { expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+    await vi.waitFor(() => {
+      expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused");
+    });
     expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
   });
 
   it("keeps a live status newer than a connect read that arrives after it, for Alignment and Attention", async () => {
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     const app = await mountWithWorkstreamChats();
-    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
-    const mode = (aligned: boolean, attention: string) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention, checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const receive = (event: unknown) => {
+      Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
+    }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (aligned: boolean, attention: string) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention, checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     const tab = () => tabsRoot(app).querySelector('[data-session="a1"]');
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
 
     // The reconnect read is answered with the old mode but held in flight; the newer status renders meanwhile.
     let release!: () => void;
-    vi.spyOn(api, "openAsks").mockImplementation((ref) => ref.id !== "a1" ? Promise.resolve({ pendingAsks: [] }) : new Promise((resolve) => { release = () => { resolve({ pendingAsks: [], workingMode: mode(false, "AFK"), workingModeVersion: 1 }); }; }));
+    vi.spyOn(api, "openAsks").mockImplementation((ref) =>
+      ref.id !== "a1"
+        ? Promise.resolve({ pendingAsks: [] })
+        : new Promise((resolve) => {
+            release = () => {
+              resolve({ pendingAsks: [], workingMode: mode(false, "AFK"), workingModeVersion: 1 });
+            };
+          }),
+    );
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
-    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(release).toBeDefined();
+    });
     receive({ type: "status.update", status: { ...idleStatus("a1"), extensionStatuses: { "working-mode": mode(true, "Focused") }, workingModeVersion: 2 } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+      expect(tab()?.querySelector(".attention")?.getAttribute("aria-label")).toBe("Attention: Focused");
+    });
 
     release();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -2609,12 +3778,29 @@ describe("window tabs", () => {
 
   it("reads a Chat's open asks again after a reconnect that came while the previous connect read was in flight", async () => {
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     const app = await mountWithWorkstreamChats();
-    const mode = (aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const mode = (aligned: boolean) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment: "Align", attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     const dashed = () => tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned");
     workstreamTab(app, "Release").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
 
     // The first read is answered with the mode from before the gap and held; the Chat is aligned during a second outage.
     let release!: () => void;
@@ -2623,45 +3809,89 @@ describe("window tabs", () => {
       if (ref.id !== "a1") return Promise.resolve({ pendingAsks: [] });
       reads += 1;
       return reads === 1
-        ? new Promise((resolve) => { release = () => { resolve({ pendingAsks: [], workingMode: mode(false), workingModeVersion: 1 }); }; })
+        ? new Promise((resolve) => {
+            release = () => {
+              resolve({ pendingAsks: [], workingMode: mode(false), workingModeVersion: 1 });
+            };
+          })
         : Promise.resolve({ pendingAsks: [], workingMode: mode(true), workingModeVersion: 2 });
     });
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
-    await vi.waitFor(() => { expect(release).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(release).toBeDefined();
+    });
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
 
     release();
-    await vi.waitFor(() => { expect(openAsks.mock.calls.filter(([ref]) => ref.id === "a1")).toHaveLength(2); });
-    await vi.waitFor(async () => { app.requestUpdate(); await app.updateComplete; expect(dashed()).toBe(false); });
+    await vi.waitFor(() => {
+      expect(openAsks.mock.calls.filter(([ref]) => ref.id === "a1")).toHaveLength(2);
+    });
+    await vi.waitFor(async () => {
+      app.requestUpdate();
+      await app.updateComplete;
+      expect(dashed()).toBe(false);
+    });
   });
 
   it("does not frame a remote tab without a live feed, even when its seed reports unaligned", async () => {
     await mountWithWorkstreamChats();
     document.body.replaceChildren();
-    await vi.waitFor(async () => { expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`); });
+    await vi.waitFor(async () => {
+      expect((await locks.query()).held?.map((lock) => lock.name)).not.toContain(`${WINDOW_ID_LOCK_PREFIX}w1`);
+    });
     vi.clearAllMocks();
     vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(idleStatus(ref.id)));
-    const workingMode = JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment: "Align", attention: "Focused", checking: "Default", orchestration: "Main" }, applied: null, aligned: false });
-    const openAsks = vi.spyOn(api, "openAsks").mockImplementation((ref, machineId) => Promise.resolve(ref.id === "a1" && machineId === "remote" ? { pendingAsks: [], workingMode, workingModeVersion: 1 } : { pendingAsks: [] }));
+    const workingMode = JSON.stringify({
+      schemaVersion: 2,
+      phase: "applied",
+      selected: { alignment: "Align", attention: "Focused", checking: "Default", orchestration: "Main" },
+      applied: null,
+      aligned: false,
+    });
+    const openAsks = vi
+      .spyOn(api, "openAsks")
+      .mockImplementation((ref, machineId) =>
+        Promise.resolve(ref.id === "a1" && machineId === "remote" ? { pendingAsks: [], workingMode, workingModeVersion: 1 } : { pendingAsks: [] }),
+      );
     const sockets: SilentWebSocket[] = [];
-    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); if (url.endsWith("/api/machines/local/events")) sockets.push(this); } });
+    vi.stubGlobal(
+      "WebSocket",
+      class extends SilentWebSocket {
+        constructor(url: string) {
+          super();
+          if (url.endsWith("/api/machines/local/events")) sockets.push(this);
+        }
+      },
+    );
     window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
     const app = new WorkbenchApp();
     document.body.append(app);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sockets.length).toBeGreaterThan(0); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+      expect(sockets.length).toBeGreaterThan(0);
+    });
     // a1's Chat lives on the remote machine (a federated PI WEB).
     const windows = Reflect.get(app, "windows") as { window: WorkbenchWindow | undefined }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private controller
     const held = windows.window;
     if (held === undefined) throw new Error("no window");
-    Object.defineProperty(windows, "window", { configurable: true, get: () => ({ ...held, chats: held.chats.map((chat) => chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat) }) });
+    Object.defineProperty(windows, "window", {
+      configurable: true,
+      get: () => ({ ...held, chats: held.chats.map((chat) => (chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat)) }),
+    });
 
     sockets.at(-1)?.onopen?.();
     daemonJoined(sockets.at(-1));
 
-    await vi.waitFor(() => { expect(openAsks.mock.calls.map(([ref, machineId]) => `${ref.id}@${machineId ?? ""}`)).toContain("a1@remote"); });
-    await vi.waitFor(async () => { app.requestUpdate(); await app.updateComplete; expect(tabsRoot(app).querySelector('[data-session="a1"] .attention')?.getAttribute("aria-label")).toBe("Attention: Focused"); });
+    await vi.waitFor(() => {
+      expect(openAsks.mock.calls.map(([ref, machineId]) => `${ref.id}@${machineId ?? ""}`)).toContain("a1@remote");
+    });
+    await vi.waitFor(async () => {
+      app.requestUpdate();
+      await app.updateComplete;
+      expect(tabsRoot(app).querySelector('[data-session="a1"] .attention')?.getAttribute("aria-label")).toBe("Attention: Focused");
+    });
     expect(tabsRoot(app).querySelector('[data-session="a1"]')?.hasAttribute("data-unaligned")).toBe(false);
   });
 
@@ -2675,27 +3905,46 @@ describe("window tabs", () => {
     };
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), attentionRequest: { id: "attention-1", reason: "Review the release PR" } } });
-    await vi.waitFor(() => { expect(getState(app).status?.attentionRequest?.id).toBe("attention-1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).status?.attentionRequest?.id).toBe("attention-1");
+    });
     expect(acknowledge).not.toHaveBeenCalled();
 
     focused.mockReturnValue(true);
     window.dispatchEvent(new Event("focus"));
     window.dispatchEvent(new Event("focus"));
 
-    await vi.waitFor(() => { expect(acknowledge).toHaveBeenCalledExactlyOnceWith({ id: "b1", cwd: workspace.path }, "attention-1", "local"); });
+    await vi.waitFor(() => {
+      expect(acknowledge).toHaveBeenCalledExactlyOnceWith({ id: "b1", cwd: workspace.path }, "attention-1", "local");
+    });
   });
 
   it("frames a Chat's tab dashed while its Alignment waits for an agreement, and drops the frame once aligned", async () => {
     const app = await mountWithWorkstreamChats();
-    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
-    const mode = (alignment: string, aligned: boolean) => JSON.stringify({ schemaVersion: 2, phase: "applied", selected: { alignment, attention: "Default", checking: "Default", orchestration: "Main" }, applied: null, aligned });
+    const receive = (event: unknown) => {
+      Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
+    }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const mode = (alignment: string, aligned: boolean) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        phase: "applied",
+        selected: { alignment, attention: "Default", checking: "Default", orchestration: "Main" },
+        applied: null,
+        aligned,
+      });
     const tab = () => tabsRoot(app).querySelector('[data-session="b1"]');
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), workingModeVersion: 1, extensionStatuses: { "working-mode": mode("Align", false) } } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(true); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(tab()?.hasAttribute("data-unaligned")).toBe(true);
+    });
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), workingModeVersion: 2, extensionStatuses: { "working-mode": mode("Align", true) } } });
-    await vi.waitFor(async () => { await app.updateComplete; expect(tab()?.hasAttribute("data-unaligned")).toBe(false); });
+    await vi.waitFor(async () => {
+      await app.updateComplete;
+      expect(tab()?.hasAttribute("data-unaligned")).toBe(false);
+    });
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), workingModeVersion: 3, extensionStatuses: { "working-mode": mode("Default", false) } } });
     await app.updateComplete;
@@ -2713,7 +3962,9 @@ describe("window tabs", () => {
     expect(workstreamTab(app, "Docs").classList.contains("tinted")).toBe(true);
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     await app.updateComplete;
     expect(workstreamTabs(app)).toEqual([]);
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
@@ -2730,7 +3981,9 @@ describe("window tabs", () => {
     expect(tools()).not.toBeNull();
 
     tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
+    });
     expect(tools()).toBeNull();
   });
 
@@ -2738,7 +3991,7 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats();
     const tabRowMenu = () => app.shadowRoot?.querySelector<HTMLElement>("workbench-window-tabs > .chat-tools > workbench-menu-button");
     expect(tabRowMenu()?.querySelector(".window-add, .window-layout")).toBeNull();
-    [...tabRowMenu()?.querySelectorAll<HTMLButtonElement>(".menu-item") ?? []].find((item) => item.textContent.trim() === "Workbench settings")?.click();
+    [...(tabRowMenu()?.querySelectorAll<HTMLButtonElement>(".menu-item") ?? [])].find((item) => item.textContent.trim() === "Workbench settings")?.click();
     const panel = app.shadowRoot?.querySelector<WorkbenchSettingsPanel>("workbench-settings-panel.chat-settings");
     await panel?.updateComplete;
     expect(panel?.shadowRoot?.querySelector(".trigger")).toBeNull();
@@ -2760,7 +4013,9 @@ describe("window tabs", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
     tileMenu()?.querySelector<HTMLButtonElement>(".window-add")?.click();
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
+    });
   });
 
   it("asks the server to end a closed Durable Chat's host, but only leaves a legacy Chat or one another live window lists", async () => {
@@ -2770,7 +4025,9 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats(["b1", "a1"]);
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(1); });
+    await vi.waitFor(() => {
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
     expect(stop.mock.calls[0]?.[0]).toMatchObject({ id: "b1", cwd: workspace.path });
     expect(stop.mock.calls[0]?.slice(1)).toEqual([false, "local"]);
     expect(confirm).not.toHaveBeenCalled();
@@ -2783,17 +4040,29 @@ describe("window tabs", () => {
     localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...storedHeartbeats(), w2: Date.now() }));
     await windows.update((store) => ({ ...store, w2: { ...emptyWindow("Window 2"), chats: [a1] } }));
     closeButton(app, "Plan the release").click();
-    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Release notes"]); });
+    await vi.waitFor(() => {
+      expect(chatTabs(app)).toEqual(["Release notes"]);
+    });
     await settled(app);
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it("warns before closing a Durable Chat whose current status runs background bash or children, and keeps it on Cancel", async () => {
     const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
-    const busy = { ...idleStatus("b1"), capabilities: [], extensionStatuses: {
-      [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, jobs: [{ id: "j1", elapsedSeconds: 1, bytes: 0 }, { id: "j2", elapsedSeconds: 1, bytes: 0 }] }),
-      [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "s1", kind: "subagent" }] }),
-    } };
+    const busy = {
+      ...idleStatus("b1"),
+      capabilities: [],
+      extensionStatuses: {
+        [BACKGROUND_BASH_STATUS_KEY]: JSON.stringify({
+          schemaVersion: 1,
+          jobs: [
+            { id: "j1", elapsedSeconds: 1, bytes: 0 },
+            { id: "j2", elapsedSeconds: 1, bytes: 0 },
+          ],
+        }),
+        [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "s1", kind: "subagent" }] }),
+      },
+    };
     const app = await mountWithWorkstreamChats(["b1"]);
     // The window's cached status is idle; the server's current one names the work started since.
     vi.spyOn(api, "status").mockResolvedValue(busy);
@@ -2801,21 +4070,27 @@ describe("window tabs", () => {
     vi.stubGlobal("confirm", confirm);
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(confirm).toHaveBeenCalledWith("\"Install guide\": 2 background bash jobs and 1 subagent are running; closing ends them."); });
+    await vi.waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith('"Install guide": 2 background bash jobs and 1 subagent are running; closing ends them.');
+    });
     await settled(app);
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
     expect(stop).not.toHaveBeenCalled();
 
     confirm.mockReturnValue(true);
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(1); });
+    await vi.waitFor(() => {
+      expect(stop).toHaveBeenCalledTimes(1);
+    });
     expect(stop.mock.calls[0]?.[1]).toBe(true);
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("b1");
 
     // A legacy Chat closes without a warning, whatever it runs.
     confirm.mockClear();
     closeButton(app, "Plan the release").click();
-    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Release notes"]); });
+    await vi.waitFor(() => {
+      expect(chatTabs(app)).toEqual(["Release notes"]);
+    });
     expect(confirm).not.toHaveBeenCalled();
     expect(stop).toHaveBeenCalledTimes(1);
   });
@@ -2827,43 +4102,63 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats(["b1", "a1"]);
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(confirm).toHaveBeenCalledWith("\"Install guide\": 1 subagent is running; closing ends it."); });
+    await vi.waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith('"Install guide": 1 subagent is running; closing ends it.');
+    });
     await settled(app);
     expect(stop.mock.calls.map((call) => call[1])).toEqual([false]);
 
     confirm.mockReturnValue(true);
     closeButton(app, "Plan the release").click();
-    await vi.waitFor(() => { expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([["b1", false], ["a1", false], ["a1", true]]); });
+    await vi.waitFor(() => {
+      expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([
+        ["b1", false],
+        ["a1", false],
+        ["a1", true],
+      ]);
+    });
   });
 
   it("names each busy Chat of a batch close, a running turn included, before any tab goes, and confirms only those", async () => {
     const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
     const app = await mountWithWorkstreamChats(["b1", "a1"]);
-    vi.spyOn(api, "status").mockImplementation((session) => Promise.resolve(session.id === "b1" ? { ...idleStatus("b1"), isStreaming: true } : idleStatus(session.id)));
+    vi.spyOn(api, "status").mockImplementation((session) =>
+      Promise.resolve(session.id === "b1" ? { ...idleStatus("b1"), isStreaming: true } : idleStatus(session.id)),
+    );
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
     const closeBoth = async () => {
-      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "b1"], label: "Both", clientX: 0, clientY: 0 } }));
+      app.shadowRoot
+        ?.querySelector("workbench-window-tabs")
+        ?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "b1"], label: "Both", clientX: 0, clientY: 0 } }));
       await app.updateComplete;
-      [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Close 2 Chats")?.click();
+      [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])]
+        .find((item) => item.textContent.trim() === "Close 2 Chats")
+        ?.click();
     };
 
     await closeBoth();
-    await vi.waitFor(() => { expect(confirm).toHaveBeenCalledWith("\"Install guide\": A turn is running; closing ends it."); });
+    await vi.waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith('"Install guide": A turn is running; closing ends it.');
+    });
     await settled(app);
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toEqual(expect.arrayContaining(["a1", "b1"]));
     expect(stop).not.toHaveBeenCalled();
 
     confirm.mockReturnValue(true);
     await closeBoth();
-    await vi.waitFor(() => { expect(stop).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(stop).toHaveBeenCalledTimes(2);
+    });
     expect(Object.fromEntries(stop.mock.calls.map((call) => [call[0].id, call[1]]))).toEqual({ a1: false, b1: true });
   });
 
   it("closes every Chat of a window the macOS app closes as their tabs do, and keeps the window on Cancel", async () => {
     const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
     const app = await mountWithWorkstreamChats(["b1", "a1"]);
-    vi.spyOn(api, "status").mockImplementation((session) => Promise.resolve(session.id === "b1" ? { ...idleStatus("b1"), isStreaming: true } : idleStatus(session.id)));
+    vi.spyOn(api, "status").mockImplementation((session) =>
+      Promise.resolve(session.id === "b1" ? { ...idleStatus("b1"), isStreaming: true } : idleStatus(session.id)),
+    );
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
     const closeWindow = async (): Promise<unknown> => {
@@ -2880,7 +4175,7 @@ describe("window tabs", () => {
     await windows.update((store) => ({ ...store, w2: { ...emptyWindow("Window 2"), chats: [a1] } }));
 
     await expect(closeWindow()).resolves.toBe(false);
-    expect(confirm).toHaveBeenCalledWith("\"Install guide\": A turn is running; closing ends it.");
+    expect(confirm).toHaveBeenCalledWith('"Install guide": A turn is running; closing ends it.');
     await settled(app);
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toEqual(expect.arrayContaining(["a1", "b1"]));
     expect(stop).not.toHaveBeenCalled();
@@ -2905,7 +4200,10 @@ describe("window tabs", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([["b1", false], ["b1", false]]);
+    expect(stop.mock.calls.map((call) => [call[0].id, call[1]])).toEqual([
+      ["b1", false],
+      ["b1", false],
+    ]);
   });
 
   it("keeps a Durable Chat open with an error when the server does not answer in time", async () => {
@@ -2919,7 +4217,9 @@ describe("window tabs", () => {
     } finally {
       vi.useRealTimers();
     }
-    await vi.waitFor(() => { expect(getState(app).error).toContain("The server did not answer within 5 s."); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("The server did not answer within 5 s.");
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
     expect(stop).not.toHaveBeenCalled();
   });
@@ -2930,7 +4230,9 @@ describe("window tabs", () => {
     vi.spyOn(api, "status").mockRejectedValue(new Error("daemon unavailable"));
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(getState(app).error).toContain("close it again to retry"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("close it again to retry");
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
     expect(stop).not.toHaveBeenCalled();
   });
@@ -2945,10 +4247,14 @@ describe("window tabs", () => {
     await settled(app);
     vi.spyOn(api, "locate").mockRejectedValue(new Error("daemon unavailable"));
 
-    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["x1"], label: "Unlisted", clientX: 0, clientY: 0 } }));
+    app.shadowRoot
+      ?.querySelector("workbench-window-tabs")
+      ?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["x1"], label: "Unlisted", clientX: 0, clientY: 0 } }));
     await app.updateComplete;
     [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Close")?.click();
-    await vi.waitFor(() => { expect(getState(app).error).toContain("close it again to retry"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("close it again to retry");
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("x1");
     expect(stop).not.toHaveBeenCalled();
   });
@@ -2963,7 +4269,9 @@ describe("window tabs", () => {
     });
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(getState(app).error).toContain("storage is full"); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("storage is full");
+    });
     await settled(app);
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
     expect(stop).not.toHaveBeenCalled();
@@ -2982,10 +4290,14 @@ describe("window tabs", () => {
 
     closeButton(app, "Install guide").click();
     // The close reads the current status, then waits for the store lock behind the transfer.
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
     release();
     await transfer;
-    await vi.waitFor(() => { expect(chatTabs(app)).not.toContain("Install guide"); });
+    await vi.waitFor(() => {
+      expect(chatTabs(app)).not.toContain("Install guide");
+    });
     await settled(app);
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
     expect(stop).not.toHaveBeenCalled();
@@ -2995,14 +4307,18 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats();
 
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     await app.updateComplete;
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
     closeButton(app, "Plan the release").click();
     await app.updateComplete;
     expect(getState(app).selectedSession?.id).toBe("a2");
     closeButton(app, "Release notes").click();
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
+    });
     expect(tabsRoot(app).querySelector("nav")).toBeNull();
   });
 
@@ -3016,31 +4332,43 @@ describe("window tabs", () => {
     await settled(app);
     const tiles = () => [...(app.shadowRoot?.querySelectorAll<HTMLElement>(".grid > .tile") ?? [])];
     expect(tiles()).toHaveLength(3);
-    expect(tiles().filter((tile) => tile.dataset["focused"] === "true").map((tile) => tile.querySelector(".chat-shell")?.getAttribute("data-session"))).toEqual(["b1"]);
+    expect(
+      tiles()
+        .filter((tile) => tile.dataset["focused"] === "true")
+        .map((tile) => tile.querySelector(".chat-shell")?.getAttribute("data-session")),
+    ).toEqual(["b1"]);
     expect(paneChats(app)).toEqual(["a1", "a2", "b1"]);
-    const panes = [...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []];
+    const panes = [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])];
     expect(tabsRoot(app).querySelector(".workstream-tab")).toBeNull();
     // One live menu per tile: focusing never replaces a tile or replays a click.
     expect(tiles().map((tile) => tile.style.getPropertyValue("--ws") !== "")).toEqual([true, true, true]);
-    expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar workstream-context-drawer") === null && tile.querySelector(":scope > .tile-bar .tile-tools > workbench-menu-button") !== null)).toEqual([true, true, true]);
+    expect(
+      tiles().map(
+        (tile) =>
+          tile.querySelector(":scope > .tile-bar workstream-context-drawer") === null
+          && tile.querySelector(":scope > .tile-bar .tile-tools > workbench-menu-button") !== null,
+      ),
+    ).toEqual([true, true, true]);
     expect(tiles().map((tile) => tile.querySelector(":scope > .tile-bar .tile-tools")?.hasAttribute("inert"))).toEqual([false, false, false]);
 
     app.shadowRoot?.querySelector('.tile[data-session="a1"]')?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a1"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a1");
+    });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector('.tile[data-focused="true"] .chat-shell')?.getAttribute("data-session")).toBe("a1");
-    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
+    expect([...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])]).toEqual(panes);
 
     app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] > .tile-bar .tile-actions button[title^="Full size"]')?.click();
     await settled(app);
     expect(tiles().filter((tile) => !tile.hasAttribute("hidden"))).toHaveLength(1);
-    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
+    expect([...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])]).toEqual(panes);
     expect(app.shadowRoot?.querySelector<HTMLButtonElement>('.tile[data-focused="true"] button[aria-label="Restore grid"]')).not.toBeNull();
 
     press("g");
     await settled(app);
     expect(tiles().filter((tile) => !tile.hasAttribute("hidden"))).toHaveLength(1);
-    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
+    expect([...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])]).toEqual(panes);
     expect(workstreamTabs(app)).toEqual(["Release2", "Docs"]);
     expect(app.shadowRoot?.querySelector('header button[aria-label="Full size"]')).toBeNull();
   });
@@ -3048,14 +4376,23 @@ describe("window tabs", () => {
   it("puts a grid tile's own open questions in a bar above its compact composer", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
-    const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }] };
+    const ask = {
+      askId: "abc-1",
+      askedAt: "2026-10-19T10:00:00.000Z",
+      updatedAt: "2026-10-19T10:00:00.000Z",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      questions: [{ id: "db", question: "Which database?", options: [] }],
+    };
     vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a2" ? { ...idleStatus("a2"), pendingAsks: [ask] } : idleStatus(ref.id)));
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
     const tile = (sessionId: string) => app.shadowRoot?.querySelector('.tile[data-session="' + sessionId + '"] workbench-chat-pane');
 
-    await vi.waitFor(() => { expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]); });
+    await vi.waitFor(() => {
+      expect(tile("a2")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([ask]);
+    });
     expect(tile("a2")?.querySelector("workbench-question-chips + goal-status-chip")?.nextElementSibling?.localName).toBe("prompt-editor");
     expect(tile("a1")?.querySelector<WorkbenchQuestionChips>("workbench-question-chips")?.asks).toEqual([]);
   });
@@ -3063,22 +4400,41 @@ describe("window tabs", () => {
   it("opens an unfocused tile's questions in one click without replacing its question bar", async () => {
     vi.spyOn(PromptEditor.prototype, "focusInput").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
-    const ask = { askId: "abc-1", askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: [{ id: "db", question: "Which database?", options: [] }, { id: "why", question: "Why now?", options: [] }] };
+    const ask = {
+      askId: "abc-1",
+      askedAt: "2026-10-19T10:00:00.000Z",
+      updatedAt: "2026-10-19T10:00:00.000Z",
+      revision: "r1",
+      turnsSinceUpdate: 0,
+      questions: [
+        { id: "db", question: "Which database?", options: [] },
+        { id: "why", question: "Why now?", options: [] },
+      ],
+    };
     vi.spyOn(api, "status").mockImplementation((ref) => Promise.resolve(ref.id === "a2" ? { ...idleStatus("a2"), pendingAsks: [ask] } : idleStatus(ref.id)));
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
     await settled(app);
-    const sideChips = () => app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
-    await vi.waitFor(async () => { await sideChips()?.updateComplete; expect(sideChips()?.shadowRoot?.querySelector(".bar")?.textContent).toContain("2 open questions"); });
+    const sideChips = () =>
+      app.shadowRoot?.querySelector('.tile[data-session="a2"] workbench-chat-pane')?.querySelector<WorkbenchQuestionChips>("workbench-question-chips");
+    await vi.waitFor(async () => {
+      await sideChips()?.updateComplete;
+      expect(sideChips()?.shadowRoot?.querySelector(".bar")?.textContent).toContain("2 open questions");
+    });
 
     const chip = sideChips()?.shadowRoot?.querySelector<HTMLButtonElement>(".bar");
     const chipsBefore = sideChips();
     chip?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true }));
     chip?.click();
 
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     const shellChips = () => app.shadowRoot?.querySelector<WorkbenchQuestionChips>('.tile[data-focused="true"] .composer-area > workbench-question-chips');
     expect(shellChips()).toBe(chipsBefore);
-    await vi.waitFor(async () => { await shellChips()?.updateComplete; expect(shellChips()?.shadowRoot?.querySelector('.drawer ask-user-card[data-ask="abc-1"]')).not.toBeNull(); });
+    await vi.waitFor(async () => {
+      await shellChips()?.updateComplete;
+      expect(shellChips()?.shadowRoot?.querySelector('.drawer ask-user-card[data-ask="abc-1"]')).not.toBeNull();
+    });
   });
 
   it("keeps the Chat on screen and its Files pane mounted across \u2303G and full size", async () => {
@@ -3100,7 +4456,7 @@ describe("window tabs", () => {
     const panes = [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])];
     expect(panes).toHaveLength(3);
     await press("Enter");
-    expect([...app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? []]).toEqual(panes);
+    expect([...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])]).toEqual(panes);
     await press("g");
   });
 
@@ -3112,14 +4468,19 @@ describe("window tabs", () => {
     const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
     const w1 = stored["w1"];
     if (w1 === undefined) throw new Error("missing window");
-    localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify({ ...stored, w1: { ...w1, chats: w1.chats.map((chat) => chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat) } }));
+    localStorage.setItem(
+      WINDOW_STORE_KEY,
+      JSON.stringify({ ...stored, w1: { ...w1, chats: w1.chats.map((chat) => (chat.sessionId === "a1" ? { ...chat, machineId: "remote" } : chat)) } }),
+    );
     window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
     const snapshot = vi.mocked(api.transcriptSnapshot);
     snapshot.mockClear();
 
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true, bubbles: true, cancelable: true }));
 
-    await vi.waitFor(() => { expect(snapshot.mock.calls.find(([selected]) => selected.id === "a1")?.[2]).toBe("remote"); });
+    await vi.waitFor(() => {
+      expect(snapshot.mock.calls.find(([selected]) => selected.id === "a1")?.[2]).toBe("remote");
+    });
     expect(snapshot.mock.calls.find(([selected]) => selected.id === "a2")?.[2]).toBe("local");
   });
 
@@ -3128,11 +4489,17 @@ describe("window tabs", () => {
     const closed = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
 
-    app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2", "b1"], label: "All", clientX: 0, clientY: 0 } }));
+    app.shadowRoot
+      ?.querySelector("workbench-window-tabs")
+      ?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2", "b1"], label: "All", clientX: 0, clientY: 0 } }));
     await app.updateComplete;
-    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Move to new window")?.click();
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])]
+      .find((item) => item.textContent.trim() === "Move to new window")
+      ?.click();
 
-    await vi.waitFor(() => { expect(closed).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(closed).toHaveBeenCalledOnce();
+    });
   });
 
   it("moves a Chat to a new window from its tab's menu, and this window shows its next tab", async () => {
@@ -3140,7 +4507,9 @@ describe("window tabs", () => {
     const closed = vi.spyOn(window, "close").mockImplementation(() => undefined);
     const app = await mountWithWorkstreamChats();
 
-    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true, clientX: 30, clientY: 40 }));
+    tabsRoot(app)
+      .querySelector('[data-session="b1"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true, clientX: 30, clientY: 40 }));
     await app.updateComplete;
     const menu = app.shadowRoot?.querySelector<HTMLElement>('.window-menu[aria-label="Install guide"]');
     expect([...(menu?.querySelectorAll("button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close"]);
@@ -3150,10 +4519,14 @@ describe("window tabs", () => {
     const target = url.searchParams.get("win") ?? "";
     expect(url.pathname).toBe("/");
     expect(Object.fromEntries(url.searchParams)).toEqual({ win: target, project: "project", workspace: "workspace", session: "b1", view: "chat" });
-    await vi.waitFor(() => { expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]).toMatchObject({ name: "Window 2", focused: "b1" }); });
+    await vi.waitFor(() => {
+      expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]).toMatchObject({ name: "Window 2", focused: "b1" });
+    });
     const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
     expect(stored[target]?.chats.map((chat) => chat.workstream?.title)).toEqual(["Docs"]);
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     await app.updateComplete;
     expect(app.shadowRoot?.querySelector(".window-menu")).toBeNull();
     expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
@@ -3161,7 +4534,9 @@ describe("window tabs", () => {
 
     // One Workstream left, so no Workstream row: its menu comes from the tab component's own event.
     const openMenu = async () => {
-      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
+      app.shadowRoot
+        ?.querySelector("workbench-window-tabs")
+        ?.dispatchEvent(new CustomEvent("chat-tab-menu", { detail: { sessionIds: ["a1", "a2"], label: "Release", clientX: 0, clientY: 0 } }));
       await app.updateComplete;
       return [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])];
     };
@@ -3174,11 +4549,18 @@ describe("window tabs", () => {
     localStorage.setItem(WINDOW_HEARTBEAT_KEY, "{}");
     window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_HEARTBEAT_KEY }));
     await app.updateComplete;
-    expect([...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Move to new window", "Close 2 Chats"]);
+    expect([...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].map((item) => item.textContent.trim())).toEqual([
+      "Move to new window",
+      "Close 2 Chats",
+    ]);
     stale[1]?.click();
-    await vi.waitFor(() => { expect(getState(app).error).toBe("That window has closed, so the Chats stay here."); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toBe("That window has closed, so the Chats stay here.");
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
-    await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]); });
+    await vi.waitFor(() => {
+      expect(chatTabs(app)).toEqual(["Plan the release", "Release notes"]);
+    });
     localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ [target]: Date.now() }));
     // Another window dropped the target meanwhile: its entry clicked anyway does not recreate it.
     const kept = localStorage.getItem(WINDOW_STORE_KEY) ?? "";
@@ -3186,14 +4568,18 @@ describe("window tabs", () => {
     localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(Object.fromEntries(Object.entries(parseWindowStore(kept)).filter(([id]) => id !== target))));
     Reflect.set(app, "app", { ...getState(app), error: undefined });
     offered[1]?.click();
-    await vi.waitFor(() => { expect(getState(app).error).toBe("That window has closed, so the Chats stay here."); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toBe("That window has closed, so the Chats stay here.");
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]).toBeUndefined();
     localStorage.setItem(WINDOW_STORE_KEY, kept);
     window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
     await settled(app);
     const items = await openMenu();
     items[1]?.click();
-    await vi.waitFor(() => { expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(app.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))[target]?.chats.map((chat) => chat.sessionId)).toEqual(["b1", "a1", "a2"]);
   });
 
@@ -3207,7 +4593,9 @@ describe("window tabs", () => {
     if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
     const canClose = vi.spyOn(pane, "canClose").mockReturnValue(false);
 
-    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app)
+      .querySelector('[data-session="b1"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
     await app.updateComplete;
@@ -3217,10 +4605,14 @@ describe("window tabs", () => {
     expect(getState(app).selectedSession?.id).toBe("b1");
 
     canClose.mockClear().mockReturnValue(true);
-    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app)
+      .querySelector('[data-session="b1"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     expect(opened).toHaveBeenCalledTimes(1);
     expect(canClose).toHaveBeenCalledTimes(1);
   });
@@ -3234,7 +4626,12 @@ describe("window tabs", () => {
       app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
       await app.updateComplete;
     };
-    saveStagedAttachments(machineSessionKey("local", "a1"), { attachments: [{ id: "att-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }], nextImageReference: 1, pendingImageReferences: [], generation: 0 });
+    saveStagedAttachments(machineSessionKey("local", "a1"), {
+      attachments: [{ id: "att-1", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }],
+      nextImageReference: 1,
+      pendingImageReferences: [],
+      generation: 0,
+    });
     await moveToNewWindow(workstreamTab(app, "Release"));
 
     expect(opened).not.toHaveBeenCalled();
@@ -3253,20 +4650,31 @@ describe("window tabs", () => {
     const asked: unknown[] = [];
     const source = otherWindow("w9", (request, from) => {
       asked.push(request);
-      if (handOver && request.kind === "move") localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(moveChats(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w9", from, request.sessionIds)));
+      if (handOver && request.kind === "move")
+        localStorage.setItem(
+          WINDOW_STORE_KEY,
+          JSON.stringify(moveChats(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w9", from, request.sessionIds)),
+        );
       return handOver;
     });
-    const drop = () => tabsRoot(app).querySelector("nav")?.dispatchEvent(new CustomEvent("chat-tab-drop", { bubbles: true, composed: true, detail: { windowId: "w9", sessionIds: ["c1"] } }));
+    const drop = () =>
+      tabsRoot(app)
+        .querySelector("nav")
+        ?.dispatchEvent(new CustomEvent("chat-tab-drop", { bubbles: true, composed: true, detail: { windowId: "w9", sessionIds: ["c1"] } }));
     try {
       drop();
-      await vi.waitFor(() => { expect(asked).toEqual([{ kind: "move", sessionIds: ["c1"] }]); });
+      await vi.waitFor(() => {
+        expect(asked).toEqual([{ kind: "move", sessionIds: ["c1"] }]);
+      });
       await settled(app);
       expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w9"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
       expect(getState(app).selectedSession?.id).toBe("b1");
 
       handOver = true;
       drop();
-      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("c1"); });
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("c1");
+      });
       const after = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
       expect(after["w9"]?.chats).toEqual([]);
       expect(after["w1"]?.focused).toBe("c1");
@@ -3290,17 +4698,23 @@ describe("window tabs", () => {
     await windows.update((store) => ({ ...store, w9: emptyWindow("Window 9") }));
     try {
       target.ask("w1", { kind: "move", sessionIds: ["b1"] });
-      await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
+      await vi.waitFor(() => {
+        expect(target.answers).toEqual([false]);
+      });
       expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
       expect(getState(app).selectedSession?.id).toBe("b1");
 
       canClose.mockReturnValue(true);
       target.ask("w1", { kind: "move", sessionIds: ["b1"] });
-      await vi.waitFor(() => { expect(target.answers).toEqual([false, true]); });
+      await vi.waitFor(() => {
+        expect(target.answers).toEqual([false, true]);
+      });
       const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
       expect(stored["w9"]?.chats.map((chat) => chat.sessionId)).toEqual(["b1"]);
       expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).not.toContain("b1");
-      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("a2");
+      });
     } finally {
       target.close();
     }
@@ -3315,11 +4729,15 @@ describe("window tabs", () => {
     const release = locks.hold(WINDOW_STORE_LOCK);
     try {
       target.ask("w1", { kind: "move", sessionIds: ["b1"] });
-      await new Promise((resolve) => { setTimeout(resolve, 50); });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50);
+      });
       // The asking window closes while the move waits for the store.
       localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify(Object.fromEntries(Object.entries(storedHeartbeats()).filter(([id]) => id !== "w9"))));
       release();
-      await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
+      await vi.waitFor(() => {
+        expect(target.answers).toEqual([false]);
+      });
       const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
       expect(stored["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
       expect(stored["w9"]?.chats).toEqual([]);
@@ -3335,11 +4753,19 @@ describe("window tabs", () => {
     const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
     const received: unknown[] = [];
     // The holder reloads as the first request arrives, and answers the next.
-    const owner = otherWindow("w2", (request) => { received.push(request); return received.length > 1 ? true : new Promise<boolean>(() => undefined); });
+    const owner = otherWindow("w2", (request) => {
+      received.push(request);
+      return received.length > 1 ? true : new Promise<boolean>(() => undefined);
+    });
     try {
       window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "c1", message: "entry:e1" } }));
 
-      await vi.waitFor(() => { expect(received).toHaveLength(2); }, { timeout: 2_000 });
+      await vi.waitFor(
+        () => {
+          expect(received).toHaveLength(2);
+        },
+        { timeout: 2_000 },
+      );
       expect(received[0]).toEqual({ kind: "select", sessionId: "c1", anchor: "entry:e1" });
       await settled(app);
       const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
@@ -3349,8 +4775,12 @@ describe("window tabs", () => {
       expect(app.shadowRoot?.querySelector(".chat-error")).toBeNull();
 
       owner.ask("w1", { kind: "select", sessionId: "a2" });
-      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
-      await vi.waitFor(() => { expect(owner.answers).toEqual([true]); });
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("a2");
+      });
+      await vi.waitFor(() => {
+        expect(owner.answers).toEqual([true]);
+      });
     } finally {
       owner.close();
       release();
@@ -3361,7 +4791,8 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats();
     const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
     localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
-    const holds = (machineId: string, sessionId: string) => !window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_HOLDS_EVENT, { cancelable: true, detail: { machineId, sessionId } }));
+    const holds = (machineId: string, sessionId: string) =>
+      !window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_HOLDS_EVENT, { cancelable: true, detail: { machineId, sessionId } }));
     const before = localStorage.getItem(WINDOW_STORE_KEY);
 
     expect(holds("local", "a2")).toBe(true);
@@ -3374,7 +4805,9 @@ describe("window tabs", () => {
 
     vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
     window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: "local", sessionId: "a2" } }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     expect(new URLSearchParams(window.location.search).get("win")).toBe("w1");
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
   });
@@ -3385,20 +4818,29 @@ describe("window tabs", () => {
     localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
     const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
     const received: unknown[] = [];
-    const owner = otherWindow("w2", (request) => { received.push(request); return true; });
+    const owner = otherWindow("w2", (request) => {
+      received.push(request);
+      return true;
+    });
     const held = () => parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
     try {
       window.history.pushState({}, "", "/?win=w1&project=project&workspace=workspace&session=c1&view=chat");
       window.dispatchEvent(new PopStateEvent("popstate"));
-      await vi.waitFor(() => { expect(received).toEqual([{ kind: "select", sessionId: "c1" }]); });
+      await vi.waitFor(() => {
+        expect(received).toEqual([{ kind: "select", sessionId: "c1" }]);
+      });
       await settled(app);
       expect(getState(app).selectedSession?.id).toBe("b1");
       expect(new URLSearchParams(window.location.search).get("session")).toBe("b1");
 
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "t", metaKey: true, bubbles: true, cancelable: true }));
-      await vi.waitFor(() => { expect(app.shadowRoot?.querySelector("workstream-chooser")).not.toBeNull(); });
+      await vi.waitFor(() => {
+        expect(app.shadowRoot?.querySelector("workstream-chooser")).not.toBeNull();
+      });
       openFromWorkstream(app, { sessionId: "c1", projectId: "project", workspaceId: "workspace" });
-      await vi.waitFor(() => { expect(received).toHaveLength(2); });
+      await vi.waitFor(() => {
+        expect(received).toHaveLength(2);
+      });
       await settled(app);
       expect(getState(app).selectedSession).toBeUndefined();
       expect(held()["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
@@ -3416,7 +4858,9 @@ describe("window tabs", () => {
       expect(localStorage.getItem(WINDOW_STORE_KEY)).toBeNull();
       expect(parseWindowStore(sessionStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats).toHaveLength(3);
 
-      tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+      tabsRoot(app)
+        .querySelector('[data-session="b1"]')
+        ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
       await app.updateComplete;
       expect([...(app.shadowRoot?.querySelectorAll(".window-menu button") ?? [])].map((item) => item.textContent.trim())).toEqual(["Close"]);
     } finally {
@@ -3435,7 +4879,9 @@ describe("window tabs", () => {
     expect(getState(app).selectedSession).toBeUndefined();
     expect(app.shadowRoot?.querySelector("prompt-editor")).toBeNull();
     successor.release();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
     await app.updateComplete;
     expect(workstreamTabs(app)).toEqual([]);
     expect(chatTabs(app)).toHaveLength(2);
@@ -3446,16 +4892,23 @@ describe("window tabs", () => {
     const lookup = holdLookup("c1");
     const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
     const received: unknown[] = [];
-    const owner = otherWindow("w2", (request) => { received.push(request); return true; });
+    const owner = otherWindow("w2", (request) => {
+      received.push(request);
+      return true;
+    });
     try {
       window.history.pushState({}, "", "/?win=w1&project=project&workspace=workspace&session=c1&view=chat");
       window.dispatchEvent(new PopStateEvent("popstate"));
-      await vi.waitFor(() => { expect(lookup.asked()).toBe(true); });
+      await vi.waitFor(() => {
+        expect(lookup.asked()).toBe(true);
+      });
       const elsewhere = { sessionId: "c1", title: "Elsewhere", machineId: "local", projectId: "project", workspaceId: "workspace" };
       localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(openChat(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY)), "w2", elsewhere)));
       lookup.release();
 
-      await vi.waitFor(() => { expect(received).toEqual([{ kind: "select", sessionId: "c1" }]); });
+      await vi.waitFor(() => {
+        expect(received).toEqual([{ kind: "select", sessionId: "c1" }]);
+      });
       await settled(app);
       const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
       expect(stored["w2"]?.chats.map((chat) => chat.sessionId)).toEqual(["c1"]);
@@ -3476,9 +4929,13 @@ describe("window tabs", () => {
     const target = otherWindow("w2", () => false);
     try {
       app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
-      await vi.waitFor(() => { expect(lookup.asked()).toBe(true); });
+      await vi.waitFor(() => {
+        expect(lookup.asked()).toBe(true);
+      });
       target.ask("w1", { kind: "move", sessionIds: ["a2"] });
-      await vi.waitFor(() => { expect(target.answers).toEqual([true]); });
+      await vi.waitFor(() => {
+        expect(target.answers).toEqual([true]);
+      });
       lookup.release();
 
       await settled(app);
@@ -3505,16 +4962,22 @@ describe("window tabs", () => {
       setItem(key, value);
     });
 
-    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app)
+      .querySelector('[data-session="b1"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
     app.shadowRoot?.querySelector<HTMLButtonElement>(".window-menu button")?.click();
-    await vi.waitFor(() => { expect(writable).not.toEqual([]); });
+    await vi.waitFor(() => {
+      expect(writable).not.toEqual([]);
+    });
     await settled(app);
 
     expect(writable.every((sessionId) => sessionId === undefined)).toBe(true);
     expect(app.shadowRoot?.querySelector("prompt-editor")).toBeNull();
     successor.release();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
   });
 
   it("keeps Chats whose hand-over the asking window gave up on while their owner decided", async () => {
@@ -3526,14 +4989,21 @@ describe("window tabs", () => {
     if (pane === null || pane === undefined) throw new Error("Files pane was not mounted");
     const now = Date.now();
     // The owner confirms discarding file edits only after the asking window stopped waiting.
-    vi.spyOn(pane, "canClose").mockImplementation(() => { vi.spyOn(Date, "now").mockReturnValue(now + 61_000); return true; });
+    vi.spyOn(pane, "canClose").mockImplementation(() => {
+      vi.spyOn(Date, "now").mockReturnValue(now + 61_000);
+      return true;
+    });
     const target = otherWindow("w9", () => false);
     try {
       target.ask("w1", { kind: "move", sessionIds: ["b1"] });
-      await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
+      await vi.waitFor(() => {
+        expect(target.answers).toEqual([false]);
+      });
       expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain("b1");
       expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w9"]).toBeUndefined();
-      await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("b1");
+      });
     } finally {
       target.close();
     }
@@ -3548,17 +5018,23 @@ describe("window tabs", () => {
     let asked = false;
     const listed = vi.mocked(api.sessions).getMockImplementation();
     vi.mocked(api.sessions).mockImplementation((cwd, machineId, options) => {
-      if (options?.sessionId === "a2") { asked = true; return lookup.promise; }
+      if (options?.sessionId === "a2") {
+        asked = true;
+        return lookup.promise;
+      }
       return listed?.(cwd, machineId, options) ?? Promise.resolve([]);
     });
     vi.mocked(api.workspaces).mockResolvedValue([workspace, otherWorkspace]);
     const saved = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
     const own = saved["w1"];
-    if (own !== undefined) saved["w1"] = { ...own, chats: own.chats.map((chat) => chat.sessionId === "a2" ? { ...chat, workspaceId: otherWorkspace.id } : chat) };
+    if (own !== undefined)
+      saved["w1"] = { ...own, chats: own.chats.map((chat) => (chat.sessionId === "a2" ? { ...chat, workspaceId: otherWorkspace.id } : chat)) };
     localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(saved));
     window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
-    await vi.waitFor(() => { expect(asked).toBe(true); });
+    await vi.waitFor(() => {
+      expect(asked).toBe(true);
+    });
     const windows: unknown = Reflect.get(app, "windows");
     if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
     await windows.update((store) => ({ ...store, w2: emptyWindow("Window 2") }));
@@ -3566,7 +5042,9 @@ describe("window tabs", () => {
     const release = locks.hold(`${WINDOW_ID_LOCK_PREFIX}w2`);
     try {
       target.ask("w1", { kind: "move", sessionIds: ["a2"] });
-      await vi.waitFor(() => { expect(target.answers).toEqual([true]); });
+      await vi.waitFor(() => {
+        expect(target.answers).toEqual([true]);
+      });
       lookup.resolve([{ ...session("a2", "Notes"), cwd: otherWorkspace.path }]);
       await settled(app);
       await settled(app);
@@ -3589,9 +5067,13 @@ describe("window tabs", () => {
     const created = deferred<SessionInfo>();
     vi.spyOn(api, "startSession").mockReturnValue(created.promise);
     closeButton(app, "Install guide").click();
-    await vi.waitFor(() => { expect(successor.asked()).toBe(true); });
+    await vi.waitFor(() => {
+      expect(successor.asked()).toBe(true);
+    });
     app.shadowRoot?.querySelector<HTMLButtonElement>(".new-chat button")?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id.startsWith("creating:")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id.startsWith("creating:")).toBe(true);
+    });
     successor.release();
     await settled(app);
     await settled(app);
@@ -3617,7 +5099,9 @@ describe("window tabs", () => {
     expect(getState(app).selectedSession?.id).toBe("b1");
     release();
     await selecting;
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id.startsWith("creating:")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id.startsWith("creating:")).toBe(true);
+    });
     started.resolve({ ...session("new-chat", "Fresh"), persisted: false });
     await creating;
     await settled(app);
@@ -3633,13 +5117,17 @@ describe("window tabs", () => {
     tabsRoot(source).querySelector<HTMLButtonElement>("button.add")?.click();
     await source.updateComplete;
     source.shadowRoot?.querySelector<HTMLButtonElement>(".new-chat button")?.click();
-    await vi.waitFor(() => { expect(getState(source).selectedSession?.id.startsWith("creating:")).toBe(true); });
+    await vi.waitFor(() => {
+      expect(getState(source).selectedSession?.id.startsWith("creating:")).toBe(true);
+    });
     vi.mocked(api.sessions).mockResolvedValue([row]);
     // The daemon exposes the created id to another live window before the creator's HTTP response returns.
     window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=new-chat&view=chat");
     const target = new WorkbenchApp();
     document.body.append(target);
-    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("new-chat"); });
+    await vi.waitFor(() => {
+      expect(getState(target).selectedSession?.id).toBe("new-chat");
+    });
     await settled(target);
     window.dispatchEvent(new StorageEvent("storage", { key: WINDOW_STORE_KEY }));
     await settled(source);
@@ -3662,7 +5150,9 @@ describe("window tabs", () => {
     await settled(target);
 
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w2"]?.chats.map((chat) => chat.sessionId)).toContain("new-chat");
-    const writable = [source, target].map((app) => app.shadowRoot?.querySelector<PromptEditor>("prompt-editor")).filter((editor) => editor?.sessionId === "new-chat" && !editor.disabled);
+    const writable = [source, target]
+      .map((app) => app.shadowRoot?.querySelector<PromptEditor>("prompt-editor"))
+      .filter((editor) => editor?.sessionId === "new-chat" && !editor.disabled);
     expect(writable).toHaveLength(1);
   });
 
@@ -3682,12 +5172,16 @@ describe("window tabs", () => {
     window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=another&view=chat");
     const target = new WorkbenchApp();
     document.body.append(target);
-    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("another"); });
+    await vi.waitFor(() => {
+      expect(getState(target).selectedSession?.id).toBe("another");
+    });
     await settled(target);
     tabsRoot(target).querySelector<HTMLButtonElement>("button.add")?.click();
     await settled(target);
     [...(target.shadowRoot?.querySelectorAll<HTMLButtonElement>(".session") ?? [])].find((button) => !button.textContent.includes("Another"))?.click();
-    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("new-chat"); });
+    await vi.waitFor(() => {
+      expect(getState(target).selectedSession?.id).toBe("new-chat");
+    });
     await settled(target);
     await promptEditor(target).updateComplete;
     promptEditor(target).replaceText("new owner's draft");
@@ -3699,7 +5193,9 @@ describe("window tabs", () => {
     expect(loadDraft(machineSessionKey("local", "new-chat"))).toBe("new owner's draft");
 
     target.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "another" } }));
-    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("another"); });
+    await vi.waitFor(() => {
+      expect(getState(target).selectedSession?.id).toBe("another");
+    });
     await settled(target);
     expect(loadDraft(machineSessionKey("local", tempId))).toBe("important first prompt");
     expect(loadDraft(machineSessionKey("local", "new-chat"))).toBe("new owner's draft");
@@ -3719,7 +5215,8 @@ describe("window tabs", () => {
     await sessions.send("queued first message");
     const slow = mode === "slow-tab" ? holdLookup("a2") : undefined;
     if (mode === "home") tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
-    else if (mode === "slow-tab") app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
+    else if (mode === "slow-tab")
+      app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
     else if (mode === "history") {
       window.history.replaceState({}, "", "/?win=w1&project=project&workspace=workspace&session=a2&view=chat");
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -3727,8 +5224,14 @@ describe("window tabs", () => {
       vi.spyOn(api, "locate").mockResolvedValue({ cwd: workspace.path });
       window.dispatchEvent(new CustomEvent(NATIVE_NOTIFICATION_OPEN_EVENT, { detail: { machineId: mode === "remote" ? "remote" : "local", sessionId: "a2" } }));
     }
-    if (slow !== undefined) await vi.waitFor(() => { expect(slow.asked()).toBe(true); });
-    else if (mode !== "home") await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    if (slow !== undefined)
+      await vi.waitFor(() => {
+        expect(slow.asked()).toBe(true);
+      });
+    else if (mode !== "home")
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("a2");
+      });
     await settled(app);
     const row = { ...session("created-after-navigation", ""), persisted: false, messageCount: 0 };
     created.resolve(row);
@@ -3739,7 +5242,10 @@ describe("window tabs", () => {
     // A loading destination keeps the outgoing Chat on screen, including its completed creation.
     expect(getState(app).selectedSession?.id).toBe(mode === "home" ? undefined : mode === "slow-tab" ? row.id : "a2");
     slow?.release();
-    if (slow !== undefined) await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    if (slow !== undefined)
+      await vi.waitFor(() => {
+        expect(getState(app).selectedSession?.id).toBe("a2");
+      });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.find((chat) => chat.sessionId === row.id)?.machineId).toBe("local");
   });
 
@@ -3773,13 +5279,17 @@ describe("window tabs", () => {
     const reloading = sessions.reloadSession();
     const next = holdLookup("a2");
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: "a2" } }));
-    await vi.waitFor(() => { expect(next.asked()).toBe(true); });
+    await vi.waitFor(() => {
+      expect(next.asked()).toBe(true);
+    });
     const generation = sessions.navigationGeneration;
     reloaded.resolve({ reloaded: true });
     await reloading;
     expect(sessions.navigationGeneration).toBe(generation);
     next.release();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("a2");
+    });
   });
 
   it.each([false, true])("r5–r8: reserves the creator's draft before any startup event (missed=%s)", async (missed) => {
@@ -3793,12 +5303,19 @@ describe("window tabs", () => {
     const tempId = getState(source).selectedSession?.id ?? "";
     const row = { ...session("reserved-chat", ""), persisted: false, messageCount: 0, startupToken: start.mock.calls[0]?.[2] ?? "" };
     promptEditor(source).replaceText("important first prompt");
-    if (!missed) sessions.applyGlobalEvent({ type: "session.startup", startupToken: row.startupToken, activity: { sessionId: row.id, phase: "active", label: "Creating session", at: "now", startup: true } });
+    if (!missed)
+      sessions.applyGlobalEvent({
+        type: "session.startup",
+        startupToken: row.startupToken,
+        activity: { sessionId: row.id, phase: "active", label: "Creating session", at: "now", startup: true },
+      });
     vi.mocked(api.sessions).mockResolvedValue([row, session("another", "Another")]);
     window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=another&view=chat");
     const target = new WorkbenchApp();
     document.body.append(target);
-    await vi.waitFor(() => { expect(getState(target).selectedSession?.id).toBe("another"); });
+    await vi.waitFor(() => {
+      expect(getState(target).selectedSession?.id).toBe("another");
+    });
     const targetSessions = sessionsOf(target);
     await targetSessions.selectSession(row);
     await settled(target);
@@ -3827,13 +5344,19 @@ describe("window tabs", () => {
     const tempId = getState(app).selectedSession?.id ?? "";
     const row = { ...session("reserved-chat", ""), persisted: false, startupToken: start.mock.calls[0]?.[2] ?? "" };
     promptEditor(app).replaceText("first prompt");
-    sessions.applyGlobalEvent({ type: "session.startup", startupToken: row.startupToken, activity: { sessionId: row.id, phase: "active", label: "Creating session", at: "now", startup: true } });
+    sessions.applyGlobalEvent({
+      type: "session.startup",
+      startupToken: row.startupToken,
+      activity: { sessionId: row.id, phase: "active", label: "Creating session", at: "now", startup: true },
+    });
     await settled(app);
     tabsRoot(app).querySelector<HTMLButtonElement>("button.add")?.click();
     await settled(app);
     // A pending tab and a chooser/notification row carrying the real id are the same Chat.
     app.shadowRoot?.querySelector("workbench-window-tabs")?.dispatchEvent(new CustomEvent("chat-tab-select", { detail: { sessionId: tempId } }));
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe(tempId); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe(tempId);
+    });
     await sessions.selectSession(row);
     await settled(app);
     expect(getState(app).selectedSession?.id).toBe(tempId);
@@ -3856,14 +5379,20 @@ describe("window tabs", () => {
     await settled(app);
     const tempId = getState(app).selectedSession?.id ?? "";
     promptEditor(app).replaceText("first prompt");
-    sessions.applyGlobalEvent({ type: "session.startup", startupToken: tempId, activity: { sessionId: "reserved-chat", phase: "active", label: "Creating session", at: "now", startup: true } });
+    sessions.applyGlobalEvent({
+      type: "session.startup",
+      startupToken: tempId,
+      activity: { sessionId: "reserved-chat", phase: "active", label: "Creating session", at: "now", startup: true },
+    });
     await settled(app);
     const tabs = tabsRoot(app);
     const tab = tabs.querySelector(`[data-session="reserved-chat"]`) ?? tabs.querySelector(`[data-session="${tempId}"]`);
     expect(tab).not.toBeNull();
     tab?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
-    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((button) => button.textContent === "Move to new window")?.click();
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])]
+      .find((button) => button.textContent === "Move to new window")
+      ?.click();
     await settled(app);
     expect(opened).not.toHaveBeenCalled();
     expect(promptEditor(app).view?.state.doc.toString()).toBe("first prompt");
@@ -3883,13 +5412,19 @@ describe("window tabs", () => {
     await settled(source);
     promptEditor(source).replaceText("first prompt");
     const startupToken = getState(source).selectedSession?.id ?? "";
-    sessions.applyGlobalEvent({ type: "session.startup", startupToken, activity: { sessionId: "new-chat", phase: "active", label: "Creating session", at: "now", startup: true } });
+    sessions.applyGlobalEvent({
+      type: "session.startup",
+      startupToken,
+      activity: { sessionId: "new-chat", phase: "active", label: "Creating session", at: "now", startup: true },
+    });
     expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId)).toContain(startupToken);
     vi.mocked(api.sessions).mockResolvedValue([{ ...row, startupToken }]);
     window.history.replaceState({}, "", "/?win=w2&project=project&workspace=workspace&session=new-chat&view=chat");
     const target = new WorkbenchApp();
     document.body.append(target);
-    await vi.waitFor(() => { expect(target.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(target.shadowRoot?.querySelector('[data-view="chooser"]')).not.toBeNull();
+    });
     await settled(target);
     expect(getState(target).selectedSession).toBeUndefined();
     expect(target.shadowRoot?.querySelector("prompt-editor")).toBeNull();
@@ -3911,11 +5446,17 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats();
     await settled(app);
     promptEditor(app).replaceText("saved draft");
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("full", "QuotaExceededError");
+    });
     promptEditor(app).replaceText("saved draft plus unsaved edits");
-    tabsRoot(app).querySelector('[data-session="b1"]')?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
+    tabsRoot(app)
+      .querySelector('[data-session="b1"]')
+      ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, composed: true }));
     await app.updateComplete;
-    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])].find((item) => item.textContent.trim() === "Move to new window")?.click();
+    [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>(".window-menu button") ?? [])]
+      .find((item) => item.textContent.trim() === "Move to new window")
+      ?.click();
     await vi.waitFor(() => {
       expect(getState(app).selectedSession?.id).toBe("b1");
       expect(getState(app).error).toContain("storage is full");
@@ -3934,13 +5475,20 @@ describe("window tabs", () => {
     const store = localStorage.setItem.bind(localStorage);
     let attempts = 0;
     vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
-      if (key !== WINDOW_STORE_KEY) { store(key, value); return; }
+      if (key !== WINDOW_STORE_KEY) {
+        store(key, value);
+        return;
+      }
       attempts += 1;
       throw new DOMException("full", "QuotaExceededError");
     });
     sessions.applyGlobalEvent({ type: "session.name", sessionId: "b1", name: "A longer auto-generated Chat title" });
-    await vi.waitFor(() => { expect(getState(app).error).toContain("storage is full"); });
-    await new Promise((resolve) => { setTimeout(resolve, 50); });
+    await vi.waitFor(() => {
+      expect(getState(app).error).toContain("storage is full");
+    });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
     expect(attempts).toBe(1);
   });
 });
@@ -3957,10 +5505,19 @@ function holdLookup(sessionId: string) {
   let asked = false;
   const listed = vi.mocked(api.sessions).getMockImplementation();
   vi.mocked(api.sessions).mockImplementation(async (cwd, machineId, options) => {
-    if (options?.sessionId === sessionId) { asked = true; await held.promise; return [session(sessionId, sessionId)]; }
+    if (options?.sessionId === sessionId) {
+      asked = true;
+      await held.promise;
+      return [session(sessionId, sessionId)];
+    }
     return listed === undefined ? [] : await listed(cwd, machineId, options);
   });
-  return { asked: () => asked, release: () => { held.resolve(undefined); } };
+  return {
+    asked: () => asked,
+    release: () => {
+      held.resolve(undefined);
+    },
+  };
 }
 
 type OtherWindowRequest = { kind: "select"; sessionId: string; anchor?: string } | { kind: "move"; sessionIds: string[] };
@@ -3978,8 +5535,13 @@ function otherWindow(windowId: string, answer: (request: OtherWindowRequest, fro
     const message = event.data;
     if (!isOtherWindowMessage(message) || message.to !== windowId) return;
     const request = message.request;
-    if (request === undefined) { answers.push(message.ok === true); return; }
-    void Promise.resolve(answer(request, message.from)).then((ok) => { channel.postMessage({ id: message.id, to: message.from, from: windowId, ok }); });
+    if (request === undefined) {
+      answers.push(message.ok === true);
+      return;
+    }
+    void Promise.resolve(answer(request, message.from)).then((ok) => {
+      channel.postMessage({ id: message.id, to: message.from, from: windowId, ok });
+    });
   };
   return {
     answers,
@@ -3989,13 +5551,17 @@ function otherWindow(windowId: string, answer: (request: OtherWindowRequest, fro
       localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...storedHeartbeats(), [windowId]: Date.now() }));
       channel.postMessage({ id: `${windowId}:${String(asked)}`, to, from: windowId, request, expires: Date.now() + timeoutMs });
     },
-    close: () => { channel.close(); },
+    close: () => {
+      channel.close();
+    },
   };
 }
 
 /** A window store write settles before the render it causes. */
 async function settled(app: WorkbenchApp): Promise<void> {
-  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
   await app.updateComplete;
 }
 
@@ -4005,8 +5571,12 @@ function tabsRoot(app: WorkbenchApp): ShadowRoot {
   return root;
 }
 
-const paneChats = (app: WorkbenchApp): (string | undefined)[] => [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) => pane instanceof WorkbenchChatPane ? pane.app?.selectedSession?.id : undefined);
-const workstreamTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".workstream-tab")].map((tab) => tab.textContent.replace(/\s+/gu, ""));
+const paneChats = (app: WorkbenchApp): (string | undefined)[] =>
+  [...(app.shadowRoot?.querySelectorAll("workbench-chat-pane") ?? [])].map((pane) =>
+    pane instanceof WorkbenchChatPane ? pane.app?.selectedSession?.id : undefined,
+  );
+const workstreamTabs = (app: WorkbenchApp): string[] =>
+  [...tabsRoot(app).querySelectorAll(".workstream-tab")].map((tab) => tab.textContent.replace(/\s+/gu, ""));
 const chatTabs = (app: WorkbenchApp): string[] => [...tabsRoot(app).querySelectorAll(".chat-tab .title, .solo .title")].map((title) => title.textContent);
 
 function workstreamTab(app: WorkbenchApp, title: string): HTMLElement {
@@ -4129,17 +5699,35 @@ describe("Workbench Chat controls", () => {
   it("backs off unchanged Workstream watches without repeated lifecycle lookups", async () => {
     const current = session("backoff", "Chat", "Chat title");
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, ({ operation }) => operation === "watch"
-      ? { ok: true, value: { mode: "replay", events: [], nextSequence: 20 } }
-      : { ok: true, value: [] }, undefined, true);
+    stubWorkstreamService(
+      calls,
+      ({ operation }) => (operation === "watch" ? { ok: true, value: { mode: "replay", events: [], nextSequence: 20 } } : { ok: true, value: [] }),
+      undefined,
+      true,
+    );
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: current.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
     vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
     const app = await mountChooser([current]);
     app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("backoff"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
-    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("backoff");
+      expect(Reflect.get(app, "currentWorkstream")).toBeNull();
+    });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined();
+    });
     const fetcher = vi.mocked(fetch);
     const lifecycleCalls = () => fetcher.mock.calls.filter(([url]) => typeof url === "string" && url.endsWith("/plugins")).length;
     const before = lifecycleCalls();
@@ -4158,7 +5746,10 @@ describe("Workbench Chat controls", () => {
       await vi.advanceTimersByTimeAsync(2_000);
       expect(calls.filter((call) => call.operation === "watch")).toHaveLength(3);
       expect(lifecycleCalls()).toBe(before);
-    } finally { app.remove(); vi.useRealTimers(); }
+    } finally {
+      app.remove();
+      vi.useRealTimers();
+    }
   });
 
   it("refreshes the open header when an external Workstream association appears, changes title, or disappears", async () => {
@@ -4167,33 +5758,68 @@ describe("Workbench Chat controls", () => {
     let associated = false;
     let title = "External Workstream";
     const calls: WorkstreamServiceCall[] = [];
-    stubWorkstreamService(calls, ({ operation }) => {
-      if (operation === "list") return { ok: true, value: associated ? [{ id: "external" }] : [] };
-      if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: revision } };
-      return { ok: true, value: { id: "external", title, revision, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
-    }, undefined, true);
+    stubWorkstreamService(
+      calls,
+      ({ operation }) => {
+        if (operation === "list") return { ok: true, value: associated ? [{ id: "external" }] : [] };
+        if (operation === "watch") return { ok: true, value: { mode: "replay", events: [], nextSequence: revision } };
+        return { ok: true, value: { id: "external", title, revision, sessions: [], humanTasks: [], links: [], overview: null, closed: false } };
+      },
+      undefined,
+      true,
+    );
     vi.spyOn(api, "messages").mockResolvedValue({ messages: [], start: 0, total: 0 });
-    vi.spyOn(api, "status").mockResolvedValue({ sessionId: current.id, persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 });
+    vi.spyOn(api, "status").mockResolvedValue({
+      sessionId: current.id,
+      persisted: true,
+      isStreaming: false,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    });
     vi.spyOn(api, "streamSnapshot").mockResolvedValue({ seq: 0, partial: null });
     vi.spyOn(api, "thinkingLevels").mockResolvedValue({ levels: [] });
     const app = await mountChooser([current]);
     app.shadowRoot?.querySelector<HTMLButtonElement>(".session")?.click();
-    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("current"); expect(Reflect.get(app, "currentWorkstream")).toBeNull(); });
-    await vi.waitFor(() => { expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(getState(app).selectedSession?.id).toBe("current");
+      expect(Reflect.get(app, "currentWorkstream")).toBeNull();
+    });
+    await vi.waitFor(() => {
+      expect(Reflect.get(app, "workstreamWatchTimer")).toBeDefined();
+    });
     await app.updateComplete;
     expect(shownWorkstream(app)).toBeUndefined();
 
     associated = true;
     revision = 1;
-    await vi.waitFor(() => { expect(shownWorkstream(app)).toBe("External Workstream"); }, { timeout: 3_000 });
+    await vi.waitFor(
+      () => {
+        expect(shownWorkstream(app)).toBe("External Workstream");
+      },
+      { timeout: 3_000 },
+    );
 
     title = "Renamed elsewhere";
     revision = 2;
-    await vi.waitFor(() => { expect(shownWorkstream(app)).toBe("Renamed elsewhere"); }, { timeout: 3_000 });
+    await vi.waitFor(
+      () => {
+        expect(shownWorkstream(app)).toBe("Renamed elsewhere");
+      },
+      { timeout: 3_000 },
+    );
 
     associated = false;
     revision = 3;
-    await vi.waitFor(() => { expect(shownWorkstream(app)).toBeUndefined(); }, { timeout: 3_000 });
+    await vi.waitFor(
+      () => {
+        expect(shownWorkstream(app)).toBeUndefined();
+      },
+      { timeout: 3_000 },
+    );
     const watchCalls = calls.filter((call) => call.operation === "watch");
     expect(watchCalls.length).toBeGreaterThanOrEqual(4);
     expect(watchCalls[0]?.input).toEqual({ afterSequence: Number.MAX_SAFE_INTEGER });
@@ -4207,9 +5833,14 @@ describe("Workbench Chat controls", () => {
       ...getState(app),
       selectedSession: current,
       status: {
-        sessionId: current.id, isStreaming: false, isCompacting: false, isBashRunning: false,
-        pendingMessageCount: 0, queuedMessages: [],
-        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+        sessionId: current.id,
+        isStreaming: false,
+        isCompacting: false,
+        isBashRunning: false,
+        pendingMessageCount: 0,
+        queuedMessages: [],
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
         extensionStatuses: {
           [ACTIVITY_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, items: [{ id: "worker-1", kind: "worker", activity: "running" }] }),
           [GOAL_STATUS_KEY]: JSON.stringify({ schemaVersion: 1, goalId: "goal-1234567890", state: "active", objective: "Build the UI" }),
@@ -4264,7 +5895,9 @@ describe("Workbench Chat controls", () => {
 async function mountChooser(sessions: SessionInfo[]): Promise<WorkbenchApp> {
   const app = new WorkbenchApp();
   document.body.append(app);
-  await vi.waitFor(() => { expect(Reflect.get(app, "loading")).toBe(false); });
+  await vi.waitFor(() => {
+    expect(Reflect.get(app, "loading")).toBe(false);
+  });
   setState(app, {
     ...initialAppState(),
     machines: [machine],
@@ -4284,7 +5917,9 @@ async function chatAnchors(app: WorkbenchApp): Promise<HTMLAnchorElement[]> {
   if (chat === null || chat === undefined) throw new Error("Chat was not rendered");
   await chat.updateComplete;
   const texts = [...chat.renderRoot.querySelectorAll<FormattedText>("formatted-text")];
-  await vi.waitFor(() => { expect(texts.every((text) => (text.renderRoot.querySelector(".enhanced-content")?.childElementCount ?? 0) > 0)).toBe(true); });
+  await vi.waitFor(() => {
+    expect(texts.every((text) => (text.renderRoot.querySelector(".enhanced-content")?.childElementCount ?? 0) > 0)).toBe(true);
+  });
   await Promise.all(texts.map((text) => text.updateComplete));
   return texts.flatMap((text) => [...text.renderRoot.querySelectorAll("a")]);
 }
@@ -4294,14 +5929,25 @@ function setState(app: WorkbenchApp, state: AppState): void {
   const focused: unknown = Reflect.get(app, "focused");
   const windows: unknown = Reflect.get(app, "windows");
   const create: unknown = Reflect.get(app, "createChatSession");
-  if (!(focused instanceof WorkbenchSessionFocus) || !(windows instanceof WorkbenchWindowController) || typeof create !== "function") throw new Error("Workbench session seam unavailable");
+  if (!(focused instanceof WorkbenchSessionFocus) || !(windows instanceof WorkbenchWindowController) || typeof create !== "function")
+    throw new Error("Workbench session seam unavailable");
   const session = state.selectedSession;
-  if (session === undefined) { focused.clear(); Reflect.set(app, "app", state); return; }
+  if (session === undefined) {
+    focused.clear();
+    Reflect.set(app, "app", state);
+    return;
+  }
   const runtime: unknown = focused.current?.state.selectedSession?.id === session.id ? focused.current : Reflect.apply(create, app, [state]);
   if (!(runtime instanceof WorkbenchChatSession)) throw new Error("Chat runtime unavailable");
   runtime.patch(state, false);
   runtime.ready = true;
-  const store = openChat(windows.store, windows.id, { sessionId: session.id, title: session.name ?? session.firstMessage, machineId: state.selectedMachine?.id ?? "local", projectId: state.selectedProject?.id, workspaceId: state.selectedWorkspace?.id });
+  const store = openChat(windows.store, windows.id, {
+    sessionId: session.id,
+    title: session.name ?? session.firstMessage,
+    machineId: state.selectedMachine?.id ?? "local",
+    projectId: state.selectedProject?.id,
+    workspaceId: state.selectedWorkspace?.id,
+  });
   localStorage.setItem(WINDOW_STORE_KEY, JSON.stringify(store));
   Reflect.set(windows, "current", store);
   focused.focus(runtime);
@@ -4355,7 +6001,16 @@ function scaleSelect(panel: WorkbenchSettingsPanel): HTMLSelectElement {
 }
 
 function session(id: string, firstMessage: string, name?: string): SessionInfo {
-  return { id, cwd: workspace.path, path: `/sessions/${id}.jsonl`, ...(name === undefined ? {} : { name }), created: "2026-08-31T00:00:00.000Z", modified: "2026-08-31T00:00:00.000Z", messageCount: 1, firstMessage };
+  return {
+    id,
+    cwd: workspace.path,
+    path: `/sessions/${id}.jsonl`,
+    ...(name === undefined ? {} : { name }),
+    created: "2026-08-31T00:00:00.000Z",
+    modified: "2026-08-31T00:00:00.000Z",
+    messageCount: 1,
+    firstMessage,
+  };
 }
 
 const machine: Machine = { id: "local", name: "Local", kind: "local", createdAt: "2026-08-31T00:00:00.000Z", updatedAt: "2026-08-31T00:00:00.000Z" };
@@ -4374,9 +6029,22 @@ class FakeBrowserNotification {
 }
 
 function daemonJoined(socket: SilentWebSocket | undefined): void {
-  socket?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "machine.status", status: {
-    epochId: "daemon", revision: 1, machine: {}, projects: {}, workspaces: {}, unattributed: {}, generatedAt: "2026-10-19T10:00:00Z",
-  } }) }));
+  socket?.onmessage?.(
+    new MessageEvent("message", {
+      data: JSON.stringify({
+        type: "machine.status",
+        status: {
+          epochId: "daemon",
+          revision: 1,
+          machine: {},
+          projects: {},
+          workspaces: {},
+          unattributed: {},
+          generatedAt: "2026-10-19T10:00:00Z",
+        },
+      }),
+    }),
+  );
 }
 
 class SilentWebSocket {
@@ -4387,5 +6055,7 @@ class SilentWebSocket {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
-  close(): void { this.readyState = 3; }
+  close(): void {
+    this.readyState = 3;
+  }
 }

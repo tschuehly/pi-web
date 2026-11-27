@@ -36,7 +36,8 @@ export function extensionDialogCancelValue(kind: ExtensionDialogKind): boolean |
  * (or an invalid extension value, defensively ignored) means "waits forever".
  */
 export function effectiveExtensionDialogTimeoutMs(extensionTimeoutMs: number | undefined, daemonDefaultMs: number): number | undefined {
-  const fromExtension = typeof extensionTimeoutMs === "number" && Number.isFinite(extensionTimeoutMs) && extensionTimeoutMs > 0 ? extensionTimeoutMs : undefined;
+  const fromExtension =
+    typeof extensionTimeoutMs === "number" && Number.isFinite(extensionTimeoutMs) && extensionTimeoutMs > 0 ? extensionTimeoutMs : undefined;
   const fromDaemon = daemonDefaultMs > 0 ? daemonDefaultMs : undefined;
   if (fromExtension === undefined) return fromDaemon;
   if (fromDaemon === undefined) return fromExtension;
@@ -68,14 +69,22 @@ export class ExtensionDialogWaiters {
     return new Promise((resolve) => {
       const parked: ParkedExtensionDialog = { cancelValue: extensionDialogCancelValue(dialog.kind), resolve };
       if (triggers.timeoutMs !== undefined) {
-        const handle = setTimeout(() => { triggers.onTrigger?.("timeout"); }, triggers.timeoutMs);
-        parked.cancelArmedTimeout = () => { clearTimeout(handle); };
+        const handle = setTimeout(() => {
+          triggers.onTrigger?.("timeout");
+        }, triggers.timeoutMs);
+        parked.cancelArmedTimeout = () => {
+          clearTimeout(handle);
+        };
       }
       if (triggers.signal !== undefined) {
         const signal = triggers.signal;
-        const onAbort = () => { triggers.onTrigger?.("cancelled"); };
+        const onAbort = () => {
+          triggers.onTrigger?.("cancelled");
+        };
         signal.addEventListener("abort", onAbort, { once: true });
-        parked.removeSignalListener = () => { signal.removeEventListener("abort", onAbort); };
+        parked.removeSignalListener = () => {
+          signal.removeEventListener("abort", onAbort);
+        };
       }
       this.parked.set(dialog.dialogId, parked);
     });
@@ -83,12 +92,16 @@ export class ExtensionDialogWaiters {
 
   /** Resolve the parked wait with the user's answer, which the store has already validated and recorded. */
   settleWithAnswer(dialogId: string, answer: ExtensionDialogAnswer): boolean {
-    return this.settle(dialogId, (parked) => { parked.resolve(answer); });
+    return this.settle(dialogId, (parked) => {
+      parked.resolve(answer);
+    });
   }
 
   /** Resolve the parked wait with the dialog kind's cancel value after a close without an answer. */
   settleWithCancelValue(dialogId: string): boolean {
-    return this.settle(dialogId, (parked) => { parked.resolve(parked.cancelValue); });
+    return this.settle(dialogId, (parked) => {
+      parked.resolve(parked.cancelValue);
+    });
   }
 
   private settle(dialogId: string, resolveParked: (parked: ParkedExtensionDialog) => void): boolean {

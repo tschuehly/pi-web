@@ -47,7 +47,16 @@ class RenderOnlyApp extends PiWebApp {
 customElements.define("render-only-pi-web-app", RenderOnlyApp);
 
 const workspace: Workspace = { id: "workspace", projectId: "project", path: "/repo", label: "main", isMain: true, effectiveConfig: {} };
-const session: SessionInfo = { id: "session", path: "/repo/session.jsonl", cwd: "/repo", name: "Current chat", created: "now", modified: "now", messageCount: 1, firstMessage: "hello" };
+const session: SessionInfo = {
+  id: "session",
+  path: "/repo/session.jsonl",
+  cwd: "/repo",
+  name: "Current chat",
+  created: "now",
+  modified: "now",
+  messageCount: 1,
+  firstMessage: "hello",
+};
 
 const unexpectedRequest = vi.fn(() => Promise.reject(new Error("Rendering tests must not make network requests")));
 
@@ -162,8 +171,12 @@ describe("application rendering boundaries", () => {
     shell.isDesktopSideBySideLayout = false;
     const load = vi.spyOn(controller, "loadSelectedSession").mockResolvedValue(undefined);
     patchState(app, {
-      selectedWorkspace: workspace, workspaces: [workspace], selectedSession: session, sessions: [session],
-      mainView: "navigation", messages: [{ role: "assistant", parts: [{ type: "text", text: "Deferred transcript" }] }],
+      selectedWorkspace: workspace,
+      workspaces: [workspace],
+      selectedSession: session,
+      sessions: [session],
+      mainView: "navigation",
+      messages: [{ role: "assistant", parts: [{ type: "text", text: "Deferred transcript" }] }],
     });
     document.body.append(app);
     await settle(app);
@@ -306,7 +319,9 @@ describe("application rendering boundaries", () => {
     await settle(app);
     const layout = () => app.shadowRoot?.querySelector(".shell");
     const panelButton = (label: string) => panelToggle(app, label);
-    const tabs = () => [...app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".mobile-tabs button") ?? []];
+    const tabs = () => [
+      ...(app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".mobile-tabs button") ?? []),
+    ];
     expect(layout()?.classList.contains("two-column-layout")).toBe(false);
     expect(tabs().map((button) => button.title)).not.toContain("Chat");
     const collapse = panelButton("Collapse workspace panel");
@@ -316,14 +331,26 @@ describe("application rendering boundaries", () => {
     await settle(app);
     expect(layout()?.classList.contains("two-column-layout")).toBe(true);
     expect(deepActiveElement(document)).toBe(panelButton("Expand workspace panel"));
-    expect(tabs().find((button) => button.title === "Chat")?.classList.contains("selected")).toBe(true);
-    tabs().find((button) => button.title === "Test")?.click();
+    expect(
+      tabs()
+        .find((button) => button.title === "Chat")
+        ?.classList.contains("selected"),
+    ).toBe(true);
+    tabs()
+      .find((button) => button.title === "Test")
+      ?.click();
     await settle(app);
     expect(layout()?.classList.contains("workspace-view")).toBe(true);
-    expect(tabs().find((button) => button.title === "Test")?.classList.contains("selected")).toBe(true);
+    expect(
+      tabs()
+        .find((button) => button.title === "Test")
+        ?.classList.contains("selected"),
+    ).toBe(true);
     expect(app.shadowRoot?.querySelector("workspace-panel")?.shadowRoot?.querySelector("header")).toBeNull();
     expect(app.shadowRoot?.querySelector("workspace-panel")?.shadowRoot?.textContent).toContain("Tool content");
-    tabs().find((button) => button.title === "Chat")?.click();
+    tabs()
+      .find((button) => button.title === "Chat")
+      ?.click();
     await settle(app);
     expect(layout()?.classList.contains("chat-view")).toBe(true);
     const expand = panelButton("Expand workspace panel");
@@ -382,8 +409,7 @@ describe("application rendering boundaries", () => {
     let width = 1181;
     const originalMatchMedia = window.matchMedia.bind(window);
     const media = new Map<string, MediaQueryList>();
-    const matches = (query: string) => query === "(min-width: 1181px)" ? width > 1180
-      : query === "(max-width: 760px)" ? width <= 760 : false;
+    const matches = (query: string) => (query === "(min-width: 1181px)" ? width > 1180 : query === "(max-width: 760px)" ? width <= 760 : false);
     vi.spyOn(window, "matchMedia").mockImplementation((query) => {
       let result = media.get(query);
       if (result === undefined) {
@@ -400,7 +426,10 @@ describe("application rendering boundaries", () => {
     const dialog = app.shadowRoot?.querySelector<NavigationDialog>("navigation-dialog");
     if (dialog == null) throw new Error("Expected open navigation");
     const destinations = () => dialog.tabs.map((tab) => tab.id);
-    const tabIds = () => [...app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot?.querySelectorAll<HTMLButtonElement>('.mobile-tabs button') ?? []].map((button) => button.title);
+    const tabIds = () =>
+      [...(app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".mobile-tabs button") ?? [])].map(
+        (button) => button.title,
+      );
     const resize = async (next: number) => {
       const previous = new Map([...media].map(([query]) => [query, matches(query)]));
       width = next;
@@ -478,7 +507,10 @@ describe("application rendering boundaries", () => {
     { desktop: false, collapsed: true },
   ])("does not select or highlight a fallback for unavailable destinations: %j", async ({ desktop, collapsed }) => {
     saveNavigationPreferences({ pinnedIds: ["chat"], mobileCollapsed: collapsed });
-    const app = await mountApp({ selectedWorkspace: workspace, workspaces: [workspace], mainView: "workspace", workspaceTool: "render-test:panel" }, () => html`<p>Remembered content</p>`);
+    const app = await mountApp(
+      { selectedWorkspace: workspace, workspaces: [workspace], mainView: "workspace", workspaceTool: "render-test:panel" },
+      () => html`<p>Remembered content</p>`,
+    );
     const shell: unknown = Reflect.get(app, "appShell");
     if (!(shell instanceof AppShellController)) throw new Error("Expected shell controller");
     shell.isDesktopSideBySideLayout = desktop;
@@ -508,7 +540,10 @@ describe("application rendering boundaries", () => {
 
   it.each(["chat", "workspace"] as const)("collapsed mobile navigation selects the visible destination, not the remembered tool: %s", async (mainView) => {
     saveNavigationPreferences({ pinnedIds: ["chat"], mobileCollapsed: true });
-    const app = await mountApp({ selectedWorkspace: workspace, workspaces: [workspace], mainView, workspaceTool: "render-test:panel" }, () => html`<p>Tool content</p>`);
+    const app = await mountApp(
+      { selectedWorkspace: workspace, workspaces: [workspace], mainView, workspaceTool: "render-test:panel" },
+      () => html`<p>Tool content</p>`,
+    );
     const shell: unknown = Reflect.get(app, "appShell");
     if (!(shell instanceof AppShellController)) throw new Error("Expected shell controller");
     shell.isDesktopSideBySideLayout = false;
@@ -530,7 +565,7 @@ describe("application rendering boundaries", () => {
     app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Navigation"]')?.click();
     await settle(app);
     const dialog = app.shadowRoot?.querySelector<NavigationDialog>("navigation-dialog");
-    const tool = [...dialog?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".destination-button") ?? []].find((button) => button.textContent === "Test");
+    const tool = [...(dialog?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".destination-button") ?? [])].find((button) => button.textContent === "Test");
     expect(tool).toBeDefined();
     tool?.click();
     await settle(app);
@@ -550,7 +585,9 @@ describe("application rendering boundaries", () => {
     const action = palette?.actions.find((candidate) => candidate.id === "app.navigation.open");
     expect(action?.title).toBe("Open Navigation");
     expect(action?.shortcut).toBe("mod+shift+n");
-    const button = [...palette?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".options button") ?? []].find((candidate) => candidate.textContent.includes("Open Navigation"));
+    const button = [...(palette?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".options button") ?? [])].find((candidate) =>
+      candidate.textContent.includes("Open Navigation"),
+    );
     expect(button).toBeDefined();
     button?.click();
     await settle(app);
@@ -564,7 +601,10 @@ describe("application rendering boundaries", () => {
     expect(deepActiveElement(document)).toBe(originalFocus);
   });
   it("updates shared tabs from pin controls without changing selected content, and reloads preferences", async () => {
-    const app = await mountApp({ selectedWorkspace: workspace, workspaces: [workspace], workspaceTool: "render-test:panel", mainView: "workspace" }, () => html`<p>Selected tool content</p>`);
+    const app = await mountApp(
+      { selectedWorkspace: workspace, workspaces: [workspace], workspaceTool: "render-test:panel", mainView: "workspace" },
+      () => html`<p>Selected tool content</p>`,
+    );
     await settle(app);
     const workspacePanel = app.shadowRoot?.querySelector("workspace-panel");
     const open = app.shadowRoot?.querySelector("app-mobile-main-tabs")?.shadowRoot?.querySelector<HTMLButtonElement>('button[aria-label="Navigation"]');
@@ -613,7 +653,7 @@ describe("application rendering boundaries", () => {
     expect(app.shadowRoot?.querySelector("app-mobile-main-tabs")).toBeNull();
     const context = app.shadowRoot?.querySelector("app-context-bar");
     expect(context?.shadowRoot?.querySelectorAll(".context-item")).toHaveLength(3);
-    const controls = [...context?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".context-actions button") ?? []];
+    const controls = [...(context?.shadowRoot?.querySelectorAll<HTMLButtonElement>(".context-actions button") ?? [])];
     expect(controls.map((button) => button.getAttribute("aria-label") ?? button.textContent.trim())).toEqual(["Navigation", "Show Actions"]);
     expect(controls[0]?.classList.contains("selected")).toBe(true);
     controls[0]?.focus();
@@ -667,13 +707,18 @@ describe("application rendering boundaries", () => {
     const send = vi.spyOn(SessionController.prototype, "send").mockResolvedValue(true);
     const key = machineSessionKey("local", session.id);
     saveDraft(key, "Unsent draft");
-    saveStagedAttachments(key, { ...emptyStagedAttachmentDraft(), attachments: [{ id: "file", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }] });
+    saveStagedAttachments(key, {
+      ...emptyStagedAttachmentDraft(),
+      attachments: [{ id: "file", kind: "file", name: "notes.txt", mimeType: "text/plain", data: "aGk=", size: 2 }],
+    });
     const app = await mountApp({ selectedSession: session, status: sessionStatus(session.id) });
     await settle(app);
     const editor = promptEditor(app);
     expect(editor.disabled).toBe(false);
 
-    patchState(app, { status: { ...sessionStatus(session.id, [{ severity: "warning", message: "Ordinary runtime warning" }]), recentlyActiveElsewhere: true } });
+    patchState(app, {
+      status: { ...sessionStatus(session.id, [{ severity: "warning", message: "Ordinary runtime warning" }]), recentlyActiveElsewhere: true },
+    });
     await settle(app);
     const notice = app.shadowRoot?.querySelector(".composer-activity-notice");
     expect(notice?.getAttribute("role")).toBe("alert");
@@ -826,14 +871,35 @@ describe("application rendering boundaries", () => {
       expect(initialFormatted?.shadowRoot?.querySelector("pi-web-content-renderer")).toBeNull();
     }
 
-    const draw = vi.fn((input: ContentRendererInput) => { void input; return html`<b>Rendered diagram</b>`; });
+    const draw = vi.fn((input: ContentRendererInput) => {
+      void input;
+      return html`<b>Rendered diagram</b>`;
+    });
     const result: ExternalPluginLoadResult = {
-      terminalMode: "recovery-disabled", declarations: [{ id: "mermaid" }], failures: [],
-      registrations: [{ id: "mermaid", plugin: {
-        apiVersion: 5, name: "Mermaid", activate: () => ({ contributions: { contentRenderers: [{
-          id: "diagram", title: "Diagram", languages: ["mermaid"], render: draw,
-        }] } }),
-      } }],
+      terminalMode: "recovery-disabled",
+      declarations: [{ id: "mermaid" }],
+      failures: [],
+      registrations: [
+        {
+          id: "mermaid",
+          plugin: {
+            apiVersion: 5,
+            name: "Mermaid",
+            activate: () => ({
+              contributions: {
+                contentRenderers: [
+                  {
+                    id: "diagram",
+                    title: "Diagram",
+                    languages: ["mermaid"],
+                    render: draw,
+                  },
+                ],
+              },
+            }),
+          },
+        },
+      ],
     };
     const register: unknown = Reflect.get(app, "registerExternalPlugins");
     if (typeof register !== "function") throw new Error("Expected plugin registration boundary");
@@ -847,7 +913,7 @@ describe("application rendering boundaries", () => {
     if (order === "after") expect(formatted).toBe(initialFormatted);
     const host = formatted.shadowRoot?.querySelector("pi-web-content-renderer");
     if (!(host instanceof ContentRendererHost)) throw new Error("Expected diagram controls");
-    const renderButton = [...host.shadowRoot?.querySelectorAll("button") ?? []].find((button) => button.textContent.trim() === "Diagram");
+    const renderButton = [...(host.shadowRoot?.querySelectorAll("button") ?? [])].find((button) => button.textContent.trim() === "Diagram");
     expect(renderButton).toBeDefined();
     expect(draw).not.toHaveBeenCalled();
     renderButton?.click();
@@ -871,13 +937,25 @@ describe("application rendering boundaries", () => {
   });
 
   it("refreshes guarded surfaces when built-in registration finishes asynchronously", async () => {
-    let finishActivation: () => void = () => { throw new Error("Activation gate was not initialized"); };
-    const ready = new Promise<void>((resolve) => { finishActivation = resolve; });
+    let finishActivation: () => void = () => {
+      throw new Error("Activation gate was not initialized");
+    };
+    const ready = new Promise<void>((resolve) => {
+      finishActivation = resolve;
+    });
     vi.spyOn(corePlugin, "activate").mockImplementationOnce(async () => {
       await ready;
-      return { contributions: { workspacePanels: [{
-        id: "late-panel", title: "Late panel", render: () => html`<p>Loaded asynchronously</p>`,
-      }] } };
+      return {
+        contributions: {
+          workspacePanels: [
+            {
+              id: "late-panel",
+              title: "Late panel",
+              render: () => html`<p>Loaded asynchronously</p>`,
+            },
+          ],
+        },
+      };
     });
     const app = await mountApp({ selectedWorkspace: workspace, workspaces: [workspace] });
     Reflect.set(app, "verifiedPluginModeByMachine", new Map([["local", "recovery-disabled"]]));
@@ -963,14 +1041,19 @@ describe("application rendering boundaries", () => {
   it("renews workspace navigation after reselecting the active Chat tab", async () => {
     window.history.replaceState(null, "", "?project=project&workspace=workspace&tool=render-test%3Apanel&view=chat");
     let context: WorkspacePanelContext | undefined;
-    const app = await mountApp({
-      selectedProject: { id: "project", name: "Project", path: "/repo", createdAt: "now" },
-      selectedWorkspace: workspace, workspaces: [workspace],
-      workspaceTool: "render-test:panel", mainView: "chat",
-    }, (next) => {
-      context = next;
-      return html`<button aria-label="Open folder" @click=${() => next.navigation?.set("folder", "src")}>Open folder</button>`;
-    });
+    const app = await mountApp(
+      {
+        selectedProject: { id: "project", name: "Project", path: "/repo", createdAt: "now" },
+        selectedWorkspace: workspace,
+        workspaces: [workspace],
+        workspaceTool: "render-test:panel",
+        mainView: "chat",
+      },
+      (next) => {
+        context = next;
+        return html`<button aria-label="Open folder" @click=${() => next.navigation?.set("folder", "src")}>Open folder</button>`;
+      },
+    );
     await settle(app);
     const previousContext = context;
     const url = window.location.href;
@@ -991,19 +1074,36 @@ describe("application rendering boundaries", () => {
   it("opens chat file links through generic panel navigation and rejects stale workspace requests", async () => {
     const app = await mountApp({
       selectedProject: { id: "project", name: "Project", path: "/repo", createdAt: "now" },
-      selectedWorkspace: workspace, workspaces: [workspace], selectedSession: session, sessions: [session],
-      mainView: "chat", messages: [{ role: "assistant", parts: [{ type: "text", text: "[file](./reports/a%20%231.txt)" }] }],
+      selectedWorkspace: workspace,
+      workspaces: [workspace],
+      selectedSession: session,
+      sessions: [session],
+      mainView: "chat",
+      messages: [{ role: "assistant", parts: [{ type: "text", text: "[file](./reports/a%20%231.txt)" }] }],
     });
     const registry: unknown = Reflect.get(app, "plugins");
     if (!(registry instanceof PluginRegistry)) throw new Error("Expected plugin registry");
     Reflect.set(app, "verifiedPluginModeByMachine", new Map([["local", "recovery-disabled"]]));
     const fileOpenQuery = vi.fn((_context: WorkspacePanelContext, path: string) => ({ file: path }));
-    await registry.register({ id: "viewer", plugin: {
-      apiVersion: 4, name: "Viewer", activate: () => ({ contributions: { workspacePanels: [{
-        id: "files", title: "Viewer", fileOpenQuery,
-        render: (context) => html`<p>Selected: ${context.navigation?.query["file"]}</p>`,
-      }] } }),
-    } });
+    await registry.register({
+      id: "viewer",
+      plugin: {
+        apiVersion: 4,
+        name: "Viewer",
+        activate: () => ({
+          contributions: {
+            workspacePanels: [
+              {
+                id: "files",
+                title: "Viewer",
+                fileOpenQuery,
+                render: (context) => html`<p>Selected: ${context.navigation?.query["file"]}</p>`,
+              },
+            ],
+          },
+        }),
+      },
+    });
     await settle(app);
     const chat = app.shadowRoot?.querySelector("chat-view");
     const formatted = chat?.shadowRoot?.querySelector("formatted-text");
@@ -1014,7 +1114,10 @@ describe("application rendering boundaries", () => {
     const detail = { machineId: "local", projectId: "project", workspaceId: "workspace", root: "/repo", path: "reports/a #1.txt" };
     for (const field of ["machineId", "projectId", "workspaceId", "root"] as const) {
       const stale = new CustomEvent("workspace-file-open", {
-        detail: { ...detail, [field]: "stale" }, bubbles: true, composed: true, cancelable: true,
+        detail: { ...detail, [field]: "stale" },
+        bubbles: true,
+        composed: true,
+        cancelable: true,
       });
       formatted.dispatchEvent(stale);
       expect(stale.defaultPrevented).toBe(false);
@@ -1038,44 +1141,56 @@ describe("application rendering boundaries", () => {
     expect(unhandled.defaultPrevented).toBe(false);
   });
 
-  it.each(["session-refresh", "workspace-sessions-refresh"] as const)("offers Retry for a persistent %s failure without a reconnect banner", async (recovery: BrowserErrorRecovery) => {
-    window.history.replaceState(null, "", `?${new URLSearchParams({ project: workspace.projectId, workspace: workspace.id, session: session.id })}`);
-    const scope = recovery === "session-refresh"
-      ? sessionBrowserErrorScope("local", session.id, { cwd: session.cwd, projectId: workspace.projectId, workspaceId: workspace.id })
-      : workspaceBrowserErrorScope("local", workspace.projectId, workspace.id);
-    const app = await mountApp({
-      selectedProject: { id: workspace.projectId, name: "Project", path: workspace.path, createdAt: "now" },
-      selectedWorkspace: workspace, selectedSession: session, mainView: "chat",
-      browserErrors: reportBrowserError({}, scope, "Updates could not be refreshed. Check your connection and retry.", recovery),
-    });
-    const sessions: unknown = Reflect.get(app, "sessions");
-    if (!(sessions instanceof SessionController)) throw new Error("Expected SessionController");
-    const refreshSelected = vi.spyOn(sessions, "refreshSelectedSession").mockResolvedValue();
-    const refreshWorkspace = vi.spyOn(sessions, "refreshCurrentWorkspaceSessions").mockResolvedValue();
-    await settle(app);
-    const retry = [...app.shadowRoot?.querySelectorAll<HTMLButtonElement>("main .error button") ?? []].find((button) => button.textContent.trim() === "Retry");
-    if (retry === undefined) throw new Error("Expected a recovery Retry button");
-    retry.click();
+  it.each(["session-refresh", "workspace-sessions-refresh"] as const)(
+    "offers Retry for a persistent %s failure without a reconnect banner",
+    async (recovery: BrowserErrorRecovery) => {
+      window.history.replaceState(null, "", `?${new URLSearchParams({ project: workspace.projectId, workspace: workspace.id, session: session.id })}`);
+      const scope =
+        recovery === "session-refresh"
+          ? sessionBrowserErrorScope("local", session.id, { cwd: session.cwd, projectId: workspace.projectId, workspaceId: workspace.id })
+          : workspaceBrowserErrorScope("local", workspace.projectId, workspace.id);
+      const app = await mountApp({
+        selectedProject: { id: workspace.projectId, name: "Project", path: workspace.path, createdAt: "now" },
+        selectedWorkspace: workspace,
+        selectedSession: session,
+        mainView: "chat",
+        browserErrors: reportBrowserError({}, scope, "Updates could not be refreshed. Check your connection and retry.", recovery),
+      });
+      const sessions: unknown = Reflect.get(app, "sessions");
+      if (!(sessions instanceof SessionController)) throw new Error("Expected SessionController");
+      const refreshSelected = vi.spyOn(sessions, "refreshSelectedSession").mockResolvedValue();
+      const refreshWorkspace = vi.spyOn(sessions, "refreshCurrentWorkspaceSessions").mockResolvedValue();
+      await settle(app);
+      const retry = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>("main .error button") ?? [])].find(
+        (button) => button.textContent.trim() === "Retry",
+      );
+      if (retry === undefined) throw new Error("Expected a recovery Retry button");
+      retry.click();
 
-    if (recovery === "session-refresh") {
-      expect(refreshSelected).toHaveBeenCalledExactlyOnceWith(session.id, { recoverNetwork: true });
-      expect(refreshWorkspace).not.toHaveBeenCalled();
-    } else {
-      expect(refreshWorkspace).toHaveBeenCalledExactlyOnceWith("local", { recoverNetwork: true });
-      expect(refreshSelected).not.toHaveBeenCalled();
-    }
-    expect(app.shadowRoot?.textContent).not.toContain("Reconnecting");
-  });
+      if (recovery === "session-refresh") {
+        expect(refreshSelected).toHaveBeenCalledExactlyOnceWith(session.id, { recoverNetwork: true });
+        expect(refreshWorkspace).not.toHaveBeenCalled();
+      } else {
+        expect(refreshWorkspace).toHaveBeenCalledExactlyOnceWith("local", { recoverNetwork: true });
+        expect(refreshSelected).not.toHaveBeenCalled();
+      }
+      expect(app.shadowRoot?.textContent).not.toContain("Reconnecting");
+    },
+  );
 
   it("does not offer automatic recovery for a failed user action", async () => {
     window.history.replaceState(null, "", `?${new URLSearchParams({ session: session.id })}`);
     const app = await mountApp({
-      selectedWorkspace: workspace, selectedSession: session, mainView: "chat",
+      selectedWorkspace: workspace,
+      selectedSession: session,
+      mainView: "chat",
       browserErrors: reportBrowserError({}, sessionBrowserErrorScope("local", session.id), "Prompt delivery could not be confirmed"),
     });
     await settle(app);
     expect(app.shadowRoot?.textContent).toContain("Prompt delivery could not be confirmed");
-    const retry = [...app.shadowRoot?.querySelectorAll<HTMLButtonElement>("main .error button") ?? []].find((button) => button.textContent.trim() === "Retry");
+    const retry = [...(app.shadowRoot?.querySelectorAll<HTMLButtonElement>("main .error button") ?? [])].find(
+      (button) => button.textContent.trim() === "Retry",
+    );
     expect(retry).toBeUndefined();
   });
 
@@ -1091,10 +1206,15 @@ describe("application rendering boundaries", () => {
 
 function sessionStatus(sessionId: string, warnings: SessionWarning[] = []): SessionStatus {
   return {
-    sessionId, isStreaming: false, isCompacting: false, isBashRunning: false,
+    sessionId,
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
     recentlyActiveElsewhere: false,
-    pendingMessageCount: 0, queuedMessages: [],
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
     warnings,
   };
 }
@@ -1113,12 +1233,16 @@ function dismissActivityNotice(app: PiWebApp): void {
 }
 
 it.each([false, true])("hides only folder workspace UI and retains its workspace context (mobile=%s)", async (mobile) => {
-  const app = await mountApp({
-    selectedProject: { id: "project", name: "Project", path: "/repo/subdir", createdAt: "now" },
-    selectedWorkspace: { ...workspace, path: "/repo/subdir" }, workspaces: [workspace],
-    workspaceResolution: { projectId: "project", status: "folder", diagnostics: [], workspaces: [workspace] },
-    mainView: "navigation",
-  }, (context) => html`<p>${context.state.selectedWorkspace?.path}</p>`);
+  const app = await mountApp(
+    {
+      selectedProject: { id: "project", name: "Project", path: "/repo/subdir", createdAt: "now" },
+      selectedWorkspace: { ...workspace, path: "/repo/subdir" },
+      workspaces: [workspace],
+      workspaceResolution: { projectId: "project", status: "folder", diagnostics: [], workspaces: [workspace] },
+      mainView: "navigation",
+    },
+    (context) => html`<p>${context.state.selectedWorkspace?.path}</p>`,
+  );
   const shell: unknown = Reflect.get(app, "appShell");
   if (!(shell instanceof AppShellController)) throw new Error("Expected shell controller");
   shell.isMobileNavigationLayout = mobile;
@@ -1137,7 +1261,11 @@ it.each([false, true])("hides only folder workspace UI and retains its workspace
   }
 });
 
-async function mountApp(patch: Partial<AppState>, panelRender?: (context: WorkspacePanelContext) => ReturnType<typeof html>, label?: () => string): Promise<RenderOnlyApp> {
+async function mountApp(
+  patch: Partial<AppState>,
+  panelRender?: (context: WorkspacePanelContext) => ReturnType<typeof html>,
+  label?: () => string,
+): Promise<RenderOnlyApp> {
   const app = new RenderOnlyApp();
   if (panelRender !== undefined) {
     const registry: unknown = Reflect.get(app, "plugins");
@@ -1148,11 +1276,14 @@ async function mountApp(patch: Partial<AppState>, panelRender?: (context: Worksp
     await registry.register({
       id: "render-test",
       plugin: {
-        apiVersion: 4, name: "Render test",
-        activate: () => ({ contributions: {
-          workspacePanels: [{ id: "panel", title: "Test", render: panelRender, ...(label === undefined ? {} : { badge: label }) }],
-          ...(label === undefined ? {} : { workspaceLabels: [{ id: "label", items: () => [{ type: "text" as const, text: label() }] }] }),
-        } }),
+        apiVersion: 4,
+        name: "Render test",
+        activate: () => ({
+          contributions: {
+            workspacePanels: [{ id: "panel", title: "Test", render: panelRender, ...(label === undefined ? {} : { badge: label }) }],
+            ...(label === undefined ? {} : { workspaceLabels: [{ id: "label", items: () => [{ type: "text" as const, text: label() }] }] }),
+          },
+        }),
       },
     });
   }
@@ -1168,7 +1299,9 @@ function manualAnimationFrames(): () => void {
     frames.set(++nextId, callback);
     return nextId;
   });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => { frames.delete(id); });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames.delete(id);
+  });
   return () => {
     const pending = [...frames.values()];
     frames.clear();

@@ -32,7 +32,11 @@ type ChannelKind = (typeof channelKinds)[number];
 const liveTopologies = new Set<ChannelTopology>();
 
 afterEach(async () => {
-  await Promise.all([...liveTopologies].map(async (topology) => { await topology.close(); }));
+  await Promise.all(
+    [...liveTopologies].map(async (topology) => {
+      await topology.close();
+    }),
+  );
   liveTopologies.clear();
 });
 
@@ -54,10 +58,13 @@ describe("plugin backend channel physical admission and teardown", () => {
     expect(topology.physicalSocketCounts("direct").sessiond).toBe(1);
 
     await shutdown;
-    await vi.waitFor(() => {
-      expect(topology.registry.activeChannelCount()).toBe(0);
-      expect(topology.physicalSocketCounts("direct").sessiond).toBe(0);
-    }, { timeout: 3_000 });
+    await vi.waitFor(
+      () => {
+        expect(topology.registry.activeChannelCount()).toBe(0);
+        expect(topology.physicalSocketCounts("direct").sessiond).toBe(0);
+      },
+      { timeout: 3_000 },
+    );
     transport.destroy();
   });
 
@@ -73,27 +80,29 @@ describe("plugin backend channel physical admission and teardown", () => {
       });
 
       const deniedTargets = equivalentChannelRequestTargets(kind, topology.url(kind));
-      const denied = await Promise.all(deniedTargets.map(
-        async (requestTarget) => openRawWebSocket(topology.url(kind), requestTarget),
-      ));
+      const denied = await Promise.all(deniedTargets.map(async (requestTarget) => openRawWebSocket(topology.url(kind), requestTarget)));
       rawSockets.push(...denied);
       for (const requestTarget of deniedTargets) {
-        expect(topology.receiverPayloadLimits(kind, requestTarget)).toEqual([
-          PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES,
-        ]);
+        expect(topology.receiverPayloadLimits(kind, requestTarget)).toEqual([PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES]);
       }
-      await vi.waitFor(() => {
-        expect(topology.physicalSocketCounts(kind)).toEqual(expectedPhysicalCounts(kind, 1));
-        expect(topology.registry.activeChannelCount()).toBe(1);
-        expect(topology.activeProxyAdmissions()).toEqual(expectedProxyAdmissions(kind, 1));
-      }, { timeout: 3_000 });
+      await vi.waitFor(
+        () => {
+          expect(topology.physicalSocketCounts(kind)).toEqual(expectedPhysicalCounts(kind, 1));
+          expect(topology.registry.activeChannelCount()).toBe(1);
+          expect(topology.activeProxyAdmissions()).toEqual(expectedProxyAdmissions(kind, 1));
+        },
+        { timeout: 3_000 },
+      );
 
       first.write(maskedTextFrame("{"));
-      await vi.waitFor(() => {
-        expect(topology.physicalSocketCounts(kind)).toEqual(expectedPhysicalCounts(kind, 0));
-        expect(topology.registry.activeChannelCount()).toBe(0);
-        expect(topology.activeProxyAdmissions()).toEqual({ local: 0, federated: 0 });
-      }, { timeout: 4_000 });
+      await vi.waitFor(
+        () => {
+          expect(topology.physicalSocketCounts(kind)).toEqual(expectedPhysicalCounts(kind, 0));
+          expect(topology.registry.activeChannelCount()).toBe(0);
+          expect(topology.activeProxyAdmissions()).toEqual({ local: 0, federated: 0 });
+        },
+        { timeout: 4_000 },
+      );
     } finally {
       for (const socket of rawSockets) socket.destroy();
     }
@@ -138,20 +147,25 @@ async function createTopology(
   const sessiond = await websocketApp();
   const sessiondReceiverPayloadLimits = captureReceiverPayloadLimits(sessiond.websocketServer);
   registerPluginBackendChannelRoutes(sessiond, {
-    projects: { requireProject: (projectId) => projectId === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found")) },
+    projects: { requireProject: (projectId) => (projectId === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))) },
     backends: registry,
   });
   await sessiond.listen({ host: "127.0.0.1", port: 0 });
 
   const local = await websocketApp();
   const localReceiverPayloadLimits = captureReceiverPayloadLimits(local.websocketServer);
-  registerPluginBackendChannelProxyRoutes(local, {
-    connectWebSocket(path, socketOptions) {
-      const socket = new WebSocket(`${serverUrl(sessiond)}${path}`, socketOptions);
-      outboundSockets.add(socket);
-      return socket;
+  registerPluginBackendChannelProxyRoutes(
+    local,
+    {
+      connectWebSocket(path, socketOptions) {
+        const socket = new WebSocket(`${serverUrl(sessiond)}${path}`, socketOptions);
+        outboundSockets.add(socket);
+        return socket;
+      },
     },
-  }, "/api", localAdmissions);
+    "/api",
+    localAdmissions,
+  );
   await local.listen({ host: "127.0.0.1", port: 0 });
 
   const remoteClient: MachineClient = {
@@ -165,9 +179,13 @@ async function createTopology(
   };
   const federated = await websocketApp();
   const federatedReceiverPayloadLimits = captureReceiverPayloadLimits(federated.websocketServer);
-  registerMachineProxyRoutes(federated, {
-    remoteClient: (machineId) => Promise.resolve(machineId === "remote" ? remoteClient : undefined),
-  }, federatedAdmissions);
+  registerMachineProxyRoutes(
+    federated,
+    {
+      remoteClient: (machineId) => Promise.resolve(machineId === "remote" ? remoteClient : undefined),
+    },
+    federatedAdmissions,
+  );
   await federated.listen({ host: "127.0.0.1", port: 0 });
 
   const path = `/paired-plugin-backends/pi-web.terminal/projects/${encodeURIComponent(project.id)}/workspaces/${encodeURIComponent(workspaceId)}/channels/terminal.attach`;
@@ -192,11 +210,7 @@ async function createTopology(
       };
     },
     receiverPayloadLimits(kind, requestPath) {
-      const limits = kind === "direct"
-        ? sessiondReceiverPayloadLimits
-        : kind === "local-proxy"
-          ? localReceiverPayloadLimits
-          : federatedReceiverPayloadLimits;
+      const limits = kind === "direct" ? sessiondReceiverPayloadLimits : kind === "local-proxy" ? localReceiverPayloadLimits : federatedReceiverPayloadLimits;
       return [...(limits.get(requestPath) ?? [])];
     },
     activeProxyAdmissions: () => ({ local: localAdmissions.activeCount, federated: federatedAdmissions.activeCount }),
@@ -220,9 +234,7 @@ async function websocketApp(): Promise<FastifyInstance> {
   return app;
 }
 
-function contribution(
-  openChannel: NonNullable<ServerPluginPairedBackendContribution["backend"]["openChannel"]>,
-): ServerPluginPairedBackendContribution {
+function contribution(openChannel: NonNullable<ServerPluginPairedBackendContribution["backend"]["openChannel"]>): ServerPluginPairedBackendContribution {
   return {
     pluginId: "pi-web.terminal",
     pluginName: "Terminal",
@@ -251,17 +263,9 @@ function expectedProxyAdmissions(kind: ChannelKind, count: number): { local: num
 
 function equivalentChannelRequestTargets(kind: ChannelKind, urlValue: string): readonly string[] {
   const channelPath = "/paired-plugin-backends/pi-web.terminal/projects/project-one/workspaces/workspace-one/channels/terminal.attach";
-  const topologyPath = kind === "direct"
-    ? channelPath
-    : kind === "local-proxy"
-      ? `/api${channelPath}`
-      : `/api/machines/remote${channelPath}`;
+  const topologyPath = kind === "direct" ? channelPath : kind === "local-proxy" ? `/api${channelPath}` : `/api/machines/remote${channelPath}`;
   const url = new URL(urlValue);
-  return [
-    topologyPath.replace("/project-one/", "/%2e%2e/"),
-    topologyPath.replace("/projects/", "/pro%6aects/"),
-    `http://${url.host}${topologyPath}`,
-  ];
+  return [topologyPath.replace("/project-one/", "/%2e%2e/"), topologyPath.replace("/projects/", "/pro%6aects/"), `http://${url.host}${topologyPath}`];
 }
 
 function captureReceiverPayloadLimits(server: WebSocketServer): Map<string, number[]> {
@@ -276,15 +280,15 @@ function captureReceiverPayloadLimits(server: WebSocketServer): Map<string, numb
 
 function webSocketReceiverMaxPayload(socket: WebSocket): number {
   const receiver: unknown = Reflect.get(socket, "_receiver");
-  const maxPayload: unknown = typeof receiver === "object" && receiver !== null
-    ? Reflect.get(receiver, "_maxPayload")
-    : undefined;
+  const maxPayload: unknown = typeof receiver === "object" && receiver !== null ? Reflect.get(receiver, "_maxPayload") : undefined;
   if (typeof maxPayload !== "number") throw new Error("Expected ws receiver payload limit");
   return maxPayload;
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function waitForOpen(socket: WebSocket): Promise<void> {
@@ -312,7 +316,9 @@ function socketMessages(socket: WebSocket): { next(): Promise<string> } {
     next: () => {
       const value = queued.shift();
       return value === undefined
-        ? new Promise<string>((resolve) => { waiters.push(resolve); })
+        ? new Promise<string>((resolve) => {
+            waiters.push(resolve);
+          })
         : Promise.resolve(value);
     },
   };
@@ -326,7 +332,9 @@ async function openRawWebSocket(urlValue: string, rawRequestPath?: string): Prom
   socket.on("error", () => undefined);
   await new Promise<void>((resolve, reject) => {
     let response = "";
-    const onError = (error: Error): void => { reject(error); };
+    const onError = (error: Error): void => {
+      reject(error);
+    };
     const onData = (data: Buffer): void => {
       response += data.toString("latin1");
       if (!response.includes("\r\n\r\n")) return;
@@ -343,16 +351,18 @@ async function openRawWebSocket(urlValue: string, rawRequestPath?: string): Prom
     socket.on("data", onData);
     socket.once("connect", () => {
       const key = randomBytes(16).toString("base64");
-      socket.write([
-        `GET ${requestPath} HTTP/1.1`,
-        `Host: ${url.host}`,
-        "Upgrade: websocket",
-        "Connection: Upgrade",
-        `Sec-WebSocket-Key: ${key}`,
-        "Sec-WebSocket-Version: 13",
-        "",
-        "",
-      ].join("\r\n"));
+      socket.write(
+        [
+          `GET ${requestPath} HTTP/1.1`,
+          `Host: ${url.host}`,
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Key: ${key}`,
+          "Sec-WebSocket-Version: 13",
+          "",
+          "",
+        ].join("\r\n"),
+      );
     });
   });
   return socket;

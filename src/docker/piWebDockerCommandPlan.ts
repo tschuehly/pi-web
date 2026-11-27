@@ -25,9 +25,7 @@ export interface PiWebDockerCommandPlan {
   target?: PiWebDockerLogsTarget | PiWebDockerShellTarget;
 }
 
-export type PiWebDockerParseResult =
-  | { ok: true; plan: PiWebDockerCommandPlan }
-  | { ok: false; errors: string[] };
+export type PiWebDockerParseResult = { ok: true; plan: PiWebDockerCommandPlan } | { ok: false; errors: string[] };
 
 export const PI_WEB_DOCKER_USER_COMMANDS = [
   "install",
@@ -52,8 +50,7 @@ export type PiWebDockerRuntimeHostPlan =
 
 export type PiWebDockerDevUpdateStep =
   // A failed or impossible fast-forward warns and still rebuilds the checkout in place.
-  | { kind: "gitFastForward"; onFailure: "warn" }
-  | { kind: "compose"; args: string[] };
+  { kind: "gitFastForward"; onFailure: "warn" } | { kind: "compose"; args: string[] };
 
 export type PiWebDockerDevHostPlan =
   | { kind: "compose"; args: string[]; usesGeneratedEnv: true }
@@ -62,17 +59,7 @@ export type PiWebDockerDevHostPlan =
   | { kind: "diagnostics"; usesGeneratedEnv: true }
   | { kind: "usage" };
 
-const noArgumentCommands = new Set<PiWebDockerCommand>([
-  "start",
-  "stop",
-  "restart",
-  "restart-web",
-  "restart-sessiond",
-  "update",
-  "status",
-  "doctor",
-  "help",
-]);
+const noArgumentCommands = new Set<PiWebDockerCommand>(["start", "stop", "restart", "restart-web", "restart-sessiond", "update", "status", "doctor", "help"]);
 
 const commands: ReadonlySet<string> = new Set([...PI_WEB_DOCKER_USER_COMMANDS, "help"]);
 

@@ -1,7 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configApi, pluginsApi, type PiWebConfigResponse, type PiWebPluginsResponse } from "../api";
 import { SettingsDialog } from "./SettingsDialog";
-import { callDialogPromise, callDialogUpdated, configResponse, deferred, getDialogProperty, pluginsResponse, remoteMachine, secondRemoteMachine, setDialogProperty, stubWindowTimers } from "./SettingsDialog.testSupport";
+import {
+  callDialogPromise,
+  callDialogUpdated,
+  configResponse,
+  deferred,
+  getDialogProperty,
+  pluginsResponse,
+  remoteMachine,
+  secondRemoteMachine,
+  setDialogProperty,
+  stubWindowTimers,
+} from "./SettingsDialog.testSupport";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -73,27 +84,31 @@ describe("settings-dialog session daemon machine targeting", () => {
     expect(saveSpy.mock.calls).toEqual([[{ spawnSessions: true }, "local"]]);
     expect(getDialogProperty(dialog, "sessiondConfigResponse")).toBe(savedConfig);
     expect(getDialogProperty(dialog, "configResponse")).toMatchObject({ config: { host: "127.0.0.1", spawnSessions: true, subsessions: false } });
-    expect(getDialogProperty(dialog, "savedMessage")).toBe("Session daemon settings saved for local. Restart the session daemon to apply agent permission changes. Restarting interrupts active sessions.");
+    expect(getDialogProperty(dialog, "savedMessage")).toBe(
+      "Session daemon settings saved for local. Restart the session daemon to apply agent permission changes. Restarting interrupts active sessions.",
+    );
     expect(getDialogProperty(dialog, "saving")).toBe(false);
   });
 
-  it.each([
-    { model: "provider/naming", maxTokens: 48 },
-    {},
-  ])("confirms naming-only saves apply without a restart, including resets (%j)", async (sessionNaming) => {
-    stubWindowTimers();
-    const patch = { sessionNaming };
-    const saved = configResponse(patch);
-    const saveSpy = vi.spyOn(configApi, "saveConfig").mockResolvedValue(saved);
-    const dialog = new SettingsDialog();
-    dialog.machine = remoteMachine;
+  it.each([{ model: "provider/naming", maxTokens: 48 }, {}])(
+    "confirms naming-only saves apply without a restart, including resets (%j)",
+    async (sessionNaming) => {
+      stubWindowTimers();
+      const patch = { sessionNaming };
+      const saved = configResponse(patch);
+      const saveSpy = vi.spyOn(configApi, "saveConfig").mockResolvedValue(saved);
+      const dialog = new SettingsDialog();
+      dialog.machine = remoteMachine;
 
-    await callDialogPromise(dialog, "saveSessiondConfig", patch);
+      await callDialogPromise(dialog, "saveSessiondConfig", patch);
 
-    expect(saveSpy).toHaveBeenCalledWith(patch, remoteMachine.id);
-    expect(getDialogProperty(dialog, "sessiondConfigResponse")).toBe(saved);
-    expect(getDialogProperty(dialog, "savedMessage")).toBe(`Session naming settings saved for ${remoteMachine.name}. They apply to the next naming request without a restart. Existing names and in-progress naming requests are unchanged.`);
-  });
+      expect(saveSpy).toHaveBeenCalledWith(patch, remoteMachine.id);
+      expect(getDialogProperty(dialog, "sessiondConfigResponse")).toBe(saved);
+      expect(getDialogProperty(dialog, "savedMessage")).toBe(
+        `Session naming settings saved for ${remoteMachine.name}. They apply to the next naming request without a restart. Existing names and in-progress naming requests are unchanged.`,
+      );
+    },
+  );
 
   it("keeps the permission restart warning when a patch also changes naming", async () => {
     stubWindowTimers();
@@ -103,7 +118,9 @@ describe("settings-dialog session daemon machine targeting", () => {
 
     await callDialogPromise(dialog, "saveSessiondConfig", patch);
 
-    expect(getDialogProperty(dialog, "savedMessage")).toBe("Session daemon settings saved for local. Restart the session daemon to apply agent permission changes. Restarting interrupts active sessions. Naming changes apply to the next naming request without a restart.");
+    expect(getDialogProperty(dialog, "savedMessage")).toBe(
+      "Session daemon settings saved for local. Restart the session daemon to apply agent permission changes. Restarting interrupts active sessions. Naming changes apply to the next naming request without a restart.",
+    );
   });
 
   it("saves session-daemon toggles on the selected remote machine", async () => {
@@ -165,7 +182,9 @@ describe("settings-dialog session daemon machine targeting", () => {
 
     await callDialogPromise(dialog, "loadSessiondConfigForTarget");
 
-    expect(getDialogProperty(dialog, "sessiondError")).toBe("Failed to load session-daemon config from Lab Mac (remote machine): Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again.");
+    expect(getDialogProperty(dialog, "sessiondError")).toBe(
+      "Failed to load session-daemon config from Lab Mac (remote machine): Could not reach Lab Mac for selected-machine settings. Check the machine connection and try again.",
+    );
     expect(getDialogProperty(dialog, "sessiondLoading")).toBe(false);
   });
 });

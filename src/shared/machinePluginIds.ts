@@ -22,9 +22,7 @@ export function machineScopedBundledPluginId(machineId: string, pluginId: string
 
 /** Machine-scope an id only after its host-authored manifest has been validated. */
 export function machineScopedManifestPluginId(machineId: string, pluginId: string): string {
-  return isPiWebBundledPluginId(pluginId)
-    ? machineScopedBundledPluginId(machineId, pluginId)
-    : machineScopedPluginId(machineId, pluginId);
+  return isPiWebBundledPluginId(pluginId) ? machineScopedBundledPluginId(machineId, pluginId) : machineScopedPluginId(machineId, pluginId);
 }
 
 export function parseMachineScopedPluginId(pluginId: string): MachineScopedPluginIdParts | undefined {
@@ -35,9 +33,12 @@ export function parseMachineScopedPluginId(pluginId: string): MachineScopedPlugi
 
   const encodedMachineId = rest.slice(0, separator);
   const sourcePluginId = rest.slice(separator + 1);
-  if (!isHexString(encodedMachineId)
+  if (
+    !isHexString(encodedMachineId)
     || !isPiWebPluginId(sourcePluginId)
-    || (isReservedPiWebPluginId(sourcePluginId) && !isPiWebBundledPluginId(sourcePluginId))) return undefined;
+    || (isReservedPiWebPluginId(sourcePluginId) && !isPiWebBundledPluginId(sourcePluginId))
+  )
+    return undefined;
 
   const machineId = hexToString(encodedMachineId);
   if (machineId === "") return undefined;
@@ -54,9 +55,7 @@ function scopedPluginId(machineId: string, pluginId: string): string {
 }
 
 function stringToHex(value: string): string {
-  return [...new TextEncoder().encode(value)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return [...new TextEncoder().encode(value)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function hexToString(value: string): string {

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { initialAppState, type AppState } from "../appState";
 import type { Machine, Project, SessionInfo, Workspace } from "../api";
 import type { KeyValueStorage } from "./sessionStorageMemory";
-import { emptyMachineNavigationSnapshot, InMemoryMachineNavigationMemory, machineNavigationSnapshotFromState, routeFromMachineNavigationSnapshot, SessionStorageMachineNavigationMemory } from "./machineNavigationMemory";
+import {
+  emptyMachineNavigationSnapshot,
+  InMemoryMachineNavigationMemory,
+  machineNavigationSnapshotFromState,
+  routeFromMachineNavigationSnapshot,
+  SessionStorageMachineNavigationMemory,
+} from "./machineNavigationMemory";
 
 describe("InMemoryMachineNavigationMemory", () => {
   it("remembers independent navigation snapshots per machine", () => {
@@ -52,7 +58,13 @@ describe("SessionStorageMachineNavigationMemory", () => {
 
   it("ignores malformed stored snapshots", () => {
     const storage = memoryStorage({
-      "pi-web:machine-navigation:v1": JSON.stringify({ version: 1, entries: [["local", { machineId: "local", tool: "bad", surface: { selectedFilePath: "README.md" } }], ["remote", { projectId: "missing-machine", surface: {} }]] }),
+      "pi-web:machine-navigation:v1": JSON.stringify({
+        version: 1,
+        entries: [
+          ["local", { machineId: "local", tool: "bad", surface: { selectedFilePath: "README.md" } }],
+          ["remote", { projectId: "missing-machine", surface: {} }],
+        ],
+      }),
     });
 
     const memory = new SessionStorageMachineNavigationMemory(storage);
@@ -64,18 +76,26 @@ describe("SessionStorageMachineNavigationMemory", () => {
 
   it("migrates the v1 Files field without overriding an already captured canonical query", () => {
     const storage = memoryStorage({
-      "pi-web:machine-navigation:v1": JSON.stringify({ version: 1, entries: [["local", {
-        machineId: "local",
-        surface: {
-          selectedFilePath: "legacy.ts",
-          selectedTerminalId: "terminal-1",
-          contributionQuery: {
-            "core.workspace.files--file": "canonical.ts",
-            "git.workspace.git--diff": ["a", "b"],
-            malformed: "ignored",
-          },
-        },
-      }]] }),
+      "pi-web:machine-navigation:v1": JSON.stringify({
+        version: 1,
+        entries: [
+          [
+            "local",
+            {
+              machineId: "local",
+              surface: {
+                selectedFilePath: "legacy.ts",
+                selectedTerminalId: "terminal-1",
+                contributionQuery: {
+                  "core.workspace.files--file": "canonical.ts",
+                  "git.workspace.git--diff": ["a", "b"],
+                  malformed: "ignored",
+                },
+              },
+            },
+          ],
+        ],
+      }),
     });
 
     expect(new SessionStorageMachineNavigationMemory(storage).latest("local")?.surface.contributionQuery).toEqual({
@@ -85,23 +105,34 @@ describe("SessionStorageMachineNavigationMemory", () => {
     });
   });
 
-  it.each(["core:workspace.git", "git:workspace.git", "retryable:workspace.panel", "git", "settings", "", null, 42])("rejects stored view %j without migrating it to a tool", (view) => {
-    const storage = memoryStorage({
-      "pi-web:machine-navigation:v1": JSON.stringify({ version: 1, entries: [["local", {
-        machineId: "local",
-        tool: "core:workspace.git",
-        view,
-        surface: {},
-      }]] }),
-    });
+  it.each(["core:workspace.git", "git:workspace.git", "retryable:workspace.panel", "git", "settings", "", null, 42])(
+    "rejects stored view %j without migrating it to a tool",
+    (view) => {
+      const storage = memoryStorage({
+        "pi-web:machine-navigation:v1": JSON.stringify({
+          version: 1,
+          entries: [
+            [
+              "local",
+              {
+                machineId: "local",
+                tool: "core:workspace.git",
+                view,
+                surface: {},
+              },
+            ],
+          ],
+        }),
+      });
 
-    const snapshot = new SessionStorageMachineNavigationMemory(storage).latest("local");
+      const snapshot = new SessionStorageMachineNavigationMemory(storage).latest("local");
 
-    expect(snapshot?.tool).toBe("core:workspace.git");
-    expect(snapshot?.view).toBeUndefined();
-    if (snapshot === undefined) throw new Error("Expected stored snapshot");
-    expect(routeFromMachineNavigationSnapshot(snapshot).view).toBeUndefined();
-  });
+      expect(snapshot?.tool).toBe("core:workspace.git");
+      expect(snapshot?.view).toBeUndefined();
+      if (snapshot === undefined) throw new Error("Expected stored snapshot");
+      expect(routeFromMachineNavigationSnapshot(snapshot).view).toBeUndefined();
+    },
+  );
 });
 
 describe("machineNavigationSnapshotFromState", () => {
@@ -116,11 +147,13 @@ describe("machineNavigationSnapshotFromState", () => {
       mainView: "workspace",
     };
 
-    expect(machineNavigationSnapshotFromState(state, {
-      "core.workspace.files--file": "src/main.ts",
-      "core.workspace.terminal--terminal": "terminal-1",
-      "git.workspace.git--diff": ["README.md", "package.json"],
-    })).toEqual({
+    expect(
+      machineNavigationSnapshotFromState(state, {
+        "core.workspace.files--file": "src/main.ts",
+        "core.workspace.terminal--terminal": "terminal-1",
+        "git.workspace.git--diff": ["README.md", "package.json"],
+      }),
+    ).toEqual({
       machineId: "remote",
       projectId: "project",
       workspaceId: "workspace",
@@ -180,15 +213,17 @@ describe("machineNavigationSnapshotFromState", () => {
 
 describe("routeFromMachineNavigationSnapshot", () => {
   it("converts navigation snapshots to URL routes", () => {
-    expect(routeFromMachineNavigationSnapshot({
-      machineId: "remote",
-      projectId: "project",
-      workspaceId: "workspace",
-      sessionId: "session",
-      tool: "git:workspace.git",
-      view: "navigation",
-      surface: {},
-    })).toEqual({
+    expect(
+      routeFromMachineNavigationSnapshot({
+        machineId: "remote",
+        projectId: "project",
+        workspaceId: "workspace",
+        sessionId: "session",
+        tool: "git:workspace.git",
+        view: "navigation",
+        surface: {},
+      }),
+    ).toEqual({
       machineId: "remote",
       projectId: "project",
       workspaceId: "workspace",
@@ -223,7 +258,11 @@ function memoryStorage(seed: Record<string, string> = {}): KeyValueStorage {
   const values = new Map(Object.entries(seed));
   return {
     getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => { values.set(key, value); },
-    removeItem: (key) => { values.delete(key); },
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
   };
 }

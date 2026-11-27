@@ -3,7 +3,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { WorkbenchMenuButton } from "./WorkbenchMenuButton";
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 async function mount(): Promise<{ menu: WorkbenchMenuButton; trigger: HTMLButtonElement; panel: HTMLElement; items: HTMLButtonElement[] }> {
   const menu = new WorkbenchMenuButton();

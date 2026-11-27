@@ -9,8 +9,8 @@ describe("parseUnifiedDiff", () => {
       "--- a/src/app.ts",
       "+++ b/src/app.ts",
       "@@ -10,2 +10,2 @@ export function demo() {",
-      "-  const name = \"fooBar\";",
-      "+  const name = \"fooBaz\";",
+      '-  const name = "fooBar";',
+      '+  const name = "fooBaz";',
       "   return name;",
     ].join("\n");
 
@@ -40,18 +40,17 @@ describe("parseUnifiedDiff", () => {
       "+new",
     ].join("\n");
 
-    expect(parseUnifiedDiff(diff).slice(0, 5).map((line) => line.kind)).toEqual(["meta", "meta", "meta", "meta", "hunk"]);
+    expect(
+      parseUnifiedDiff(diff)
+        .slice(0, 5)
+        .map((line) => line.kind),
+    ).toEqual(["meta", "meta", "meta", "meta", "hunk"]);
   });
 
   it("parses changed content that starts with file header markers inside hunks", () => {
-    const diff = [
-      "diff --git a/README.md b/README.md",
-      "--- a/README.md",
-      "+++ b/README.md",
-      "@@ -1 +1 @@",
-      "---- removed heading",
-      "++++ added heading",
-    ].join("\n");
+    const diff = ["diff --git a/README.md b/README.md", "--- a/README.md", "+++ b/README.md", "@@ -1 +1 @@", "---- removed heading", "++++ added heading"].join(
+      "\n",
+    );
 
     const removed = firstLineOfKind(parseUnifiedDiff(diff), "remove");
     const added = firstLineOfKind(parseUnifiedDiff(diff), "add");
@@ -66,8 +65,8 @@ describe("parseUnifiedDiff", () => {
       "--- a/src/app.ts",
       "+++ b/src/app.ts",
       "@@ -1 +1,2 @@",
-      "-const label = \"old\";",
-      "+const label = \"new\";",
+      '-const label = "old";',
+      '+const label = "new";',
       "+const extra = true;",
     ].join("\n");
 
@@ -80,14 +79,7 @@ describe("parseUnifiedDiff", () => {
   });
 
   it("leaves pure additions without inline change spans", () => {
-    const diff = [
-      "diff --git a/new.txt b/new.txt",
-      "new file mode 100644",
-      "--- /dev/null",
-      "+++ b/new.txt",
-      "@@ -0,0 +1 @@",
-      "+brand new",
-    ].join("\n");
+    const diff = ["diff --git a/new.txt b/new.txt", "new file mode 100644", "--- /dev/null", "+++ b/new.txt", "@@ -0,0 +1 @@", "+brand new"].join("\n");
 
     const added = firstLineOfKind(parseUnifiedDiff(diff), "add");
 
@@ -96,28 +88,21 @@ describe("parseUnifiedDiff", () => {
   });
 
   it("keeps emoji graphemes intact in inline change spans", () => {
-    const lines = parseUnifiedDiff([
-      "@@ -1 +1 @@",
-      "-const author = \"👩🏽‍💻\";",
-      "+const author = \"👨🏻‍💻\";",
-    ].join("\n"));
+    const lines = parseUnifiedDiff(["@@ -1 +1 @@", '-const author = "👩🏽‍💻";', '+const author = "👨🏻‍💻";'].join("\n"));
     const removed = firstLineOfKind(lines, "remove");
     const added = firstLineOfKind(lines, "add");
 
     expect(changedText(removed)).toEqual(["👩🏽‍💻"]);
     expect(changedText(added)).toEqual(["👨🏻‍💻"]);
-    for (const span of [...removed.spans, ...added.spans]) expect(span.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u);
+    for (const span of [...removed.spans, ...added.spans])
+      expect(span.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u);
   });
 
   it("falls back to bounded whole-middle spans without losing shared text", () => {
     const shared = "prefix ".repeat(40);
     const removedMiddle = "a".repeat(600);
     const addedMiddle = "b".repeat(600);
-    const lines = parseUnifiedDiff([
-      "@@ -1 +1 @@",
-      `-${shared}${removedMiddle}`,
-      `+${shared}${addedMiddle}`,
-    ].join("\n"));
+    const lines = parseUnifiedDiff(["@@ -1 +1 @@", `-${shared}${removedMiddle}`, `+${shared}${addedMiddle}`].join("\n"));
     const removed = firstLineOfKind(lines, "remove");
     const added = firstLineOfKind(lines, "add");
 

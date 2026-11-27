@@ -23,16 +23,19 @@ export async function writeMockAgentConfig(agentDir: string, mockUrl: string, op
     await cp(dirname(options.claudeCodeUse), target, { recursive: true });
     extensions.push(join(target, basename(options.claudeCodeUse)));
   }
-  await writeFile(join(agentDir, "settings.json"), json({
-    defaultProvider: MOCK_CLAUDE_MODEL.provider,
-    defaultModel: MOCK_CLAUDE_MODEL.id,
-    transport: "sse",
-    retry: { baseDelayMs: 1 },
-    // The Claude subscription billing notice stays dismissed, as on a daily-use machine; it would otherwise add a
-    // "Warnings 1" chip to every Claude Chat's composer.
-    warnings: { anthropicExtraUsage: false },
-    ...(extensions.length > 0 ? { extensions } : {}),
-  }));
+  await writeFile(
+    join(agentDir, "settings.json"),
+    json({
+      defaultProvider: MOCK_CLAUDE_MODEL.provider,
+      defaultModel: MOCK_CLAUDE_MODEL.id,
+      transport: "sse",
+      retry: { baseDelayMs: 1 },
+      // The Claude subscription billing notice stays dismissed, as on a daily-use machine; it would otherwise add a
+      // "Warnings 1" chip to every Claude Chat's composer.
+      warnings: { anthropicExtraUsage: false },
+      ...(extensions.length > 0 ? { extensions } : {}),
+    }),
+  );
 }
 
 /**
@@ -42,16 +45,34 @@ export async function writeMockAgentConfig(agentDir: string, mockUrl: string, op
 export async function writeMockProviders(agentDir: string, mockUrl: string): Promise<void> {
   await mkdir(agentDir, { recursive: true });
   const never = Date.UTC(2100, 0, 1);
-  await writeFile(join(agentDir, "models.json"), json({ providers: { anthropic: { baseUrl: mockUrl }, "openai-codex": { baseUrl: mockUrl }, openai: { baseUrl: `${mockUrl}/openai/v1` } } }));
+  await writeFile(
+    join(agentDir, "models.json"),
+    json({ providers: { anthropic: { baseUrl: mockUrl }, "openai-codex": { baseUrl: mockUrl }, openai: { baseUrl: `${mockUrl}/openai/v1` } } }),
+  );
   const existing = JSON.parse(await readFile(join(agentDir, "auth.json"), "utf8").catch(() => "{}")) as Record<string, unknown>;
-  await writeFile(join(agentDir, "auth.json"), json({
-    ...existing,
-    // pi-ai takes the OAuth path for any token containing sk-ant-oat; joined from parts so secret scanners skip it.
-    anthropic: { type: "oauth", access: ["sk", "ant", "oat01", "e2e", "mock", "not", "a", "real", "token"].join("-"), refresh: "e2e-mock-refresh", expires: never },
-    "openai-codex": { type: "oauth", access: fakeChatGptJwt(MOCK_CODEX_ACCOUNT, never), refresh: "e2e-mock-refresh", expires: never, accountId: MOCK_CODEX_ACCOUNT },
-    // Workbench routing (routing-policy.json) sends Luna, Sol and Astra children to `openai` signed in with ChatGPT.
-    openai: { type: "oauth", access: "e2e-mock-openai-access", refresh: "e2e-mock-refresh", expires: never },
-  }), { mode: 0o600 });
+  await writeFile(
+    join(agentDir, "auth.json"),
+    json({
+      ...existing,
+      // pi-ai takes the OAuth path for any token containing sk-ant-oat; joined from parts so secret scanners skip it.
+      anthropic: {
+        type: "oauth",
+        access: ["sk", "ant", "oat01", "e2e", "mock", "not", "a", "real", "token"].join("-"),
+        refresh: "e2e-mock-refresh",
+        expires: never,
+      },
+      "openai-codex": {
+        type: "oauth",
+        access: fakeChatGptJwt(MOCK_CODEX_ACCOUNT, never),
+        refresh: "e2e-mock-refresh",
+        expires: never,
+        accountId: MOCK_CODEX_ACCOUNT,
+      },
+      // Workbench routing (routing-policy.json) sends Luna, Sol and Astra children to `openai` signed in with ChatGPT.
+      openai: { type: "oauth", access: "e2e-mock-openai-access", refresh: "e2e-mock-refresh", expires: never },
+    }),
+    { mode: 0o600 },
+  );
 }
 
 /** An unsigned JWT carrying only the ChatGPT account claim pi-ai's Codex transport reads. */

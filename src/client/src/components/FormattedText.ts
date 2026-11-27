@@ -8,7 +8,12 @@ import { writeClipboardText } from "../clipboard";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
 import { DEFAULT_CODE_BLOCK_POLICY, type CodeBlockPolicy } from "../formatting/codeBlockPolicy";
 import { rememberExternalMarkdownImageDimensions, restoreExternalMarkdownImageDimensions } from "../formatting/externalMarkdownImages";
-import { workspaceContextChanged, type MarkdownWorkspaceContext, type OutsideFileOpenRequest, type WorkspaceFileOpenRequest } from "../formatting/workspaceLinks";
+import {
+  workspaceContextChanged,
+  type MarkdownWorkspaceContext,
+  type OutsideFileOpenRequest,
+  type WorkspaceFileOpenRequest,
+} from "../formatting/workspaceLinks";
 import { formattedTextStyles } from "./formattedTextStyles";
 import { codeBlockFrameStyles } from "./codeBlockFrameStyles";
 import { openOwnerRunDialog, type OwnerRunTarget } from "./OwnerRunDialog";
@@ -30,10 +35,22 @@ function absoluteLinkPath(anchor: Element, context: MarkdownWorkspaceContext): s
 function requestFileOpen(source: EventTarget, context: MarkdownWorkspaceContext, path: string | null, outside: string | null, anchor: Element): boolean {
   const [start = 0, end = start] = (anchor.getAttribute("data-lines") ?? "").split("-").map(Number);
   const lines = start > 0 ? { lines: { start, end } } : {};
-  const request = path !== null
-    ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", { detail: { ...context, path, ...lines }, bubbles: true, composed: true, cancelable: true })
-    : outside === null ? undefined
-    : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", { detail: { machineId: context.machineId, path: outside, ...lines }, bubbles: true, composed: true, cancelable: true });
+  const request =
+    path !== null
+      ? new CustomEvent<WorkspaceFileOpenRequest>("workspace-file-open", {
+          detail: { ...context, path, ...lines },
+          bubbles: true,
+          composed: true,
+          cancelable: true,
+        })
+      : outside === null
+        ? undefined
+        : new CustomEvent<OutsideFileOpenRequest>("outside-file-open", {
+            detail: { machineId: context.machineId, path: outside, ...lines },
+            bubbles: true,
+            composed: true,
+            cancelable: true,
+          });
   return request !== undefined && !source.dispatchEvent(request);
 }
 
@@ -62,7 +79,10 @@ export function openChatFileLink(source: EventTarget, context: MarkdownWorkspace
   const html = absolute !== null && /\.html?$/i.test(absolute);
   if (absolute !== null && openLocalFile !== undefined) {
     void openLocalFile(absolute).catch((error: unknown) => {
-      if (html) { console.warn("Could not open HTML file in the browser", error); return; }
+      if (html) {
+        console.warn("Could not open HTML file in the browser", error);
+        return;
+      }
       requestFileOpen(source, context, path, outside, anchor);
     });
     return true;
@@ -70,9 +90,11 @@ export function openChatFileLink(source: EventTarget, context: MarkdownWorkspace
   return requestFileOpen(source, context, path, outside, anchor);
 }
 // Lucide folder-search.
-const REVEAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/></svg>';
+const REVEAL_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.7 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v4.1"/><path d="m21 21-1.9-1.9"/><circle cx="17" cy="17" r="3"/></svg>';
 // Lucide copy.
-const COPY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const COPY_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
 type CopyKind = "code block" | "quote" | "full path";
 
 @customElement("formatted-text")
@@ -94,7 +116,8 @@ export class FormattedText extends LitElement {
   @property({ type: Boolean, attribute: "diff-views" }) diffViews = false;
   @property({ attribute: false, hasChanged: workspaceContextChanged }) workspaceContext: MarkdownWorkspaceContext | undefined;
   /** The committed assistant message this text belongs to: its pi-run blocks get a run button. */
-  @property({ attribute: false, hasChanged: (next?: OwnerRunTarget, previous?: OwnerRunTarget) => JSON.stringify(next) !== JSON.stringify(previous) }) ownerRun: OwnerRunTarget | undefined;
+  @property({ attribute: false, hasChanged: (next?: OwnerRunTarget, previous?: OwnerRunTarget) => JSON.stringify(next) !== JSON.stringify(previous) })
+  ownerRun: OwnerRunTarget | undefined;
 
   private readonly enhancement = new VisibleContentController(this);
   private phase: "markdown" | "preview" | "done" = "markdown";
@@ -192,11 +215,15 @@ export class FormattedText extends LitElement {
   private enhanceMarkdown(): void {
     try {
       this.layoutChanged = true;
-      this.content = this.contentRendering?.renderMarkdown({
-        text: this.text,
-        machineId: this.workspaceContext?.machineId ?? this.machineId,
-        toSafeHtml: (text) => text === this.text && this.markup !== undefined ? this.markup : this.safeHtml(text),
-      }, this.intentKey, this.codeBlocks);
+      this.content = this.contentRendering?.renderMarkdown(
+        {
+          text: this.text,
+          machineId: this.workspaceContext?.machineId ?? this.machineId,
+          toSafeHtml: (text) => (text === this.text && this.markup !== undefined ? this.markup : this.safeHtml(text)),
+        },
+        this.intentKey,
+        this.codeBlocks,
+      );
       this.displayedText = this.text;
       this.replacing = false;
     } catch (error) {
@@ -292,7 +319,10 @@ export class FormattedText extends LitElement {
     const revealed = reveal?.previousElementSibling;
     if (revealed instanceof Element && this.workspaceContext !== undefined) {
       const absolute = absoluteLinkPath(revealed, this.workspaceContext);
-      if (absolute !== null) void window.piWebNative?.revealLocalFile?.(absolute).catch((error: unknown) => { console.warn("Could not show the file in Finder", error); });
+      if (absolute !== null)
+        void window.piWebNative?.revealLocalFile?.(absolute).catch((error: unknown) => {
+          console.warn("Could not show the file in Finder", error);
+        });
       return;
     }
     const copyPath = event.target.closest(".file-copy-button");
@@ -303,9 +333,17 @@ export class FormattedText extends LitElement {
       return;
     }
     const anchor = event.target.closest(FILE_LINK_SELECTOR);
-    if (anchor instanceof HTMLAnchorElement && this.workspaceContext !== undefined
-      && !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
-      && (!anchor.target || anchor.target === "_self")) {
+    if (
+      anchor instanceof HTMLAnchorElement
+      && this.workspaceContext !== undefined
+      && !event.defaultPrevented
+      && event.button === 0
+      && !event.metaKey
+      && !event.ctrlKey
+      && !event.shiftKey
+      && !event.altKey
+      && (!anchor.target || anchor.target === "_self")
+    ) {
       if (openChatFileLink(this, this.workspaceContext, anchor)) event.preventDefault();
       return;
     }
@@ -338,7 +376,12 @@ export class FormattedText extends LitElement {
     button.setAttribute("aria-label", label);
   }
 
-  static override styles = [formattedTextStyles, codeBlockFrameStyles, diffLineStyles, wordDiffStyles, css`
+  static override styles = [
+    formattedTextStyles,
+    codeBlockFrameStyles,
+    diffLineStyles,
+    wordDiffStyles,
+    css`
     .pending-source { white-space: pre-wrap; overflow-wrap: anywhere; }
     .owner-run-block .code-block-header { justify-content: space-between; }
     .owner-run-invalid { color: var(--pi-muted); font-size: 12px; }
@@ -356,5 +399,6 @@ export class FormattedText extends LitElement {
     .file-reveal-button, .file-copy-button { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-left: 2px; border: 0; border-radius: 4px; background: transparent; color: var(--pi-muted); padding: 0; vertical-align: -3px; cursor: pointer; }
     .file-reveal-button:hover, .file-reveal-button:focus-visible, .file-copy-button:hover, .file-copy-button:focus-visible { color: var(--pi-text); background: var(--pi-surface); }
     .file-reveal-button svg, .file-copy-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  `];
+  `,
+  ];
 }

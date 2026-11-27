@@ -20,10 +20,7 @@ export function queryNamespace(contributionId: string): string {
 }
 
 /** Read one contribution's canonical query snapshot, falling back to aliases per key. */
-export function readContributionQuery(
-  contributionId: QualifiedContributionId,
-  aliases: readonly QualifiedContributionId[] = [],
-): ContributionQuerySnapshot {
+export function readContributionQuery(contributionId: QualifiedContributionId, aliases: readonly QualifiedContributionId[] = []): ContributionQuerySnapshot {
   return contributionQueryFromParams(new URLSearchParams(window.location.search), contributionId, aliases);
 }
 
@@ -61,9 +58,8 @@ function contributionQueryFromParams(
 
 /** Capture only bounded, syntactically valid contribution-owned query parameters. */
 export function readContributionQueryRecord(): ContributionQueryRecord {
-  return readBoundedQueryFromParams(
-    new URLSearchParams(window.location.search),
-    (key) => isContributionQueryParameter(key) ? { key, parameterLength: key.length } : undefined,
+  return readBoundedQueryFromParams(new URLSearchParams(window.location.search), (key) =>
+    isContributionQueryParameter(key) ? { key, parameterLength: key.length } : undefined,
   );
 }
 
@@ -76,15 +72,16 @@ export function normalizeContributionQueryRecord(value: unknown): ContributionQu
   for (const [key, candidate] of Object.entries(value)) {
     if (parameterCount >= MAX_CONTRIBUTION_QUERY_PARAMETERS) break;
     if (!isContributionQueryParameter(key) || key.length > MAX_CONTRIBUTION_QUERY_PARAMETER_LENGTH) continue;
-    const values = typeof candidate === "string"
-      ? [candidate]
-      : Array.isArray(candidate) && candidate.every((item) => typeof item === "string")
-        ? candidate.slice(0, MAX_CONTRIBUTION_QUERY_VALUES)
-        : undefined;
+    const values =
+      typeof candidate === "string"
+        ? [candidate]
+        : Array.isArray(candidate) && candidate.every((item) => typeof item === "string")
+          ? candidate.slice(0, MAX_CONTRIBUTION_QUERY_VALUES)
+          : undefined;
     if (values === undefined || values.length === 0 || values.some((item) => item.length > MAX_CONTRIBUTION_QUERY_VALUE_LENGTH)) continue;
     const candidateLength = key.length + values.reduce((total, item) => total + item.length, 0);
     if (recordLength + candidateLength > MAX_CONTRIBUTION_QUERY_RECORD_LENGTH) break;
-    result[key] = values.length === 1 ? values[0] ?? "" : values;
+    result[key] = values.length === 1 ? (values[0] ?? "") : values;
     parameterCount += 1;
     recordLength += candidateLength;
   }
@@ -120,9 +117,8 @@ export function patchContributionQueryRecord(
     if (typeof value === "string") candidates.append(key, value);
     else for (const item of value) candidates.append(key, item);
   }
-  return readBoundedQueryFromParams(
-    candidates,
-    (parameter) => isContributionQueryParameter(parameter) ? { key: parameter, parameterLength: parameter.length } : undefined,
+  return readBoundedQueryFromParams(candidates, (parameter) =>
+    isContributionQueryParameter(parameter) ? { key: parameter, parameterLength: parameter.length } : undefined,
   );
 }
 
@@ -170,9 +166,8 @@ export function setContributionQueryKey(
       candidates.append(parameter, existingValue);
     }
   }
-  const normalized = readBoundedQueryFromParams(
-    candidates,
-    (parameter) => isContributionQueryParameter(parameter) ? { key: parameter, parameterLength: parameter.length } : undefined,
+  const normalized = readBoundedQueryFromParams(candidates, (parameter) =>
+    isContributionQueryParameter(parameter) ? { key: parameter, parameterLength: parameter.length } : undefined,
   );
   replaceContributionQueryParams(url.searchParams, normalized);
   return commitUrl(url, options);
@@ -195,10 +190,7 @@ function readNamespacedQueryFromParams(params: URLSearchParams, namespace: strin
   });
 }
 
-function uniqueContributionIds(
-  contributionId: QualifiedContributionId,
-  aliases: readonly QualifiedContributionId[],
-): QualifiedContributionId[] {
+function uniqueContributionIds(contributionId: QualifiedContributionId, aliases: readonly QualifiedContributionId[]): QualifiedContributionId[] {
   return [...new Set([contributionId, ...aliases])];
 }
 
@@ -223,8 +215,10 @@ function serializeContributionQueryValue(key: string, value: unknown): string[] 
     }
     return String(item);
   });
-  if (serialized.some((item) => item.length > MAX_CONTRIBUTION_QUERY_VALUE_LENGTH)
-    || serialized.reduce((total, item) => total + item.length, 0) > MAX_CONTRIBUTION_QUERY_RECORD_LENGTH) {
+  if (
+    serialized.some((item) => item.length > MAX_CONTRIBUTION_QUERY_VALUE_LENGTH)
+    || serialized.reduce((total, item) => total + item.length, 0) > MAX_CONTRIBUTION_QUERY_RECORD_LENGTH
+  ) {
     throw new Error(`Contribution navigation value is too long for key: ${key}`);
   }
   return serialized;
@@ -252,9 +246,8 @@ function readBoundedQueryFromParams(
   const budget: QueryBudget = { parameterCount: 0, recordLength: 0 };
   for (const [parameter, value] of params) {
     const accepted = acceptParameter(parameter);
-    if (accepted === undefined
-      || accepted.parameterLength > MAX_CONTRIBUTION_QUERY_PARAMETER_LENGTH
-      || value.length > MAX_CONTRIBUTION_QUERY_VALUE_LENGTH) continue;
+    if (accepted === undefined || accepted.parameterLength > MAX_CONTRIBUTION_QUERY_PARAMETER_LENGTH || value.length > MAX_CONTRIBUTION_QUERY_VALUE_LENGTH)
+      continue;
     appendBoundedQueryParam(result, accepted.key, value, accepted.parameterLength, budget);
   }
   return result;
@@ -269,42 +262,35 @@ function addBoundedQueryValue(
 ): boolean {
   if (Object.hasOwn(result, key)) return false;
   const values = typeof value === "string" ? [value] : [...value];
-  if (values.length === 0
+  if (
+    values.length === 0
     || values.length > MAX_CONTRIBUTION_QUERY_VALUES
     || values.some((item) => item.length > MAX_CONTRIBUTION_QUERY_VALUE_LENGTH)
-    || budget.parameterCount >= MAX_CONTRIBUTION_QUERY_PARAMETERS) return false;
+    || budget.parameterCount >= MAX_CONTRIBUTION_QUERY_PARAMETERS
+  )
+    return false;
   const candidateLength = parameterLength + values.reduce((total, item) => total + item.length, 0);
   if (budget.recordLength + candidateLength > MAX_CONTRIBUTION_QUERY_RECORD_LENGTH) return false;
-  result[key] = values.length === 1 ? values[0] ?? "" : values;
+  result[key] = values.length === 1 ? (values[0] ?? "") : values;
   budget.parameterCount += 1;
   budget.recordLength += candidateLength;
   return true;
 }
 
-function appendBoundedQueryParam(
-  result: ContributionQueryRecord,
-  key: string,
-  value: string,
-  parameterLength: number,
-  budget: QueryBudget,
-): void {
+function appendBoundedQueryParam(result: ContributionQueryRecord, key: string, value: string, parameterLength: number, budget: QueryBudget): void {
   if (!Object.hasOwn(result, key)) {
     addBoundedQueryValue(result, key, value, parameterLength, budget);
     return;
   }
   const existing = result[key];
   const existingValues = Array.isArray(existing) ? existing : [existing ?? ""];
-  if (existingValues.length >= MAX_CONTRIBUTION_QUERY_VALUES
-    || budget.recordLength + value.length > MAX_CONTRIBUTION_QUERY_RECORD_LENGTH) return;
+  if (existingValues.length >= MAX_CONTRIBUTION_QUERY_VALUES || budget.recordLength + value.length > MAX_CONTRIBUTION_QUERY_RECORD_LENGTH) return;
   result[key] = [...existingValues, value];
   budget.recordLength += value.length;
 }
 
 /** Apply contribution state to a URL before its single route/history commit. */
-export function replaceContributionQueryParams(
-  params: URLSearchParams,
-  record: Readonly<Record<string, string | readonly string[]>>,
-): void {
+export function replaceContributionQueryParams(params: URLSearchParams, record: Readonly<Record<string, string | readonly string[]>>): void {
   for (const key of [...params.keys()]) {
     if (isContributionQueryParameter(key)) params.delete(key);
   }

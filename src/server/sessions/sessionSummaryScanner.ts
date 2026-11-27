@@ -7,7 +7,12 @@ import type { PiSessionListEntry } from "./piSessionService.js";
 import type { SessionUiMetadata } from "../../shared/pluginApiTypes.js";
 import { sessionUiMetadataFromEntry } from "./sessionMetadata.js";
 import { cwdPathsEqual } from "../workingDirectory.js";
-import { parsePersistedChildSubsessionLink, parsePersistedParentSubsessionLink, type PersistedChildSubsessionLink, type PersistedParentSubsessionLink } from "./subsessionProvenance.js";
+import {
+  parsePersistedChildSubsessionLink,
+  parsePersistedParentSubsessionLink,
+  type PersistedChildSubsessionLink,
+  type PersistedParentSubsessionLink,
+} from "./subsessionProvenance.js";
 
 /*
  * LISTING CONTRACT
@@ -224,9 +229,13 @@ export class SessionSummaryScanner {
         parent = await pending;
       }
       if (parent?.id !== marker.spawnedBySessionId) continue;
-      const reciprocal = this.memoizedFold(parentPath)?.parentLinks?.some((link) =>
-        link.spawnedBySessionId === parent.id && link.spawnedSessionId === session.id
-        && link.spawnedSessionFile !== undefined && cwdPathsEqual(link.spawnedSessionFile, session.path));
+      const reciprocal = this.memoizedFold(parentPath)?.parentLinks?.some(
+        (link) =>
+          link.spawnedBySessionId === parent.id
+          && link.spawnedSessionId === session.id
+          && link.spawnedSessionFile !== undefined
+          && cwdPathsEqual(link.spawnedSessionFile, session.path),
+      );
       if (reciprocal === true) session.agentSubsession = true;
     }
     return sessions;

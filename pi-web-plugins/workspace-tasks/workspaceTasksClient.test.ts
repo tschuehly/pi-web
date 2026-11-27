@@ -4,7 +4,9 @@ import { loadWorkspaceTasksConfig, type WorkspaceTasksFileReader } from "./works
 
 describe("workspace tasks client", () => {
   it("loads the configured path through the public workspace file helper", async () => {
-    const readFile = vi.fn<WorkspaceTasksFileReader["readFile"]>(() => Promise.resolve({ content: JSON.stringify({ version: 1, tasks: [] }), truncated: false, binary: false }));
+    const readFile = vi.fn<WorkspaceTasksFileReader["readFile"]>(() =>
+      Promise.resolve({ content: JSON.stringify({ version: 1, tasks: [] }), truncated: false, binary: false }),
+    );
 
     await loadWorkspaceTasksConfig({ readFile });
 

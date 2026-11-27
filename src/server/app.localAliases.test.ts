@@ -6,7 +6,10 @@ registerAppTestHooks();
 
 describe("buildApp local machine aliases", () => {
   it("serves local session proxy routes through machine-scoped aliases", async () => {
-    const sessionsResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/local/sessions?cwd=${encodeURIComponent(appTestContext.projectDir)}` });
+    const sessionsResponse = await appTestContext.app.inject({
+      method: "GET",
+      url: `/api/machines/local/sessions?cwd=${encodeURIComponent(appTestContext.projectDir)}`,
+    });
 
     expect(sessionsResponse.statusCode).toBe(200);
     expect(sessionsResponse.json()).toEqual({ method: "GET", path: `/sessions?cwd=${encodeURIComponent(appTestContext.projectDir)}` });

@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { workspaceFilePreviewErrorResponsePolicy, workspaceFilePreviewResponsePolicy } from "./filePreviewResponsePolicy.js";
 
-const IMAGE_CSP = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data: blob:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
-const HTML_CSP = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
-const PDF_CSP = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'self'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
-const DOWNLOAD_CSP = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'none'";
-const ERROR_CSP = "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
+const IMAGE_CSP =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data: blob:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
+const HTML_CSP =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; media-src 'none'; font-src 'none'; style-src 'unsafe-inline'; worker-src 'none'; frame-ancestors 'self'";
+const PDF_CSP =
+  "default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'self'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
+const DOWNLOAD_CSP =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'none'";
+const ERROR_CSP =
+  "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; script-src 'none'; connect-src 'none'; img-src 'none'; media-src 'none'; font-src 'none'; style-src 'none'; worker-src 'none'; frame-ancestors 'self'";
 
 describe("workspaceFilePreviewResponsePolicy", () => {
   it("returns exact allowlisted image, HTML, and PDF response policy", () => {
@@ -60,10 +65,10 @@ describe("workspaceFilePreviewResponsePolicy", () => {
   });
 
   it("uses a safe quoted fallback and RFC 5987 encoding for hostile and non-ASCII filenames", () => {
-    const policy = workspaceFilePreviewResponsePolicy("reports/résumé's \"draft\".pdf");
+    const policy = workspaceFilePreviewResponsePolicy('reports/résumé\'s "draft".pdf');
     expect(policy.contentDisposition).toBe("inline; filename=\"r_sum_'s _draft_.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9%27s%20%22draft%22.pdf");
 
-    const hostile = workspaceFilePreviewResponsePolicy("bad\"\r\nX-Evil: yes.html");
+    const hostile = workspaceFilePreviewResponsePolicy('bad"\r\nX-Evil: yes.html');
     expect(hostile.contentDisposition).not.toMatch(/[\r\n]/u);
     expect(hostile.contentDisposition).toContain("filename*=UTF-8''bad%22%0D%0AX-Evil%3A%20yes.html");
 
@@ -85,7 +90,11 @@ describe("workspaceFilePreviewResponsePolicy", () => {
     expect(workspaceFilePreviewResponsePolicy("clip.M4V").contentType).toBe("video/mp4");
     expect(workspaceFilePreviewResponsePolicy("IMG_2430.MOV").contentType).toBe("video/quicktime");
     const webm = workspaceFilePreviewResponsePolicy("clip.webm");
-    expect(webm).toMatchObject({ contentType: "video/webm", contentDisposition: "inline; filename=\"clip.webm\"; filename*=UTF-8''clip.webm", contentTypeOptions: "nosniff" });
+    expect(webm).toMatchObject({
+      contentType: "video/webm",
+      contentDisposition: "inline; filename=\"clip.webm\"; filename*=UTF-8''clip.webm",
+      contentTypeOptions: "nosniff",
+    });
     expect(webm.contentSecurityPolicy).toMatch(/^sandbox; default-src 'none';/u);
     expect(webm.contentSecurityPolicy).toContain("script-src 'none'");
     expect(webm.contentSecurityPolicy).toContain("media-src 'self'");

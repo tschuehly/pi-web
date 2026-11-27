@@ -14,7 +14,6 @@ test.skip(process.env["PI_WEB_E2E_DURABLE_HOST"] === undefined, "PI_WEB_E2E_DURA
 test.skip(process.env["PI_WEB_E2E_MOCK_URL"] === undefined, "the mock model server is off (PI_WEB_E2E_MOCK_MODELS=0)");
 const mock = mockModels();
 
-
 const editor = (page: Page) => page.locator("prompt-editor .cm-content");
 const chat = (page: Page) => page.locator("chat-view");
 
@@ -24,7 +23,9 @@ async function send(page: Page, text: string): Promise<void> {
   await page.getByRole("button", { name: "Send message" }).click();
 }
 
-test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its status line, model, elapsed and quiet time, and leaves it once collected", async ({ page }) => {
+test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its status line, model, elapsed and quiet time, and leaves it once collected", async ({
+  page,
+}) => {
   const base = process.env["PI_WEB_E2E_BASE_URL"];
   const workspaceId = process.env["PI_WEB_E2E_WORKSPACE_ID"];
   const quota = process.env["PI_WEB_E2E_QUOTA_CACHE"];
@@ -38,19 +39,27 @@ test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its statu
   const child = `roster-child-${String(Date.now())}`;
   const childDone = `${child}-done`;
   const task = `${child}: report your status, then finish.`;
-  const leadScript = await mock.script({ provider: "anthropic", match: lead, turns: [
-    [{ toolCall: { name: "subagent", args: { name: "Roster probe", task, profile: "scout", cognitiveRole: "routine", background: true } } }],
-    "The probe runs in the background.",
-    // The completion wake: collect once.
-    [{ toolCall: { name: "subagent_collect", args: {} } }],
-    "Collected the probe.",
-  ] });
+  const leadScript = await mock.script({
+    provider: "anthropic",
+    match: lead,
+    turns: [
+      [{ toolCall: { name: "subagent", args: { name: "Roster probe", task, profile: "scout", cognitiveRole: "routine", background: true } } }],
+      "The probe runs in the background.",
+      // The completion wake: collect once.
+      [{ toolCall: { name: "subagent_collect", args: {} } }],
+      "Collected the probe.",
+    ],
+  });
   // The child reports, then holds its answer until the spec has checked the running row.
-  const childScript = await mock.script({ provider: "openai", match: child, turns: [
-    [{ toolCall: { name: "report_status", args: { status: "Reading the roster code" } } }],
-    [{ barrier: `${childDone}-report` }, { toolCall: { name: "report_status", args: { status: "Checking the roster result" } } }],
-    [{ barrier: childDone }, { text: "Roster probe finished." }],
-  ] });
+  const childScript = await mock.script({
+    provider: "openai",
+    match: child,
+    turns: [
+      [{ toolCall: { name: "report_status", args: { status: "Reading the roster code" } } }],
+      [{ barrier: `${childDone}-report` }, { toolCall: { name: "report_status", args: { status: "Checking the roster result" } } }],
+      [{ barrier: childDone }, { text: "Roster probe finished." }],
+    ],
+  });
 
   await page.goto(`${base}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId }).toString()}`);
   await page.getByRole("button", { name: "New Durable Chat" }).click();
@@ -58,7 +67,12 @@ test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its statu
   const sessionId = new URL(page.url()).searchParams.get("session") ?? "";
   const project = process.env["PI_WEB_E2E_PROJECT_DIR"] ?? "";
   // Tool results sit in collapsed step groups; the transcript API shows them.
-  const transcript = async () => JSON.stringify(await (await page.request.get(`${base}api/sessions/${encodeURIComponent(sessionId)}/messages?${new URLSearchParams({ cwd: project }).toString()}`)).json());
+  const transcript = async () =>
+    JSON.stringify(
+      await (
+        await page.request.get(`${base}api/sessions/${encodeURIComponent(sessionId)}/messages?${new URLSearchParams({ cwd: project }).toString()}`)
+      ).json(),
+    );
 
   await page.getByRole("button", { name: /^Model: / }).click();
   await page.getByRole("combobox", { name: "Search models" }).fill(MOCK_CLAUDE_MODEL.id);
@@ -110,7 +124,9 @@ test("AC-P092 AC-P099 a Durable Chat's Subagent shows in Activity with its statu
 });
 
 for (const legacy of [false, true]) {
-  test(`AC-P089 ${legacy ? "legacy" : "Durable"} foreground children have fresh context, native tools, separate identity and model receipts`, async ({ page }) => {
+  test(`AC-P089 ${legacy ? "legacy" : "Durable"} foreground children have fresh context, native tools, separate identity and model receipts`, async ({
+    page,
+  }) => {
     const { readFile } = await import("node:fs/promises");
     const { join } = await import("node:path");
     const project = process.env["PI_WEB_E2E_PROJECT_DIR"]!;
@@ -119,11 +135,22 @@ for (const legacy of [false, true]) {
     const identities: { id: string; tmp: string }[] = [];
     for (const index of [0, 1]) {
       const marker = `identity-child-${session}-${index}`;
-      const script = await mock.script({ provider: "openai", match: marker, turns: [
-        [tc("bash", { command: `node -e 'require("fs").writeFileSync("${marker}.json",JSON.stringify({id:process.env.PI_SESSION_ID,tmp:process.env.PI_TMP}))'` }), tc("grep", { pattern: "Seeded", path: "docs/notes.md" }), tc("find", { pattern: "*.md", path: "docs" }), tc("ls", { path: "docs" })],
-        [tc("subagent", scout("forbidden-grandchild"))],
-        "Identity child finished.",
-      ] });
+      const script = await mock.script({
+        provider: "openai",
+        match: marker,
+        turns: [
+          [
+            tc("bash", {
+              command: `node -e 'require("fs").writeFileSync("${marker}.json",JSON.stringify({id:process.env.PI_SESSION_ID,tmp:process.env.PI_TMP}))'`,
+            }),
+            tc("grep", { pattern: "Seeded", path: "docs/notes.md" }),
+            tc("find", { pattern: "*.md", path: "docs" }),
+            tc("ls", { path: "docs" }),
+          ],
+          [tc("subagent", scout("forbidden-grandchild"))],
+          "Identity child finished.",
+        ],
+      });
       const result = await call(page, "subagent", scout(marker, { background: false }));
       expect(textOf(result)).toContain("Completion receipt: openai/gpt-6-luna:medium");
       expect(result.isError).not.toBe(true);
@@ -157,11 +184,19 @@ test("AC-P089 review routes away from author family and refuses a same-family ov
     const provider = author.startsWith("openai") ? "anthropic" : "openai";
     const model = provider === "anthropic" ? "claude-opus-5-5" : "gpt-6.1-sol";
     const script = await mock.script({ provider, match: marker, turns: ["Independent review complete."] });
-    const receipt = await call(page, "subagent", scout(marker, { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, background: false }));
+    const receipt = await call(
+      page,
+      "subagent",
+      scout(marker, { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, background: false }),
+    );
     expect(textOf(receipt)).toContain(`Completion receipt: ${provider}/${model}:high`);
     expect(textOf(receipt)).toContain(`family ${provider === "anthropic" ? "anthropic" : "openai"}`);
     expect((await requests(script)).map((r) => [r.provider, r.model])).toEqual([[provider, model]]);
-    const refused = await call(page, "subagent", scout("forbidden-same-family", { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, modelOverride: author, background: false }));
+    const refused = await call(
+      page,
+      "subagent",
+      scout("forbidden-same-family", { profile: "reviewer", cognitiveRole: "review", independentOfModel: author, modelOverride: author, background: false }),
+    );
     expect(refused.isError).toBe(true);
     expect(textOf(refused)).toMatch(/not independent|independen.*family/i);
   }
@@ -200,7 +235,11 @@ test("AC-P090 AC-P091 AC-P099 results ride completion notices that truncate hone
   await mock.release("parent-busy");
   await expect(page.locator("chat-view").getByText("Wake observed.", { exact: true })).toBeVisible();
   // Each result rides exactly one completion notice (a result that ends after a notice was composed rides the next), which collects it.
-  const notices = async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion").map(textOf).join("\n");
+  const notices = async () =>
+    (await messages(page))
+      .filter((m) => m.customType === "pi-workbench:child-completion")
+      .map(textOf)
+      .join("\n");
   await expect.poll(async () => (await notices()).split(`${idOf(second)} [execution_failed]`).length).toBe(2);
   const carried = await notices();
   expect(carried.split(`${idOf(first)} [success]`)).toHaveLength(2);
@@ -214,45 +253,52 @@ test("AC-P090 AC-P091 AC-P099 results ride completion notices that truncate hone
   expect(await requests(failure)).toHaveLength(1);
 });
 
-for (const legacy of [false, true]) test(`AC-P094 ${legacy ? "legacy" : "Durable"} steer and follow-up deliver once; requested status wakes; running follow-up must remain cancellable`, async ({ page }) => {
-  const { killHost, status } = await import("./support");
-  await create(page, legacy);
-  const marker = `steered-child-${Date.now()}`;
-  const script = await mock.script({ provider: "openai", match: marker, turns: [
-    [tc("report_status", { status: "Before steer" })],
-    [{ barrier: "child-before-steer" }, tc("report_status", { status: "After steer" })],
-    [{ barrier: "child-follow-up" }, { text: "Steered answer" }],
-    [{ barrier: "child-after-follow-up" }, { text: "Should be cancelled" }],
-  ] });
-  const id = idOf(await call(page, "subagent", scout(marker)));
-  await mock.waitForBarrier("child-before-steer");
-  expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-update")).toHaveLength(0);
-  const steer = await call(page, "subagent_steer", { executionId: id, message: "STEER-ONCE", requestUpdate: true });
-  const followUp = await call(page, "subagent_steer", { executionId: id, message: "FOLLOW-UP-ONCE", mode: "followUp" });
-  expect(steer.details).toMatchObject({ executionId: id, mode: "steer" });
-  expect(followUp.details).toMatchObject({ executionId: id, mode: "followUp" });
-  expect(Number(followUp.details!["sequence"])).toBeGreaterThan(Number(steer.details!["sequence"]));
-  await mock.release("child-before-steer");
-  await mock.waitForBarrier("child-follow-up");
-  await expect.poll(async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-update").length).toBe(1);
-  await expect(rows(page).locator(".report")).toContainText("After steer");
-  await mock.release("child-follow-up");
-  await mock.waitForBarrier("child-after-follow-up");
-  const child = await requests(script);
-  expect(JSON.stringify(child[2]!.body).match(/STEER-ONCE/g)).toHaveLength(1);
-  expect(JSON.stringify(child[3]!.body).match(/FOLLOW-UP-ONCE/g)).toHaveLength(1);
-  expect.soft((await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion")).toHaveLength(0);
-  const cancelled = await call(page, "subagent_cancel", { executionId: id, reason: "acceptance cancellation" });
-  expect(textOf(cancelled)).toBe(`${id}: cancelled.`);
-  expect(textOf(await call(page, "subagent_status", { executionId: id }))).toContain("cancelled");
-  if (!legacy) await killHost(page);
-  await status(page);
-  await page.reload();
-  expect(textOf(await call(page, "subagent_status", { executionId: id }))).toContain("cancelled");
-  await mock.release("child-after-follow-up");
-  expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion")).toHaveLength(0);
-  expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-update")).toHaveLength(1);
-});
+for (const legacy of [false, true])
+  test(`AC-P094 ${legacy ? "legacy" : "Durable"} steer and follow-up deliver once; requested status wakes; running follow-up must remain cancellable`, async ({
+    page,
+  }) => {
+    const { killHost, status } = await import("./support");
+    await create(page, legacy);
+    const marker = `steered-child-${Date.now()}`;
+    const script = await mock.script({
+      provider: "openai",
+      match: marker,
+      turns: [
+        [tc("report_status", { status: "Before steer" })],
+        [{ barrier: "child-before-steer" }, tc("report_status", { status: "After steer" })],
+        [{ barrier: "child-follow-up" }, { text: "Steered answer" }],
+        [{ barrier: "child-after-follow-up" }, { text: "Should be cancelled" }],
+      ],
+    });
+    const id = idOf(await call(page, "subagent", scout(marker)));
+    await mock.waitForBarrier("child-before-steer");
+    expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-update")).toHaveLength(0);
+    const steer = await call(page, "subagent_steer", { executionId: id, message: "STEER-ONCE", requestUpdate: true });
+    const followUp = await call(page, "subagent_steer", { executionId: id, message: "FOLLOW-UP-ONCE", mode: "followUp" });
+    expect(steer.details).toMatchObject({ executionId: id, mode: "steer" });
+    expect(followUp.details).toMatchObject({ executionId: id, mode: "followUp" });
+    expect(Number(followUp.details!["sequence"])).toBeGreaterThan(Number(steer.details!["sequence"]));
+    await mock.release("child-before-steer");
+    await mock.waitForBarrier("child-follow-up");
+    await expect.poll(async () => (await messages(page)).filter((m) => m.customType === "pi-workbench:child-update").length).toBe(1);
+    await expect(rows(page).locator(".report")).toContainText("After steer");
+    await mock.release("child-follow-up");
+    await mock.waitForBarrier("child-after-follow-up");
+    const child = await requests(script);
+    expect(JSON.stringify(child[2]!.body).match(/STEER-ONCE/g)).toHaveLength(1);
+    expect(JSON.stringify(child[3]!.body).match(/FOLLOW-UP-ONCE/g)).toHaveLength(1);
+    expect.soft((await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion")).toHaveLength(0);
+    const cancelled = await call(page, "subagent_cancel", { executionId: id, reason: "acceptance cancellation" });
+    expect(textOf(cancelled)).toBe(`${id}: cancelled.`);
+    expect(textOf(await call(page, "subagent_status", { executionId: id }))).toContain("cancelled");
+    if (!legacy) await killHost(page);
+    await status(page);
+    await page.reload();
+    expect(textOf(await call(page, "subagent_status", { executionId: id }))).toContain("cancelled");
+    await mock.release("child-after-follow-up");
+    expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-completion")).toHaveLength(0);
+    expect((await messages(page)).filter((m) => m.customType === "pi-workbench:child-update")).toHaveLength(1);
+  });
 
 test("AC-P093 cancelling a running Subagent survives SIGKILL without late result or wake", async ({ page }) => {
   const { killHost, status } = await import("./support");

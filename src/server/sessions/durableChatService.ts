@@ -5,14 +5,49 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { CHAT_CAPABILITY_LABELS, type ChatCapability, isChatCapability } from "../../shared/apiTypes.js";
-import type { AskUserCloseResponse, AskUserOutcome, AskUserSubmission, AskUserSubmissionImage, PendingAskUser, QueuedSessionMessage, SavedPromptAttachment, SessionAttentionEvent, SessionAttentionRequest, SessionNotificationDismissAllRequest, SessionNotificationDismissRequest, SessionNotificationInboxSnapshot, SessionNotificationSummaryEvent, SessionQueueMessageMutation, SessionStatus, SessionUiEvent } from "../../shared/apiTypes.js";
+import type {
+  AskUserCloseResponse,
+  AskUserOutcome,
+  AskUserSubmission,
+  AskUserSubmissionImage,
+  PendingAskUser,
+  QueuedSessionMessage,
+  SavedPromptAttachment,
+  SessionAttentionEvent,
+  SessionAttentionRequest,
+  SessionNotificationDismissAllRequest,
+  SessionNotificationDismissRequest,
+  SessionNotificationInboxSnapshot,
+  SessionNotificationSummaryEvent,
+  SessionQueueMessageMutation,
+  SessionStatus,
+  SessionUiEvent,
+} from "../../shared/apiTypes.js";
 import { childrenRunning, familyBusy, runningWork } from "../../shared/closeBusy.js";
-import { hasExplicitPromptImageReference, parsePromptAttachments, removeImageReferenceTokensFromText, stripInlineImageReferenceMapping } from "../../shared/promptAttachments.js";
+import {
+  hasExplicitPromptImageReference,
+  parsePromptAttachments,
+  removeImageReferenceTokensFromText,
+  stripInlineImageReferenceMapping,
+} from "../../shared/promptAttachments.js";
 import type { PiWebConfig } from "../../config.js";
 import { loadEffectiveProjectAttachmentsConfig } from "../workspaces/projectPiWebConfig.js";
 import { attachmentsToInlineImages, saveAttachmentsToWorkspace } from "./attachmentService.js";
 import type { SessionMedia, SessionMediaIndex } from "./sessionMediaIndex.js";
-import type { ClientCommand, ClientCommandResult, ClientMessagePage, ClientSession, ClientSessionModel, ClientSessionModelCatalogEntry, ClientSessionStatus, ClientSessionTreeNavigateRequest, ClientSessionTreeNavigateResult, ClientThinkingLevel, SessionStreamSnapshot, SessionTranscriptSnapshot } from "../types.js";
+import type {
+  ClientCommand,
+  ClientCommandResult,
+  ClientMessagePage,
+  ClientSession,
+  ClientSessionModel,
+  ClientSessionModelCatalogEntry,
+  ClientSessionStatus,
+  ClientSessionTreeNavigateRequest,
+  ClientSessionTreeNavigateResult,
+  ClientThinkingLevel,
+  SessionStreamSnapshot,
+  SessionTranscriptSnapshot,
+} from "../types.js";
 import { projectSessionTree, type ProjectableSessionTreeNode } from "./sessionTreeProjection.js";
 import type { DurableChatResourceSet, DurableContributedResources } from "./durableChatResources.js";
 import { durableThinkingLevel, expandPromptTemplate, expandSkills } from "./durableChatResources.js";
@@ -20,21 +55,52 @@ import { BUILTIN_COMMANDS } from "./builtinCommands.js";
 import { cacheMissNoticesByEntryId, cacheScanEntries, liveCacheMissNotice } from "./cacheMissNotices.js";
 import type { ModelPriceSource } from "./cacheStats.js";
 import { pageMessagesAtSafeBoundary } from "./messagePaging.js";
-import { appendInlineImageReferenceMapping, CHECKPOINT_SESSION_TITLE_MAX_LENGTH, CHECKPOINT_TITLE_COMMAND, parseModelSpec, spawnTargetError } from "./piSessionService.js";
+import {
+  appendInlineImageReferenceMapping,
+  CHECKPOINT_SESSION_TITLE_MAX_LENGTH,
+  CHECKPOINT_TITLE_COMMAND,
+  parseModelSpec,
+  spawnTargetError,
+} from "./piSessionService.js";
 import type { SpawnTargetResolver } from "./spawnTargetResolver.js";
 import { catalogWithEnabledFirst, resolveEnabledModelIds } from "./sessionModelScope.js";
 import type { ModelRuntime } from "../../piSdk.js";
 import type { SpawnSessionResult } from "./spawnSessionTool.js";
 import { canonicalizeStoredCwd, cwdPathsEqual } from "../workingDirectory.js";
-import { cleanSessionName, cleanTabName, fallbackSessionName, SESSION_TITLE_SYSTEM_PROMPT, sessionTitleInput, shortSessionNamePrompt, tabNamePrompt } from "./sessionNameGenerator.js";
+import {
+  cleanSessionName,
+  cleanTabName,
+  fallbackSessionName,
+  SESSION_TITLE_SYSTEM_PROMPT,
+  sessionTitleInput,
+  shortSessionNamePrompt,
+  tabNamePrompt,
+} from "./sessionNameGenerator.js";
 import type { SessionNotificationGeneration, SessionNotificationMutation, SessionNotificationStore } from "./sessionNotificationStore.js";
 import { isWorkstreamLaunchToken, type WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { PendingAskStore, renderAskUserFollowUp, withEarlierAnswers, type PendingAskCloseResult } from "./pendingAskStore.js";
-import { type DurableChatRecord, hostAcceptsArg, type SessionRuntimeLocator, storeCode, type StoreCode, storeCodeRefusal, type StoreSchema } from "./sessionRuntimeLocator.js";
+import {
+  type DurableChatRecord,
+  hostAcceptsArg,
+  type SessionRuntimeLocator,
+  storeCode,
+  type StoreCode,
+  storeCodeRefusal,
+  type StoreSchema,
+} from "./sessionRuntimeLocator.js";
 import type { SessionRouteRef } from "./sessionService.js";
 import { LiveReviewCollector, type LiveReviewPairing, PAIR_USAGE, parsePairCommand } from "./liveReview.js";
 import type { NativeConfirm } from "../nativeConfirm.js";
-import { committedOwnerRun, openOwnerCommandInTerminal, OwnerRunNotConfirmedError, ownerRunConfirmText, ownerRunFolder, ownerRunResultText, ownerRunScript, type OwnerRunResult } from "./ownerRuns.js";
+import {
+  committedOwnerRun,
+  openOwnerCommandInTerminal,
+  OwnerRunNotConfirmedError,
+  ownerRunConfirmText,
+  ownerRunFolder,
+  ownerRunResultText,
+  ownerRunScript,
+  type OwnerRunResult,
+} from "./ownerRuns.js";
 
 /** The session-host protocol version this daemon speaks (Workbench `chat-session.ts` `PROTOCOL`). */
 export const DURABLE_HOST_PROTOCOL = 2;
@@ -71,26 +137,40 @@ export interface DurableHostProcess {
  * its store and exits, 0 once they are cancelled. `readTranscript`: a one-off process (`--read-transcript`) that opens the
  * store paused with no packages, sends `{ transcript: { messages } }` and exits 0; no host starts.
  */
-export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean; readTranscript?: boolean; fullAccessDigest?: string }) => DurableHostProcess;
+export type DurableHostLauncher = (
+  record: DurableChatRecord,
+  storeDir: string,
+  options?: { attachOnly?: boolean; endJobs?: boolean; readTranscript?: boolean; fullAccessDigest?: string },
+) => DurableHostProcess;
 
 /** Recheck the actual launch entry (a pruned pin can fall back). launchd may expose argv: only a verifier goes there. */
-export const fullAccessDigestArgs = (digest: string | undefined, entry: string): string[] => digest !== undefined && hostAcceptsArg(entry, "--full-access-sha256") ? ["--full-access-sha256", digest] : [];
+export const fullAccessDigestArgs = (digest: string | undefined, entry: string): string[] =>
+  digest !== undefined && hostAcceptsArg(entry, "--full-access-sha256") ? ["--full-access-sha256", digest] : [];
 
 /**
  * PI WEB's folder and socket overrides, absolute as this daemon resolves them (against its own folder, config.ts and
  * sessiond.ts), for its hosts: their fenced commands are then denied the same paths from any folder.
  */
 export function daemonPathEnvironment(env: NodeJS.ProcessEnv = process.env, webPort?: number): Record<string, string> {
-  const paths = Object.fromEntries(["PI_WEB_DATA_DIR", "PI_WEB_DURABLE_HOST_DIR", "PI_WEB_SESSIOND_SOCKET"].flatMap((name) => {
-    const value = env[name];
-    return value === undefined || value === "" ? [] : [[name, resolve(value)]];
-  }));
+  const paths = Object.fromEntries(
+    ["PI_WEB_DATA_DIR", "PI_WEB_DURABLE_HOST_DIR", "PI_WEB_SESSIOND_SOCKET"].flatMap((name) => {
+      const value = env[name];
+      return value === undefined || value === "" ? [] : [[name, resolve(value)]];
+    }),
+  );
   // PORT has already been scrubbed from process.env; use the server parser’s result, not a second config read.
   return webPort === undefined ? paths : { ...paths, PI_WEB_PORT: String(webPort) };
 }
 
 /** What starts a family's host: the Workbench host entry, the model and Pi agent dir it runs with. */
-export interface DurableHostOptions { webPort?: number; entry: string; model: string | ((cwd: string) => string); agentDir: string; scripted?: boolean; thinkingLevel?: (cwd: string, model: string) => string }
+export interface DurableHostOptions {
+  webPort?: number;
+  entry: string;
+  model: string | ((cwd: string) => string);
+  agentDir: string;
+  scripted?: boolean;
+  thinkingLevel?: (cwd: string, model: string) => string;
+}
 
 /** The host's arguments for one family; a new Chat starts at the thinking level Pi would pick (a reopened one keeps its own). */
 export function durableHostLaunchArgs(options: DurableHostOptions, record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string): string[] {
@@ -100,10 +180,23 @@ export function durableHostLaunchArgs(options: DurableHostOptions, record: Pick<
 }
 
 /** Host arguments: the family store, workspace, model, Chat ID and a new Chat's thinking level; every host runs the installed Pi packages it binds. */
-export function durableHostArgs(record: Pick<DurableChatRecord, "id" | "cwd">, storeDir: string, options: { model: string; scripted?: boolean; thinking?: string }): string[] {
+export function durableHostArgs(
+  record: Pick<DurableChatRecord, "id" | "cwd">,
+  storeDir: string,
+  options: { model: string; scripted?: boolean; thinking?: string },
+): string[] {
   return [
-    "--store", storeDir, "--cwd", record.cwd, "--model", options.model, "--session-id", record.id, "--packages",
-    ...(options.thinking === undefined ? [] : ["--thinking", options.thinking]), ...(options.scripted === true ? ["--scripted"] : []),
+    "--store",
+    storeDir,
+    "--cwd",
+    record.cwd,
+    "--model",
+    options.model,
+    "--session-id",
+    record.id,
+    "--packages",
+    ...(options.thinking === undefined ? [] : ["--thinking", options.thinking]),
+    ...(options.scripted === true ? ["--scripted"] : []),
   ];
 }
 
@@ -118,11 +211,20 @@ export function forkDurableHost(options: DurableHostOptions): DurableHostLaunche
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessDigestArgs(launch?.fullAccessDigest, options.entry)], {
-        execArgv: [],
-        stdio: ["ignore", log, log, "ipc"],
-        env: { ...process.env, ...daemonPathEnvironment(process.env, options.webPort), PI_CODING_AGENT_DIR: options.agentDir },
-      });
+      return fork(
+        options.entry,
+        [
+          ...durableHostLaunchArgs(options, record, storeDir),
+          ...(launch?.endJobs === true ? ["--end-jobs"] : []),
+          ...(launch?.readTranscript === true ? ["--read-transcript"] : []),
+          ...fullAccessDigestArgs(launch?.fullAccessDigest, options.entry),
+        ],
+        {
+          execArgv: [],
+          stdio: ["ignore", log, log, "ipc"],
+          env: { ...process.env, ...daemonPathEnvironment(process.env, options.webPort), PI_CODING_AGENT_DIR: options.agentDir },
+        },
+      );
     } finally {
       closeSync(log);
     }
@@ -135,7 +237,14 @@ interface HostEvents {
   readonly mediaIndex?: SessionMediaIndex;
   /** Notification inbox summaries (the daemon's shared notification catalog). */
   publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
-  publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string; shortName?: string } | SessionAttentionEvent): void;
+  publishGlobal(
+    event:
+      | { type: "session.created"; session: ClientSession }
+      | { type: "status.update"; status: SessionStatus }
+      | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } }
+      | { type: "session.name"; sessionId: string; name?: string; shortName?: string }
+      | SessionAttentionEvent,
+  ): void;
   startGeneration(sessionId: string): string;
   currentSeq(sessionId: string): number;
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
@@ -208,10 +317,15 @@ class DurableHostConnection {
     onExit: (error: Error) => void,
     onError: (error: Error) => void = () => undefined,
   ) {
-    this.exited = new Promise((resolve) => { this.#markExited = resolve; });
+    this.exited = new Promise((resolve) => {
+      this.#markExited = resolve;
+    });
     let markReady!: () => void;
     let failReady!: (error: Error) => void;
-    this.ready = new Promise((resolve, reject) => { markReady = resolve; failReady = reject; });
+    this.ready = new Promise((resolve, reject) => {
+      markReady = resolve;
+      failReady = reject;
+    });
     process.on("message", (message) => {
       if (!isRecord(message)) return;
       if (isRecord(message["ready"])) {
@@ -300,18 +414,35 @@ class DurableHostConnection {
     if (conditional) {
       let wait: NodeJS.Timeout | undefined;
       const answer = await Promise.race([
-        this.request("close", params).then(({ result }) => result, (error: unknown) => ({ closed: false, busy: `its safe close failed (${error instanceof Error ? error.message : String(error)})` })),
-        new Promise<unknown>((resolve) => { wait = setTimeout(() => { resolve({ closed: false, busy: "it did not answer the safe close" }); }, 2 * graceMs); }),
+        this.request("close", params).then(
+          ({ result }) => result,
+          (error: unknown) => ({ closed: false, busy: `its safe close failed (${error instanceof Error ? error.message : String(error)})` }),
+        ),
+        new Promise<unknown>((resolve) => {
+          wait = setTimeout(() => {
+            resolve({ closed: false, busy: "it did not answer the safe close" });
+          }, 2 * graceMs);
+        }),
       ]);
       clearTimeout(wait);
       this.fullAccess = isRecord(answer) && answer["fullAccess"] === true;
       if (!isRecord(answer) || answer["closed"] !== true) return isRecord(answer) && typeof answer["busy"] === "string" ? answer["busy"] : "the host is busy";
     }
-    const terminate = setTimeout(() => { this.process.kill("SIGTERM"); }, graceMs);
-    const kill = setTimeout(() => { this.process.kill("SIGKILL"); }, 2 * graceMs);
+    const terminate = setTimeout(() => {
+      this.process.kill("SIGTERM");
+    }, graceMs);
+    const kill = setTimeout(() => {
+      this.process.kill("SIGKILL");
+    }, 2 * graceMs);
     try {
       // Already gone, or terminated by the timers.
-      if (!conditional) await this.request("close", params).then(({ result }) => { this.fullAccess = isRecord(result) && result["fullAccess"] === true; }, () => undefined);
+      if (!conditional)
+        await this.request("close", params).then(
+          ({ result }) => {
+            this.fullAccess = isRecord(result) && result["fullAccess"] === true;
+          },
+          () => undefined,
+        );
       await this.exited;
       return undefined;
     } finally {
@@ -336,55 +467,64 @@ export class DurableChatService {
   readonly #ownerRuns = new Set<string>();
   readonly #ownerRunCancels = new Map<string, Set<AbortController>>();
 
-  constructor(private readonly deps: {
-    locator: SessionRuntimeLocator;
-    events: HostEvents;
-    launch: DurableHostLauncher;
-    /** `<data dir>/durable`: one directory per family store. */
-    storesDir: string;
-    /**
-     * AGENTS.md, APPEND_SYSTEM.md, skills and prompts for a workspace, from Pi's loader, with those the host's packages
-     * contributed; sent to each host as it opens.
-     */
-    resources?: (cwd: string, contributed?: DurableContributedResources) => Promise<DurableChatResourceSet>;
-    /** PI WEB config, for the attachment folder of a save request that names none (as legacy Chats). */
-    config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
-    /** Pi's prompt cache-miss notices, as legacy Chats show them: Pi's `showCacheMissNotices` for a workspace, and prices. */
-    cacheMissNotices?: { enabled(cwd: string): boolean; models: ModelPriceSource };
-    /** Pi's `enabledModels` patterns for a workspace; they scope the models a Chat offers, as for legacy Chats. None: every model. */
-    enabledModels?: (cwd: string) => string[] | undefined;
-    /**
-     * The daemon's unread catalog (the legacy service's, shared): committed run starts and ends, and a host exit.
-     * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
-     */
-    unread?: (sessionId: string, cwd: string, change: "active" | "idle" | "closed") => Promise<void>;
-    /** The daemon's notification store (shared with legacy Chats): each host's package warnings, per Chat. */
-    notifications?: SessionNotificationStore;
-    /** The daemon's Workstream launch records (shared with legacy Chats): a launch token names the Chat it created. */
-    launches?: Pick<WorkstreamLaunchStore, "reserve" | "confirm" | "lookup">;
-    logger?: { warn(object: object, message: string): void; info?(object: object, message: string): void };
-    /** The project-scoped targets of spawn_session (legacy `spawnSessions`); without it, hosts are told spawning is off. */
-    spawnTargets?: SpawnTargetResolver;
-    /**
-     * The owner's Allow at this Mac (nativeConfirm.ts): any same-user process passes the request-source guard, so a
-     * pi-run starts only after it. Undefined (not macOS): pi-runs are refused.
-     */
-    confirm?: NativeConfirm | undefined;
-    /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
-    closeGraceMs?: number;
-    /** How long `stopIfUnwatched` waits for the closing tab's own socket to go; default 2 s. */
-    watchGraceMs?: number;
-    /** The clock of the idle close; tests inject one. */
-    now?: () => number;
-    /**
-     * Seamless upgrade B (`PI_WEB_DURABLE_AUTO_UPGRADE=1`, default off): a pinned family that may move is "upgrade
-     * pending" and restarts on current code by itself (Upgrade now) once only restart-surviving work remains.
-     */
-    autoUpgrade?: boolean;
-  }) {
-    this.#idleSweep = setInterval(() => { void this.closeIdleHosts().then(() => this.upgradePendingHosts()); }, IDLE_HOST_SWEEP_MS);
+  constructor(
+    private readonly deps: {
+      locator: SessionRuntimeLocator;
+      events: HostEvents;
+      launch: DurableHostLauncher;
+      /** `<data dir>/durable`: one directory per family store. */
+      storesDir: string;
+      /**
+       * AGENTS.md, APPEND_SYSTEM.md, skills and prompts for a workspace, from Pi's loader, with those the host's packages
+       * contributed; sent to each host as it opens.
+       */
+      resources?: (cwd: string, contributed?: DurableContributedResources) => Promise<DurableChatResourceSet>;
+      /** PI WEB config, for the attachment folder of a save request that names none (as legacy Chats). */
+      config?: { read(): { effectiveConfig: PiWebConfig } | Promise<{ effectiveConfig: PiWebConfig }> };
+      /** Pi's prompt cache-miss notices, as legacy Chats show them: Pi's `showCacheMissNotices` for a workspace, and prices. */
+      cacheMissNotices?: { enabled(cwd: string): boolean; models: ModelPriceSource };
+      /** Pi's `enabledModels` patterns for a workspace; they scope the models a Chat offers, as for legacy Chats. None: every model. */
+      enabledModels?: (cwd: string) => string[] | undefined;
+      /**
+       * The daemon's unread catalog (the legacy service's, shared): committed run starts and ends, and a host exit.
+       * Turn ends of a Durable Chat mark it unread exactly as a legacy Chat's do.
+       */
+      unread?: (sessionId: string, cwd: string, change: "active" | "idle" | "closed") => Promise<void>;
+      /** The daemon's notification store (shared with legacy Chats): each host's package warnings, per Chat. */
+      notifications?: SessionNotificationStore;
+      /** The daemon's Workstream launch records (shared with legacy Chats): a launch token names the Chat it created. */
+      launches?: Pick<WorkstreamLaunchStore, "reserve" | "confirm" | "lookup">;
+      logger?: { warn(object: object, message: string): void; info?(object: object, message: string): void };
+      /** The project-scoped targets of spawn_session (legacy `spawnSessions`); without it, hosts are told spawning is off. */
+      spawnTargets?: SpawnTargetResolver;
+      /**
+       * The owner's Allow at this Mac (nativeConfirm.ts): any same-user process passes the request-source guard, so a
+       * pi-run starts only after it. Undefined (not macOS): pi-runs are refused.
+       */
+      confirm?: NativeConfirm | undefined;
+      /** Stop's wait before SIGTERM, and again before SIGKILL; default 5 s. */
+      closeGraceMs?: number;
+      /** How long `stopIfUnwatched` waits for the closing tab's own socket to go; default 2 s. */
+      watchGraceMs?: number;
+      /** The clock of the idle close; tests inject one. */
+      now?: () => number;
+      /**
+       * Seamless upgrade B (`PI_WEB_DURABLE_AUTO_UPGRADE=1`, default off): a pinned family that may move is "upgrade
+       * pending" and restarts on current code by itself (Upgrade now) once only restart-surviving work remains.
+       */
+      autoUpgrade?: boolean;
+    },
+  ) {
+    this.#idleSweep = setInterval(() => {
+      void this.closeIdleHosts().then(() => this.upgradePendingHosts());
+    }, IDLE_HOST_SWEEP_MS);
     this.#idleSweep.unref();
-    this.#unsubscribeViewed = deps.events.onSessionSubscribersChange?.((sessionId) => { void this.#connections.get(sessionId)?.then((connection) => this.#sendViewed(sessionId, connection), () => undefined); });
+    this.#unsubscribeViewed = deps.events.onSessionSubscribersChange?.((sessionId) => {
+      void this.#connections.get(sessionId)?.then(
+        (connection) => this.#sendViewed(sessionId, connection),
+        () => undefined,
+      );
+    });
   }
 
   /**
@@ -403,10 +543,16 @@ export class DurableChatService {
       // A newer send owns the state (and its own retry).
       if (connection.viewedSent !== viewed) return;
       connection.viewedSent = undefined;
-      connection.viewedRetry = setTimeout(() => {
-        connection.viewedRetry = undefined;
-        void this.#connections.get(sessionId)?.then((live) => live === connection ? this.#sendViewed(sessionId, connection, attempt + 1) : undefined, () => undefined);
-      }, Math.min(VIEWED_RETRY_MS * 2 ** attempt, 30_000));
+      connection.viewedRetry = setTimeout(
+        () => {
+          connection.viewedRetry = undefined;
+          void this.#connections.get(sessionId)?.then(
+            (live) => (live === connection ? this.#sendViewed(sessionId, connection, attempt + 1) : undefined),
+            () => undefined,
+          );
+        },
+        Math.min(VIEWED_RETRY_MS * 2 ** attempt, 30_000),
+      );
       connection.viewedRetry.unref();
     });
   }
@@ -520,7 +666,10 @@ export class DurableChatService {
     return this.#inbox(ref, (store, cwd) => store.dismissAll(ref.id, cwd, request.daemonInstanceId, request.throughOrder, request.throughOverflowWatermark));
   }
 
-  #inbox(ref: SessionRouteRef, operate: (store: SessionNotificationStore, cwd: string) => { snapshot: SessionNotificationInboxSnapshot; mutations: SessionNotificationMutation[] }): SessionNotificationInboxSnapshot | undefined {
+  #inbox(
+    ref: SessionRouteRef,
+    operate: (store: SessionNotificationStore, cwd: string) => { snapshot: SessionNotificationInboxSnapshot; mutations: SessionNotificationMutation[] },
+  ): SessionNotificationInboxSnapshot | undefined {
     const record = this.#record(ref);
     const store = this.deps.notifications;
     if (store === undefined || !this.#notificationGenerations.has(record.id)) return undefined;
@@ -543,7 +692,8 @@ export class DurableChatService {
       // Not a filesystem path: browsers never receive store locations.
       path: `durable:${record.id}`,
       persisted: true,
-      name: record.name !== undefined ? `Durable · ${record.name}` : record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
+      name:
+        record.name !== undefined ? `Durable · ${record.name}` : record.firstMessage === "" ? "Durable Chat" : `Durable · ${record.firstMessage.slice(0, 60)}`,
       ...(record.shortName === undefined ? {} : { shortName: record.shortName }),
       created: record.created,
       modified: record.modified,
@@ -566,7 +716,8 @@ export class DurableChatService {
   }
 
   list(cwd: string, sessionId?: string): ClientSession[] {
-    return this.deps.locator.all()
+    return this.deps.locator
+      .all()
       .filter((record) => record.cwd === cwd && (sessionId === undefined || record.id === sessionId))
       .map((record) => this.info(record));
   }
@@ -583,7 +734,8 @@ export class DurableChatService {
   async messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const record = this.#record(ref);
     const cold = this.#connections.has(record.id) || record.host !== undefined || record.upgrade !== undefined ? undefined : await this.#readCold(record);
-    const transcript = cold !== undefined ? { messages: cold } : hostTranscript((await (await this.#connection(record)).request("transcript", hostPageArgs(page))).result);
+    const transcript =
+      cold !== undefined ? { messages: cold } : hostTranscript((await (await this.#connection(record)).request("transcript", hostPageArgs(page))).result);
     return this.#page(ref, transcript, page);
   }
 
@@ -600,25 +752,34 @@ export class DurableChatService {
     if (running !== undefined) return running;
     // ponytail: one read at a time daemon-wide (each is a Node process opening the store); a sweep of N Chats takes N reads.
     // Never rejects: a reader that cannot start (a launcher refusal, a spawn error) is a failed read, and the next one runs.
-    const read = this.#coldQueue.then(() => new Promise<unknown[] | undefined>((resolve) => {
-      const failed = (error: unknown) => {
-        this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat history reader failed");
-        resolve(undefined);
-      };
-      let messages: unknown[] | undefined;
-      try {
-        const reader = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { readTranscript: true });
-        reader.on("message", (message) => {
-          const transcript = isRecord(message) && isRecord(message["transcript"]) ? message["transcript"] : undefined;
-          if (Array.isArray(transcript?.["messages"])) messages = transcript["messages"];
-        });
-        // A spawn failure emits "error" and may never emit "exit".
-        reader.on("error", failed);
-        reader.on("exit", (code) => { resolve(code === 0 ? messages : undefined); });
-      } catch (error) {
-        failed(error);
-      }
-    })).finally(() => { this.#coldReads.delete(record.id); });
+    const read = this.#coldQueue
+      .then(
+        () =>
+          new Promise<unknown[] | undefined>((resolve) => {
+            const failed = (error: unknown) => {
+              this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat history reader failed");
+              resolve(undefined);
+            };
+            let messages: unknown[] | undefined;
+            try {
+              const reader = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { readTranscript: true });
+              reader.on("message", (message) => {
+                const transcript = isRecord(message) && isRecord(message["transcript"]) ? message["transcript"] : undefined;
+                if (Array.isArray(transcript?.["messages"])) messages = transcript["messages"];
+              });
+              // A spawn failure emits "error" and may never emit "exit".
+              reader.on("error", failed);
+              reader.on("exit", (code) => {
+                resolve(code === 0 ? messages : undefined);
+              });
+            } catch (error) {
+              failed(error);
+            }
+          }),
+      )
+      .finally(() => {
+        this.#coldReads.delete(record.id);
+      });
     this.#coldQueue = read.then(() => undefined);
     this.#coldReads.set(record.id, read);
     return read;
@@ -652,7 +813,13 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     const { result, seq } = await connection.request("transcript", hostPageArgs({ limit: page?.limit ?? 20 }));
     const transcript = hostTranscript(result);
-    return { seq, generation: connection.generation, partial: transcript.partial, page: this.#page(ref, transcript, { limit: page?.limit ?? 20 }), status: { ...this.#withWorkingMode(ref.id, browserStatus(transcript.status, connection), connection), sessionId: ref.id } };
+    return {
+      seq,
+      generation: connection.generation,
+      partial: transcript.partial,
+      page: this.#page(ref, transcript, { limit: page?.limit ?? 20 }),
+      status: { ...this.#withWorkingMode(ref.id, browserStatus(transcript.status, connection), connection), sessionId: ref.id },
+    };
   }
 
   /**
@@ -678,7 +845,8 @@ export class DurableChatService {
     const notices = this.deps.cacheMissNotices;
     if (notices === undefined) return message;
     const history = this.#cacheScan.get(sessionId) ?? [];
-    const cacheMissNotice = isRecord(message) && message["role"] === "assistant" && notices.enabled(cwd) ? liveCacheMissNotice(history, message, notices.models) : undefined;
+    const cacheMissNotice =
+      isRecord(message) && message["role"] === "assistant" && notices.enabled(cwd) ? liveCacheMissNotice(history, message, notices.models) : undefined;
     // ponytail: grows by one small usage record per paid turn while the daemon runs; trim after compaction if it matters.
     this.#cacheScan.set(sessionId, [...history, ...cacheScanEntries([message], "usage")]);
     return cacheMissNotice === undefined || !isRecord(message) ? message : { ...message, cacheMissNotice };
@@ -688,10 +856,17 @@ export class DurableChatService {
    * Resolves once the host committed the input; a queued input shows in status until it is placed. The client's
    * operation ID makes a retried request the same input; `/skill:name` expands as in a legacy Chat.
    */
-  async prompt(ref: SessionRouteRef, text: unknown, streamingBehavior?: unknown, attachments?: unknown, options?: { operationId?: string; spawned?: true; machine?: true }): Promise<void> {
+  async prompt(
+    ref: SessionRouteRef,
+    text: unknown,
+    streamingBehavior?: unknown,
+    attachments?: unknown,
+    options?: { operationId?: string; spawned?: true; machine?: true },
+  ): Promise<void> {
     const operationId = options?.operationId;
     if (typeof text !== "string") throw new Error("text field must be a non-empty string");
-    if (streamingBehavior !== undefined && streamingBehavior !== "steer" && streamingBehavior !== "followUp") throw new Error("streamingBehavior must be steer or followUp");
+    if (streamingBehavior !== undefined && streamingBehavior !== "steer" && streamingBehavior !== "followUp")
+      throw new Error("streamingBehavior must be steer or followUp");
     // As a legacy Chat: images go inline (resized by Pi), named [PIC_n] in a trailing legend unless a command takes them.
     const parsed = parsePromptAttachments(attachments, { enforceInlineSizeLimit: false });
     if (text.trim() === "" && parsed.length === 0) throw new Error("text field must be a non-empty string");
@@ -713,13 +888,20 @@ export class DurableChatService {
     const titled = this.deps.locator.durable(ref.id);
     if (titled?.name !== undefined && titled.shortName === undefined && titled.shortNameSource !== "manual") this.#retab(ref.id);
     const { result } = await connection.request("prompt", {
-      operationId: operationId ?? randomUUID(), text: providerText,
+      operationId: operationId ?? randomUUID(),
+      text: providerText,
       ...(streamingBehavior === undefined ? {} : { mode: streamingBehavior }),
       ...(options?.machine === true ? { machine: true } : {}),
-      ...(images.length === 0 ? {} : {
-        images,
-        attachments: parsed.map((attachment) => ({ reference: attachment.reference, mimeType: attachment.mimeType, ...(attachment.name === undefined ? {} : { name: attachment.name }) })),
-      }),
+      ...(images.length === 0
+        ? {}
+        : {
+            images,
+            attachments: parsed.map((attachment) => ({
+              reference: attachment.reference,
+              mimeType: attachment.mimeType,
+              ...(attachment.name === undefined ? {} : { name: attachment.name }),
+            })),
+          }),
     });
     // The host admitted a new owner input (not a replayed operation; an older host does not say): this chat's reply chain
     // starts again. spawn_session's assignment is not the owner.
@@ -763,7 +945,8 @@ export class DurableChatService {
     const allowed = confirm === undefined ? undefined : await confirm(confirmationText).catch(() => false);
     if (allowed !== true) {
       this.#ownerRuns.delete(key);
-      throw allowed === undefined ? new OwnerRunNotConfirmedError(501, "Run buttons need a macOS confirmation dialog, which this platform lacks")
+      throw allowed === undefined
+        ? new OwnerRunNotConfirmedError(501, "Run buttons need a macOS confirmation dialog, which this platform lacks")
         : new OwnerRunNotConfirmedError(403, "not confirmed: the macOS dialog was not answered with Allow");
     }
     if (run.mode === "run") {
@@ -788,13 +971,24 @@ export class DurableChatService {
       if (cancel.signal.aborted) return;
       const host = await this.#for(ref);
       // Through the host's redactor, as `!` output is; output it cannot redact is withheld.
-      const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(({ result: text }) => typeof text === "string" ? text : undefined, () => undefined);
-      const text = redacted ?? ownerRunResultText(run, { status: result.status, ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }), error: "output withheld: the host could not redact it" });
+      const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(
+        ({ result: text }) => (typeof text === "string" ? text : undefined),
+        () => undefined,
+      );
+      const text =
+        redacted
+        ?? ownerRunResultText(run, {
+          status: result.status,
+          ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+          error: "output withheld: the host could not redact it",
+        });
       // shortcut: a result the host refuses is only logged (the command does not run again); keep it for a retry if that happens.
       // `machine`: not the owner's message, so it leaves an open attention request open (an older host ignores it and clears it).
       await host.request("prompt", { operationId, text, mode: "followUp", machine: true });
     };
-    const failed = (error: unknown) => { this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered"); };
+    const failed = (error: unknown) => {
+      this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered");
+    };
     try {
       void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
     } catch (error) {
@@ -832,12 +1026,19 @@ export class DurableChatService {
     this.#require(connection, "queue.edit");
     const queued = hostStatus((await connection.request("status")).result).queuedMessages;
     const current = queued.map(displayQueuedMessage);
-    if (current.length !== mutation.expectedQueue.length || current.some((entry, index) => {
-      const expected = mutation.expectedQueue[index];
-      if (expected === undefined) return true;
-      return entry.kind !== expected.kind || entry.text !== expected.text
-        || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true));
-    })) return { ...(await this.status(ref)), queueChanged: true };
+    if (
+      current.length !== mutation.expectedQueue.length
+      || current.some((entry, index) => {
+        const expected = mutation.expectedQueue[index];
+        if (expected === undefined) return true;
+        return (
+          entry.kind !== expected.kind
+          || entry.text !== expected.text
+          || (mutation.action === "edit" && index === mutation.index && (entry.hasAttachments === true) !== (expected.hasAttachments === true))
+        );
+      })
+    )
+      return { ...(await this.status(ref)), queueChanged: true };
     if (mutation.index >= current.length) throw new Error("Invalid queue index");
     const changed = await this.#mutateQueue(connection, mutation.action === "edit" ? "recall" : mutation.action, mutation.index, queued);
     return changed ? { ...(await this.status(ref)), queueChanged: true } : this.status(ref);
@@ -890,18 +1091,41 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     const hostCommands = await this.#hostCommands(ref);
     return [
-      ...(connection.capabilities.includes("compact") ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }] : []),
-      ...BUILTIN_COMMANDS.filter((command) => command.name === "name" || command.name === "session" || (command.name === "tree" && connection.capabilities.includes("tree"))),
-      { name: "tabname", description: "Name this Chat's tab in one or two words; without a name, the tab takes a generated one again", argumentHint: "[name]", source: "builtin" as const },
-      { name: "mode", description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now; /mode unalign clears the alignment", source: "extension" as const },
-      { name: "pair", description: "Live review: a reviewer chat watches this chat's work and messages it on a defect; /pair stop ends it", argumentHint: "[provider/model] [--trigger turn|turn5|edits] [--brief silent|coach] | stop", source: "extension" as const },
+      ...(connection.capabilities.includes("compact")
+        ? [{ name: "compact", description: "Manually compact session context", argumentHint: "[instructions]", source: "builtin" as const }]
+        : []),
+      ...BUILTIN_COMMANDS.filter(
+        (command) => command.name === "name" || command.name === "session" || (command.name === "tree" && connection.capabilities.includes("tree")),
+      ),
+      {
+        name: "tabname",
+        description: "Name this Chat's tab in one or two words; without a name, the tab takes a generated one again",
+        argumentHint: "[name]",
+        source: "builtin" as const,
+      },
+      {
+        name: "mode",
+        description: "Choose Working Mode guidance for the next prompt; /mode send delivers it now; /mode unalign clears the alignment",
+        source: "extension" as const,
+      },
+      {
+        name: "pair",
+        description: "Live review: a reviewer chat watches this chat's work and messages it on a defect; /pair stop ends it",
+        argumentHint: "[provider/model] [--trigger turn|turn5|edits] [--brief silent|coach] | stop",
+        source: "extension" as const,
+      },
       ...hostCommands.map((command) => ({ ...command, source: "extension" as const })),
       ...(this.#templates.get(ref.id) ?? []).map((template) => ({
-        name: template.name, source: "prompt" as const,
+        name: template.name,
+        source: "prompt" as const,
         ...(template.description === undefined ? {} : { description: template.description }),
         ...(template.argumentHint === undefined ? {} : { argumentHint: template.argumentHint }),
       })),
-      ...(this.#skills.get(ref.id) ?? []).map((skill) => ({ name: `skill:${skill.name}`, ...(skill.description === undefined ? {} : { description: skill.description }), source: "skill" as const })),
+      ...(this.#skills.get(ref.id) ?? []).map((skill) => ({
+        name: `skill:${skill.name}`,
+        ...(skill.description === undefined ? {} : { description: skill.description }),
+        source: "skill" as const,
+      })),
     ].sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -966,7 +1190,9 @@ export class DurableChatService {
     this.#require(connection, "tree");
     if (request.summary.mode !== "none") this.#require(connection, "tree.summary");
     const { result } = await connection.request("navigate", {
-      targetId: request.targetId, expectedLeafId: request.expectedLeafId, ...(request.retainCheckpoint === true ? { retainCheckpoint: true } : {}),
+      targetId: request.targetId,
+      expectedLeafId: request.expectedLeafId,
+      ...(request.retainCheckpoint === true ? { retainCheckpoint: true } : {}),
     });
     const editorText = isRecord(result) && typeof result["editorText"] === "string" ? stripInlineImageReferenceMapping(result["editorText"]) : undefined;
     return { cancelled: false, ...(editorText === undefined ? {} : { editorText }) };
@@ -974,11 +1200,18 @@ export class DurableChatService {
 
   /** The commands the host offers; a host without any (an older build) offers none. */
   async #hostCommands(ref: SessionRouteRef): Promise<{ name: string; description?: string }[]> {
-    const result = await (await this.#for(ref)).request("commands").then((reply) => reply.result, () => []);
+    const result = await (await this.#for(ref)).request("commands").then(
+      (reply) => reply.result,
+      () => [],
+    );
     return Array.isArray(result)
-      ? result.filter(isRecord).flatMap((command) => typeof command["name"] === "string"
-        ? [{ name: command["name"], ...(typeof command["description"] === "string" ? { description: command["description"] } : {}) }]
-        : [])
+      ? result
+          .filter(isRecord)
+          .flatMap((command) =>
+            typeof command["name"] === "string"
+              ? [{ name: command["name"], ...(typeof command["description"] === "string" ? { description: command["description"] } : {}) }]
+              : [],
+          )
       : [];
   }
 
@@ -1016,11 +1249,16 @@ export class DurableChatService {
     const title = record?.name;
     if (title === undefined || record?.shortNameSource === "manual" || connection === undefined) return;
     void (async () => {
-      const naming = this.deps.config === undefined ? {} : (await this.deps.config.read()).effectiveConfig.sessionNaming ?? {};
+      const naming = this.deps.config === undefined ? {} : ((await this.deps.config.read()).effectiveConfig.sessionNaming ?? {});
       const model = naming.model === undefined ? undefined : parseModelSpec(naming.model);
-      const { result } = await (await connection).request("complete", {
-        systemPrompt: SESSION_TITLE_SYSTEM_PROMPT, prompt: tabNamePrompt(title),
-        maxTokens: naming.maxTokens ?? 24, reasoning: naming.thinkingLevel ?? "minimal", timeoutMs: naming.timeoutMs ?? 10_000,
+      const { result } = await (
+        await connection
+      ).request("complete", {
+        systemPrompt: SESSION_TITLE_SYSTEM_PROMPT,
+        prompt: tabNamePrompt(title),
+        maxTokens: naming.maxTokens ?? 24,
+        reasoning: naming.thinkingLevel ?? "minimal",
+        timeoutMs: naming.timeoutMs ?? 10_000,
         ...(model === undefined ? {} : { model }),
       });
       const shortName = typeof result === "string" ? cleanTabName(result) : undefined;
@@ -1037,7 +1275,12 @@ export class DurableChatService {
     const record = this.deps.locator.durable(sessionId);
     if (record === undefined) throw new Error("Session not found");
     const session = this.info(record);
-    const event = { type: "session.name" as const, sessionId, ...(session.name === undefined ? {} : { name: session.name }), ...(session.shortName === undefined ? {} : { shortName: session.shortName }) };
+    const event = {
+      type: "session.name" as const,
+      sessionId,
+      ...(session.name === undefined ? {} : { name: session.name }),
+      ...(session.shortName === undefined ? {} : { shortName: session.shortName }),
+    };
     this.deps.events.publish(sessionId, event);
     this.deps.events.publishGlobal(event);
     return session;
@@ -1065,18 +1308,23 @@ export class DurableChatService {
     if (record.firstMessage !== "" && sessionTitleInput(record.firstMessage) !== undefined) return;
     this.#titling.add(record.id);
     void (async () => {
-      const naming = this.deps.config === undefined ? {} : (await this.deps.config.read()).effectiveConfig.sessionNaming ?? {};
+      const naming = this.deps.config === undefined ? {} : ((await this.deps.config.read()).effectiveConfig.sessionNaming ?? {});
       const model = naming.model === undefined ? undefined : parseModelSpec(naming.model);
       const { result } = await connection.request("complete", {
-        systemPrompt: SESSION_TITLE_SYSTEM_PROMPT, prompt: shortSessionNamePrompt(titleText),
-        maxTokens: naming.maxTokens ?? 24, reasoning: naming.thinkingLevel ?? "minimal", timeoutMs: naming.timeoutMs ?? 10_000,
+        systemPrompt: SESSION_TITLE_SYSTEM_PROMPT,
+        prompt: shortSessionNamePrompt(titleText),
+        maxTokens: naming.maxTokens ?? 24,
+        reasoning: naming.thinkingLevel ?? "minimal",
+        timeoutMs: naming.timeoutMs ?? 10_000,
         ...(model === undefined ? {} : { model }),
       });
       return typeof result === "string" ? cleanSessionName(result) : undefined;
-    })().catch((error: unknown) => {
-      this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat naming failed; using the first-message fallback");
-      return undefined;
-    }).then(async (name) => name ?? fallbackSessionName((await connection.request("redact", { text: titleText })).result))
+    })()
+      .catch((error: unknown) => {
+        this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat naming failed; using the first-message fallback");
+        return undefined;
+      })
+      .then(async (name) => name ?? fallbackSessionName((await connection.request("redact", { text: titleText })).result))
       .catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat title fallback could not be redacted; leaving the Chat untitled");
         return undefined;
@@ -1092,7 +1340,8 @@ export class DurableChatService {
     const { result } = await (await this.#for(ref)).request("transcript");
     const { messages, status } = hostTranscript(result);
     const role = (name: string) => messages.filter((message) => isRecord(message) && message["role"] === name);
-    const toolCalls = role("assistant").flatMap((message): unknown[] => (isRecord(message) && Array.isArray(message["content"]) ? message["content"] : []))
+    const toolCalls = role("assistant")
+      .flatMap((message): unknown[] => (isRecord(message) && Array.isArray(message["content"]) ? message["content"] : []))
       .filter((part) => isRecord(part) && part["type"] === "toolCall").length;
     return [
       `Session: ${ref.id}`,
@@ -1106,7 +1355,7 @@ export class DurableChatService {
   /** The running host's open asks; undefined when none runs, as this read never starts one. */
   async openAsks(ref: SessionRouteRef): Promise<PendingAskUser[] | undefined> {
     const status = await this.#runningStatus(ref);
-    return status === undefined ? undefined : status.pendingAsks ?? [];
+    return status === undefined ? undefined : (status.pendingAsks ?? []);
   }
 
   /** The newer of the connected host's Working Mode status and the saved one, with its version: never starts a host. */
@@ -1120,7 +1369,11 @@ export class DurableChatService {
   }
 
   /** Only host-numbered samples can seed tabs. Compare host life first, then sample, never transport arrival. */
-  #withWorkingMode<T extends { extensionStatuses?: Record<string, string> }>(id: string, status: T, connection: DurableHostConnection): T & { workingModeVersion?: number } {
+  #withWorkingMode<T extends { extensionStatuses?: Record<string, string> }>(
+    id: string,
+    status: T,
+    connection: DurableHostConnection,
+  ): T & { workingModeVersion?: number } {
     const observed = status.extensionStatuses?.["working-mode"];
     const record = this.deps.locator.durable(id);
     if (observed === undefined || record === undefined) return status;
@@ -1130,10 +1383,17 @@ export class DurableChatService {
     if (last === undefined || connection.hostLife > last.hostLife || (connection.hostLife === last.hostLife && sample > last.sample)) {
       this.#modeSample.set(id, { hostLife: connection.hostLife, sample });
       const mode = sample === 0 ? undefined : observed;
-      if (mode !== record.sampledWorkingMode) this.deps.locator.update(id, { sampledWorkingMode: mode, workingModeVersion: (record.workingModeVersion ?? 0) + 1 });
+      if (mode !== record.sampledWorkingMode)
+        this.deps.locator.update(id, { sampledWorkingMode: mode, workingModeVersion: (record.workingModeVersion ?? 0) + 1 });
     }
     const saved = this.deps.locator.durable(id) ?? record;
-    return saved.sampledWorkingMode === undefined ? status : { ...status, extensionStatuses: { ...status.extensionStatuses, "working-mode": saved.sampledWorkingMode }, workingModeVersion: saved.workingModeVersion ?? 0 };
+    return saved.sampledWorkingMode === undefined
+      ? status
+      : {
+          ...status,
+          extensionStatuses: { ...status.extensionStatuses, "working-mode": saved.sampledWorkingMode },
+          workingModeVersion: saved.workingModeVersion ?? 0,
+        };
   }
 
   async attentionRequest(ref: SessionRouteRef): Promise<SessionAttentionRequest | undefined> {
@@ -1164,11 +1424,23 @@ export class DurableChatService {
     return this.#closeAsk(ref, askId, operationId, undefined, (store, sessionId) => store.cancel(sessionId, askId));
   }
 
-  async #closeAsk(ref: SessionRouteRef, askId: string, operationId: string | undefined, revision: string | undefined, close: (store: PendingAskStore, sessionId: string) => PendingAskCloseResult, attached: readonly AskUserSubmissionImage[] = []): Promise<AskUserCloseResponse> {
+  async #closeAsk(
+    ref: SessionRouteRef,
+    askId: string,
+    operationId: string | undefined,
+    revision: string | undefined,
+    close: (store: PendingAskStore, sessionId: string) => PendingAskCloseResult,
+    attached: readonly AskUserSubmissionImage[] = [],
+  ): Promise<AskUserCloseResponse> {
     const connection = await this.#for(ref);
     // An older host would drop the images; resized (as prompt images are) before the set closes, so a failure keeps it open.
     if (attached.length > 0) this.#require(connection, "ask-images");
-    const images = (await attachmentsToInlineImages(attached.map((image, index) => ({ kind: "image", reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, data: image.data })), true)).map((entry) => entry.image);
+    const images = (
+      await attachmentsToInlineImages(
+        attached.map((image, index) => ({ kind: "image", reference: `[PIC_${String(index + 1)}]`, mimeType: image.mimeType, data: image.data })),
+        true,
+      )
+    ).map((entry) => entry.image);
     const asks = (await this.status(ref)).pendingAsks ?? [];
     const store = new PendingAskStore();
     store.restore(ref.id, asks);
@@ -1178,7 +1450,9 @@ export class DurableChatService {
     // The store's sets after this close, as a legacy Chat reminds: a partial send leaves its set open with the rest.
     const content = outcome === undefined ? "" : renderAskUserFollowUp(outcome, store.pendingAsks(ref.id));
     const { result } = await connection.request("closeAsk", {
-      askId, operationId: operationId ?? randomUUID(), content,
+      askId,
+      operationId: operationId ?? randomUUID(),
+      content,
       ...(outcome === undefined || images.length === 0 ? {} : { images }),
       outcome: outcome ?? { askId, reason: "stale" },
       ...(revision === undefined ? {} : { revision }),
@@ -1189,7 +1463,12 @@ export class DurableChatService {
     const earlier = isRecord(result) && Array.isArray(result["earlier"]) ? result["earlier"].filter(isAskOutcome) : [];
     // `order`: the set's question ids as posted and revised, so the record numbers them in set order, as a legacy Chat's.
     const order = isRecord(result) && Array.isArray(result["order"]) ? result["order"].filter((id) => typeof id === "string") : [];
-    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"])) return { result: "closed", outcome: withEarlierAnswers(result["outcome"], earlier, order, asks.find((ask) => ask.askId === askId)?.contextEdited === true), sessionStatus };
+    if (isRecord(result) && result["result"] === "closed" && isAskOutcome(result["outcome"]))
+      return {
+        result: "closed",
+        outcome: withEarlierAnswers(result["outcome"], earlier, order, asks.find((ask) => ask.askId === askId)?.contextEdited === true),
+        sessionStatus,
+      };
     return { result: "stale", sessionStatus };
   }
 
@@ -1205,7 +1484,11 @@ export class DurableChatService {
 
   async #scopedModels(ref: SessionRouteRef) {
     const { result } = await (await this.#for(ref)).request("models");
-    const models = (Array.isArray(result) ? result.filter(isRecord) : []).map((model) => ({ ...model, provider: typeof model["provider"] === "string" ? model["provider"] : "", id: typeof model["id"] === "string" ? model["id"] : "" }));
+    const models = (Array.isArray(result) ? result.filter(isRecord) : []).map((model) => ({
+      ...model,
+      provider: typeof model["provider"] === "string" ? model["provider"] : "",
+      id: typeof model["id"] === "string" ? model["id"] : "",
+    }));
     // Pi's own pattern resolution, over the host's models (those with a stored login) rather than PI WEB's catalog.
     const enabledIds = await resolveEnabledModelIds({
       settingsManager: { getEnabledModels: () => this.deps.enabledModels?.(ref.cwd) },
@@ -1255,7 +1538,10 @@ export class DurableChatService {
    * shortcut: work the host starts between its status sample and `{ end: true }` (milliseconds) ends unwarned; move the check into the host if that bites.
    * shortcut: another browser that is reconnecting has no socket, so the Chat counts as unwatched and ends; it reopens when that browser reconnects.
    */
-  async stopIfUnwatched(ref: SessionRouteRef, confirmed: boolean): Promise<{ stopped: true } | { stopped: false; watched: true } | { stopped: false; busy: string }> {
+  async stopIfUnwatched(
+    ref: SessionRouteRef,
+    confirmed: boolean,
+  ): Promise<{ stopped: true } | { stopped: false; watched: true } | { stopped: false; busy: string }> {
     const record = this.#record(ref);
     const watched = () => this.deps.events.hasSessionSubscribers?.(record.id) !== false;
     for (let waited = 0; watched() && waited < (this.deps.watchGraceMs ?? 2000); waited += 50) await new Promise((resolve) => setTimeout(resolve, 50));
@@ -1263,9 +1549,12 @@ export class DurableChatService {
     if (!confirmed) {
       const pending = this.#connections.get(record.id) ?? (record.host === undefined ? undefined : this.#connection(record, true));
       const connection = await pending?.catch(() => undefined);
-      const busy = connection === undefined
-        ? familiesWithBackgroundJobs().has(record.id) ? "Background bash jobs are running; closing ends them." : undefined
-        : runningWork(hostStatus((await connection.request("status")).result));
+      const busy =
+        connection === undefined
+          ? familiesWithBackgroundJobs().has(record.id)
+            ? "Background bash jobs are running; closing ends them."
+            : undefined
+          : runningWork(hostStatus((await connection.request("status")).result));
       if (busy !== undefined) return { stopped: false, busy };
       if (watched()) return { stopped: false, watched: true };
     }
@@ -1280,7 +1569,10 @@ export class DurableChatService {
    * restart: no owner ended a Chat.
    */
   async stopAll(): Promise<void> {
-    const recorded = this.deps.locator.all().filter((record) => record.host !== undefined).map((record) => record.id);
+    const recorded = this.deps.locator
+      .all()
+      .filter((record) => record.host !== undefined)
+      .map((record) => record.id);
     await Promise.all([...new Set([...this.#connections.keys(), ...recorded, ...familiesWithBackgroundJobs()])].map((id) => this.#end(id, true)));
   }
 
@@ -1299,7 +1591,10 @@ export class DurableChatService {
       const child = this.deps.launch(record, join(this.deps.storesDir, record.storeId), { endJobs: true });
       await new Promise<void>((resolve, reject) => {
         child.on("error", reject);
-        child.on("exit", (code) => { if (code === 0) resolve(); else reject(new Error(`Cancelling the background jobs of Durable Chat ${sessionId} failed (exit ${String(code)})`)); });
+        child.on("exit", (code) => {
+          if (code === 0) resolve();
+          else reject(new Error(`Cancelling the background jobs of Durable Chat ${sessionId} failed (exit ${String(code)})`));
+        });
       });
     }
     await connection?.close(this.deps.closeGraceMs ?? 5000, explicit ? { end: true } : undefined);
@@ -1316,7 +1611,13 @@ export class DurableChatService {
     for (const [id, pending] of [...this.#connections]) {
       if (!idle(id)) continue;
       const connection = await pending.catch(() => undefined);
-      const busy = connection === undefined ? "it is not open" : await connection.request("status").then(({ result }) => familyBusy(hostStatus(result)), () => "its status is unknown");
+      const busy =
+        connection === undefined
+          ? "it is not open"
+          : await connection.request("status").then(
+              ({ result }) => familyBusy(hostStatus(result)),
+              () => "its status is unknown",
+            );
       // Re-checked after the await: work or a browser may have arrived meanwhile.
       if (busy !== undefined || !idle(id) || this.#connections.get(id) !== pending) continue;
       this.deps.logger?.info?.({ sessionId: id }, "Closing idle Durable Chat host");
@@ -1324,7 +1625,13 @@ export class DurableChatService {
       // The pin moves, not away: it keeps naming code that opened the store, so a daemon rolled back to older code
       // reopens the family on it and never on code older than the store.
       const upgrade = connection?.pin !== undefined && hostMoveRefusal(connection.code) === undefined ? connection.code?.current : undefined;
-      const closed = await this.#end(id).then(() => true, (error: unknown) => { this.deps.logger?.warn({ sessionId: id, err: error }, "Durable Chat host did not close cleanly"); return false; });
+      const closed = await this.#end(id).then(
+        () => true,
+        (error: unknown) => {
+          this.deps.logger?.warn({ sessionId: id, err: error }, "Durable Chat host did not close cleanly");
+          return false;
+        },
+      );
       if (closed && upgrade !== undefined) this.deps.locator.setHostEntry(id, upgrade);
     }
   }
@@ -1364,7 +1671,7 @@ export class DurableChatService {
       // Served Pages do not block the owner's click: `status` below starts the new host at once, which reopens them on the
       // same port, so open tabs miss only the restart.
       const busy = familyBusy(hostStatus((await connection.request("status")).result));
-      const refused = busy ?? await this.#upgradeOnce(record, pin, connection.code, connection.closeIfRestartSafe ? "ifRestartSafe" : "plain", true);
+      const refused = busy ?? (await this.#upgradeOnce(record, pin, connection.code, connection.closeIfRestartSafe ? "ifRestartSafe" : "plain", true));
       if (refused !== undefined) throw new Error(`This Chat cannot move to new host code while ${refused}; try again when it is quiet`);
       return this.status(ref);
     }
@@ -1376,12 +1683,20 @@ export class DurableChatService {
    * One ordered restart per family at a time, until its resume: a later request (a double click, B) joins it. Only within
    * one Pi Durable version (see `restartRefusal`), unless with `noFallback`, which only never moves to older code.
    */
-  #upgradeOnce(record: DurableChatRecord, pin: { revision: string; current: string }, code: DurableHostProcess["code"], close: UpgradeClose, noFallback = false): Promise<string | undefined> {
+  #upgradeOnce(
+    record: DurableChatRecord,
+    pin: { revision: string; current: string },
+    code: DurableHostProcess["code"],
+    close: UpgradeClose,
+    noFallback = false,
+  ): Promise<string | undefined> {
     let running = this.#upgrades.get(record.id);
     if (running === undefined) {
       const refusal = noFallback ? hostMoveRefusal(code) : restartRefusal(code);
       if (refusal !== undefined) return Promise.reject(new Error(refusal));
-      running = this.#upgradeRestart(record, pin, code?.current, close, noFallback).finally(() => { this.#upgrades.delete(record.id); });
+      running = this.#upgradeRestart(record, pin, code?.current, close, noFallback).finally(() => {
+        this.#upgrades.delete(record.id);
+      });
       this.#upgrades.set(record.id, running);
     }
     return running;
@@ -1400,14 +1715,22 @@ export class DurableChatService {
    * is on disk first (`DurableChatRecord.upgrade`) and cleared only once a host acknowledged its resume, so a daemon that
    * dies or fails before then leaves the owed resume to the next one (`#recoverUpgrade`).
    */
-  async #upgradeRestart(record: DurableChatRecord, pin: { revision: string; current: string }, current: string | undefined, close: UpgradeClose, noFallback: boolean): Promise<string | undefined> {
+  async #upgradeRestart(
+    record: DurableChatRecord,
+    pin: { revision: string; current: string },
+    current: string | undefined,
+    close: UpgradeClose,
+    noFallback: boolean,
+  ): Promise<string | undefined> {
     const id = record.id;
     const pinned = this.deps.locator.durable(id)?.hostEntry;
     const old = this.#connections.get(id);
     if (old === undefined) return "it is not open";
     this.deps.logger?.info?.({ sessionId: id, from: pin.revision, to: pin.current }, "upgrade-restart: restarting Durable Chat host on current code");
     let settle!: (connection: Promise<DurableHostConnection>) => void;
-    const held = new Promise<DurableHostConnection>((resolve) => { settle = resolve; });
+    const held = new Promise<DurableHostConnection>((resolve) => {
+      settle = resolve;
+    });
     // Settled with a failed start when both codes fail: the caller gets that error; the family's entry may have no reader.
     void held.catch(() => undefined);
     let final: Promise<DurableHostConnection> | undefined;
@@ -1417,8 +1740,15 @@ export class DurableChatService {
       settle(connection);
       // The family's entry becomes the host's own, so its exit drops it; none when it is gone or never started.
       void connection.then(
-        (host) => { if (this.#connections.get(id) === held) { if (host.alive) this.#connections.set(id, connection); else this.#connections.delete(id); } },
-        () => { if (this.#connections.get(id) === held) this.#connections.delete(id); },
+        (host) => {
+          if (this.#connections.get(id) === held) {
+            if (host.alive) this.#connections.set(id, connection);
+            else this.#connections.delete(id);
+          }
+        },
+        () => {
+          if (this.#connections.get(id) === held) this.#connections.delete(id);
+        },
       );
     };
     let carryFullAccess = false;
@@ -1457,11 +1787,17 @@ export class DurableChatService {
       this.deps.logger?.warn({ sessionId: id, err: connection }, "upgrade-restart: the new host did not start; no fallback across a store-format change");
       handOver(next);
       this.#upgradeDone(id);
-      throw new Error(`The new host code (${pin.current}) did not start: ${connection.message}. This upgrade changes the store format, so this Chat stays on the new code; the next message tries again.`, { cause: connection });
+      throw new Error(
+        `The new host code (${pin.current}) did not start: ${connection.message}. This upgrade changes the store format, so this Chat stays on the new code; the next message tries again.`,
+        { cause: connection },
+      );
     }
     if (connection instanceof Error) {
       const back = await this.#rollBack(record, open(pinned), connection, handOver);
-      throw new Error(`The new host code (${pin.current}) did not start: ${connection.message}. This Chat is back on its old host code (${pin.revision}).${back}`, { cause: connection });
+      throw new Error(
+        `The new host code (${pin.current}) did not start: ${connection.message}. This Chat is back on its old host code (${pin.revision}).${back}`,
+        { cause: connection },
+      );
     }
     // Settled before the resume is sent, which still goes first: waiters run only after it is on its way.
     handOver(next);
@@ -1493,10 +1829,12 @@ export class DurableChatService {
   async #finishUpgrade(sessionId: string, connection: DurableHostConnection, recovering = false): Promise<void> {
     const nonce = connection.fullAccessNonce;
     connection.fullAccessNonce = undefined;
-    await connection.request("resume", { reason: "upgrade-restart", ...(recovering ? { discardFullAccess: true } : nonce === undefined ? {} : { fullAccess: nonce }) }).catch((error: unknown) => {
-      if (!(error instanceof Error && error.message === "Unknown method resume")) throw error;
-      this.deps.logger?.warn({}, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
-    });
+    await connection
+      .request("resume", { reason: "upgrade-restart", ...(recovering ? { discardFullAccess: true } : nonce === undefined ? {} : { fullAccess: nonce }) })
+      .catch((error: unknown) => {
+        if (!(error instanceof Error && error.message === "Unknown method resume")) throw error;
+        this.deps.logger?.warn({}, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
+      });
     this.#upgradeDone(sessionId);
   }
 
@@ -1504,13 +1842,25 @@ export class DurableChatService {
    * After a failed start of the new host: the old pin's host (`started`, the one host the rollback starts), resumed.
    * `handOver` gets it as the family's connection. Returns the rest of the error's sentence.
    */
-  async #rollBack(record: DurableChatRecord, started: Promise<DurableHostConnection>, error: unknown, handOver?: (connection: Promise<DurableHostConnection>) => void): Promise<string> {
+  async #rollBack(
+    record: DurableChatRecord,
+    started: Promise<DurableHostConnection>,
+    error: unknown,
+    handOver?: (connection: Promise<DurableHostConnection>) => void,
+  ): Promise<string> {
     this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the new host did not start; rolling back to the old pin");
     handOver?.(started);
     const message = (failure: unknown) => (failure instanceof Error ? failure.message : String(failure));
     return started.then(
-      (host) => this.#finishUpgrade(record.id, host).then(() => "", (failure: unknown) => ` It did not resume there (${message(failure)}); the next message resumes it.`),
-      (again: unknown) => { this.#upgradeDone(record.id); return ` It did not start there either (${message(again)}); the next message tries again.`; },
+      (host) =>
+        this.#finishUpgrade(record.id, host).then(
+          () => "",
+          (failure: unknown) => ` It did not resume there (${message(failure)}); the next message resumes it.`,
+        ),
+      (again: unknown) => {
+        this.#upgradeDone(record.id);
+        return ` It did not start there either (${message(again)}); the next message tries again.`;
+      },
     );
   }
 
@@ -1523,7 +1873,9 @@ export class DurableChatService {
     this.deps.logger?.info?.({ sessionId: record.id }, "upgrade-restart: finishing an upgrade an earlier daemon left");
     const connection = await this.#connection(record).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
     if (!(connection instanceof Error)) {
-      await this.#finishUpgrade(record.id, connection, true).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; a later daemon or the next message resumes"); });
+      await this.#finishUpgrade(record.id, connection, true).catch((error: unknown) => {
+        this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; a later daemon or the next message resumes");
+      });
       return;
     }
     if (upgrade.from === undefined || this.deps.locator.durable(record.id)?.hostEntry === upgrade.from) {
@@ -1558,7 +1910,10 @@ export class DurableChatService {
         const record = this.deps.locator.durable(id);
         const pin = connection?.pin;
         if (connection?.upgradePending !== true || pin === undefined || record === undefined || this.#connections.get(id) !== pending) continue;
-        const status = await connection.request("status").then(({ result }) => hostStatus(result), () => undefined);
+        const status = await connection.request("status").then(
+          ({ result }) => hostStatus(result),
+          () => undefined,
+        );
         if (status === undefined || !restartSafe(status) || this.#declined(id, connection.code) || this.#connections.get(id) !== pending) continue;
         // A store-format change moves only when the family is quiet, as the Upgrade host click does.
         if (connection.upgradeQuiet && familyBusy(status) !== undefined) continue;
@@ -1567,7 +1922,10 @@ export class DurableChatService {
           this.deps.logger?.warn({ sessionId: id, err: error }, "upgrade-restart: automatic upgrade failed");
           this.deps.locator.setUpgradeState(id, "upgradeDeclined", connection.code?.current);
           const generation = this.#notificationGenerations.get(id);
-          if (generation !== undefined) this.#publishNotifications(this.deps.notifications?.addNotification(generation, error instanceof Error ? error.message : String(error), "warning").mutations ?? []);
+          if (generation !== undefined)
+            this.#publishNotifications(
+              this.deps.notifications?.addNotification(generation, error instanceof Error ? error.message : String(error), "warning").mutations ?? [],
+            );
         });
       } finally {
         this.#autoUpgrading.delete(id);
@@ -1584,10 +1942,12 @@ export class DurableChatService {
     this.#unsubscribeViewed?.();
     const connections = [...this.#connections.values()];
     this.#connections.clear();
-    await Promise.all(connections.map(async (pending) => {
-      const connection = await pending.catch(() => undefined);
-      if (connection?.detach() === false) await connection.close(this.deps.closeGraceMs ?? 5000);
-    }));
+    await Promise.all(
+      connections.map(async (pending) => {
+        const connection = await pending.catch(() => undefined);
+        if (connection?.detach() === false) await connection.close(this.deps.closeGraceMs ?? 5000);
+      }),
+    );
   }
 
   /**
@@ -1595,11 +1955,23 @@ export class DurableChatService {
    * for a family an earlier daemon left mid-upgrade, whose host is owed a resume.
    */
   async reattach(): Promise<void> {
-    await Promise.all(this.deps.locator.all().map((record) => {
-      if (record.upgrade !== undefined) return this.#recoverUpgrade(record, record.upgrade);
-      // A reattached host may have changed Working Mode while no daemon listened: refresh the record from it.
-      return record.host === undefined ? Promise.resolve() : this.#connection(record, true).then(() => this.workingMode(record), () => undefined).then(() => undefined, () => undefined);
-    }));
+    await Promise.all(
+      this.deps.locator.all().map((record) => {
+        if (record.upgrade !== undefined) return this.#recoverUpgrade(record, record.upgrade);
+        // A reattached host may have changed Working Mode while no daemon listened: refresh the record from it.
+        return record.host === undefined
+          ? Promise.resolve()
+          : this.#connection(record, true)
+              .then(
+                () => this.workingMode(record),
+                () => undefined,
+              )
+              .then(
+                () => undefined,
+                () => undefined,
+              );
+      }),
+    );
   }
 
   #for(ref: SessionRouteRef): Promise<DurableHostConnection> {
@@ -1620,12 +1992,20 @@ export class DurableChatService {
       this.#notificationGenerations.set(record.id, notifications.generation);
       this.#publishNotifications(notifications.mutations);
     }
-    const host = attachOnly ? this.deps.launch(record, storeDir, { attachOnly }) : this.deps.launch(record, storeDir, fullAccessNonce === undefined ? undefined : { fullAccessDigest: createHash("sha256").update(fullAccessNonce).digest("hex") });
+    const host = attachOnly
+      ? this.deps.launch(record, storeDir, { attachOnly })
+      : this.deps.launch(
+          record,
+          storeDir,
+          fullAccessNonce === undefined ? undefined : { fullAccessDigest: createHash("sha256").update(fullAccessNonce).digest("hex") },
+        );
     this.#lastActive.set(record.id, this.#now());
     const connection = new DurableHostConnection(
       host,
       this.deps.events.startGeneration(record.id),
-      (event) => { this.#onEvent(record.id, event, connection); },
+      (event) => {
+        this.#onEvent(record.id, event, connection);
+      },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
         // Only this host's entry: during Upgrade now the map already holds the handover to the next host.
@@ -1636,7 +2016,9 @@ export class DurableChatService {
         if (this.#reviewing.delete(record.id) && record.reviewing !== undefined) void this.#sendDigest(record.reviewing);
         this.deps.events.publish(record.id, { type: "agent.end" });
       },
-      (error) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host process error"); },
+      (error) => {
+        this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat host process error");
+      },
     );
     connection.fullAccessNonce = fullAccessNonce;
     const opened = connection.ready.then(async () => {
@@ -1644,8 +2026,12 @@ export class DurableChatService {
       connection.pin = await hostPin(host.code, connection.revision);
       const refusal = restartRefusal(host.code);
       connection.upgradeQuiet = refusal !== undefined && hostMoveRefusal(host.code) === undefined;
-      connection.upgradePending = this.deps.autoUpgrade === true && connection.pin !== undefined && !this.#declined(record.id, host.code)
-        && (connection.upgradeQuiet || refusal === undefined) && connection.closeIfRestartSafe;
+      connection.upgradePending =
+        this.deps.autoUpgrade === true
+        && connection.pin !== undefined
+        && !this.#declined(record.id, host.code)
+        && (connection.upgradeQuiet || refusal === undefined)
+        && connection.closeIfRestartSafe;
       const loaded = await this.deps.resources?.(record.cwd, connection.contributed).catch((error: unknown) => {
         this.deps.logger?.warn({ sessionId: record.id, err: error }, "Durable Chat resources failed to load");
         return undefined;
@@ -1653,13 +2039,20 @@ export class DurableChatService {
       if (loaded !== undefined) {
         this.#skills.set(record.id, loaded.skillList);
         this.#templates.set(record.id, loaded.promptList ?? []);
-        await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, spawnSessions: this.deps.spawnTargets !== undefined, chatMessages: true });
+        await connection.request("configure", {
+          resources: loaded.resources,
+          compaction: loaded.compaction,
+          spawnSessions: this.deps.spawnTargets !== undefined,
+          chatMessages: true,
+        });
       }
       await this.#sendViewed(record.id, connection);
       return connection;
     });
     this.#connections.set(record.id, opened);
-    opened.catch(() => { if (this.#connections.get(record.id) === opened) this.#connections.delete(record.id); });
+    opened.catch(() => {
+      if (this.#connections.get(record.id) === opened) this.#connections.delete(record.id);
+    });
     return opened;
   }
 
@@ -1670,9 +2063,14 @@ export class DurableChatService {
       pending = this.#spawn(event);
       this.#spawns.set(event.requestId, pending);
       // ponytail: successful request IDs stay for the daemon's life (one small entry per spawned Chat).
-      pending.catch(() => { this.#spawns.delete(event.requestId); });
+      pending.catch(() => {
+        this.#spawns.delete(event.requestId);
+      });
     }
-    const answer = await pending.then((result) => ({ result }), (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+    const answer = await pending.then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+    );
     await connection.request("spawned", { requestId: event.requestId, ...answer }).catch((error: unknown) => {
       this.deps.logger?.warn({ requestId: event.requestId, err: error }, "Durable Chat host did not take the spawn_session answer");
     });
@@ -1709,8 +2107,18 @@ export class DurableChatService {
     }
     const record = this.deps.locator.durable(ref.id);
     if (record !== undefined) this.deps.events.publishGlobal({ type: "session.created", session: this.info(record) });
-    this.deps.logger?.info?.({ spawningCwd: event.spawningCwd, sessionId: ref.id, cwd: ref.cwd, promptLength: event.prompt.length }, "spawn_session started a new Durable Chat");
-    const used = event.model ?? (await this.status(ref).then((status) => status.model, () => undefined).then((m) => (m?.provider === undefined || m.id === undefined ? undefined : `${m.provider}/${m.id}`)));
+    this.deps.logger?.info?.(
+      { spawningCwd: event.spawningCwd, sessionId: ref.id, cwd: ref.cwd, promptLength: event.prompt.length },
+      "spawn_session started a new Durable Chat",
+    );
+    const used =
+      event.model
+      ?? (await this.status(ref)
+        .then(
+          (status) => status.model,
+          () => undefined,
+        )
+        .then((m) => (m?.provider === undefined || m.id === undefined ? undefined : `${m.provider}/${m.id}`)));
     return { sessionId: ref.id, cwd: ref.cwd, ...(used === undefined ? {} : { model: used }) };
   }
 
@@ -1721,21 +2129,31 @@ export class DurableChatService {
    */
   async #chatIdentity(record: DurableChatRecord, connection: DurableHostConnection): Promise<{ key: string; name: string }> {
     const before = this.deps.locator.durable(record.id) ?? record;
-    const masked = (text: string) => connection.request("redact", { text }).then(
-      ({ result }) => {
-        const clean = typeof result === "string" ? result.replace(/\[REDACTED[^\]]*\]/gu, " ").replace(/\s+/gu, " ").trim() : "";
-        return clean === "" ? undefined : clean;
-      },
-      () => undefined,
-    );
+    const masked = (text: string) =>
+      connection.request("redact", { text }).then(
+        ({ result }) => {
+          const clean =
+            typeof result === "string"
+              ? result
+                  .replace(/\[REDACTED[^\]]*\]/gu, " ")
+                  .replace(/\s+/gu, " ")
+                  .trim()
+              : "";
+          return clean === "" ? undefined : clean;
+        },
+        () => undefined,
+      );
     const title = before.name === undefined ? undefined : await masked(before.name);
     const needed = before.firstMessage !== "" && (title === undefined || before.key === undefined);
-    const first = !needed ? "" : (await masked(before.firstMessage)) ?? "";
+    const first = !needed ? "" : ((await masked(before.firstMessage)) ?? "");
     // Read again after the await, with no await before the save: a concurrent send may have assigned the key meanwhile.
     const live = this.deps.locator.durable(record.id) ?? before;
     let key = live.key;
     if (key === undefined) {
-      key = chatKey({ id: live.id, ...(title === undefined ? {} : { name: title }), firstMessage: first }, new Set(this.deps.locator.all().flatMap((other) => (other.key === undefined ? [] : [other.key]))));
+      key = chatKey(
+        { id: live.id, ...(title === undefined ? {} : { name: title }), firstMessage: first },
+        new Set(this.deps.locator.all().flatMap((other) => (other.key === undefined ? [] : [other.key]))),
+      );
       this.deps.locator.update(live.id, { key });
     }
     return { key, name: title ?? (first.slice(0, 60).trim() || "Durable Chat") };
@@ -1749,8 +2167,13 @@ export class DurableChatService {
     const found = records.find((record) => record.key === name) ?? this.deps.locator.durable(name);
     if (found !== undefined) return found;
     if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(name)) throw new Error(`No Durable Chat ${name} in this PI WEB`);
-    const close = closeChatKeys(name, records.flatMap((record) => (record.key === undefined ? [] : [record.key])));
-    throw new Error(`send_chat_message: no chat with key ${name}${close.length === 0 ? "" : `; close matches: ${close.join(", ")}`}. Run send_chat_message with action "list" to see chats.`);
+    const close = closeChatKeys(
+      name,
+      records.flatMap((record) => (record.key === undefined ? [] : [record.key])),
+    );
+    throw new Error(
+      `send_chat_message: no chat with key ${name}${close.length === 0 ? "" : `; close matches: ${close.join(", ")}`}. Run send_chat_message with action "list" to see chats.`,
+    );
   }
 
   /** A host's send_chat_message request: answered with `chatMessaged`, the delivery or the refusal. */
@@ -1765,11 +2188,16 @@ export class DurableChatService {
       if (sending === undefined) {
         sending = this.#sendChatMessage(sender, event, connection);
         this.#chatMessages.set(id, { at: now, sending });
-        sending.catch(() => { this.#chatMessages.delete(id); });
+        sending.catch(() => {
+          this.#chatMessages.delete(id);
+        });
       }
       pending = sending;
     }
-    const answer = await pending.then((result) => ({ result }), (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }));
+    const answer = await pending.then(
+      (result) => ({ result }),
+      (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) }),
+    );
     await connection.request("chatMessaged", { requestId: event.requestId, ...answer }).catch((error: unknown) => {
       this.deps.logger?.warn({ requestId: event.requestId, err: error }, "Durable Chat host did not take the send_chat_message answer");
     });
@@ -1778,17 +2206,30 @@ export class DurableChatService {
   /** Other chats, most recently active first, at most 15. */
   #chatList(sender: DurableChatRecord, connection: DurableHostConnection): Promise<ChatListEntry[]> {
     const active = (record: DurableChatRecord) => Math.max(Date.parse(record.modified) || 0, this.#lastActive.get(record.id) ?? 0);
-    const records = this.deps.locator.all().filter((record) => record.id !== sender.id).sort((a, b) => active(b) - active(a)).slice(0, CHAT_LIST_LIMIT);
-    return Promise.all(records.map(async (record): Promise<ChatListEntry> => {
-      const { key, name } = await this.#chatIdentity(record, connection);
-      return { id: record.id, key, title: name.slice(0, 60), cwd: record.cwd, state: !this.#connections.has(record.id) ? "closed" : this.#streaming.has(record.id) ? "running" : "idle" };
-    }));
+    const records = this.deps.locator
+      .all()
+      .filter((record) => record.id !== sender.id)
+      .sort((a, b) => active(b) - active(a))
+      .slice(0, CHAT_LIST_LIMIT);
+    return Promise.all(
+      records.map(async (record): Promise<ChatListEntry> => {
+        const { key, name } = await this.#chatIdentity(record, connection);
+        return {
+          id: record.id,
+          key,
+          title: name.slice(0, 60),
+          cwd: record.cwd,
+          state: !this.#connections.has(record.id) ? "closed" : this.#streaming.has(record.id) ? "running" : "idle",
+        };
+      }),
+    );
   }
 
   /** Validate, apply the loop guard, start or reach the target's host, and deliver; the sender is the daemon's record. */
   async #sendChatMessage(sender: DurableChatRecord, event: HostChatMessageEvent, senderConnection: DurableHostConnection): Promise<ChatMessageResult> {
     const { text } = event;
-    if (typeof text !== "string" || text.trim() === "" || text.length > CHAT_MESSAGE_MAX_LENGTH) throw new Error(`send_chat_message: text must be 1 to ${String(CHAT_MESSAGE_MAX_LENGTH)} characters`);
+    if (typeof text !== "string" || text.trim() === "" || text.length > CHAT_MESSAGE_MAX_LENGTH)
+      throw new Error(`send_chat_message: text must be 1 to ${String(CHAT_MESSAGE_MAX_LENGTH)} characters`);
     const target = this.#chatMessageTarget(event.chat);
     if (target.id === sender.id) throw new Error("send_chat_message: a chat cannot message itself");
     const to = await this.#chatIdentity(target, senderConnection);
@@ -1805,8 +2246,14 @@ export class DurableChatService {
     const live = sender.reviewing === target.id && target.liveReview?.reviewerId === sender.id;
     const windows = live ? [] : [`${sender.id}\0${target.id}`, sender.id];
     const [direction = [], hourly = []] = windows.map((window) => this.#chatMessagesSent.get(window));
-    if (direction.length >= CHAT_MESSAGE_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; stop and report to the owner instead of retrying.`);
-    if (hourly.length >= CHAT_MESSAGE_HOURLY_LIMIT) throw new Error(`send_chat_message: you sent ${String(CHAT_MESSAGE_HOURLY_LIMIT)} chat messages in the last hour; stop and report to the owner instead of retrying.`);
+    if (direction.length >= CHAT_MESSAGE_LIMIT)
+      throw new Error(
+        `send_chat_message: you sent ${String(CHAT_MESSAGE_LIMIT)} messages to ${key} in the last 5 minutes; stop and report to the owner instead of retrying.`,
+      );
+    if (hourly.length >= CHAT_MESSAGE_HOURLY_LIMIT)
+      throw new Error(
+        `send_chat_message: you sent ${String(CHAT_MESSAGE_HOURLY_LIMIT)} chat messages in the last hour; stop and report to the owner instead of retrying.`,
+      );
     for (const window of windows) this.#chatMessagesSent.set(window, [...(this.#chatMessagesSent.get(window) ?? []), { at: now, requestId: event.requestId }]);
     // shortcut: a replay after a daemon restart counts until the target answers it as a duplicate, so a full window refuses it first; persist the windows if that shows up.
     const uncount = () => {
@@ -1823,11 +2270,17 @@ export class DurableChatService {
     try {
       const connection = await this.#connection(target);
       const { result } = await connection.request("chatMessage", {
-        requestId: event.requestId, from: { chatId: sender.id, key: from.key, name: from.name }, text, wake, urgent: wake && event.urgent === true,
-        ...(live ? { liveReview: { kind: "reviewer" } } : { hop }), ...(held ? { held: true } : {}),
+        requestId: event.requestId,
+        from: { chatId: sender.id, key: from.key, name: from.name },
+        text,
+        wake,
+        urgent: wake && event.urgent === true,
+        ...(live ? { liveReview: { kind: "reviewer" } } : { hop }),
+        ...(held ? { held: true } : {}),
       });
       const delivery = isRecord(result) ? result["delivery"] : undefined;
-      if (delivery !== "started" && delivery !== "queued" && delivery !== "steered" && delivery !== "noted") throw new Error("The target chat's host sent a malformed delivery");
+      if (delivery !== "started" && delivery !== "queued" && delivery !== "steered" && delivery !== "noted")
+        throw new Error("The target chat's host sent a malformed delivery");
       // A replay the target took before (a restarted daemon forgot it): the hop and held flag it was admitted with, and no quota.
       const duplicate = isRecord(result) && result["duplicate"] === true;
       if (duplicate) uncount();
@@ -1841,9 +2294,11 @@ export class DurableChatService {
     } catch (error) {
       // A failed delivery does not count toward the limits: its own entry goes from the current windows.
       uncount();
-      if (error instanceof Error && error.message === "Unknown method chatMessage") throw new Error("The target chat's host is too old; upgrade its host", { cause: error });
+      if (error instanceof Error && error.message === "Unknown method chatMessage")
+        throw new Error("The target chat's host is too old; upgrade its host", { cause: error });
       // The target's restore waits for its owner: refused now, never delivered later.
-      if (error instanceof Error && error.message === CHAT_PAUSED) throw new Error(`${key} is paused until the owner resumes it; the message was not delivered`, { cause: error });
+      if (error instanceof Error && error.message === CHAT_PAUSED)
+        throw new Error(`${key} is paused until the owner resumes it; the message was not delivered`, { cause: error });
       throw error;
     }
   }
@@ -1868,12 +2323,14 @@ export class DurableChatService {
       return { type: "done", message: `Live review stopped; "${reviewerName(pairing.reviewerId)}" stays readable.` };
     }
     if (main.reviewing !== undefined) return { type: "unsupported", message: "This chat is a live reviewer; it cannot have one." };
-    if (pairing !== undefined) return { type: "unsupported", message: `This chat already has a live reviewer, "${reviewerName(pairing.reviewerId)}"; /pair stop ends it first.` };
+    if (pairing !== undefined)
+      return { type: "unsupported", message: `This chat already has a live reviewer, "${reviewerName(pairing.reviewerId)}"; /pair stop ends it first.` };
     const model = parseModelSpec(command.model);
     if (model === undefined) return { type: "unsupported", message: PAIR_USAGE };
     const connection = await this.#connection(main);
     // An older host would show the reviewer's messages as ordinary mail and drop the reviewer's brief.
-    if (!connection.capabilities.includes("liveReview")) return { type: "unsupported", message: "Live review needs this chat's host to support it: upgrade host, then /pair again." };
+    if (!connection.capabilities.includes("liveReview"))
+      return { type: "unsupported", message: "Live review needs this chat's host to support it: upgrade host, then /pair again." };
     const { name } = await this.#chatIdentity(main, connection);
     const reviewer = await this.start(main.cwd);
     const reviewerRef = { id: reviewer.id, cwd: reviewer.cwd };
@@ -1892,18 +2349,39 @@ export class DurableChatService {
     }
     const title = `Live review · ${name}`.slice(0, CHECKPOINT_SESSION_TITLE_MAX_LENGTH);
     this.#setName(reviewer.id, title, "manual");
-    const next: LiveReviewPairing = { reviewerId: reviewer.id, model: command.model, thinking: "low", trigger: command.trigger, brief: command.brief, turn: 0, digests: 0, startedAt: new Date(this.#now()).toISOString() };
-    this.deps.locator.updateAll([[main.id, { liveReview: next }], [reviewer.id, { reviewing: main.id }]]);
+    const next: LiveReviewPairing = {
+      reviewerId: reviewer.id,
+      model: command.model,
+      thinking: "low",
+      trigger: command.trigger,
+      brief: command.brief,
+      turn: 0,
+      digests: 0,
+      startedAt: new Date(this.#now()).toISOString(),
+    };
+    this.deps.locator.updateAll([
+      [main.id, { liveReview: next }],
+      [reviewer.id, { reviewing: main.id }],
+    ]);
     const record = this.deps.locator.durable(reviewer.id);
     if (record !== undefined) this.deps.events.publishGlobal({ type: "session.created", session: this.info(record) });
-    this.deps.logger?.info?.({ sessionId: main.id, reviewerId: reviewer.id, model: command.model, trigger: command.trigger, brief: command.brief }, "live review started");
-    return { type: "done", message: `Live review on: "${title}" reviews this chat with ${command.model} at thinking low, trigger ${command.trigger}, brief ${command.brief}. /pair stop ends it.` };
+    this.deps.logger?.info?.(
+      { sessionId: main.id, reviewerId: reviewer.id, model: command.model, trigger: command.trigger, brief: command.brief },
+      "live review started",
+    );
+    return {
+      type: "done",
+      message: `Live review on: "${title}" reviews this chat with ${command.model} at thinking low, trigger ${command.trigger}, brief ${command.brief}. /pair stop ends it.`,
+    };
   }
 
   /** Run a pairing change after the ones before it for the same main Chat, so two `/pair` never start two reviewers. */
   #serializePairing<T>(mainId: string, change: () => Promise<T>): Promise<T> {
     const run = (this.#pairings.get(mainId) ?? Promise.resolve()).then(change, change);
-    this.#pairings.set(mainId, run.catch(() => undefined));
+    this.#pairings.set(
+      mainId,
+      run.catch(() => undefined),
+    );
     return run;
   }
 
@@ -1916,14 +2394,18 @@ export class DurableChatService {
     await this.#serializePairing(mainId, () => {
       const reviewerId = this.deps.locator.durable(mainId)?.liveReview?.reviewerId;
       if (reviewerId !== undefined && (mainId === sessionId || reviewerId === sessionId)) this.#unlink(mainId, reviewerId);
-      else if (mainId !== sessionId && this.deps.locator.durable(sessionId)?.reviewing === mainId) this.deps.locator.update(sessionId, { reviewing: undefined });
+      else if (mainId !== sessionId && this.deps.locator.durable(sessionId)?.reviewing === mainId)
+        this.deps.locator.update(sessionId, { reviewing: undefined });
       return Promise.resolve();
     });
   }
 
   /** Forget a pairing in both records at once and drop its pending digest. */
   #unlink(mainId: string, reviewerId: string): void {
-    this.deps.locator.updateAll([[mainId, { liveReview: undefined }], [reviewerId, { reviewing: undefined }]]);
+    this.deps.locator.updateAll([
+      [mainId, { liveReview: undefined }],
+      [reviewerId, { reviewing: undefined }],
+    ]);
     this.#liveReviews.delete(mainId);
     this.#reviewing.delete(reviewerId);
     this.deps.logger?.info?.({ sessionId: mainId, reviewerId }, "live review stopped");
@@ -1939,17 +2421,22 @@ export class DurableChatService {
     if (pairing === undefined) return;
     if (event.type === "agent.start") this.deps.locator.update(record.id, { liveReview: { ...pairing, turn: pairing.turn + 1 } });
     let review = this.#liveReviews.get(record.id);
-    if (review === undefined) this.#liveReviews.set(record.id, review = new LiveReviewCollector(pairing.trigger));
+    if (review === undefined) this.#liveReviews.set(record.id, (review = new LiveReviewCollector(pairing.trigger)));
     const collector = review;
     // Each field through this main Chat host's redactor whole, before the digest cuts or escapes it.
-    const redact = (text: string) => connection.request("redact", { text }).then(({ result }) => {
-      if (typeof result !== "string") throw new Error("The host's redactor returned no text");
-      return result;
-    });
-    const next = (this.#reviewEvents.get(record.id) ?? Promise.resolve()).then(async () => {
-      await collector.add(event, redact);
-      if (collector.due && this.#liveReviews.get(record.id) === collector) void this.#sendDigest(record.id);
-    }).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "live review event not collected"); });
+    const redact = (text: string) =>
+      connection.request("redact", { text }).then(({ result }) => {
+        if (typeof result !== "string") throw new Error("The host's redactor returned no text");
+        return result;
+      });
+    const next = (this.#reviewEvents.get(record.id) ?? Promise.resolve())
+      .then(async () => {
+        await collector.add(event, redact);
+        if (collector.due && this.#liveReviews.get(record.id) === collector) void this.#sendDigest(record.id);
+      })
+      .catch((error: unknown) => {
+        this.deps.logger?.warn({ sessionId: record.id, err: error }, "live review event not collected");
+      });
     this.#reviewEvents.set(record.id, next);
   }
 
@@ -1974,10 +2461,17 @@ export class DurableChatService {
       const connection = await this.#connection(reviewer);
       const from = await this.#chatIdentity(main, connection);
       await connection.request("chatMessage", {
-        requestId: `live-review-digest-${String(number)}`, from: { chatId: main.id, ...from }, text, wake: true, urgent: false,
+        requestId: `live-review-digest-${String(number)}`,
+        from: { chatId: main.id, ...from },
+        text,
+        wake: true,
+        urgent: false,
         liveReview: { kind: "digest", turn: Math.max(1, pairing.turn), trigger: pairing.trigger, brief: pairing.brief },
       });
-      this.deps.logger?.info?.({ sessionId: mainId, reviewerId: reviewer.id, digest: number, turn: pairing.turn, length: text.length }, "live review digest sent");
+      this.deps.logger?.info?.(
+        { sessionId: mainId, reviewerId: reviewer.id, digest: number, turn: pairing.turn, length: text.length },
+        "live review digest sent",
+      );
     } catch (error) {
       // The reviewer did not take it: the next digest carries it.
       this.#reviewing.delete(reviewer.id);
@@ -2001,8 +2495,13 @@ export class DurableChatService {
       // Committed and deduplicated by the host: one notification per ask or attention request.
       const name = this.info(record).name ?? "Durable Chat";
       this.deps.events.publishGlobal({
-        type: "session.attention", sessionId, cwd: record.cwd, sessionName: name.slice(0, 120),
-        kind: event.kind, id: event.id, detail: event.detail.trim().split(/\r?\n/u)[0]?.slice(0, 120) ?? "",
+        type: "session.attention",
+        sessionId,
+        cwd: record.cwd,
+        sessionName: name.slice(0, 120),
+        kind: event.kind,
+        id: event.id,
+        detail: event.detail.trim().split(/\r?\n/u)[0]?.slice(0, 120) ?? "",
       });
       return;
     }
@@ -2020,7 +2519,8 @@ export class DurableChatService {
     }
     if (event.type === "durable.notification") {
       const generation = this.#notificationGenerations.get(sessionId);
-      if (generation !== undefined) this.#publishNotifications(this.deps.notifications?.addNotification(generation, event.message, event.severity).mutations ?? []);
+      if (generation !== undefined)
+        this.#publishNotifications(this.deps.notifications?.addNotification(generation, event.message, event.severity).mutations ?? []);
       return;
     }
     if (event.type === "status.update") {
@@ -2032,11 +2532,15 @@ export class DurableChatService {
       const status = { ...this.#withWorkingMode(sessionId, browserStatus(event.status, connection), connection), sessionId };
       this.deps.events.publish(sessionId, { type: "status.update", status }, scope);
       this.deps.events.publishGlobal({ type: "status.update", status });
-      const change = status.messageCount !== undefined && status.messageCount !== record.messageCount ? { messageCount: status.messageCount, modified: new Date().toISOString() } : {};
+      const change =
+        status.messageCount !== undefined && status.messageCount !== record.messageCount
+          ? { messageCount: status.messageCount, modified: new Date().toISOString() }
+          : {};
       if (Object.keys(change).length > 0) this.deps.locator.update(sessionId, change);
       return;
     }
-    const frame = event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event;
+    const frame =
+      event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event;
     this.deps.events.publish(sessionId, { ...frame, generation: connection.generation }, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
@@ -2046,7 +2550,8 @@ export class DurableChatService {
     }
     // Each tool phase by name, as legacy Activity shows it; a finished tool leaves the run active until it ends.
     if (event.type === "tool.start") this.#activity(sessionId, scope, "active", `running tool: ${event.toolName}`);
-    if (event.type === "tool.end") this.#activity(sessionId, scope, event.isError ? "error" : "active", `${event.isError ? "tool failed" : "tool complete"}: ${event.toolName}`);
+    if (event.type === "tool.end")
+      this.#activity(sessionId, scope, event.isError ? "error" : "active", `${event.isError ? "tool failed" : "tool complete"}: ${event.toolName}`);
     if (event.type === "message.end" && record.firstMessage === "") {
       if (isRecord(event.message) && event.message["role"] === "user") this.deps.locator.update(sessionId, { firstMessage: textOf(event.message["content"]) });
     }
@@ -2065,13 +2570,19 @@ function displayPromptMessage(message: unknown): unknown {
   const content = message["content"];
   if (typeof content === "string") return { ...message, content: stripInlineImageReferenceMapping(content) };
   if (!Array.isArray(content)) return message;
-  return { ...message, content: content.map((part: unknown) => isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? { ...part, text: stripInlineImageReferenceMapping(part["text"]) } : part) };
+  return {
+    ...message,
+    content: content.map((part: unknown) =>
+      isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? { ...part, text: stripInlineImageReferenceMapping(part["text"]) } : part,
+    ),
+  };
 }
 
 /** A queued message as the browser sees it: no host ID, no image legend. */
 function displayQueuedMessage(message: QueuedSessionMessage): QueuedSessionMessage {
   return {
-    kind: message.kind, text: stripInlineImageReferenceMapping(message.text),
+    kind: message.kind,
+    text: stripInlineImageReferenceMapping(message.text),
     ...(message.hasAttachments === undefined ? {} : { hasAttachments: message.hasAttachments }),
     ...(message.attachmentCount === undefined ? {} : { attachmentCount: message.attachmentCount }),
   };
@@ -2083,8 +2594,12 @@ function browserStatus(status: HostTranscript["status"], connection: DurableHost
     ...status,
     queuedMessages: status.queuedMessages.map(displayQueuedMessage),
     capabilities: connection.capabilities,
-    ...(connection.pin === undefined ? {} : { durableHostPin: { ...connection.pin, repeats: upgradeRepeats(status), ...(connection.upgradePending ? { pending: true } : {}) } }),
-    ...(connection.capabilities.includes("queue.edit") ? {} : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
+    ...(connection.pin === undefined
+      ? {}
+      : { durableHostPin: { ...connection.pin, repeats: upgradeRepeats(status), ...(connection.upgradePending ? { pending: true } : {}) } }),
+    ...(connection.capabilities.includes("queue.edit")
+      ? {}
+      : { queueMessageActionsUnavailable: "Editing queued messages is not available in this Durable Chat host yet." }),
   };
 }
 
@@ -2127,7 +2642,8 @@ type UpgradeClose = "upgrade" | "ifRestartSafe" | "plain";
  */
 function hostMoveRefusal(code: DurableHostProcess["code"]): string | undefined {
   const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? {} : storeCode(entry)));
-  if (pinned?.durable === undefined || current?.durable === undefined) return "This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read";
+  if (pinned?.durable === undefined || current?.durable === undefined)
+    return "This Chat cannot move to new host code: the Pi Durable version of its host code cannot be read";
   return storeCodeRefusal(pinned, current);
 }
 
@@ -2140,9 +2656,12 @@ function restartRefusal(code: DurableHostProcess["code"]): string | undefined {
   const refusal = hostMoveRefusal(code);
   if (refusal !== undefined) return refusal;
   const [pinned, current] = [code?.entry, code?.current].map((entry) => (entry === undefined ? {} : storeCode(entry)));
-  if (pinned?.durable !== current?.durable) return `This upgrade changes the store format (Pi Durable ${String(pinned?.durable)} to ${String(current?.durable)}); use Upgrade host when the Chat is quiet`;
+  if (pinned?.durable !== current?.durable)
+    return `This upgrade changes the store format (Pi Durable ${String(pinned?.durable)} to ${String(current?.durable)}); use Upgrade host when the Chat is quiet`;
   // Same Pi Durable, but a Workbench document or task at a new version is migrated too: the old code then refuses the store.
-  return isSchema(pinned?.schema) && JSON.stringify(pinned.schema) === JSON.stringify(current?.schema) ? undefined : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
+  return isSchema(pinned?.schema) && JSON.stringify(pinned.schema) === JSON.stringify(current?.schema)
+    ? undefined
+    : "This upgrade changes the store format (its Workbench store schema); use Upgrade host when the Chat is quiet";
 }
 
 function isSchema(schema: StoreCode["schema"]): schema is StoreSchema {
@@ -2151,7 +2670,10 @@ function isSchema(schema: StoreCode["schema"]): schema is StoreSchema {
 
 /** A revision folder's short commit (installed folders are git worktrees), else its name. */
 async function shortRevision(folder: string): Promise<string> {
-  return run("git", ["-C", folder, "rev-parse", "--short", "HEAD"]).then(({ stdout }) => stdout.trim(), () => basename(folder));
+  return run("git", ["-C", folder, "rev-parse", "--short", "HEAD"]).then(
+    ({ stdout }) => stdout.trim(),
+    () => basename(folder),
+  );
 }
 
 /**
@@ -2159,8 +2681,14 @@ async function shortRevision(folder: string): Promise<string> {
  * restart unchanged (open questions, background bash, watchers, Atelier Pages).
  */
 function restartSafe(status: HostTranscript["status"]): boolean {
-  return !status.isStreaming && !status.isCompacting && !status.isBashRunning && status.pendingMessageCount === 0
-    && (status.activeToolExecutions?.length ?? 0) === 0 && !childrenRunning(status);
+  return (
+    !status.isStreaming
+    && !status.isCompacting
+    && !status.isBashRunning
+    && status.pendingMessageCount === 0
+    && (status.activeToolExecutions?.length ?? 0) === 0
+    && !childrenRunning(status)
+  );
 }
 
 /**
@@ -2177,18 +2705,58 @@ function upgradeRepeats(status: HostTranscript["status"]): string[] {
 }
 
 /** A host-side notification request: the daemon turns it into PI WEB's global `session.attention`. */
-interface HostAttentionEvent { type: "durable.attention"; kind: "ask" | "attention"; id: string; detail: string }
+interface HostAttentionEvent {
+  type: "durable.attention";
+  kind: "ask" | "attention";
+  id: string;
+  detail: string;
+}
 /** A Pi package's warning or error outside a command: kept in the Chat's notification inbox, as in a legacy Chat. */
-interface HostNotificationEvent { type: "durable.notification"; severity: "warning" | "error"; message: string }
+interface HostNotificationEvent {
+  type: "durable.notification";
+  severity: "warning" | "error";
+  message: string;
+}
 /** spawn_session: start an independent Chat in a workspace of the spawning Chat's project, answered with `spawned`. */
-interface HostSpawnEvent { type: "durable.spawn"; requestId: string; spawningCwd: string; prompt: string; cwd?: string; model?: string; thinkingLevel?: string }
+interface HostSpawnEvent {
+  type: "durable.spawn";
+  requestId: string;
+  spawningCwd: string;
+  prompt: string;
+  cwd?: string;
+  model?: string;
+  thinkingLevel?: string;
+}
 /** send_chat_message from a Durable Chat's lead: deliver to another Chat, answered with `chatMessaged`. */
-interface HostChatMessageEvent { type: "durable.chat-message"; requestId: string; chat: unknown; text: unknown; wake?: unknown; urgent?: unknown }
+interface HostChatMessageEvent {
+  type: "durable.chat-message";
+  requestId: string;
+  chat: unknown;
+  text: unknown;
+  wake?: unknown;
+  urgent?: unknown;
+}
 /** send_chat_message's list of other Chats, answered with `chatMessaged`. */
-interface HostChatListEvent { type: "durable.chat-list"; requestId: string }
+interface HostChatListEvent {
+  type: "durable.chat-list";
+  requestId: string;
+}
 type HostEvent = HostAttentionEvent | HostNotificationEvent | HostSpawnEvent | HostChatMessageEvent | HostChatListEvent;
-interface ChatMessageResult { chatId: string; key: string; name: string; delivery: "started" | "queued" | "steered" | "noted"; hop?: number; held?: true }
-interface ChatListEntry { id: string; key: string; title: string; cwd: string; state: "running" | "idle" | "closed" }
+interface ChatMessageResult {
+  chatId: string;
+  key: string;
+  name: string;
+  delivery: "started" | "queued" | "steered" | "noted";
+  hop?: number;
+  held?: true;
+}
+interface ChatListEntry {
+  id: string;
+  key: string;
+  title: string;
+  cwd: string;
+  state: "running" | "idle" | "closed";
+}
 
 const CHAT_MESSAGE_MAX_LENGTH = 8000;
 const CHAT_LIST_LIMIT = 15;
@@ -2198,7 +2766,33 @@ const CHAT_MESSAGE_WINDOW_MS = 5 * 60_000;
 const CHAT_MESSAGE_HOURLY_LIMIT = 10;
 const CHAT_MESSAGE_HOUR_MS = 60 * 60_000;
 const CHAT_MESSAGE_HOP_LIMIT = 6;
-const CHAT_KEY_STOP_WORDS = new Set(["a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in", "into", "is", "it", "its", "of", "on", "or", "the", "this", "that", "to", "via", "vs", "with"]);
+const CHAT_KEY_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "is",
+  "it",
+  "its",
+  "of",
+  "on",
+  "or",
+  "the",
+  "this",
+  "that",
+  "to",
+  "via",
+  "vs",
+  "with",
+]);
 
 /** The Durable host's refusal of a chat message while its restore waits for the owner (pi-workbench `chat-message.ts`). */
 const CHAT_PAUSED = "The chat is paused until the owner resumes it; the message was not delivered";
@@ -2208,7 +2802,13 @@ const CHAT_PAUSED = "The chat is paused until the owner resumes it; the message 
  * `chat-<first 8 hex of the ID>` when neither has any; `-2`, `-3`… when taken.
  */
 export function chatKey(record: Pick<DurableChatRecord, "id" | "firstMessage"> & { name?: string }, taken: ReadonlySet<string>): string {
-  const words = (text: string) => text.normalize("NFKD").replace(/[^\x20-\x7e]/gu, "").toLowerCase().split(/[^a-z0-9]+/u).filter((word) => word !== "" && !CHAT_KEY_STOP_WORDS.has(word));
+  const words = (text: string) =>
+    text
+      .normalize("NFKD")
+      .replace(/[^\x20-\x7e]/gu, "")
+      .toLowerCase()
+      .split(/[^a-z0-9]+/u)
+      .filter((word) => word !== "" && !CHAT_KEY_STOP_WORDS.has(word));
   const picked = [...words(record.name ?? ""), ...words(record.firstMessage)].slice(0, 3);
   const base = picked.length === 0 ? `chat-${record.id.replace(/-/gu, "").slice(0, 8)}` : picked.join("-");
   let key = base;
@@ -2220,7 +2820,8 @@ export function chatKey(record: Pick<DurableChatRecord, "id" | "firstMessage"> &
 function closeChatKeys(name: string, keys: readonly string[]): string[] {
   const stems = (key: string) => key.split("-").map((word) => word.slice(0, 4));
   const wanted = new Set(stems(name));
-  return keys.map((key) => ({ key, score: stems(key).filter((stem) => wanted.has(stem)).length }))
+  return keys
+    .map((key) => ({ key, score: stems(key).filter((stem) => wanted.has(stem)).length }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
     .slice(0, 3)
@@ -2229,7 +2830,13 @@ function closeChatKeys(name: string, keys: readonly string[]): string[] {
 
 /** The host returns the outcome PI WEB's store computed (or, on a retry, recorded); a shape check suffices. */
 function isAskOutcome(value: unknown): value is AskUserOutcome {
-  return isRecord(value) && typeof value["askId"] === "string" && typeof value["reason"] === "string" && Array.isArray(value["questions"]) && typeof value["summary"] === "string";
+  return (
+    isRecord(value)
+    && typeof value["askId"] === "string"
+    && typeof value["reason"] === "string"
+    && Array.isArray(value["questions"])
+    && typeof value["summary"] === "string"
+  );
 }
 
 function commandResult(value: unknown): ClientCommandResult {
@@ -2265,11 +2872,12 @@ function textOf(content: unknown): string {
 
 /** The contributed resources a host's ready message names; anything malformed is dropped. */
 function parseContributedResources(value: unknown): DurableContributedResources {
-  const paths = (list: unknown) => (Array.isArray(list) ? list : []).flatMap((entry: unknown) => {
-    if (!isRecord(entry)) return [];
-    const { path, extensionPath } = entry;
-    return typeof path === "string" && path !== "" && typeof extensionPath === "string" && extensionPath !== "" ? [{ path, extensionPath }] : [];
-  });
+  const paths = (list: unknown) =>
+    (Array.isArray(list) ? list : []).flatMap((entry: unknown) => {
+      if (!isRecord(entry)) return [];
+      const { path, extensionPath } = entry;
+      return typeof path === "string" && path !== "" && typeof extensionPath === "string" && extensionPath !== "" ? [{ path, extensionPath }] : [];
+    });
   return isRecord(value) ? { skillPaths: paths(value["skillPaths"]), promptPaths: paths(value["promptPaths"]) } : { skillPaths: [], promptPaths: [] };
 }
 
@@ -2283,8 +2891,9 @@ function isSessionUiEvent(value: unknown): value is SessionUiEvent | HostEvent {
 }
 
 function isHostStatus(value: unknown): value is HostTranscript["status"] {
-  return isRecord(value) && typeof value["isStreaming"] === "boolean" && Array.isArray(value["queuedMessages"])
-    && typeof value["pendingMessageCount"] === "number";
+  return (
+    isRecord(value) && typeof value["isStreaming"] === "boolean" && Array.isArray(value["queuedMessages"]) && typeof value["pendingMessageCount"] === "number"
+  );
 }
 
 function hostStatus(value: unknown): HostTranscript["status"] {

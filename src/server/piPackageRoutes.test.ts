@@ -26,7 +26,9 @@ describe("registerPiPackageRoutes", () => {
     const response = await app.inject({ method: "GET", url: "/api/pi-packages" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ packages: [{ source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" }] });
+    expect(response.json()).toEqual({
+      packages: [{ source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" }],
+    });
     expect(serviceMocks.list).toHaveBeenCalledOnce();
   });
 
@@ -40,7 +42,9 @@ describe("registerPiPackageRoutes", () => {
       const response = await prefixedApp.inject({ method: "GET", url: "/api/machines/local/pi-packages" });
 
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ packages: [{ source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" }] });
+      expect(response.json()).toEqual({
+        packages: [{ source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" }],
+      });
       expect(prefixedMocks.list).toHaveBeenCalledOnce();
     } finally {
       await prefixedApp.close();
@@ -88,7 +92,7 @@ describe("registerPiPackageRoutes", () => {
     expect(blankSource.statusCode).toBe(400);
     expect(blankSource.json()).toEqual({ error: "Pi package source must be a non-empty string" });
     expect(invalidScope.statusCode).toBe(400);
-    expect(invalidScope.json()).toEqual({ error: "Pi package scope must be \"user\" or \"project\"" });
+    expect(invalidScope.json()).toEqual({ error: 'Pi package scope must be "user" or "project"' });
     expect(invalidUpdate.statusCode).toBe(400);
     expect(invalidUpdate.json()).toEqual({ error: "Pi package source must be a non-empty string" });
     expect(serviceMocks.install).not.toHaveBeenCalled();
@@ -119,8 +123,12 @@ function fakePiPackageService() {
   const packages: PiPackageInfo[] = [{ source: "npm:@acme/tools", scope: "user", filtered: false, installedPath: "/home/test/.pi/packages/tools" }];
   const list = vi.fn<PiPackageService["list"]>(() => Promise.resolve({ packages: [...packages] }));
   const install = vi.fn<PiPackageService["install"]>((source) => Promise.resolve({ action: "install", source, packages: [...packages] }));
-  const remove = vi.fn<PiPackageService["remove"]>((source, scope = "user") => Promise.resolve({ action: "remove", source, scope, removed: true, packages: [...packages] }));
-  const update = vi.fn<PiPackageService["update"]>((source) => Promise.resolve({ action: "update", ...(source === undefined ? {} : { source }), packages: [...packages] }));
+  const remove = vi.fn<PiPackageService["remove"]>((source, scope = "user") =>
+    Promise.resolve({ action: "remove", source, scope, removed: true, packages: [...packages] }),
+  );
+  const update = vi.fn<PiPackageService["update"]>((source) =>
+    Promise.resolve({ action: "update", ...(source === undefined ? {} : { source }), packages: [...packages] }),
+  );
   const service: PiPackageService = { list, install, remove, update };
   return { service, list, install, remove, update };
 }

@@ -38,7 +38,10 @@ export class PiWebPluginManifestRuntimeError extends Error {
   override name = "PiWebPluginManifestRuntimeError";
   readonly statusCode: 409 | 503;
 
-  constructor(readonly runtimeStatus: "unavailable" | "incompatible", message: string) {
+  constructor(
+    readonly runtimeStatus: "unavailable" | "incompatible",
+    message: string,
+  ) {
     super(message);
     this.statusCode = runtimeStatus === "unavailable" ? 503 : 409;
   }
@@ -98,10 +101,7 @@ export class PiWebPluginService {
     const lifecycle = await this.lifecycle();
     const runtime = lifecycle.response.serverRuntime;
     if (runtime.status !== "available") {
-      throw new PiWebPluginManifestRuntimeError(
-        runtime.status,
-        requiredRuntimeFailureMessage(runtime.status, runtime.message),
-      );
+      throw new PiWebPluginManifestRuntimeError(runtime.status, requiredRuntimeFailureMessage(runtime.status, runtime.message));
     }
     const plugins: PiWebPluginManifestEntry[] = [];
     for (const { plugin, backendRevision, pairedRequestVersion, pairedChannelVersion } of lifecycle.browserPlugins) {
@@ -130,12 +130,11 @@ export class PiWebPluginService {
   async readAsset(pluginId: string, assetPath: string, browserRevision?: string): Promise<{ content: Buffer; contentType: string } | undefined> {
     if (!isPiWebPluginId(pluginId)) return undefined;
     let artifact = this.browserArtifacts.get(pluginId);
-    if (artifact !== undefined && !await this.cachedArtifactIsActive(artifact)) artifact = undefined;
+    if (artifact !== undefined && !(await this.cachedArtifactIsActive(artifact))) artifact = undefined;
     artifact ??= await this.loadBrowserArtifact(pluginId);
     // Browser-only snapshots may lag the catalog's advertised entry revision.
     // Refresh on mismatch, but keep server-backed snapshots pinned to sessiond.
-    if (artifact !== undefined && artifact.backendRevision === undefined
-      && browserRevision !== undefined && artifact.revision !== browserRevision) {
+    if (artifact !== undefined && artifact.backendRevision === undefined && browserRevision !== undefined && artifact.revision !== browserRevision) {
       artifact = await this.loadBrowserArtifact(pluginId);
     }
     if (artifact === undefined) return undefined;
@@ -159,17 +158,15 @@ export class PiWebPluginService {
     }
   }
 
-  private async captureBrowserArtifact(
-    plugin: PiWebPluginPackageEntry,
-    backendRevision?: string,
-  ): Promise<CachedBrowserArtifact | undefined> {
+  private async captureBrowserArtifact(plugin: PiWebPluginPackageEntry, backendRevision?: string): Promise<CachedBrowserArtifact | undefined> {
     const module = plugin.browserModule;
     if (module === undefined) return undefined;
     const browserRoot = plugin.browserRoot;
     if (browserRoot === undefined) throw new Error(`PI WEB plugin has no browser root: ${plugin.id}`);
     const cached = this.browserArtifacts.get(plugin.id);
     if (cached !== undefined) {
-      const matches = cached.revision === module.revision
+      const matches =
+        cached.revision === module.revision
         && cached.entryPath === module.path
         && cached.entryFilePath === module.filePath
         && cached.browserRootPath === browserRoot.path
@@ -205,10 +202,12 @@ export class PiWebPluginService {
     if (runtime.status !== "available") return false;
     const record = runtime.snapshot.records.find(({ pluginId }) => pluginId === artifact.pluginId);
     const health = runtime.snapshot.health.find(({ pluginId }) => pluginId === artifact.pluginId);
-    return record?.state === "active"
+    return (
+      record?.state === "active"
       && record.moduleRevision === artifact.backendRevision
       && record.browserRevision === artifact.revision
-      && health?.health.status !== "unhealthy";
+      && health?.health.status !== "unhealthy"
+    );
   }
 
   private cacheBrowserArtifact(artifact: CachedBrowserArtifact): void {
@@ -217,8 +216,10 @@ export class PiWebPluginService {
       this.browserArtifacts.delete(artifact.pluginId);
       this.browserArtifactBytes -= current.byteLength;
     }
-    while (this.browserArtifacts.size >= BROWSER_ARTIFACT_CACHE_MAX_ENTRIES
-      || this.browserArtifactBytes + artifact.byteLength > BROWSER_ARTIFACT_CACHE_MAX_BYTES) {
+    while (
+      this.browserArtifacts.size >= BROWSER_ARTIFACT_CACHE_MAX_ENTRIES
+      || this.browserArtifactBytes + artifact.byteLength > BROWSER_ARTIFACT_CACHE_MAX_BYTES
+    ) {
       const oldest = this.browserArtifacts.values().next().value;
       if (oldest === undefined) break;
       this.browserArtifacts.delete(oldest.pluginId);
@@ -281,7 +282,10 @@ function requireTerminalManifestEntry(plugins: readonly PiWebPluginManifestEntry
 function browserModuleUrl(plugin: PiWebPluginCatalogEntry): string {
   const browserModule = plugin.browserModule;
   if (browserModule === undefined) throw new Error(`PI WEB plugin has no browser module: ${plugin.id}`);
-  const path = browserModule.path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+  const path = browserModule.path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
   return `/pi-web-plugins/${encodeURIComponent(plugin.id)}/${path}?${pluginModuleQuery(plugin.id, browserModule.revision)}`;
 }
 

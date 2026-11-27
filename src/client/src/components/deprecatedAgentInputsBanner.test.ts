@@ -3,7 +3,12 @@
 import { render, type TemplateResult } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Machine, MachineRuntime, PiWebDeprecatedAgentInput } from "../api";
-import { deprecatedAgentInputsBanner, deprecatedAgentInputsWarnings, deprecatedAgentInputsWarningText, type DeprecatedAgentInputsWarning } from "./deprecatedAgentInputsBanner";
+import {
+  deprecatedAgentInputsBanner,
+  deprecatedAgentInputsWarnings,
+  deprecatedAgentInputsWarningText,
+  type DeprecatedAgentInputsWarning,
+} from "./deprecatedAgentInputsBanner";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -15,7 +20,7 @@ describe("deprecatedAgentInputsWarnings", () => {
     const runtimes = {
       // Record order deliberately differs from machine-list order.
       "remote-b": runtimeWithInputs([{ source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" }]),
-      "local": runtimeWithInputs([{ source: "config", name: "agent.dir", replacement: "PI_CODING_AGENT_DIR" }]),
+      local: runtimeWithInputs([{ source: "config", name: "agent.dir", replacement: "PI_CODING_AGENT_DIR" }]),
       "remote-a": runtimeWithInputs(undefined),
     };
 
@@ -28,7 +33,7 @@ describe("deprecatedAgentInputsWarnings", () => {
   it("skips machines whose runtime failed or reported no deprecated inputs", () => {
     const machines = [machine("local", "Local", "local"), machine("remote-a", "Build box")];
     const runtimes = {
-      "local": runtimeWithInputs([]),
+      local: runtimeWithInputs([]),
       "remote-a": { machineId: "remote-a", ok: false, checkedAt: "now", error: "offline" },
     };
 
@@ -38,19 +43,25 @@ describe("deprecatedAgentInputsWarnings", () => {
 
 describe("deprecatedAgentInputsWarningText", () => {
   it("names the machine, each deprecated input, its replacement, and the removal notice", () => {
-    const text = deprecatedAgentInputsWarningText(warning("Build box", [
-      { source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" },
-      { source: "config", name: "agent.dir", replacement: "PI_CODING_AGENT_DIR" },
-    ]));
+    const text = deprecatedAgentInputsWarningText(
+      warning("Build box", [
+        { source: "environment", name: "PI_WEB_AGENT_DIR", replacement: "PI_CODING_AGENT_DIR" },
+        { source: "config", name: "agent.dir", replacement: "PI_CODING_AGENT_DIR" },
+      ]),
+    );
 
-    expect(text).toBe("Build box: environment variable PI_WEB_AGENT_DIR is deprecated; set PI_CODING_AGENT_DIR instead; config key agent.dir is deprecated; set PI_CODING_AGENT_DIR instead. Support for deprecated agent configuration inputs will be removed in a future release.");
+    expect(text).toBe(
+      "Build box: environment variable PI_WEB_AGENT_DIR is deprecated; set PI_CODING_AGENT_DIR instead; config key agent.dir is deprecated; set PI_CODING_AGENT_DIR instead. Support for deprecated agent configuration inputs will be removed in a future release.",
+    );
   });
 
   it("tells the user to remove inputs that have no replacement", () => {
-    const text = deprecatedAgentInputsWarningText(warning("Local", [
-      { source: "environment", name: "PI_WEB_AGENT_COMMAND" },
-      { source: "config", name: "agent.command" },
-    ]));
+    const text = deprecatedAgentInputsWarningText(
+      warning("Local", [
+        { source: "environment", name: "PI_WEB_AGENT_COMMAND" },
+        { source: "config", name: "agent.command" },
+      ]),
+    );
 
     expect(text).toContain("environment variable PI_WEB_AGENT_COMMAND is deprecated and ignored; remove it, there is no replacement");
     expect(text).toContain("config key agent.command is deprecated and ignored; remove it, there is no replacement");

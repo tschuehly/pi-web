@@ -88,7 +88,10 @@ export async function reconcileAutoInstallablePiPackages(options: ReconcileAutoI
         const paths = await Promise.all(configured.map((entry) => canonicalPath(entry.installedPath)));
         if (paths.some((path) => path !== currentPath)) {
           await installer.replaceSources(configured, source);
-          logger?.info?.({ packageId: knownPackage.id, profileDir, source, previousSources: configured.map(({ source, scope }) => ({ source, scope })) }, "reconciled managed Pi package sources to the current shipped copy");
+          logger?.info?.(
+            { packageId: knownPackage.id, profileDir, source, previousSources: configured.map(({ source, scope }) => ({ source, scope })) },
+            "reconciled managed Pi package sources to the current shipped copy",
+          );
         }
         continue;
       }
@@ -115,12 +118,11 @@ async function findConfiguredCopies(
     if (configured.scope !== "user") continue;
     // Pi omits installedPath for missing local directories; recover only a local
     // source here so deleted installations can still be recognized below.
-    const installedPath = configured.installedPath
-      ?? packageProvider.getInstalledPath(configured.source, configured.scope)
-      ?? localSourcePath(configured.source, profileDir);
+    const installedPath =
+      configured.installedPath ?? packageProvider.getInstalledPath(configured.source, configured.scope) ?? localSourcePath(configured.source, profileDir);
     if (installedPath === undefined) continue;
     const declaredName = await identityResolver.resolveDeclaredName(installedPath);
-    if (declaredName === known.id || (declaredName === undefined && await isMissingShippedCopy(installedPath, known, identityResolver))) {
+    if (declaredName === known.id || (declaredName === undefined && (await isMissingShippedCopy(installedPath, known, identityResolver)))) {
       copies.push({ ...configured, installedPath });
     }
   }
@@ -153,7 +155,7 @@ async function isMissingShippedCopy(
   // An entire old global installation may have been removed during a Node upgrade.
   if (root.endsWith(`${sep}${join("node_modules", "@jmfederico", "pi-web")}`)) return true;
   // A checkout can still identify its owner when only dist/ has been deleted.
-  return await identityResolver.resolveDeclaredName(root || sep) === "@jmfederico/pi-web";
+  return (await identityResolver.resolveDeclaredName(root || sep)) === "@jmfederico/pi-web";
 }
 
 async function canonicalPath(path: string): Promise<string> {

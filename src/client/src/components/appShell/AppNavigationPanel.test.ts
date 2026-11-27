@@ -78,11 +78,21 @@ describe("section resize boundaries", () => {
     const observers: LayoutObserver[] = [];
     class LayoutObserver implements ResizeObserver {
       readonly targets = new Set<Element>();
-      constructor(private readonly callback: ResizeObserverCallback) { observers.push(this); }
-      observe(target: Element): void { this.targets.add(target); }
-      unobserve(target: Element): void { this.targets.delete(target); }
-      disconnect(): void { this.targets.clear(); }
-      notify(): void { this.callback([], this); }
+      constructor(private readonly callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
+      observe(target: Element): void {
+        this.targets.add(target);
+      }
+      unobserve(target: Element): void {
+        this.targets.delete(target);
+      }
+      disconnect(): void {
+        this.targets.clear();
+      }
+      notify(): void {
+        this.callback([], this);
+      }
     }
     vi.stubGlobal("ResizeObserver", LayoutObserver);
     const panel = await mountPanel({}, machine("local"), false);
@@ -128,8 +138,7 @@ describe("section resize boundaries", () => {
     const panel = await mountPanel({}, machine("local"), false);
     const root = panel.shadowRoot;
     if (root === null) throw new Error("Missing navigation panel root");
-    const controls = () => [...root.querySelectorAll<NavigationSectionResizeHandle>("navigation-section-resize-handle")]
-      .map((handle) => handle.controls);
+    const controls = () => [...root.querySelectorAll<NavigationSectionResizeHandle>("navigation-section-resize-handle")].map((handle) => handle.controls);
     expect(controls()).toEqual(["navigation-projects", "navigation-workspaces"]);
 
     panel.workspaceSelectionVisible = false;
@@ -345,13 +354,21 @@ function control(list: ProjectList | WorkspaceList | SessionList, selector: stri
 
 function session(id: string): SessionInfo {
   return {
-    id, path: `/sessions/${id}.jsonl`, cwd: "/workspace",
-    created: "2026-06-09T00:00:00.000Z", modified: "2026-06-09T00:00:00.000Z",
-    messageCount: 1, firstMessage: id,
+    id,
+    path: `/sessions/${id}.jsonl`,
+    cwd: "/workspace",
+    created: "2026-06-09T00:00:00.000Z",
+    modified: "2026-06-09T00:00:00.000Z",
+    messageCount: 1,
+    firstMessage: id,
   };
 }
 
-async function mountPanel(machineStatusSnapshots: Record<string, MachineStatusSnapshot>, selectedMachine: Machine | undefined, compact = true): Promise<AppNavigationPanel> {
+async function mountPanel(
+  machineStatusSnapshots: Record<string, MachineStatusSnapshot>,
+  selectedMachine: Machine | undefined,
+  compact = true,
+): Promise<AppNavigationPanel> {
   const panel = new AppNavigationPanel();
   panel.compact = compact;
   panel.machines = [machine("local"), machine("remote-a")];

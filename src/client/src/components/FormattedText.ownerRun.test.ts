@@ -62,6 +62,8 @@ it("Review opens the confirmation with folder and literal command; Cancel sends 
   dialog = document.querySelector<OwnerRunDialog>("owner-run-dialog");
   await dialog?.updateComplete;
   dialog?.renderRoot.querySelector<HTMLButtonElement>(".run")?.click();
-  await vi.waitFor(() => { expect(document.querySelector("owner-run-dialog")).toBeNull(); });
+  await vi.waitFor(() => {
+    expect(document.querySelector("owner-run-dialog")).toBeNull();
+  });
   expect(ownerRun).toHaveBeenCalledWith(target.session, "a1", { mode: "run", cwd: "/work/repo", command: "pwd; exit 7" }, "local");
 });

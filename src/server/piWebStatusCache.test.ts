@@ -16,9 +16,7 @@ describe("createPiWebStatusCache", () => {
 
   it("returns stale status immediately while refreshing in the background", async () => {
     let now = 1_000;
-    const load = vi.fn()
-      .mockResolvedValueOnce(status("first"))
-      .mockResolvedValueOnce(status("second"));
+    const load = vi.fn().mockResolvedValueOnce(status("first")).mockResolvedValueOnce(status("second"));
     const cache = createPiWebStatusCache(load, { ttlMs: 100, now: () => now });
 
     await expect(cache.get()).resolves.toMatchObject({ generatedAt: "first" });
@@ -33,9 +31,7 @@ describe("createPiWebStatusCache", () => {
 
   it("explicitly refreshes and replaces a fresh cached status", async () => {
     let now = 1_000;
-    const load = vi.fn()
-      .mockResolvedValueOnce(status("first"))
-      .mockResolvedValueOnce(status("second"));
+    const load = vi.fn().mockResolvedValueOnce(status("first")).mockResolvedValueOnce(status("second"));
     const cache = createPiWebStatusCache(load, { ttlMs: 100, now: () => now });
 
     await expect(cache.get()).resolves.toMatchObject({ generatedAt: "first" });
@@ -49,7 +45,7 @@ describe("createPiWebStatusCache", () => {
   it.each(["forced-first", "regular-first"] as const)("does not let an older refresh replace a forced result when %s completes", async (completionOrder) => {
     const regular = createDeferred<PiWebStatusResponse>();
     const forced = createDeferred<PiWebStatusResponse>();
-    const load = vi.fn(({ force }: PiWebStatusCacheLoadOptions) => force ? forced.promise : regular.promise);
+    const load = vi.fn(({ force }: PiWebStatusCacheLoadOptions) => (force ? forced.promise : regular.promise));
     const cache = createPiWebStatusCache(load);
 
     const regularRefresh = cache.refresh();
@@ -92,10 +88,7 @@ describe("createPiWebStatusCache", () => {
     const onError = vi.fn((error: unknown) => {
       errorReported.resolve(error);
     });
-    const load = vi.fn()
-      .mockResolvedValueOnce(status("first"))
-      .mockRejectedValueOnce(refreshError)
-      .mockResolvedValueOnce(status("second"));
+    const load = vi.fn().mockResolvedValueOnce(status("first")).mockRejectedValueOnce(refreshError).mockResolvedValueOnce(status("second"));
     const cache = createPiWebStatusCache(load, { ttlMs: 100, now: () => now, onError });
 
     await expect(cache.get()).resolves.toMatchObject({ generatedAt: "first" });
@@ -114,9 +107,7 @@ describe("createPiWebStatusCache", () => {
   });
 
   it("loads again after a fresh cache is invalidated", async () => {
-    const load = vi.fn()
-      .mockResolvedValueOnce(status("first"))
-      .mockResolvedValueOnce(status("second"));
+    const load = vi.fn().mockResolvedValueOnce(status("first")).mockResolvedValueOnce(status("second"));
     const cache = createPiWebStatusCache(load);
 
     await expect(cache.get()).resolves.toMatchObject({ generatedAt: "first" });
@@ -129,7 +120,8 @@ describe("createPiWebStatusCache", () => {
   it("abandons an in-flight load when invalidated", async () => {
     const firstLoad = createDeferred<PiWebStatusResponse>();
     const secondLoad = createDeferred<PiWebStatusResponse>();
-    const load = vi.fn()
+    const load = vi
+      .fn()
       .mockImplementationOnce(() => firstLoad.promise)
       .mockImplementationOnce(() => secondLoad.promise);
     const cache = createPiWebStatusCache(load);

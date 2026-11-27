@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH, type SessionTreeNode, type SessionTreeSnapshot } from "../../shared/apiTypes";
-import { buildSessionTreeModel, initialSessionTreeSelection, toggleSessionTreeFold, transitionSessionTreeKey, validateSessionTreeSummaryChoice, visibleSessionTreeRows } from "./sessionTreeModel";
+import {
+  buildSessionTreeModel,
+  initialSessionTreeSelection,
+  toggleSessionTreeFold,
+  transitionSessionTreeKey,
+  validateSessionTreeSummaryChoice,
+  visibleSessionTreeRows,
+} from "./sessionTreeModel";
 
 describe("session tree hierarchy model", () => {
   it("builds a complete forest while normalizing orphans, cycles, self-links, and duplicate IDs", () => {
@@ -92,10 +99,7 @@ describe("session tree hierarchy model", () => {
 
   it("normalizes and renders a large deep tree without recursive or quadratic parent walks", () => {
     const count = 20_000;
-    const nodes = Array.from({ length: count }, (_, index) => node(
-      `node-${String(index)}`,
-      index === 0 ? null : `node-${String(index - 1)}`,
-    ));
+    const nodes = Array.from({ length: count }, (_, index) => node(`node-${String(index)}`, index === 0 ? null : `node-${String(index - 1)}`));
     const model = buildSessionTreeModel({
       nodes,
       activeLeafId: `node-${String(count - 1)}`,
@@ -186,12 +190,7 @@ describe("session tree summary validation", () => {
 
 function snapshot(): SessionTreeSnapshot {
   return {
-    nodes: [
-      node("root", null),
-      node("branch-1", "root"),
-      node("leaf-1", "branch-1"),
-      node("branch-2", "root"),
-    ],
+    nodes: [node("root", null), node("branch-1", "root"), node("leaf-1", "branch-1"), node("branch-2", "root")],
     activeLeafId: null,
     activePathIds: [],
   };

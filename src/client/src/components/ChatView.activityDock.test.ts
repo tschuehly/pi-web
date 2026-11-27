@@ -11,7 +11,9 @@ beforeEach(() => {
     frames.set(++nextFrame, callback);
     return nextFrame;
   });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => { frames.delete(id); });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames.delete(id);
+  });
 });
 
 afterEach(() => {
@@ -30,18 +32,27 @@ function flushFrame() {
 const transitions = {
   streaming: (view: ChatView, active: boolean) => {
     view.status = {
-      sessionId: "dock-test", isStreaming: active, isCompacting: false, isBashRunning: false,
-      pendingMessageCount: 0, queuedMessages: [], cost: 0,
+      sessionId: "dock-test",
+      isStreaming: active,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      cost: 0,
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     };
   },
   activity: (view: ChatView, active: boolean) => {
     view.activity = {
-      sessionId: "dock-test", phase: active ? "active" : "idle", label: active ? "receiving response" : "idle",
+      sessionId: "dock-test",
+      phase: active ? "active" : "idle",
+      label: active ? "receiving response" : "idle",
       at: "2026-09-01T00:00:00Z",
     };
   },
-  sending: (view: ChatView, active: boolean) => { view.isSendingPrompt = active; },
+  sending: (view: ChatView, active: boolean) => {
+    view.isSendingPrompt = active;
+  },
 };
 
 describe.each(Object.entries(transitions))("Conversation activity boundary: %s", (_name, transition) => {
@@ -64,7 +75,9 @@ describe.each(Object.entries(transitions))("Conversation activity boundary: %s",
     // Supply stable browser metrics, not simulated CSS layout. The overlay's
     // visual geometry is checked in a browser; this verifies scroll side effects.
     let top = atBottom ? 600 : 200;
-    const scroll = vi.fn((value: number) => { top = value; });
+    const scroll = vi.fn((value: number) => {
+      top = value;
+    });
     Object.defineProperties(chat, {
       clientHeight: { get: () => 400 },
       scrollHeight: { get: () => 1000 },

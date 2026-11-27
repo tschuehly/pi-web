@@ -12,13 +12,27 @@ function ask(askId: string, revision = "r1") {
 
 const user = { type: "message", message: { role: "user", content: "hi" } };
 const assistant = { type: "message", message: { role: "assistant", content: [] } };
-const posted = (details: Record<string, unknown>, isError = false) => ({ type: "message", message: { role: "toolResult", toolName: "ask_user", details: { sessionId: SESSION, ...details }, isError } });
+const posted = (details: Record<string, unknown>, isError = false) => ({
+  type: "message",
+  message: { role: "toolResult", toolName: "ask_user", details: { sessionId: SESSION, ...details }, isError },
+});
 const answers = (askId: string) => ({ type: "custom_message", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, details: { askId } });
 const closedRecord = (askId: string) => ({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId, reason: "submitted", questions: [] } });
 
 describe("openAsksFromTranscript", () => {
   it("rebuilds every posted ask at its latest revision and counts the agent turns since", () => {
-    const branch = [user, assistant, posted({ ask: ask("a1") }), assistant, posted({ ask: ask("a2") }), user, assistant, posted({ ask: { ...ask("a1", "r2"), context: "New" } }), assistant, assistant];
+    const branch = [
+      user,
+      assistant,
+      posted({ ask: ask("a1") }),
+      assistant,
+      posted({ ask: ask("a2") }),
+      user,
+      assistant,
+      posted({ ask: { ...ask("a1", "r2"), context: "New" } }),
+      assistant,
+      assistant,
+    ];
 
     expect(openAsksFromTranscript(branch, SESSION).open).toEqual([
       { ...ask("a1", "r2"), context: "New", turnsSinceUpdate: 2 },
@@ -28,8 +42,10 @@ describe("openAsksFromTranscript", () => {
 
   it("does not resurrect answered, withdrawn, or failed asks", () => {
     const branch = [
-      posted({ ask: ask("answered") }), answers("answered"),
-      posted({ ask: ask("withdrawn") }), posted({ withdrawn: { askId: "withdrawn" } }),
+      posted({ ask: ask("answered") }),
+      answers("answered"),
+      posted({ ask: ask("withdrawn") }),
+      posted({ withdrawn: { askId: "withdrawn" } }),
       posted({ ask: ask("failed") }, true),
     ];
 
@@ -50,7 +66,9 @@ describe("openAsksFromTranscript", () => {
     const opened = live.open({ sessionId: SESSION, context: "Why", questions: three });
     const branch: unknown[] = [posted({ ask: opened })];
     const send = (id: string, rev: string) => {
-      const result = live.submit(SESSION, "a1", { revision: rev, answers: [{ id, values: [], otherText: "x" }], partial: true }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
+      const result = live.submit(SESSION, "a1", { revision: rev, answers: [{ id, values: [], otherText: "x" }], partial: true }, (outcome) =>
+        branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }),
+      );
       if (result.status !== "closed") throw new Error("expected the answer to be sent");
       return result.outcome;
     };
@@ -65,7 +83,9 @@ describe("openAsksFromTranscript", () => {
 
     const restarted = new PendingAskStore({ createRevision: () => "r4" });
     restarted.restore(SESSION, rebuilt.open);
-    expect(restarted.submit(SESSION, "a1", { revision: "r2", answers: [{ id: "cache", values: [], otherText: "y" }], partial: true })).toEqual({ status: "stale" });
+    expect(restarted.submit(SESSION, "a1", { revision: "r2", answers: [{ id: "cache", values: [], otherText: "y" }], partial: true })).toEqual({
+      status: "stale",
+    });
     expect(restarted.submit(SESSION, "a1", { revision: "r3", answers: [{ id: "cache", values: [], otherText: "y" }], partial: true }).status).toBe("closed");
     expect(restarted.pendingAsks(SESSION)).toEqual([]);
 
@@ -74,34 +94,83 @@ describe("openAsksFromTranscript", () => {
   });
 
   it("drops the dependent questions a partial send skipped when it rebuilds the rest", () => {
-    const live = new PendingAskStore({ createAskId: () => "a1", createRevision: (() => { let n = 0; return () => `r${String(++n)}`; })() });
-    const set = live.open({ sessionId: SESSION, context: "Why", questions: [
-      { id: "location", question: "Where?", options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] },
-      { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } },
-      { id: "other", question: "Anything else?", options: [] },
-    ] });
+    const live = new PendingAskStore({
+      createAskId: () => "a1",
+      createRevision: (() => {
+        let n = 0;
+        return () => `r${String(++n)}`;
+      })(),
+    });
+    const set = live.open({
+      sessionId: SESSION,
+      context: "Why",
+      questions: [
+        {
+          id: "location",
+          question: "Where?",
+          options: [
+            { value: "home", label: "Home" },
+            { value: "vps", label: "VPS" },
+          ],
+        },
+        { id: "machine", question: "Which machine?", options: [{ value: "mini", label: "Mac mini" }], showIf: { question: "location", values: ["home"] } },
+        { id: "other", question: "Anything else?", options: [] },
+      ],
+    });
     const branch: unknown[] = [posted({ ask: set })];
-    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "location", values: ["vps"] }], partial: true }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
+    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "location", values: ["vps"] }], partial: true }, (outcome) =>
+      branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }),
+    );
 
     expect(openAsksFromTranscript(branch, SESSION).open.map((rebuilt) => rebuilt.questions.map((q) => q.id))).toEqual([["other"]]);
     expect(live.pendingAsks(SESSION).map((open) => open.questions.map((q) => q.id))).toEqual([["other"]]);
   });
 
   it("rebuilds the rest of a set with the context its partial send edited", () => {
-    const live = new PendingAskStore({ createAskId: () => "a1", createRevision: (() => { let n = 0; return () => `r${String(++n)}`; })() });
-    const set = live.open({ sessionId: SESSION, context: "Why", questions: [{ id: "db", question: "Which db?", options: [] }, { id: "cache", question: "Which cache?", options: [] }] });
+    const live = new PendingAskStore({
+      createAskId: () => "a1",
+      createRevision: (() => {
+        let n = 0;
+        return () => `r${String(++n)}`;
+      })(),
+    });
+    const set = live.open({
+      sessionId: SESSION,
+      context: "Why",
+      questions: [
+        { id: "db", question: "Which db?", options: [] },
+        { id: "cache", question: "Which cache?", options: [] },
+      ],
+    });
     const branch: unknown[] = [posted({ ask: set })];
-    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "db", values: [], otherText: "pg" }], partial: true, context: "Mine" }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
+    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "db", values: [], otherText: "pg" }], partial: true, context: "Mine" }, (outcome) =>
+      branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }),
+    );
 
     expect(openAsksFromTranscript(branch, SESSION).open).toEqual(live.pendingAsks(SESSION));
     expect(live.pendingAsks(SESSION)[0]).toMatchObject({ context: "Mine", contextEdited: true });
   });
 
   it("rebuilds the rest of a set without the context its partial send cleared", () => {
-    const live = new PendingAskStore({ createAskId: () => "a1", createRevision: (() => { let n = 0; return () => `r${String(++n)}`; })() });
-    const set = live.open({ sessionId: SESSION, context: "Why", questions: [{ id: "db", question: "Which db?", options: [] }, { id: "cache", question: "Which cache?", options: [] }] });
+    const live = new PendingAskStore({
+      createAskId: () => "a1",
+      createRevision: (() => {
+        let n = 0;
+        return () => `r${String(++n)}`;
+      })(),
+    });
+    const set = live.open({
+      sessionId: SESSION,
+      context: "Why",
+      questions: [
+        { id: "db", question: "Which db?", options: [] },
+        { id: "cache", question: "Which cache?", options: [] },
+      ],
+    });
     const branch: unknown[] = [posted({ ask: set })];
-    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "db", values: [], otherText: "pg" }], partial: true, context: "" }, (outcome) => branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }));
+    live.submit(SESSION, "a1", { revision: "r1", answers: [{ id: "db", values: [], otherText: "pg" }], partial: true, context: "" }, (outcome) =>
+      branch.push({ type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: outcome }),
+    );
 
     expect(live.pendingAsks(SESSION)[0]).not.toHaveProperty("context");
     expect(openAsksFromTranscript(branch, SESSION).open).toEqual(live.pendingAsks(SESSION));
@@ -116,10 +185,21 @@ describe("openAsksFromTranscript", () => {
 
 describe("partialAsksFromTranscript", () => {
   it("keeps each question where the set first listed it, though a revision lists only the open ones", () => {
-    const two = [{ id: "db", question: "Which database?", options: [] }, { id: "cache", question: "Which cache?", options: [] }];
-    const partial = { type: "custom", customType: ASK_USER_CLOSED_CUSTOM_TYPE, data: { askId: "a1", reason: "submitted", questions: [], partial: true, revision: "r2" } };
+    const two = [
+      { id: "db", question: "Which database?", options: [] },
+      { id: "cache", question: "Which cache?", options: [] },
+    ];
+    const partial = {
+      type: "custom",
+      customType: ASK_USER_CLOSED_CUSTOM_TYPE,
+      data: { askId: "a1", reason: "submitted", questions: [], partial: true, revision: "r2" },
+    };
     // db went with a partial send; the agent then revised the set, which now lists cache and a new question.
-    const branch = [posted({ ask: { ...ask("a1"), questions: two } }), partial, posted({ ask: { ...ask("a1", "r3"), questions: [two[1], { id: "ttl", question: "TTL?", options: [] }] } })];
+    const branch = [
+      posted({ ask: { ...ask("a1"), questions: two } }),
+      partial,
+      posted({ ask: { ...ask("a1", "r3"), questions: [two[1], { id: "ttl", question: "TTL?", options: [] }] } }),
+    ];
 
     expect(partialAsksFromTranscript(branch, "a1")).toEqual({ earlier: [partial.data], order: ["db", "cache", "ttl"] });
   });

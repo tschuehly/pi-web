@@ -9,7 +9,9 @@ export class HighlightedCode extends LitElement {
   private releaseStyles: (() => void) | undefined;
 
   @property({ attribute: false })
-  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined { return this.integration; }
+  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined {
+    return this.integration;
+  }
   set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
     if (value === this.integration) return;
     this.releaseStyles?.();

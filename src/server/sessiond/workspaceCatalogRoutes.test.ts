@@ -56,10 +56,7 @@ describe("session daemon workspace catalog routes", () => {
       allowedCwds: [hostPath("/repo")],
     });
 
-    listed = [
-      providerWorkspace("root", hostPath("/repo"), true),
-      providerWorkspace("linked", hostPath("/linked"), false, { branch: "feature/linked" }),
-    ];
+    listed = [providerWorkspace("root", hostPath("/repo"), true), providerWorkspace("linked", hostPath("/linked"), false, { branch: "feature/linked" })];
     const [response, spawnDecision] = await Promise.all([
       app.inject({ method: "GET", url: "/workspace-catalog/projects/p1/workspaces" }),
       spawnTargets.resolveSpawnTarget(hostPath("/repo"), hostPath("/linked")),
@@ -131,7 +128,18 @@ describe("session daemon workspace catalog routes", () => {
 
   it("exposes the immutable startup runtime and health snapshot", async () => {
     const snapshot = createWorkspaceProviderRuntimeSnapshot(
-      [{ pluginId: "git", source: "bundled", scope: "bundled", moduleRevision: "sha256:abc", settingsRevision: "sha256:settings", machineSpecific: true, state: "active", name: "Git" }],
+      [
+        {
+          pluginId: "git",
+          source: "bundled",
+          scope: "bundled",
+          moduleRevision: "sha256:abc",
+          settingsRevision: "sha256:settings",
+          machineSpecific: true,
+          state: "active",
+          name: "Git",
+        },
+      ],
       [{ pluginId: "git", health: { status: "healthy" } }],
       "bundled-only",
       [{ code: "duplicate-id", source: "local", message: "Duplicate PI WEB plugin id: git", pluginId: "git" }],
@@ -149,7 +157,18 @@ describe("session daemon workspace catalog routes", () => {
       protocolVersion: 2,
       terminalMode: "required",
       safeStart: "bundled-only",
-      records: [{ pluginId: "git", source: "bundled", scope: "bundled", moduleRevision: "sha256:abc", settingsRevision: "sha256:settings", machineSpecific: true, state: "active", name: "Git" }],
+      records: [
+        {
+          pluginId: "git",
+          source: "bundled",
+          scope: "bundled",
+          moduleRevision: "sha256:abc",
+          settingsRevision: "sha256:settings",
+          machineSpecific: true,
+          state: "active",
+          name: "Git",
+        },
+      ],
       health: [{ pluginId: "git", health: { status: "healthy" } }],
       diagnostics: [{ code: "duplicate-id", source: "local", message: "Duplicate PI WEB plugin id: git", pluginId: "git" }],
     });
@@ -160,9 +179,7 @@ describe("session daemon workspace catalog routes", () => {
 function projectReader() {
   return {
     list: () => Promise.resolve([project]),
-    requireProject: (projectId: string) => projectId === project.id
-      ? Promise.resolve(project)
-      : Promise.reject(new Error("Project not found")),
+    requireProject: (projectId: string) => (projectId === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))),
   };
 }
 
@@ -186,11 +203,6 @@ function contribution(pluginId: string, workspaceProvider: WorkspaceProvider): S
   };
 }
 
-function providerWorkspace(
-  key: string,
-  path: string,
-  isMain: boolean,
-  publicMetadata?: ProviderWorkspace["publicMetadata"],
-): ProviderWorkspace {
+function providerWorkspace(key: string, path: string, isMain: boolean, publicMetadata?: ProviderWorkspace["publicMetadata"]): ProviderWorkspace {
   return { key, path, label: key, isMain, ...(publicMetadata === undefined ? {} : { publicMetadata }) };
 }

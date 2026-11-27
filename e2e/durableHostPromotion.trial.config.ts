@@ -2,4 +2,10 @@
 import { defineConfig } from "@playwright/test";
 import base from "../playwright.config";
 
-export default defineConfig({ ...base, testDir: ".", globalSetup: undefined, testMatch: "durableHostPromotion.spec.ts", outputDir: "../test-results/durable-promotion-trial" });
+export default defineConfig({
+  ...base,
+  testDir: ".",
+  globalSetup: undefined,
+  testMatch: "durableHostPromotion.spec.ts",
+  outputDir: "../test-results/durable-promotion-trial",
+});

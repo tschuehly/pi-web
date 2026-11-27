@@ -4,7 +4,17 @@ import { NetworkRequestError } from "../api/http";
 import type { PendingExtensionDialog, SessionTranscriptSnapshot } from "../api";
 import type { SessionUiEvent } from "../sessionSocket";
 import { SessionController } from "./sessionController";
-import { defaultApi, deferred, EmitSocket, oldSession, replacementSession, runPendingAnimationFrames, status, workspace, type AppState } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  deferred,
+  EmitSocket,
+  oldSession,
+  replacementSession,
+  runPendingAnimationFrames,
+  status,
+  workspace,
+  type AppState,
+} from "./sessionController.testSupport";
 
 const oldPage = {
   messages: [
@@ -26,15 +36,21 @@ function harness() {
   const transcriptSnapshot = vi.fn(() => nextSnapshot);
   const controller = new SessionController(
     () => state,
-    (patch) => { state = { ...state, ...patch }; },
+    (patch) => {
+      state = { ...state, ...patch };
+    },
     () => undefined,
     undefined,
     { socket, api: { ...defaultApi, transcriptSnapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) } },
   );
   return {
-    socket, controller, transcriptSnapshot,
+    socket,
+    controller,
+    transcriptSnapshot,
     state: () => state,
-    nextSnapshot: (next: Promise<SessionTranscriptSnapshot>) => { nextSnapshot = next; },
+    nextSnapshot: (next: Promise<SessionTranscriptSnapshot>) => {
+      nextSnapshot = next;
+    },
   };
 }
 
@@ -70,14 +86,22 @@ describe("SessionController snapshot reconciliation", () => {
       h.nextSnapshot(cancelled.promise);
       h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
       cancelled.resolve(snapshot({ seq: 13 }));
-      await vi.waitFor(() => { expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2); });
-      await vi.waitFor(() => { expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }); });
+      await vi.waitFor(() => {
+        expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2);
+      });
+      await vi.waitFor(() => {
+        expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] });
+      });
       expect(h.state().messages).toHaveLength(3);
 
       h.nextSnapshot(Promise.resolve(snapshot({ page: secondQuestionPage, seq: 15 })));
       h.socket.emit(secondUserEvent(15));
-      await vi.waitFor(() => { expect(h.transcriptSnapshot).toHaveBeenCalledTimes(3); });
-      await vi.waitFor(() => { expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2); });
+      await vi.waitFor(() => {
+        expect(h.transcriptSnapshot).toHaveBeenCalledTimes(3);
+      });
+      await vi.waitFor(() => {
+        expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2);
+      });
       runPendingAnimationFrames();
       expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2);
     } finally {
@@ -93,10 +117,14 @@ describe("SessionController snapshot reconciliation", () => {
       h.nextSnapshot(restarted.promise);
       h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
       restarted.resolve(snapshot({ generation: "new-host", seq: 14 }));
-      await vi.waitFor(() => { expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }); });
+      await vi.waitFor(() => {
+        expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] });
+      });
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2);
-      expect(h.state().messages.filter((message) => message.parts.some((part) => part.type === "text" && part.text === "Compaction cancelled."))).toHaveLength(1);
+      expect(h.state().messages.filter((message) => message.parts.some((part) => part.type === "text" && part.text === "Compaction cancelled."))).toHaveLength(
+        1,
+      );
     } finally {
       h.controller.dispose();
     }
@@ -131,10 +159,12 @@ describe("SessionController snapshot reconciliation", () => {
       const first = deferred<SessionTranscriptSnapshot>();
       const trailing = deferred<SessionTranscriptSnapshot>();
       const trailingStarted = deferred<undefined>();
-      h.transcriptSnapshot.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => {
-        trailingStarted.resolve(undefined);
-        return trailing.promise;
-      });
+      h.transcriptSnapshot
+        .mockImplementationOnce(() => first.promise)
+        .mockImplementationOnce(() => {
+          trailingStarted.resolve(undefined);
+          return trailing.promise;
+        });
       const firstRefresh = h.controller.refreshSelectedSession();
       await Promise.resolve();
       h.socket.emit(secondUserEvent());
@@ -162,7 +192,10 @@ describe("SessionController snapshot reconciliation", () => {
       const failedRead = deferred<SessionTranscriptSnapshot>();
       h.transcriptSnapshot.mockImplementationOnce(() => failedRead.promise);
       const recoveredSnapshot = snapshot({
-        page: secondQuestionPage, status: { ...streamingStatus, pendingDialogs: [dialog] }, seq: 14, partial: partial("new answer"),
+        page: secondQuestionPage,
+        status: { ...streamingStatus, pendingDialogs: [dialog] },
+        seq: 14,
+        partial: partial("new answer"),
       });
       h.nextSnapshot(Promise.resolve(recoveredSnapshot));
       const refresh = h.controller.refreshSelectedSession(undefined, { recoverNetwork: true });
@@ -369,7 +402,11 @@ describe("SessionController snapshot reconciliation", () => {
       const refresh = h.controller.refreshSelectedSession();
       await Promise.resolve();
       h.socket.emit(secondUserEvent());
-      h.nextSnapshot(Promise.resolve(snapshot({ page: { messages: [{ role: "user", content: "replacement" }], start: 0, total: 1 }, status: status(replacementSession.id) })));
+      h.nextSnapshot(
+        Promise.resolve(
+          snapshot({ page: { messages: [{ role: "user", content: "replacement" }], start: 0, total: 1 }, status: status(replacementSession.id) }),
+        ),
+      );
       await h.controller.selectSession(replacementSession, { updateUrl: false });
       response.resolve(snapshot());
       await refresh;

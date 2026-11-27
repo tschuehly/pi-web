@@ -39,7 +39,8 @@ export function loadStagedAttachments(key: string, store: StagedAttachmentStore 
 
 export function saveStagedAttachments(key: string, draft: StagedAttachmentDraft, store: StagedAttachmentStore = defaultStore()): void {
   const resolvedKey = resolveStagedAttachmentKey(key, store);
-  if (draft.attachments.length > 0 || draft.nextImageReference > 1 || draft.pendingImageReferences.length > 0 || draft.generation > 0) store.set(resolvedKey, draft);
+  if (draft.attachments.length > 0 || draft.nextImageReference > 1 || draft.pendingImageReferences.length > 0 || draft.generation > 0)
+    store.set(resolvedKey, draft);
   else store.delete(resolvedKey);
   if (resolvedKey !== key) store.delete(key);
 }

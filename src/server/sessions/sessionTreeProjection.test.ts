@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { projectSessionTree, type ProjectableSessionTreeNode } from "./sessionTreeProjection.js";
 
-function treeNode(
-  entry: Record<string, unknown>,
-  children: ProjectableSessionTreeNode[] = [],
-  label?: unknown,
-): ProjectableSessionTreeNode {
+function treeNode(entry: Record<string, unknown>, children: ProjectableSessionTreeNode[] = [], label?: unknown): ProjectableSessionTreeNode {
   return { entry, children, ...(label === undefined ? {} : { label }) };
 }
 
@@ -17,11 +13,24 @@ describe("projectSessionTree", () => {
   it("omits provider-only image legends from user tree previews while keeping references and image markers", () => {
     const text = "compare [PIC_3] and [PIC_1]";
     const providerText = `${text}\n\nImage blocks immediately following this text map in order as follows:\n1. [PIC_1]\n2. [PIC_3]`;
-    const snapshot = projectSessionTree([
-      treeNode(entry("string", null, "message", { message: { role: "user", content: providerText } })),
-      treeNode(entry("blocks", null, "message", { message: { role: "user", content: [{ type: "text", text: providerText }, { type: "image", data: "private" }] } })),
-      treeNode(entry("plain", null, "message", { message: { role: "user", content: "Image blocks in a diagram: [PIC_4]" } })),
-    ], null);
+    const snapshot = projectSessionTree(
+      [
+        treeNode(entry("string", null, "message", { message: { role: "user", content: providerText } })),
+        treeNode(
+          entry("blocks", null, "message", {
+            message: {
+              role: "user",
+              content: [
+                { type: "text", text: providerText },
+                { type: "image", data: "private" },
+              ],
+            },
+          }),
+        ),
+        treeNode(entry("plain", null, "message", { message: { role: "user", content: "Image blocks in a diagram: [PIC_4]" } })),
+      ],
+      null,
+    );
 
     expect(snapshot.nodes.map((node) => node.summary)).toEqual([text, `${text} [image]`, "Image blocks in a diagram: [PIC_4]"]);
     expect(JSON.stringify(snapshot)).not.toContain("Image blocks immediately following");
@@ -30,45 +39,63 @@ describe("projectSessionTree", () => {
   it("preserves complete pre-order structure while strictly excluding raw private fields", () => {
     const rootChildren: ProjectableSessionTreeNode[] = [];
     const assistantChildren: ProjectableSessionTreeNode[] = [];
-    const root = treeNode(entry("root", null, "message", {
-      message: {
-        role: "user",
-        content: [
-          { type: "text", text: "hello\nworld", textSignature: "secret-text-signature" },
-          { type: "image", mimeType: "image/png", data: "secret-image-base64" },
-        ],
-        providerState: "secret-user-provider-state",
-      },
-    }), rootChildren, "  Important\nroot  ");
-    const assistant = treeNode(entry("assistant", "root", "message", {
-      message: {
-        role: "assistant",
-        content: [
-          { type: "thinking", thinking: "secret chain of thought", thinkingSignature: "secret-thinking-signature" },
-          { type: "toolCall", name: "read", arguments: { path: "secret-tool-argument", thinkingSignature: "secret-argument-signature" }, thoughtSignature: "secret-thought-signature" },
-        ],
-        usage: { privateUsage: "secret-usage" },
-        responseId: "secret-response-id",
-        stopReason: "toolUse",
-      },
-    }), assistantChildren);
-    const toolResult = treeNode(entry("tool", "assistant", "message", {
-      message: {
-        role: "toolResult",
-        toolName: "read",
-        content: [{ type: "text", text: "visible tool text" }],
-        details: { token: "secret-tool-details" },
-        unknownProviderField: "secret-tool-provider-field",
-        isError: false,
-      },
-    }));
-    const custom = treeNode(entry("custom", "root", "custom", {
-      customType: "extension-state",
-      data: { apiKey: "secret-extension-data" },
-    }));
-    const orphan = treeNode(entry("orphan", "missing-parent", "future_entry", {
-      futurePayload: "secret-unknown-payload",
-    }));
+    const root = treeNode(
+      entry("root", null, "message", {
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "hello\nworld", textSignature: "secret-text-signature" },
+            { type: "image", mimeType: "image/png", data: "secret-image-base64" },
+          ],
+          providerState: "secret-user-provider-state",
+        },
+      }),
+      rootChildren,
+      "  Important\nroot  ",
+    );
+    const assistant = treeNode(
+      entry("assistant", "root", "message", {
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "secret chain of thought", thinkingSignature: "secret-thinking-signature" },
+            {
+              type: "toolCall",
+              name: "read",
+              arguments: { path: "secret-tool-argument", thinkingSignature: "secret-argument-signature" },
+              thoughtSignature: "secret-thought-signature",
+            },
+          ],
+          usage: { privateUsage: "secret-usage" },
+          responseId: "secret-response-id",
+          stopReason: "toolUse",
+        },
+      }),
+      assistantChildren,
+    );
+    const toolResult = treeNode(
+      entry("tool", "assistant", "message", {
+        message: {
+          role: "toolResult",
+          toolName: "read",
+          content: [{ type: "text", text: "visible tool text" }],
+          details: { token: "secret-tool-details" },
+          unknownProviderField: "secret-tool-provider-field",
+          isError: false,
+        },
+      }),
+    );
+    const custom = treeNode(
+      entry("custom", "root", "custom", {
+        customType: "extension-state",
+        data: { apiKey: "secret-extension-data" },
+      }),
+    );
+    const orphan = treeNode(
+      entry("orphan", "missing-parent", "future_entry", {
+        futurePayload: "secret-unknown-payload",
+      }),
+    );
     rootChildren.push(assistant, custom);
     assistantChildren.push(toolResult);
 
@@ -99,7 +126,8 @@ describe("projectSessionTree", () => {
       "secret-tool-provider-field",
       "secret-extension-data",
       "secret-unknown-payload",
-    ]) expect(serialized).not.toContain(secret);
+    ])
+      expect(serialized).not.toContain(secret);
     for (const privateKey of ["thinkingSignature", "thoughtSignature", "arguments", "usage", "details", "data", "mimeType"]) {
       expect(serialized).not.toContain(privateKey);
     }
@@ -107,9 +135,27 @@ describe("projectSessionTree", () => {
 
   it("projects each supported entry kind from only its safe display fields", () => {
     const roots = [
-      treeNode(entry("assistant-error", null, "message", { message: { role: "assistant", content: [{ type: "thinking", thinking: "private" }], stopReason: "error", errorMessage: "private provider error" } })),
-      treeNode(entry("tool-error", null, "message", { message: { role: "toolResult", toolName: "bash", content: [{ type: "image", data: "private-image", mimeType: "image/png" }], details: "private", isError: true } })),
-      treeNode(entry("bash", null, "message", { message: { role: "bashExecution", command: "npm test", output: "private shell output", fullOutputPath: "/private/path" } })),
+      treeNode(
+        entry("assistant-error", null, "message", {
+          message: { role: "assistant", content: [{ type: "thinking", thinking: "private" }], stopReason: "error", errorMessage: "private provider error" },
+        }),
+      ),
+      treeNode(
+        entry("tool-error", null, "message", {
+          message: {
+            role: "toolResult",
+            toolName: "bash",
+            content: [{ type: "image", data: "private-image", mimeType: "image/png" }],
+            details: "private",
+            isError: true,
+          },
+        }),
+      ),
+      treeNode(
+        entry("bash", null, "message", {
+          message: { role: "bashExecution", command: "npm test", output: "private shell output", fullOutputPath: "/private/path" },
+        }),
+      ),
       treeNode(entry("custom-visible", null, "custom_message", { customType: "notice", content: "visible notice", display: true, details: "private" })),
       treeNode(entry("custom-hidden", null, "custom_message", { customType: "private-custom-type", content: "private hidden content", display: false })),
       treeNode(entry("compaction", null, "compaction", { summary: "compact summary", details: "private" })),
@@ -147,15 +193,18 @@ describe("projectSessionTree", () => {
       children: "not-an-array",
     };
 
-    expect(() => { Reflect.apply(projectSessionTree, undefined, [[malformedChild], null]); }).toThrow("Pi returned a malformed session-tree node");
-    expect(() => { Reflect.apply(projectSessionTree, undefined, [[malformedChildren], null]); }).toThrow("Pi returned a malformed session-tree node");
+    expect(() => {
+      Reflect.apply(projectSessionTree, undefined, [[malformedChild], null]);
+    }).toThrow("Pi returned a malformed session-tree node");
+    expect(() => {
+      Reflect.apply(projectSessionTree, undefined, [[malformedChildren], null]);
+    }).toThrow("Pi returned a malformed session-tree node");
     expect(() => projectSessionTree([treeNode(entry("", null, "custom"))], null)).toThrow("Pi returned a malformed session-tree entry");
     expect(() => projectSessionTree([treeNode(entry("   ", null, "custom"))], null)).toThrow("Pi returned a malformed session-tree entry");
     expect(() => projectSessionTree([treeNode(entry("child", "   ", "custom"))], null)).toThrow("Pi returned a malformed session-tree entry");
-    expect(() => projectSessionTree([
-      treeNode(entry("duplicate", null, "custom")),
-      treeNode(entry("duplicate", null, "custom")),
-    ], null)).toThrow("Pi returned duplicate session-tree entry IDs");
+    expect(() => projectSessionTree([treeNode(entry("duplicate", null, "custom")), treeNode(entry("duplicate", null, "custom"))], null)).toThrow(
+      "Pi returned duplicate session-tree entry IDs",
+    );
     expect(() => projectSessionTree([treeNode(entry("root", null, "custom"))], "missing")).toThrow("Pi returned an invalid active session-tree leaf");
   });
 
@@ -168,13 +217,18 @@ describe("projectSessionTree", () => {
 
   it("bounds summaries and traverses deep trees and malformed parent chains without recursion", () => {
     const depth = 5_000;
-    let current = treeNode(entry(`node-${String(depth - 1)}`, `node-${String(depth - 2)}`, "message", {
-      message: { role: "user", content: `${"word \n".repeat(200)}tail` },
-    }));
+    let current = treeNode(
+      entry(`node-${String(depth - 1)}`, `node-${String(depth - 2)}`, "message", {
+        message: { role: "user", content: `${"word \n".repeat(200)}tail` },
+      }),
+    );
     for (let index = depth - 2; index >= 0; index -= 1) {
-      current = treeNode(entry(`node-${String(index)}`, index === 0 ? null : `node-${String(index - 1)}`, "message", {
-        message: { role: "user", content: `message ${String(index)}` },
-      }), [current]);
+      current = treeNode(
+        entry(`node-${String(index)}`, index === 0 ? null : `node-${String(index - 1)}`, "message", {
+          message: { role: "user", content: `message ${String(index)}` },
+        }),
+        [current],
+      );
     }
 
     const snapshot = projectSessionTree([current], `node-${String(depth - 1)}`);

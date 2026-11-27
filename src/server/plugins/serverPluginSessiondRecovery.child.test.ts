@@ -38,8 +38,12 @@ afterEach(async () => {
 
 describe("sessiond persisted server plugin recovery", () => {
   it("rejects cleanup of the live Terminal bundle and unowned temporary directories", () => {
-    expect(() => { assertOwnedRoot(liveTerminalRoot); }).toThrow("Refusing to clean unowned directory");
-    expect(() => { assertOwnedRoot(join(tmpdir(), "pi-web-sessiond-plugin-unowned")); }).toThrow("Refusing to clean unowned directory");
+    expect(() => {
+      assertOwnedRoot(liveTerminalRoot);
+    }).toThrow("Refusing to clean unowned directory");
+    expect(() => {
+      assertOwnedRoot(join(tmpdir(), "pi-web-sessiond-plugin-unowned"));
+    }).toThrow("Refusing to clean unowned directory");
   });
   // Config parsing and both safe-start levels are covered by serverPluginRecovery.test.ts
   // and serverPluginRuntime.test.ts. Keep one real-process fail-closed wiring check.
@@ -51,14 +55,22 @@ describe("sessiond persisted server plugin recovery", () => {
     const markerPath = join(root, "poison-imported");
     await mkdir(pluginRoot, { recursive: true });
     await writeFile(configPath, `${JSON.stringify({ serverPlugins: { safeStart: "future-level" } })}\n`, "utf8");
-    await writeFile(join(pluginRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "poison", serverModule: "server.mjs" }] },
-    })}\n`, "utf8");
-    await writeFile(join(pluginRoot, "server.mjs"), `
+    await writeFile(
+      join(pluginRoot, "package.json"),
+      `${JSON.stringify({
+        piWeb: { plugins: [{ id: "poison", serverModule: "server.mjs" }] },
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(pluginRoot, "server.mjs"),
+      `
       import { writeFileSync } from "node:fs";
       writeFileSync(${JSON.stringify(markerPath)}, "imported");
       process.exit(97);
-    `, "utf8");
+    `,
+      "utf8",
+    );
 
     const child = spawnFixtureDaemon(root);
 
@@ -73,49 +85,58 @@ describe("sessiond persisted server plugin recovery", () => {
 
     // Windows has no POSIX signal delivery: SIGTERM force-terminates the
     // child, so the graceful-shutdown exit code only holds on POSIX hosts.
-    expect(exit).toEqual(
-      process.platform === "win32" ? { code: null, signal: "SIGTERM" } : { code: 0, signal: null },
-    );
+    expect(exit).toEqual(process.platform === "win32" ? { code: null, signal: "SIGTERM" } : { code: 0, signal: null });
     expect(existsSync(markerPath)).toBe(false);
     expect(existsSync(join(dataDir, "plugin-data"))).toBe(false);
   }, 30_000);
 
   // Persistent-directory lifecycle I/O is exercised at the runtime seam. This
   // smoke keeps early-state startup alongside the real late-authority assembly.
-  it.skipIf(process.platform === "win32")("assembles early workspace providers and sessions before one late consumer resume", async () => {
-    const root = await createDaemonFixture();
-    await buildTerminalPackage(resolve("pi-web-plugins/terminal"), join(root, "dist/pi-web-plugins/terminal"));
+  it.skipIf(process.platform === "win32")(
+    "assembles early workspace providers and sessions before one late consumer resume",
+    async () => {
+      const root = await createDaemonFixture();
+      await buildTerminalPackage(resolve("pi-web-plugins/terminal"), join(root, "dist/pi-web-plugins/terminal"));
 
-    const configPath = join(root, "config.json");
-    const dataDir = join(root, "data");
-    const projectPath = join(root, "project");
-    const projectId = "project-live-authority";
-    const workspaceId = createHash("sha1").update(`${projectId}:main`).digest("hex").slice(0, 12);
-    const eventsPath = join(root, "events.log");
-    const authorityMarker = join(root, "workspace-authority.json");
-    const runMarker = join(root, "pi-session-run.json");
-    const disposedMarker = join(root, "workspace-consumer-disposed.json");
-    const serverApiUrl = pathToFileURL(join(root, "src/server-plugin-api.ts")).href;
-    await Promise.all([
-      mkdir(projectPath, { recursive: true }),
-      mkdir(join(dataDir, "plugins"), { recursive: true }),
-    ]);
-    await writeFile(configPath, "{}\n", "utf8");
-    await writeFile(join(dataDir, "projects.json"), `${JSON.stringify({
-      projects: [{
-        id: projectId,
-        name: "Live project",
-        path: projectPath,
-        createdAt: "2026-09-10T00:00:00.000Z",
-      }],
-    })}\n`, "utf8");
+      const configPath = join(root, "config.json");
+      const dataDir = join(root, "data");
+      const projectPath = join(root, "project");
+      const projectId = "project-live-authority";
+      const workspaceId = createHash("sha1").update(`${projectId}:main`).digest("hex").slice(0, 12);
+      const eventsPath = join(root, "events.log");
+      const authorityMarker = join(root, "workspace-authority.json");
+      const runMarker = join(root, "pi-session-run.json");
+      const disposedMarker = join(root, "workspace-consumer-disposed.json");
+      const serverApiUrl = pathToFileURL(join(root, "src/server-plugin-api.ts")).href;
+      await Promise.all([mkdir(projectPath, { recursive: true }), mkdir(join(dataDir, "plugins"), { recursive: true })]);
+      await writeFile(configPath, "{}\n", "utf8");
+      await writeFile(
+        join(dataDir, "projects.json"),
+        `${JSON.stringify({
+          projects: [
+            {
+              id: projectId,
+              name: "Live project",
+              path: projectPath,
+              createdAt: "2026-09-10T00:00:00.000Z",
+            },
+          ],
+        })}\n`,
+        "utf8",
+      );
 
-    const providerRoot = join(dataDir, "plugins", "provider");
-    await mkdir(providerRoot, { recursive: true });
-    await writeFile(join(providerRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "a-workspace-provider", serverModule: "server.mjs" }] },
-    })}\n`, "utf8");
-    await writeFile(join(providerRoot, "server.mjs"), `
+      const providerRoot = join(dataDir, "plugins", "provider");
+      await mkdir(providerRoot, { recursive: true });
+      await writeFile(
+        join(providerRoot, "package.json"),
+        `${JSON.stringify({
+          piWeb: { plugins: [{ id: "a-workspace-provider", serverModule: "server.mjs" }] },
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(providerRoot, "server.mjs"),
+        `
       import { appendFile } from "node:fs/promises";
       export default {
         apiVersion: 3,
@@ -140,14 +161,22 @@ describe("sessiond persisted server plugin recovery", () => {
           };
         }
       };
-    `, "utf8");
+    `,
+        "utf8",
+      );
 
-    const stateRoot = join(dataDir, "plugins", "state-early");
-    await mkdir(stateRoot, { recursive: true });
-    await writeFile(join(stateRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "b-state-early", serverModule: "server.mjs" }] },
-    })}\n`, "utf8");
-    await writeFile(join(stateRoot, "server.mjs"), `
+      const stateRoot = join(dataDir, "plugins", "state-early");
+      await mkdir(stateRoot, { recursive: true });
+      await writeFile(
+        join(stateRoot, "package.json"),
+        `${JSON.stringify({
+          piWeb: { plugins: [{ id: "b-state-early", serverModule: "server.mjs" }] },
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(stateRoot, "server.mjs"),
+        `
       import { appendFile, writeFile } from "node:fs/promises";
       import { join } from "node:path";
       export default {
@@ -162,14 +191,22 @@ describe("sessiond persisted server plugin recovery", () => {
           };
         }
       };
-    `, "utf8");
+    `,
+        "utf8",
+      );
 
-    const consumerRoot = join(dataDir, "plugins", "workspace-consumer");
-    await mkdir(consumerRoot, { recursive: true });
-    await writeFile(join(consumerRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "z-workspace-consumer", serverModule: "server.mjs" }] },
-    })}\n`, "utf8");
-    await writeFile(join(consumerRoot, "server.mjs"), `
+      const consumerRoot = join(dataDir, "plugins", "workspace-consumer");
+      await mkdir(consumerRoot, { recursive: true });
+      await writeFile(
+        join(consumerRoot, "package.json"),
+        `${JSON.stringify({
+          piWeb: { plugins: [{ id: "z-workspace-consumer", serverModule: "server.mjs" }] },
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(consumerRoot, "server.mjs"),
+        `
       import { appendFile, writeFile } from "node:fs/promises";
       import {
         PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
@@ -228,82 +265,81 @@ describe("sessiond persisted server plugin recovery", () => {
           };
         }
       };
-    `, "utf8");
+    `,
+        "utf8",
+      );
 
-    const child = spawnFixtureDaemon(root);
+      const child = spawnFixtureDaemon(root);
 
-    const startupOutput = await waitForOutput(child, "Server listening at", 20_000);
-    expect(startupOutput).toContain("WORKSPACE_CONSUMER_STARTED");
-    expect((await readFile(eventsPath, "utf8")).trim().split("\n")).toEqual([
-      "provider:start",
-      "state:start",
-      "consumer:start",
-    ]);
-    expect(JSON.parse(await readFile(authorityMarker, "utf8"))).toEqual({
-      project: { id: projectId, name: "Live project", path: projectPath },
-      workspace: {
-        id: workspaceId,
-        projectId,
-        path: projectPath,
-        label: "Provider main",
-        isMain: true,
-        provider: {
-          pluginId: "a-workspace-provider",
-          capabilities: { remove: false },
-          metadata: { topology: "live" },
+      const startupOutput = await waitForOutput(child, "Server listening at", 20_000);
+      expect(startupOutput).toContain("WORKSPACE_CONSUMER_STARTED");
+      expect((await readFile(eventsPath, "utf8")).trim().split("\n")).toEqual(["provider:start", "state:start", "consumer:start"]);
+      expect(JSON.parse(await readFile(authorityMarker, "utf8"))).toEqual({
+        project: { id: projectId, name: "Live project", path: projectPath },
+        workspace: {
+          id: workspaceId,
+          projectId,
+          path: projectPath,
+          label: "Provider main",
+          isMain: true,
+          provider: {
+            pluginId: "a-workspace-provider",
+            capabilities: { remove: false },
+            metadata: { topology: "live" },
+          },
         },
-      },
-    });
-    const admittedRun = await readJsonObject(runMarker);
-    expect(typeof admittedRun["sessionId"]).toBe("string");
-    expect(admittedRun["sessionId"]).not.toBe("");
-    expect(admittedRun["echoed"]).toBe("connected");
-    expect(typeof admittedRun["createdId"]).toBe("string");
-    expect(admittedRun["createdId"]).not.toBe(admittedRun["sessionId"]);
-    expect(admittedRun["createdEcho"]).toBe("created and connected");
-    expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "b-state-early", "state.json"), "utf8")))
-      .toEqual({ phase: "early" });
+      });
+      const admittedRun = await readJsonObject(runMarker);
+      expect(typeof admittedRun["sessionId"]).toBe("string");
+      expect(admittedRun["sessionId"]).not.toBe("");
+      expect(admittedRun["echoed"]).toBe("connected");
+      expect(typeof admittedRun["createdId"]).toBe("string");
+      expect(admittedRun["createdId"]).not.toBe(admittedRun["sessionId"]);
+      expect(admittedRun["createdEcho"]).toBe("created and connected");
+      expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "b-state-early", "state.json"), "utf8"))).toEqual({ phase: "early" });
 
-    child.kill("SIGTERM");
-    const exit = await waitForExit(child, 10_000);
-    children.delete(child);
+      child.kill("SIGTERM");
+      const exit = await waitForExit(child, 10_000);
+      children.delete(child);
 
-    expect(exit).toEqual({ code: 0, signal: null });
-    const disposed = await readJsonObject(disposedMarker);
-    expect(disposed["connectionClosed"]).toBe(true);
-    expect(disposed["createdConnectionClosed"]).toBe(true);
-    const completion = disposed["completion"];
-    expect(["completed", "failed", "cancelled"])
-      .toContain(isRecord(completion) ? completion["status"] : undefined);
-    expect(disposed["workspaceError"])
-      .toContain("workspace authority for server plugin z-workspace-consumer is no longer active");
-    expect(disposed["piSessionsError"])
-      .toContain("PI session authority for server plugin z-workspace-consumer is no longer active");
-    expect((await readFile(eventsPath, "utf8")).trim().split("\n")).toEqual([
-      "provider:start",
-      "state:start",
-      "consumer:start",
-      "provider:dispose",
-    ]);
-  }, 40_000);
+      expect(exit).toEqual({ code: 0, signal: null });
+      const disposed = await readJsonObject(disposedMarker);
+      expect(disposed["connectionClosed"]).toBe(true);
+      expect(disposed["createdConnectionClosed"]).toBe(true);
+      const completion = disposed["completion"];
+      expect(["completed", "failed", "cancelled"]).toContain(isRecord(completion) ? completion["status"] : undefined);
+      expect(disposed["workspaceError"]).toContain("workspace authority for server plugin z-workspace-consumer is no longer active");
+      expect(disposed["piSessionsError"]).toContain("PI session authority for server plugin z-workspace-consumer is no longer active");
+      expect((await readFile(eventsPath, "utf8")).trim().split("\n")).toEqual(["provider:start", "state:start", "consumer:start", "provider:dispose"]);
+    },
+    40_000,
+  );
 
   // Plugin stop on SIGTERM requires POSIX signal delivery; Windows
   // force-terminates the child without running shutdown handlers.
-  it.skipIf(process.platform === "win32")("disposes activated plugins when SIGTERM arrives during sessiond startup", async () => {
-    const root = await createDaemonFixture();
-    // The copied catalog resolves bundled plugins relative to this temporary checkout.
-    await buildTerminalPackage(resolve("pi-web-plugins/terminal"), join(root, "dist/pi-web-plugins/terminal"));
-    const configPath = join(root, "config.json");
-    const dataDir = join(root, "data");
-    const pluginRoot = join(dataDir, "plugins", "startup-signal");
-    const startedMarker = join(root, "plugin-started");
-    const stoppedMarker = join(root, "plugin-stopped");
-    await mkdir(pluginRoot, { recursive: true });
-    await writeFile(configPath, "{}\n", "utf8");
-    await writeFile(join(pluginRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "startup-signal", serverModule: "server.mjs" }] },
-    })}\n`, "utf8");
-    await writeFile(join(pluginRoot, "server.mjs"), `
+  it.skipIf(process.platform === "win32")(
+    "disposes activated plugins when SIGTERM arrives during sessiond startup",
+    async () => {
+      const root = await createDaemonFixture();
+      // The copied catalog resolves bundled plugins relative to this temporary checkout.
+      await buildTerminalPackage(resolve("pi-web-plugins/terminal"), join(root, "dist/pi-web-plugins/terminal"));
+      const configPath = join(root, "config.json");
+      const dataDir = join(root, "data");
+      const pluginRoot = join(dataDir, "plugins", "startup-signal");
+      const startedMarker = join(root, "plugin-started");
+      const stoppedMarker = join(root, "plugin-stopped");
+      await mkdir(pluginRoot, { recursive: true });
+      await writeFile(configPath, "{}\n", "utf8");
+      await writeFile(
+        join(pluginRoot, "package.json"),
+        `${JSON.stringify({
+          piWeb: { plugins: [{ id: "startup-signal", serverModule: "server.mjs" }] },
+        })}\n`,
+        "utf8",
+      );
+      await writeFile(
+        join(pluginRoot, "server.mjs"),
+        `
       import { writeFileSync } from "node:fs";
       export default {
         apiVersion: 3,
@@ -321,19 +357,23 @@ describe("sessiond persisted server plugin recovery", () => {
           };
         }
       };
-    `, "utf8");
+    `,
+        "utf8",
+      );
 
-    const child = spawnFixtureDaemon(root);
+      const child = spawnFixtureDaemon(root);
 
-    await waitForOutput(child, "PLUGIN_STARTED", 15_000);
-    expect(existsSync(startedMarker)).toBe(true);
-    child.kill("SIGTERM");
-    const exit = await waitForExit(child, 15_000);
-    children.delete(child);
+      await waitForOutput(child, "PLUGIN_STARTED", 15_000);
+      expect(existsSync(startedMarker)).toBe(true);
+      child.kill("SIGTERM");
+      const exit = await waitForExit(child, 15_000);
+      children.delete(child);
 
-    expect(exit).toEqual({ code: 0, signal: null });
-    expect(existsSync(stoppedMarker)).toBe(true);
-  }, 35_000);
+      expect(exit).toEqual({ code: 0, signal: null });
+      expect(existsSync(stoppedMarker)).toBe(true);
+    },
+    35_000,
+  );
 });
 
 async function readJsonObject(path: string): Promise<Record<string, unknown>> {
@@ -436,10 +476,7 @@ function waitForOutput(child: FixtureChild, expected: string, timeoutMs: number)
   });
 }
 
-function waitForExit(
-  child: FixtureChild,
-  timeoutMs: number,
-): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+function waitForExit(child: FixtureChild, timeoutMs: number): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
   if (child.exitCode !== null || child.signalCode !== null) {
     return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
   }

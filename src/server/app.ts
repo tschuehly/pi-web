@@ -75,7 +75,13 @@ interface LocalProjectRouteOptions {
   config?: Pick<PiWebConfigService, "read">;
 }
 
-function registerLocalProjectRoutes(app: FastifyInstance, projects: ProjectService, workspaces: WorkspaceCatalog, prefix: string, options: LocalProjectRouteOptions = {}): void {
+function registerLocalProjectRoutes(
+  app: FastifyInstance,
+  projects: ProjectService,
+  workspaces: WorkspaceCatalog,
+  prefix: string,
+  options: LocalProjectRouteOptions = {},
+): void {
   app.get(`${prefix}/projects`, async () => projects.list());
 
   app.get<{ Querystring: { q?: string } }>(`${prefix}/project-directories`, async (request, reply) => {
@@ -101,10 +107,7 @@ async function resolveWorkspacesWithEffectiveConfig(
   workspaces: WorkspaceCatalog,
   config?: Pick<PiWebConfigService, "read">,
 ): Promise<WorkspaceProviderResolution> {
-  const [resolution, effectiveConfig] = await Promise.all([
-    workspaces.resolveProject(project.id),
-    workspaceEffectiveConfig(project.path, config),
-  ]);
+  const [resolution, effectiveConfig] = await Promise.all([workspaces.resolveProject(project.id), workspaceEffectiveConfig(project.path, config)]);
   return {
     ...resolution,
     workspaces: resolution.workspaces.map((workspace) => ({ ...workspace, effectiveConfig })),
@@ -123,10 +126,7 @@ async function readEffectiveConfig(config: Pick<PiWebConfigService, "read">) {
   return (await config.read()).effectiveConfig;
 }
 
-async function desiredPluginAgentDir(
-  profiles: ActiveAgentProfileProvider,
-  config: Pick<PiWebConfigService, "read">,
-): Promise<string> {
+async function desiredPluginAgentDir(profiles: ActiveAgentProfileProvider, config: Pick<PiWebConfigService, "read">): Promise<string> {
   try {
     return (await requireActiveAgentProfile(profiles)).dir;
   } catch (error) {
@@ -190,26 +190,36 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
   const daemonWorkspaces = new SessionDaemonWorkspaceCatalog(sessionDaemon);
   const workspaces = deps.workspaceCatalog ?? daemonWorkspaces;
   const agentProfileProvider = deps.agentProfileProvider ?? new SessionDaemonActiveAgentProfileProvider(sessionDaemon);
-  const piWebPlugins = deps.piWebPlugins ?? new PiWebPluginService({
-    configProvider: readConfig,
-    agentDirProvider: () => desiredPluginAgentDir(agentProfileProvider, configService),
-    runtimeProvider: daemonWorkspaces,
-    recoveryProvider: () => loadServerPluginRecoveryConfig(),
-  });
+  const piWebPlugins =
+    deps.piWebPlugins
+    ?? new PiWebPluginService({
+      configProvider: readConfig,
+      agentDirProvider: () => desiredPluginAgentDir(agentProfileProvider, configService),
+      runtimeProvider: daemonWorkspaces,
+      recoveryProvider: () => loadServerPluginRecoveryConfig(),
+    });
   const piPackages = deps.piPackages ?? createActiveProfilePiPackageService(agentProfileProvider);
-  const piWebStatusCache = deps.piWebStatusCache ?? createPiWebStatusCache(
-    async ({ force }) => {
-      const activeAgentProfile = await agentProfileProvider.getActiveAgentProfile();
-      return getPiWebStatus(sessionDaemon, {
-        forceReleaseCheck: force,
-        ...(activeAgentProfile.status === "available" ? { activeAgentProfile: activeAgentProfile.profile } : {}),
-      });
-    },
-    { onError: (error) => { app.log.warn({ err: error }, "failed to refresh PI WEB status cache"); } },
-  );
-  const machines = deps.machines ?? new MachineService(undefined, {
-    localRuntime: () => getPiWebRuntime(sessionDaemon),
-  });
+  const piWebStatusCache =
+    deps.piWebStatusCache
+    ?? createPiWebStatusCache(
+      async ({ force }) => {
+        const activeAgentProfile = await agentProfileProvider.getActiveAgentProfile();
+        return getPiWebStatus(sessionDaemon, {
+          forceReleaseCheck: force,
+          ...(activeAgentProfile.status === "available" ? { activeAgentProfile: activeAgentProfile.profile } : {}),
+        });
+      },
+      {
+        onError: (error) => {
+          app.log.warn({ err: error }, "failed to refresh PI WEB status cache");
+        },
+      },
+    );
+  const machines =
+    deps.machines
+    ?? new MachineService(undefined, {
+      localRuntime: () => getPiWebRuntime(sessionDaemon),
+    });
 
   app.get("/pi-web-plugins/manifest.json", async (_request, reply) => withProfileDependency(reply, () => piWebPlugins.manifest()));
 
@@ -227,9 +237,9 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
     });
   });
 
-  app.get<{ Querystring: { refresh?: string } }>("/api/pi-web/status", async (request) => request.query.refresh === "1"
-    ? piWebStatusCache.refresh({ force: true })
-    : piWebStatusCache.get());
+  app.get<{ Querystring: { refresh?: string } }>("/api/pi-web/status", async (request) =>
+    request.query.refresh === "1" ? piWebStatusCache.refresh({ force: true }) : piWebStatusCache.get(),
+  );
   app.get("/api/pi-web/version", async () => {
     const activeAgentProfile = await agentProfileProvider.getActiveAgentProfile();
     return getPiWebVersionStatus(sessionDaemon, activeAgentProfile.status === "available" ? { activeAgentProfile: activeAgentProfile.profile } : {});
@@ -286,13 +296,17 @@ export async function buildApp(deps: AppDependencies = {}): Promise<FastifyInsta
         if (filePath.startsWith(hashedAssetsDir)) res.header("cache-control", "public, max-age=31536000, immutable");
       },
     });
-    const deploymentFlavor = deps.deploymentFlavor ?? createDeploymentFlavorResolver(
-      async () => {
-        const activeAgentProfile = await agentProfileProvider.getActiveAgentProfile();
-        return detectPiWebInstallation(activeAgentProfile.status === "available" ? activeAgentProfile.profile.dir : undefined);
-      },
-      (error) => { app.log.warn({ err: error }, "failed to detect PI WEB deployment flavor"); },
-    );
+    const deploymentFlavor =
+      deps.deploymentFlavor
+      ?? createDeploymentFlavorResolver(
+        async () => {
+          const activeAgentProfile = await agentProfileProvider.getActiveAgentProfile();
+          return detectPiWebInstallation(activeAgentProfile.status === "available" ? activeAgentProfile.profile.dir : undefined);
+        },
+        (error) => {
+          app.log.warn({ err: error }, "failed to detect PI WEB deployment flavor");
+        },
+      );
     registerDeploymentIdentityAssetRoutes(app, { clientDist, flavor: deploymentFlavor });
     app.setNotFoundHandler((_request, reply) => reply.sendFile("index.html"));
   }

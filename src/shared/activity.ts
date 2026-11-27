@@ -9,11 +9,13 @@ import type { SessionActivity, SessionStatus } from "./apiTypes.js";
  * while a startup report is the latest activity.
  */
 export function isSessionActive(status?: SessionStatus, activity?: SessionActivity): boolean {
-  return (activity?.phase === "active" && activity.startup !== true)
+  return (
+    (activity?.phase === "active" && activity.startup !== true)
     || status?.isStreaming === true
     || status?.isBashRunning === true
     || status?.isCompacting === true
-    || (status?.pendingMessageCount ?? 0) > 0;
+    || (status?.pendingMessageCount ?? 0) > 0
+  );
 }
 
 /** What a live session is doing, for compact re-entry rows outside the Chat itself. */

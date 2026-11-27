@@ -34,7 +34,13 @@ async function writeChat(cwd: string, id: string): Promise<string> {
   await mkdir(dir, { recursive: true });
   const path = join(dir, `${id}.jsonl`);
   const header = { type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd };
-  const message = { type: "message", id: "m1", parentId: null, timestamp: "2026-01-01T00:01:00.000Z", message: { role: "user", content: [{ type: "text", text: `hello ${id}` }], timestamp: 1 } };
+  const message = {
+    type: "message",
+    id: "m1",
+    parentId: null,
+    timestamp: "2026-01-01T00:01:00.000Z",
+    message: { role: "user", content: [{ type: "text", text: `hello ${id}` }], timestamp: 1 },
+  };
   await writeFile(path, `${JSON.stringify(header)}\n${JSON.stringify(message)}\n`, "utf8");
   return path;
 }
@@ -50,9 +56,10 @@ async function harness(options: { archiveStore?: SessionArchiveStore; withoutGat
   const open = vi.spyOn(gateway, "open");
   const listAll = vi.spyOn(gateway, "listAll");
   // A custom or older gateway: id lookup falls back to the whole listAll catalog.
-  const sessionManager: PiSessionManagerGateway = options.withoutGatewayLocate === true
-    ? new Proxy(gateway, { get: (target, key): unknown => (key === "locate" ? undefined : Reflect.get(target, key)) })
-    : gateway;
+  const sessionManager: PiSessionManagerGateway =
+    options.withoutGatewayLocate === true
+      ? new Proxy(gateway, { get: (target, key): unknown => (key === "locate" ? undefined : Reflect.get(target, key)) })
+      : gateway;
   let runtimes = 0;
   const hub = new CapturingSessionEventHub();
   const service = new PiSessionService(hub, {

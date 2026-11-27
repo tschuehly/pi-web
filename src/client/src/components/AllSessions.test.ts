@@ -80,7 +80,9 @@ describe("AllSessions", () => {
     const element = new AllSessions();
     element.sessionActivities = { live: { sessionId: "live", phase: "active", label: "Streaming", at: "2026-09-02T10:00:00.000Z" } };
     document.body.append(element);
-    await vi.waitFor(() => { expect(element.shadowRoot?.querySelector('[role="status"]')).toBeNull(); });
+    await vi.waitFor(() => {
+      expect(element.shadowRoot?.querySelector('[role="status"]')).toBeNull();
+    });
     await element.updateComplete;
 
     const rows = [...(element.shadowRoot?.querySelectorAll("button.row") ?? [])];
@@ -111,7 +113,9 @@ describe("AllSessions", () => {
 async function mount(): Promise<AllSessions> {
   const element = new AllSessions();
   document.body.append(element);
-  await vi.waitFor(() => { expect(element.shadowRoot?.querySelector('[role="status"]')).toBeNull(); });
+  await vi.waitFor(() => {
+    expect(element.shadowRoot?.querySelector('[role="status"]')).toBeNull();
+  });
   await element.updateComplete;
   return element;
 }
@@ -128,6 +132,23 @@ function isSessionInfo(value: unknown): value is SessionInfo {
   return typeof value === "object" && value !== null && typeof Reflect.get(value, "id") === "string" && typeof Reflect.get(value, "cwd") === "string";
 }
 
-function session(id: string, firstMessage: string, modified: Date, name?: string, cwd = "/Users/thomas/projects/repo", parentSessionPath?: string): SessionInfo {
-  return { id, cwd, path: `/sessions/${id}.jsonl`, ...(name === undefined ? {} : { name }), created: modified.toISOString(), modified: modified.toISOString(), messageCount: 3, firstMessage, ...(parentSessionPath === undefined ? {} : { parentSessionPath }) };
+function session(
+  id: string,
+  firstMessage: string,
+  modified: Date,
+  name?: string,
+  cwd = "/Users/thomas/projects/repo",
+  parentSessionPath?: string,
+): SessionInfo {
+  return {
+    id,
+    cwd,
+    path: `/sessions/${id}.jsonl`,
+    ...(name === undefined ? {} : { name }),
+    created: modified.toISOString(),
+    modified: modified.toISOString(),
+    messageCount: 3,
+    firstMessage,
+    ...(parentSessionPath === undefined ? {} : { parentSessionPath }),
+  };
 }

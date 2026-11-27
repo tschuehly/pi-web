@@ -13,7 +13,11 @@ describe("buildApp Pi package routes", () => {
     expect(installResponse.statusCode).toBe(200);
     expect(installResponse.json()).toMatchObject({ action: "install", source: "npm:@acme/new-tools" });
 
-    const localAliasResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines/local/pi-packages/remove", payload: { source: "npm:@acme/tools", scope: "user" } });
+    const localAliasResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines/local/pi-packages/remove",
+      payload: { source: "npm:@acme/tools", scope: "user" },
+    });
     expect(localAliasResponse.statusCode).toBe(200);
     expect(localAliasResponse.json()).toMatchObject({ action: "remove", source: "npm:@acme/tools", scope: "user" });
     expect(appTestContext.piPackageRequests).toEqual([

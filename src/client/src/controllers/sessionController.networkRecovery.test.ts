@@ -3,7 +3,20 @@ import { NetworkRequestError, HttpRequestError } from "../api/http";
 import { initialAppState } from "../appState";
 import { BrowserErrorReporter, sessionBrowserErrorScope, workspaceBrowserErrorScope } from "../browserErrors";
 import { SessionController } from "./sessionController";
-import { defaultApi, deferred, EmitSocket, emptyPage, FakeSocket, oldSession, replacementSession, status, transcriptSnapshotFixture, workspace, type AppState, type SessionInfo } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  deferred,
+  EmitSocket,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  replacementSession,
+  status,
+  transcriptSnapshotFixture,
+  workspace,
+  type AppState,
+  type SessionInfo,
+} from "./sessionController.testSupport";
 
 const sessionScope = sessionBrowserErrorScope("local", oldSession.id, { cwd: oldSession.cwd, projectId: workspace.projectId, workspaceId: workspace.id });
 const workspaceScope = workspaceBrowserErrorScope("local", workspace.projectId, workspace.id);
@@ -11,19 +24,35 @@ const networkFailure = () => new NetworkRequestError("Load failed", { cause: new
 
 function setup(overrides: Partial<typeof defaultApi> = {}) {
   let state: AppState = {
-    ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession],
+    ...initialAppState(),
+    selectedWorkspace: workspace,
+    selectedSession: oldSession,
+    sessions: [oldSession],
     messages: [{ role: "assistant", parts: [{ type: "text", text: "cached conversation" }] }],
   };
   const snapshot = vi.fn<typeof defaultApi.transcriptSnapshot>(() => transcriptSnapshotFixture(emptyPage, status(oldSession.id)));
   const sessions = vi.fn<typeof defaultApi.sessions>(() => Promise.resolve([oldSession]));
   const api = { ...defaultApi, transcriptSnapshot: snapshot, sessions, thinkingLevels: () => Promise.resolve({ levels: [] }), ...overrides };
-  const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
-  const controller = new SessionController(() => state, setState, () => undefined, undefined, { api, socket: new FakeSocket() });
+  const setState = (patch: Partial<AppState>) => {
+    state = { ...state, ...patch };
+  };
+  const controller = new SessionController(
+    () => state,
+    setState,
+    () => undefined,
+    undefined,
+    { api, socket: new FakeSocket() },
+  );
   return { controller, snapshot, sessions, getState: () => state, setState, errors: new BrowserErrorReporter(() => state, setState) };
 }
 
-beforeEach(() => { vi.useFakeTimers(); });
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("silent session read recovery", () => {
   it("retains the current conversation without a banner while a resume fetch recovers", async () => {
@@ -54,11 +83,13 @@ describe("silent session read recovery", () => {
     await refresh;
 
     expect(h.snapshot).toHaveBeenCalledTimes(4);
-    expect(Object.values(h.getState().browserErrors)).toEqual([{
-      scope: sessionScope,
-      message: "The conversation could not be refreshed. Check your connection and retry.",
-      recovery: "session-refresh",
-    }]);
+    expect(Object.values(h.getState().browserErrors)).toEqual([
+      {
+        scope: sessionScope,
+        message: "The conversation could not be refreshed. Check your connection and retry.",
+        recovery: "session-refresh",
+      },
+    ]);
     h.snapshot.mockImplementation(() => transcriptSnapshotFixture(emptyPage, status(oldSession.id)));
     await h.controller.refreshSelectedSession(undefined, { silent: true });
     expect(h.getState().browserErrors).toEqual({});
@@ -120,8 +151,15 @@ describe("silent session read recovery", () => {
 
   it("retries a Durable Chat's send and answer under one operation id each, and never a legacy Chat's", async () => {
     const durableSession = { ...oldSession, path: `durable:${oldSession.id}` };
-    const prompt = vi.fn<typeof defaultApi.prompt>().mockRejectedValueOnce(networkFailure()).mockRejectedValueOnce(new HttpRequestError("Session daemon unavailable", 502)).mockResolvedValue({ accepted: true });
-    const submitAsk = vi.fn<typeof defaultApi.submitAsk>().mockRejectedValueOnce(networkFailure()).mockResolvedValue({ result: "closed", sessionStatus: status(oldSession.id) });
+    const prompt = vi
+      .fn<typeof defaultApi.prompt>()
+      .mockRejectedValueOnce(networkFailure())
+      .mockRejectedValueOnce(new HttpRequestError("Session daemon unavailable", 502))
+      .mockResolvedValue({ accepted: true });
+    const submitAsk = vi
+      .fn<typeof defaultApi.submitAsk>()
+      .mockRejectedValueOnce(networkFailure())
+      .mockResolvedValue({ result: "closed", sessionStatus: status(oldSession.id) });
     const h = setup({ prompt, submitAsk });
     h.setState({ selectedSession: durableSession, sessions: [durableSession] });
 
@@ -144,7 +182,8 @@ describe("silent session read recovery", () => {
     const h = setup();
     const socket = new EmitSocket();
     const controller = new SessionController(h.getState, h.setState, () => undefined, undefined, {
-      api: { ...defaultApi, transcriptSnapshot: h.snapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) }, socket,
+      api: { ...defaultApi, transcriptSnapshot: h.snapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) },
+      socket,
     });
     await controller.selectSession(oldSession, { updateUrl: false });
     h.snapshot.mockRejectedValueOnce(networkFailure());
@@ -178,11 +217,13 @@ describe("workspace session-list recovery", () => {
     const refresh = h.controller.refreshCurrentWorkspaceSessions("local", { recoverNetwork: true });
     await vi.runAllTimersAsync();
     await refresh;
-    expect(Object.values(h.getState().browserErrors)).toEqual([{
-      scope: workspaceScope,
-      message: "The session list could not be refreshed. Check your connection and retry.",
-      recovery: "workspace-sessions-refresh",
-    }]);
+    expect(Object.values(h.getState().browserErrors)).toEqual([
+      {
+        scope: workspaceScope,
+        message: "The session list could not be refreshed. Check your connection and retry.",
+        recovery: "workspace-sessions-refresh",
+      },
+    ]);
     h.sessions.mockResolvedValue([oldSession]);
     await h.controller.refreshCurrentWorkspaceSessions();
     expect(h.getState().browserErrors).toEqual({});

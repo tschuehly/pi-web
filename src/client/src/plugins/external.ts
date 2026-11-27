@@ -42,7 +42,10 @@ export interface ExternalPluginLoadResult {
   failures: ExternalPluginLoadFailure[];
 }
 
-export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest.json", options: LoadExternalPluginsOptions = {}): Promise<ExternalPluginLoadResult> {
+export async function loadExternalPlugins(
+  manifestUrl = "pi-web-plugins/manifest.json",
+  options: LoadExternalPluginsOptions = {},
+): Promise<ExternalPluginLoadResult> {
   const resolvedManifestUrl = resolveAppUrl(manifestUrl);
   const manifest = await fetchPluginManifest(resolvedManifestUrl);
 
@@ -51,7 +54,8 @@ export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest
   const failures: ExternalPluginLoadFailure[] = [];
   // Bundled defaults are discovered before installed/project plugins, which can
   // override automatic renderer defaults. Preserve manifest order within each group.
-  const selected = manifest.plugins.filter((entry) => options.shouldLoadPlugin?.(entry) !== false)
+  const selected = manifest.plugins
+    .filter((entry) => options.shouldLoadPlugin?.(entry) !== false)
     .sort((left, right) => Number(right.scope === "bundled") - Number(left.scope === "bundled"));
   const loadModule = options.moduleLoader ?? importPluginModule;
   const imports = new Map<PluginManifestEntry, Promise<PiWebPlugin>>();
@@ -71,13 +75,19 @@ export async function loadExternalPlugins(manifestUrl = "pi-web-plugins/manifest
   // plugin, while still registering in discovery order. A required Terminal loads alone first so its
   // failure stops before any ordinary plugin module is imported.
   const terminalFirst = manifest.terminalMode === "required" && selected[0]?.id === REQUIRED_TERMINAL_PLUGIN_ID;
-  if (!terminalFirst) selected.forEach((entry) => { void startImport(entry); });
+  if (!terminalFirst)
+    selected.forEach((entry) => {
+      void startImport(entry);
+    });
   for (const [index, entry] of selected.entries()) {
     const declaration = registrationDeclaration(entry, options.machineId);
     declarations.push(declaration);
     try {
       const plugin = await startImport(entry);
-      if (terminalFirst && index === 0) selected.slice(1).forEach((next) => { void startImport(next); });
+      if (terminalFirst && index === 0)
+        selected.slice(1).forEach((next) => {
+          void startImport(next);
+        });
       registrations.push({
         ...declaration,
         plugin,
@@ -115,19 +125,20 @@ function parseManifest(value: unknown): PluginManifest {
   if (value["lifecycleVersion"] !== PI_WEB_PLUGIN_LIFECYCLE_VERSION) throw new Error("Unsupported plugin manifest lifecycle version");
   const terminalMode = parseTerminalMode(value["terminalMode"]);
   const plugins = value["plugins"].map((entry) => {
-    if (!isRecord(entry) || typeof entry["id"] !== "string" || typeof entry["module"] !== "string" || entry["module"] === "") throw new Error("Invalid plugin manifest entry");
+    if (!isRecord(entry) || typeof entry["id"] !== "string" || typeof entry["module"] !== "string" || entry["module"] === "")
+      throw new Error("Invalid plugin manifest entry");
     const id = entry["id"];
     if (!isPiWebPluginId(id)) throw new Error(`Invalid plugin manifest id: ${id}`);
     const source = optionalString(entry["source"]);
     const scope = optionalString(entry["scope"]);
-    if (isReservedPiWebPluginId(id)
-      && !(isPiWebBundledPluginId(id) && source === "bundled" && scope === "bundled")) {
+    if (isReservedPiWebPluginId(id) && !(isPiWebBundledPluginId(id) && source === "bundled" && scope === "bundled")) {
       throw new Error(`Reserved plugin manifest id: ${id}`);
     }
     const backendRevision = parseBackendRevision(entry["backendRevision"]);
     const pairedRequestVersion = parsePairedCapabilityVersion(entry["pairedRequestVersion"]);
     const pairedChannelVersion = parsePairedCapabilityVersion(entry["pairedChannelVersion"]);
-    if ((pairedRequestVersion !== undefined || pairedChannelVersion !== undefined) && backendRevision === undefined) throw new Error("Invalid plugin manifest entry");
+    if ((pairedRequestVersion !== undefined || pairedChannelVersion !== undefined) && backendRevision === undefined)
+      throw new Error("Invalid plugin manifest entry");
     return {
       id,
       module: entry["module"],
@@ -175,10 +186,14 @@ async function pluginManifestResponseError(response: Response): Promise<string> 
       const error = value["error"];
       const responseDetail = value["detail"];
       const message = value["message"];
-      detail = typeof responseDetail === "string"
-        ? `${typeof error === "string" ? `${error}: ` : ""}${responseDetail}`
-        : typeof message === "string" ? message
-          : typeof error === "string" ? error : undefined;
+      detail =
+        typeof responseDetail === "string"
+          ? `${typeof error === "string" ? `${error}: ` : ""}${responseDetail}`
+          : typeof message === "string"
+            ? message
+            : typeof error === "string"
+              ? error
+              : undefined;
     }
   } catch {
     // Status metadata remains a useful bounded error when the body is not JSON.
@@ -229,7 +244,9 @@ function parsePluginModule(module: unknown, moduleUrl: string): PiWebPlugin {
 }
 
 function isPiWebPlugin(value: unknown): value is PiWebPlugin {
-  return isRecord(value) && (value["apiVersion"] === 4 || value["apiVersion"] === 5) && typeof value["name"] === "string" && typeof value["activate"] === "function";
+  return (
+    isRecord(value) && (value["apiVersion"] === 4 || value["apiVersion"] === 5) && typeof value["name"] === "string" && typeof value["activate"] === "function"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

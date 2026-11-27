@@ -11,7 +11,9 @@ beforeEach(() => {
   app = Fastify({ logger: false });
   registerProjectMutationRoutes(app, projects);
 });
-afterEach(async () => { await app.close(); });
+afterEach(async () => {
+  await app.close();
+});
 
 describe("daemon project mutations", () => {
   it("delegates add input and returns the project", async () => {
@@ -24,11 +26,14 @@ describe("daemon project mutations", () => {
     expect(projects.add).toHaveBeenCalledExactlyOnceWith(input);
   });
 
-  it.each([{}, { path: 3 }, { path: " " }, { path: "/repo", create: "yes" }, { path: "/repo", name: 3 }])("rejects invalid input %j before calling the service", async (payload) => {
-    const response = await app.inject({ method: "POST", url: "/projects", payload });
-    expect(response.statusCode).toBe(400);
-    expect(projects.add).not.toHaveBeenCalled();
-  });
+  it.each([{}, { path: 3 }, { path: " " }, { path: "/repo", create: "yes" }, { path: "/repo", name: 3 }])(
+    "rejects invalid input %j before calling the service",
+    async (payload) => {
+      const response = await app.inject({ method: "POST", url: "/projects", payload });
+      expect(response.statusCode).toBe(400);
+      expect(projects.add).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     [new Error("Project path must be a directory"), 400],
@@ -49,7 +54,10 @@ describe("daemon project mutations", () => {
     expect(projects.close).toHaveBeenCalledExactlyOnceWith("project 1");
   });
 
-  it.each([["Project not found", 404], ["Catalog reconciliation failed", 500]])("maps close error %s to %s", async (message, status) => {
+  it.each([
+    ["Project not found", 404],
+    ["Catalog reconciliation failed", 500],
+  ])("maps close error %s to %s", async (message, status) => {
     projects.close.mockRejectedValue(new Error(message));
     const response = await app.inject({ method: "DELETE", url: "/projects/project-1" });
     expect(response.statusCode).toBe(status);

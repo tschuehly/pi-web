@@ -47,4 +47,3 @@ export function targetWorkspaceIdForRun(run: TerminalCommandRun): string | undef
 export function isWorkspaceDeletionRunPending(run: TerminalCommandRun): boolean {
   return run.status === "queued" || run.status === "running";
 }
-

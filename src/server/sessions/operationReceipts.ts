@@ -31,7 +31,9 @@ export class OperationReceipts<T> {
     }
     const result = operation();
     this.#receipts.set(key, { payload: digest, result });
-    result.catch(() => { if (this.#receipts.get(key)?.result === result) this.#receipts.delete(key); });
+    result.catch(() => {
+      if (this.#receipts.get(key)?.result === result) this.#receipts.delete(key);
+    });
     for (const oldest of this.#receipts.keys()) {
       if (this.#receipts.size <= this.limit) break;
       this.#receipts.delete(oldest);

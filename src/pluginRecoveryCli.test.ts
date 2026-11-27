@@ -31,10 +31,7 @@ describe("plugin recovery CLI", () => {
 
   it("rejects invalid plugin ids before creating config", async () => {
     expect(() => {
-      runPluginRecoveryCli(
-        ["disable", "Not/A/Plugin", "--config", configPath],
-        dependencies([]),
-      );
+      runPluginRecoveryCli(["disable", "Not/A/Plugin", "--config", configPath], dependencies([]));
     }).toThrow("Invalid PI WEB plugin id");
     await expect(readFile(configPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -49,10 +46,7 @@ describe("plugin recovery CLI", () => {
   it("disables through an explicit config path and prints restart guidance", async () => {
     const lines: string[] = [];
 
-    runPluginRecoveryCli(
-      ["disable", "broken-provider", `--config=${configPath}`],
-      dependencies(lines),
-    );
+    runPluginRecoveryCli(["disable", "broken-provider", `--config=${configPath}`], dependencies(lines));
 
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       plugins: { "broken-provider": { enabled: false } },
@@ -88,38 +82,40 @@ describe("plugin recovery CLI", () => {
     const pluginRoot = join(tempDir, "data", "plugins", "poison");
     await mkdir(pluginRoot, { recursive: true });
     await writeFile(configPath, `${JSON.stringify({ serverPlugins: { safeStart: "future-level" } })}\n`, "utf8");
-    await writeFile(join(pluginRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "poison", serverModule: "server.js" }] },
-    })}\n`, "utf8");
-    await writeFile(join(pluginRoot, "server.js"), `
+    await writeFile(
+      join(pluginRoot, "package.json"),
+      `${JSON.stringify({
+        piWeb: { plugins: [{ id: "poison", serverModule: "server.js" }] },
+      })}\n`,
+      "utf8",
+    );
+    await writeFile(
+      join(pluginRoot, "server.js"),
+      `
       import { writeFileSync } from "node:fs";
       writeFileSync(${JSON.stringify(markerPath)}, "imported");
       throw new Error("poison module must not import during recovery");
-    `, "utf8");
+    `,
+      "utf8",
+    );
 
-    const result = await promisify(execFile)(process.execPath, [
-      "--import",
-      "tsx",
-      "src/cli.ts",
-      "plugins",
-      "disable",
-      "poison",
-      "--config",
-      configPath,
-      "--restart",
-    ], {
-      cwd: process.cwd(),
-      // Real Node/tsx startup can exceed five seconds on loaded Windows runners.
-      timeout: 20_000,
-      env: {
-        ...process.env,
-        PI_WEB_DATA_DIR: join(tempDir, "data"),
-        PI_WEB_SESSIOND_SOCKET: join(tempDir, "missing-sessiond.sock"),
+    const result = await promisify(execFile)(
+      process.execPath,
+      ["--import", "tsx", "src/cli.ts", "plugins", "disable", "poison", "--config", configPath, "--restart"],
+      {
+        cwd: process.cwd(),
+        // Real Node/tsx startup can exceed five seconds on loaded Windows runners.
+        timeout: 20_000,
+        env: {
+          ...process.env,
+          PI_WEB_DATA_DIR: join(tempDir, "data"),
+          PI_WEB_SESSIOND_SOCKET: join(tempDir, "missing-sessiond.sock"),
+        },
+        encoding: "utf8",
       },
-      encoding: "utf8",
-    });
+    );
 
-    expect(result.stdout).toContain("Disabled server plugin \"poison\"");
+    expect(result.stdout).toContain('Disabled server plugin "poison"');
     expect(result.stdout).toContain("Warning: PI WEB config serverPlugins.safeStart");
     expect(result.stdout).toContain("cannot be restarted automatically");
     expect(result.stdout).toContain(`PI_WEB_CONFIG=${JSON.stringify(configPath)}`);
@@ -157,25 +153,21 @@ describe("plugin recovery CLI", () => {
     expect(lines).toContain("Restart the manually launched process.");
   });
 
-  it.each([
-    ["safe-start", "set", "future"],
-    ["safe-start", "show", "--restart"],
-    ["disable"],
-    ["disable", "broken", "--config", "--restart"],
-    ["unknown"],
-  ])("rejects invalid command arguments: %s", (...args) => {
-    expect(() => {
-      runPluginRecoveryCli(args, dependencies([]));
-    }).toThrow();
-  });
+  it.each([["safe-start", "set", "future"], ["safe-start", "show", "--restart"], ["disable"], ["disable", "broken", "--config", "--restart"], ["unknown"]])(
+    "rejects invalid command arguments: %s",
+    (...args) => {
+      expect(() => {
+        runPluginRecoveryCli(args, dependencies([]));
+      }).toThrow();
+    },
+  );
 });
 
-function dependencies(
-  lines: string[],
-  plan: SessionDaemonRestartPlan = { kind: "automatic", guidance: "Run:", command: "fake-service restart sessiond" },
-) {
+function dependencies(lines: string[], plan: SessionDaemonRestartPlan = { kind: "automatic", guidance: "Run:", command: "fake-service restart sessiond" }) {
   return {
-    writeLine: (line: string) => { lines.push(line); },
+    writeLine: (line: string) => {
+      lines.push(line);
+    },
     restartPlan: () => plan,
   };
 }

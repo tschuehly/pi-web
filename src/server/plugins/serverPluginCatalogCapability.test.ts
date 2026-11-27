@@ -10,31 +10,52 @@ function fixture() {
   const project = { id: "project", name: "Project", path: repositoryPath, createdAt: "private" };
   const metadata = { owner: { nested: [true] } };
   const workspace: WorkspaceListing = {
-    id: "workspace", projectId: project.id, path: project.path, label: "Main", isMain: true,
+    id: "workspace",
+    projectId: project.id,
+    path: project.path,
+    label: "Main",
+    isMain: true,
     provider: { pluginId: "provider", capabilities: { remove: true }, metadata: { public: true } },
     removal: { actionLabel: "Remove", confirmation: "Remove workspace?", precondition: "private-token" },
   };
   let rows: readonly WorkspaceListing[] = [workspace];
-  const projects = { list: vi.fn(() => Promise.resolve([project])), requireProject: vi.fn((id: string) => {
-    if (id !== project.id) return Promise.reject(new Error("Project not found"));
-    return Promise.resolve(project);
-  }) };
+  const projects = {
+    list: vi.fn(() => Promise.resolve([project])),
+    requireProject: vi.fn((id: string) => {
+      if (id !== project.id) return Promise.reject(new Error("Project not found"));
+      return Promise.resolve(project);
+    }),
+  };
   const workspaces = { resolve: vi.fn(() => Promise.resolve({ projectId: project.id, status: "provider" as const, diagnostics: [], workspaces: rows })) };
-  const sessions = { listCatalogSessions: vi.fn((cwd: string, signal?: AbortSignal): Promise<readonly PluginSessionSnapshot[]> => {
-    signal?.throwIfAborted();
-    return Promise.resolve([
-    { id: "cold", cwd, archived: true, runtime: "not-hosted", metadata },
-    { id: "idle", cwd: repositoryPath, archived: false, runtime: "idle" },
-    { id: "busy", cwd: repositoryPath, archived: false, runtime: "busy", name: "Working" },
-  ]);
-  }) };
+  const sessions = {
+    listCatalogSessions: vi.fn((cwd: string, signal?: AbortSignal): Promise<readonly PluginSessionSnapshot[]> => {
+      signal?.throwIfAborted();
+      return Promise.resolve([
+        { id: "cold", cwd, archived: true, runtime: "not-hosted", metadata },
+        { id: "idle", cwd: repositoryPath, archived: false, runtime: "idle" },
+        { id: "busy", cwd: repositoryPath, archived: false, runtime: "busy", name: "Working" },
+      ]);
+    }),
+  };
   const lifetime = new AbortController();
   const instance = createServerPluginCatalogCapabilityFactory({ projects, workspaces, sessions }).create({
-    pluginId: "consumer", packageRoot: "/plugins/consumer", lifetimeSignal: lifetime.signal,
+    pluginId: "consumer",
+    packageRoot: "/plugins/consumer",
+    lifetimeSignal: lifetime.signal,
   });
-  return { project, workspace, metadata, projects, workspaces, sessions, lifetime, instance,
+  return {
+    project,
+    workspace,
+    metadata,
+    projects,
+    workspaces,
+    sessions,
+    lifetime,
+    instance,
     catalog: PI_WEB_HOST_CATALOG_CAPABILITY.parse(instance.value),
-    replaceWorkspaces: (next: readonly WorkspaceListing[]) => { rows = next; },
+    replaceWorkspaces: (next: readonly WorkspaceListing[]) => {
+      rows = next;
+    },
   };
 }
 const selection = { projectId: "project", workspaceId: "workspace" };
@@ -82,9 +103,16 @@ describe("server plugin catalog capability", () => {
   it("rejects in-flight results and future reads after lifetime revocation or disposal", async () => {
     const f = fixture();
     let finish!: (rows: readonly PluginSessionSnapshot[]) => void;
-    f.sessions.listCatalogSessions.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    f.sessions.listCatalogSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     const pending = f.catalog.sessions.list(selection);
-    await vi.waitFor(() => { expect(f.sessions.listCatalogSessions).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(f.sessions.listCatalogSessions).toHaveBeenCalledOnce();
+    });
     f.lifetime.abort();
     const signal = f.sessions.listCatalogSessions.mock.calls[0]?.[1];
     expect(signal?.aborted).toBe(true);

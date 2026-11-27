@@ -19,7 +19,6 @@ async function mount(messages: ChatLine[], live = false): Promise<ChatView> {
   return view;
 }
 
-
 describe("ChatView durable DOM scroll anchors", () => {
   it("renders unidentified readable messages and tool images without index anchors", async () => {
     const question: ChatLine = { role: "user", parts: [{ type: "text", text: "Question" }] };
@@ -31,11 +30,9 @@ describe("ChatView durable DOM scroll anchors", () => {
 
     view.messages = [{ ...question, entryId: "question" }, image];
     await view.updateComplete;
-    expect(view.renderRoot.querySelector("article.user")?.getAttribute("data-scroll-anchor-id"))
-      .toBe('m:["question","user","message"]');
+    expect(view.renderRoot.querySelector("article.user")?.getAttribute("data-scroll-anchor-id")).toBe('m:["question","user","message"]');
     view.messages = [{ ...question, entryId: "" }, image];
     await view.updateComplete;
     expect(view.renderRoot.querySelector("[data-scroll-anchor-id]")).toBeNull();
   });
-
 });

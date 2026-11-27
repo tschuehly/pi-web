@@ -21,7 +21,8 @@ describe("plugin prompt chip ownership", () => {
 
   it("replaces saved data and callbacks, and consumes only the submitted version", () => {
     const store = new PromptChipStore();
-    const original = vi.fn(), restored = vi.fn();
+    const original = vi.fn(),
+      restored = vi.fn();
     store.set("one", target, { ...data, onRemove: original });
     const submitted = store.list(target);
     store.set("one", target, { ...data, text: "Updated", onRemove: restored });
@@ -50,7 +51,12 @@ describe("plugin prompt chip ownership", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const store = new PromptChipStore();
     const onRemove = vi.fn();
-    store.set("one", target, { ...data, onRemove: () => { throw new Error("bad callback"); } });
+    store.set("one", target, {
+      ...data,
+      onRemove: () => {
+        throw new Error("bad callback");
+      },
+    });
     store.set("two", target, { ...data, onRemove: () => Promise.reject(new Error("rejected callback")) });
     store.set("three", target, { ...data, onRemove });
     store.consume(store.list(target));
@@ -70,7 +76,9 @@ describe("plugin prompt chip ownership", () => {
 
   it.each(["id", "label", "text"] as const)("rejects empty %s", (field) => {
     const store = new PromptChipStore();
-    expect(() => { store.set("one", target, { ...data, [field]: "  " }); }).toThrow(TypeError);
+    expect(() => {
+      store.set("one", target, { ...data, [field]: "  " });
+    }).toThrow(TypeError);
     expect(store.list(target)).toEqual([]);
   });
 });

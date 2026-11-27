@@ -34,21 +34,34 @@ export interface PathAccessPolicyOptions {
   homeDir?: string;
 }
 
-export async function createPathAccessPolicy(workspaceRootPath: string, pathAccess: PiWebPathAccessConfig | undefined, options: PathAccessPolicyOptions = {}): Promise<PathAccessPolicy> {
+export async function createPathAccessPolicy(
+  workspaceRootPath: string,
+  pathAccess: PiWebPathAccessConfig | undefined,
+  options: PathAccessPolicyOptions = {},
+): Promise<PathAccessPolicy> {
   return {
     workspaceRoot: await canonicalDirectory(workspaceRootPath, "Workspace path"),
     allowedRoots: await resolveAllowedRoots(pathAccess?.allowedPaths ?? [], options),
   };
 }
 
-export async function resolveWorkspacePathAccessTarget(rootPath: string, requestedPath: string | undefined, pathAccess?: PiWebPathAccessConfig, options: PathAccessPolicyOptions = {}): Promise<ResolvedPathAccessTarget> {
+export async function resolveWorkspacePathAccessTarget(
+  rootPath: string,
+  requestedPath: string | undefined,
+  pathAccess?: PiWebPathAccessConfig,
+  options: PathAccessPolicyOptions = {},
+): Promise<ResolvedPathAccessTarget> {
   const request = requestedPath ?? "";
   const workspaceRoot = await canonicalDirectory(rootPath, "Workspace path");
   const allowedRoots = isAbsoluteishPath(request) ? await resolveAllowedRoots(pathAccess?.allowedPaths ?? [], options) : [];
   return resolvePathAccessTarget({ workspaceRoot, allowedRoots }, requestedPath, options);
 }
 
-export async function resolvePathAccessTarget(policy: PathAccessPolicy, requestedPath: string | undefined, options: PathAccessPolicyOptions = {}): Promise<ResolvedPathAccessTarget> {
+export async function resolvePathAccessTarget(
+  policy: PathAccessPolicy,
+  requestedPath: string | undefined,
+  options: PathAccessPolicyOptions = {},
+): Promise<ResolvedPathAccessTarget> {
   const request = requestedPath ?? "";
   if (isAbsoluteishPath(request)) return resolveAllowedTarget(policy, request, options);
 

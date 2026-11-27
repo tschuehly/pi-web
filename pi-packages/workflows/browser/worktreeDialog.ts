@@ -54,7 +54,8 @@ export function openWorktreeDialog(context: DialogContext, peer: PluginPeer, onC
   const controller = new AbortController();
   let dispatching = false;
   let dispatched: { workspaceId: string; sessionId: string } | undefined;
-  element("#target", HTMLParagraphElement).textContent = `Project: ${project.name}. Starts a new conversation in its main workspace; your current conversation and draft stay unchanged.`;
+  element("#target", HTMLParagraphElement).textContent =
+    `Project: ${project.name}. Starts a new conversation in its main workspace; your current conversation and draft stay unchanged.`;
   base.setAttribute("aria-describedby", "base-help");
   function close() {
     if (controller.signal.aborted) return;
@@ -63,14 +64,23 @@ export function openWorktreeDialog(context: DialogContext, peer: PluginPeer, onC
     if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     onClose();
   }
-  function showError(message: string) { error.textContent = message; error.hidden = false; }
+  function showError(message: string) {
+    error.textContent = message;
+    error.hidden = false;
+  }
   cancel.addEventListener("click", close);
-  dialog.addEventListener("cancel", (event) => { event.preventDefault(); if (!dispatching) close(); });
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    if (!dispatching) close();
+  });
   dialog.addEventListener("close", close);
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     if (submit.disabled || controller.signal.aborted || dispatching) return;
-    if (!description.value.trim() || !base.value.trim()) { showError("Enter a base branch and a purpose or description."); return; }
+    if (!description.value.trim() || !base.value.trim()) {
+      showError("Enter a base branch and a purpose or description.");
+      return;
+    }
     dispatching = true;
     submit.disabled = true;
     cancel.disabled = true;
@@ -84,15 +94,26 @@ export function openWorktreeDialog(context: DialogContext, peer: PluginPeer, onC
         dispatched = { workspaceId: text(result["workspaceId"]), sessionId: text(result["sessionId"]) };
         if (controller.signal.aborted) return;
         status.textContent = "Conversation started. Opening it…";
-        await context.navigate({ machineId: context.catalog.machineId, projectId: project.id, workspaceId: dispatched.workspaceId, sessionId: dispatched.sessionId, view: "chat" });
+        await context.navigate({
+          machineId: context.catalog.machineId,
+          projectId: project.id,
+          workspaceId: dispatched.workspaceId,
+          sessionId: dispatched.sessionId,
+          view: "chat",
+        });
         close();
       } catch (cause) {
         if (controller.signal.aborted) return;
         status.textContent = dispatched ? "Conversation started." : "Dispatch could not be confirmed.";
-        showError(`${message(cause)} ${dispatched ? `Open conversation ${dispatched.sessionId} in Sessions.` : "Check Sessions before trying again; a conversation may already have started."}`);
+        showError(
+          `${message(cause)} ${dispatched ? `Open conversation ${dispatched.sessionId} in Sessions.` : "Check Sessions before trying again; a conversation may already have started."}`,
+        );
         // Do not retry an uncertain submission automatically or from this dialog.
         cancel.textContent = "Close";
-      } finally { dispatching = false; cancel.disabled = false; }
+      } finally {
+        dispatching = false;
+        cancel.disabled = false;
+      }
     })();
   });
   document.body.append(host);
@@ -106,7 +127,11 @@ export function openWorktreeDialog(context: DialogContext, peer: PluginPeer, onC
       const workspacePath = text(result["workspacePath"]);
       text(result["workspaceId"]);
       if (controller.signal.aborted) return;
-      const options = branches.map((branch) => { const option = document.createElement("option"); option.value = branch; return option; });
+      const options = branches.map((branch) => {
+        const option = document.createElement("option");
+        option.value = branch;
+        return option;
+      });
       element("#branches", HTMLDataListElement).replaceChildren(...options);
       base.value = defaultBase;
       base.disabled = false;
@@ -134,4 +159,6 @@ function text(value: JsonValue | undefined): string {
   if (typeof value !== "string" || value === "") throw new Error("Invalid response from Workflows.");
   return value;
 }
-function message(cause: unknown): string { return cause instanceof Error ? cause.message : String(cause); }
+function message(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}

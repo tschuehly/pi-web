@@ -1,5 +1,22 @@
 import type { ReactiveControllerHost, TemplateResult } from "lit";
-import type { DeleteWorkspaceFileResponse, FileContentResponse, FileTreeResponse, MachineKind, PluginBackend, PluginPeer, MoveWorkspaceFileOptions, MoveWorkspaceFileResponse, PiWebStatusResponse, PluginCapability, PluginCapabilityProvision, TerminalCommandRunHandle, WorkspaceProviderMetadata, WorkspaceRemovalPresentation, WriteWorkspaceFileOptions, WriteWorkspaceFileResponse } from "./shared/pluginApiTypes.js";
+import type {
+  DeleteWorkspaceFileResponse,
+  FileContentResponse,
+  FileTreeResponse,
+  MachineKind,
+  PluginBackend,
+  PluginPeer,
+  MoveWorkspaceFileOptions,
+  MoveWorkspaceFileResponse,
+  PiWebStatusResponse,
+  PluginCapability,
+  PluginCapabilityProvision,
+  TerminalCommandRunHandle,
+  WorkspaceProviderMetadata,
+  WorkspaceRemovalPresentation,
+  WriteWorkspaceFileOptions,
+  WriteWorkspaceFileResponse,
+} from "./shared/pluginApiTypes.js";
 
 export type {
   FileContentMediaType,
@@ -43,7 +60,15 @@ export type {
   MoveWorkspaceFileResponse,
 } from "./shared/pluginApiTypes.js";
 
-export type { PluginCatalogV1, PluginCatalogProject, PluginCatalogWorkspace, PluginSessionSnapshot, PluginWorkspaceSelection, PluginSessionSelection, PluginCatalogReadOptions } from "./shared/pluginCatalogTypes.js";
+export type {
+  PluginCatalogV1,
+  PluginCatalogProject,
+  PluginCatalogWorkspace,
+  PluginSessionSnapshot,
+  PluginWorkspaceSelection,
+  PluginSessionSelection,
+  PluginCatalogReadOptions,
+} from "./shared/pluginCatalogTypes.js";
 import type { PluginCatalogV1 } from "./shared/pluginCatalogTypes.js";
 
 // eslint-disable-next-line @typescript-eslint/no-deprecated -- The host intentionally accepts supported legacy entries.
@@ -85,7 +110,10 @@ export interface MessageActionAvailabilityContextV5 extends Omit<MessageActionAv
 export type MessageActionContextV5 = Omit<MessageActionContext, "message"> & MessageActionAvailabilityContextV5 & PluginDiscoveryContext;
 export type DisplayedMessageActionContextV5 = DisplayedMessageActionContext & PluginDiscoveryContext;
 
-export interface PluginContributionsV5 extends Omit<PluginContributions, "actions" | "applicationPanels" | "workspacePanels" | "workspaceLabels" | "sessionLabels" | "messageActions" | "contentRenderers" | "themes"> {
+export interface PluginContributionsV5 extends Omit<
+  PluginContributions,
+  "actions" | "applicationPanels" | "workspacePanels" | "workspaceLabels" | "sessionLabels" | "messageActions" | "contentRenderers" | "themes"
+> {
   stylesheets?: StylesheetContribution[];
   syntaxHighlighters?: SyntaxHighlighterContribution[];
   contentRenderers?: ContentRendererContributionV5[];
@@ -221,7 +249,19 @@ export interface ContentRendererContributionV5 extends Omit<ContentRendererContr
   render(input: ContentRendererInputV5): TemplateResult;
 }
 
-export type SyntaxHighlightTokenKind = "keyword" | "string" | "number" | "comment" | "type" | "function" | "variable" | "operator" | "punctuation" | "property" | "literal" | "meta";
+export type SyntaxHighlightTokenKind =
+  | "keyword"
+  | "string"
+  | "number"
+  | "comment"
+  | "type"
+  | "function"
+  | "variable"
+  | "operator"
+  | "punctuation"
+  | "property"
+  | "literal"
+  | "meta";
 
 export interface SyntaxHighlightToken {
   /** UTF-16 code-unit offsets: inclusive start, exclusive end. Sorted and nonoverlapping. */

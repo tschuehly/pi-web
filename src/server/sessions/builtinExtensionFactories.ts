@@ -23,7 +23,11 @@ function openMcpUrl(url: string): void {
   }
   // Preserve Pi's best-effort browser launch outside modal operations. Use no
   // shell: authorization URLs can contain shell metacharacters.
-  const [command, args] = process.platform === "darwin" ? ["open", [url]]
-    : process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : ["xdg-open", [url]];
-  spawn(command, args, { stdio: "ignore", detached: true }).on("error", () => { /* URL is also presented by Pi's UI. */ }).unref();
+  const [command, args] =
+    process.platform === "darwin" ? ["open", [url]] : process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]] : ["xdg-open", [url]];
+  spawn(command, args, { stdio: "ignore", detached: true })
+    .on("error", () => {
+      /* URL is also presented by Pi's UI. */
+    })
+    .unref();
 }

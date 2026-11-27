@@ -41,9 +41,18 @@ function button(host: ContentRendererHost, label: string): HTMLButtonElement {
 
 it.each(["automatic", "manual"] as const)("names the %s view button after the selected renderer", async (renderMode) => {
   const draw = vi.fn(() => html`<b>Named content</b>`);
-  const host = hostWith([{ id: "highlighted", label: "Highlighted", renderer: {
-    id: "highlighted", title: "Highlighted", renderMode, render: draw,
-  } }]);
+  const host = hostWith([
+    {
+      id: "highlighted",
+      label: "Highlighted",
+      renderer: {
+        id: "highlighted",
+        title: "Highlighted",
+        renderMode,
+        render: draw,
+      },
+    },
+  ]);
   document.body.append(host);
   await settleDeferredContent(host);
   const namedButton = button(host, "Highlighted");
@@ -172,7 +181,10 @@ it("refreshes failed manual previews on dependency changes without losing activa
 
 it("propagates metadata and cancels obsolete rendering for each metadata change", async () => {
   const inputs: import("../../../plugin-api").ContentRendererInputV5[] = [];
-  const host = automaticHost((input) => { inputs.push(input); return html`preview`; });
+  const host = automaticHost((input) => {
+    inputs.push(input);
+    return html`preview`;
+  });
   host.machineId = "local";
   host.language = "test";
   host.filePath = "a.test";
@@ -246,10 +258,12 @@ it("keeps consumer-owned external controls outside the standard embedded frame",
 });
 
 it("attaches source-policy modifiers only to raw source, never to preview content or its ancestors", async () => {
-  const draw = vi.fn<ContentRendererContribution["render"]>(() => html`
+  const draw = vi.fn<ContentRendererContribution["render"]>(
+    () => html`
     <pre class="renderer-owned-code">Preview code</pre>
     <div class="plain-code-block">Preview text</div>
-  `);
+  `,
+  );
   const host = automaticHost(draw);
   host.codeBlocks = { presentation: "code", overflow: "wrap", copy: true };
   document.body.append(host);

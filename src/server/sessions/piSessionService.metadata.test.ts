@@ -13,7 +13,9 @@ let root: string;
 const services: PiSessionService[] = [];
 const metadata = { "example.workflow": { packet: ".pi-web/example", leg: 2, nested: [true, null] } };
 
-beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "pi-web-session-metadata-")); });
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), "pi-web-session-metadata-"));
+});
 afterEach(async () => {
   await Promise.all(services.splice(0).map((service) => service.dispose()));
   await rm(root, { recursive: true, force: true });
@@ -53,7 +55,11 @@ function fixture() {
     return fake.runtime;
   };
   const service = new PiSessionService(hub, {
-    agentDir, modelRuntime: testModelRuntime, sessionManager, archiveStore, createAgentRuntime,
+    agentDir,
+    modelRuntime: testModelRuntime,
+    sessionManager,
+    archiveStore,
+    createAgentRuntime,
     spawnTargets: { resolveSpawnTarget: () => Promise.resolve({ allowed: true, cwd }) },
     heartbeatIntervalMs: 60_000,
   });
@@ -64,7 +70,14 @@ function fixture() {
 it("initializes metadata before extensions, publication and the first prompt; preserves it in cold listings, reopen and archive", async () => {
   const first = fixture();
   await mkdir(first.cwd);
-  const result = await first.service.spawnSession({ spawningCwd: first.cwd, spawningSessionId: "parent", cwd: undefined, prompt: "Continue", metadata, name: "Example workflow leg 2" });
+  const result = await first.service.spawnSession({
+    spawningCwd: first.cwd,
+    spawningSessionId: "parent",
+    cwd: undefined,
+    prompt: "Continue",
+    metadata,
+    name: "Example workflow leg 2",
+  });
   const ref = { id: result.sessionId, cwd: first.cwd };
   expect(first.startupMetadata).toEqual([metadata]);
   expect(first.promptMetadata).toEqual([metadata]);
@@ -101,7 +114,9 @@ it("publishes metadata on a transient session before Pi flushes its conversation
 it("rejects invalid metadata before allocating a session", async () => {
   const { service, sessionManager, cwd } = fixture();
   const create = vi.spyOn(sessionManager, "create");
-  await expect(service.spawnSession({ spawningCwd: cwd, spawningSessionId: "parent", cwd: undefined, prompt: "Continue", metadata: { example: { invalid: Number.NaN } } })).rejects.toThrow("finite JSON numbers");
+  await expect(
+    service.spawnSession({ spawningCwd: cwd, spawningSessionId: "parent", cwd: undefined, prompt: "Continue", metadata: { example: { invalid: Number.NaN } } }),
+  ).rejects.toThrow("finite JSON numbers");
   expect(create).not.toHaveBeenCalled();
   expect(service.activeCount()).toBe(0);
 });
@@ -109,7 +124,9 @@ it("rejects invalid metadata before allocating a session", async () => {
 it("rejects invalid explicit names before allocating a session", async () => {
   const { service, sessionManager, cwd } = fixture();
   const create = vi.spyOn(sessionManager, "create");
-  await expect(service.spawnSession({ spawningCwd: cwd, spawningSessionId: "parent", cwd: undefined, prompt: "Continue", name: "invalid\nname" })).rejects.toThrow("Initial session name");
+  await expect(
+    service.spawnSession({ spawningCwd: cwd, spawningSessionId: "parent", cwd: undefined, prompt: "Continue", name: "invalid\nname" }),
+  ).rejects.toThrow("Initial session name");
   expect(create).not.toHaveBeenCalled();
 });
 

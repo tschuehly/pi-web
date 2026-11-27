@@ -5,7 +5,10 @@ import type { SessionStatus } from "../../../../shared/apiTypes";
 import { renderDurableHostPin } from "./UnresolvedEffects";
 
 const pin = { revision: "old1234", current: "new5678" };
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+});
 
 function mount(value: SessionStatus["durableHostPin"] = pin, onUpgrade?: (mode: "quiet" | "now" | "cancel") => void) {
   const root = document.createElement("div");

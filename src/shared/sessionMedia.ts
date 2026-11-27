@@ -16,9 +16,9 @@ export interface SessionMediaReference {
 
 /** Only a complete, positive pixel pair can establish image geometry. */
 export function validImageDimensions(width: unknown, height: unknown): ImageDimensions | undefined {
-  return typeof width === "number" && Number.isSafeInteger(width) && width > 0
-    && typeof height === "number" && Number.isSafeInteger(height) && height > 0
-    ? { width, height } : undefined;
+  return typeof width === "number" && Number.isSafeInteger(width) && width > 0 && typeof height === "number" && Number.isSafeInteger(height) && height > 0
+    ? { width, height }
+    : undefined;
 }
 
 /** Explicit opt-in keeps older browser clients and remote machines compatible. */

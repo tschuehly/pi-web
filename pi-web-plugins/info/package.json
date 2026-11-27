@@ -3,7 +3,11 @@
   "private": true,
   "piWeb": {
     "plugins": [
-      { "id": "info", "browserRoot": ".", "module": "pi-web-plugin.js" }
+      {
+        "id": "info",
+        "browserRoot": ".",
+        "module": "pi-web-plugin.js"
+      }
     ]
   }
 }

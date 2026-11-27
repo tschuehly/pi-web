@@ -15,7 +15,10 @@ const { config } = effectivePiWebConfig();
 const app = await buildApp({
   bodyLimit: maxUploadBytes(process.env, config),
   logger: startupLogger,
-  requestSource: { ...(config.allowedHosts === undefined ? {} : { allowedHosts: config.allowedHosts }), ...(config.host === undefined ? {} : { host: config.host }) },
+  requestSource: {
+    ...(config.allowedHosts === undefined ? {} : { allowedHosts: config.allowedHosts }),
+    ...(config.host === undefined ? {} : { host: config.host }),
+  },
   ...(clientDist === undefined ? {} : { clientDist }),
 });
 await app.listen({ port: config.port ?? 8504, host: config.host ?? "127.0.0.1" });

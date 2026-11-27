@@ -59,7 +59,9 @@ export function wordDiffLayout(before: string, after: string): "inline" | "split
     for (let line = 0; line < Math.max(removed.length, added.length); line += 1) {
       const old = words(removed[line] ?? "");
       const fresh = words(added[line] ?? "");
-      const kept = diffArrays(old, fresh).filter((part) => !part.added && !part.removed).reduce((sum, part) => sum + part.count, 0);
+      const kept = diffArrays(old, fresh)
+        .filter((part) => !part.added && !part.removed)
+        .reduce((sum, part) => sum + part.count, 0);
       changed += 1;
       if (1 - kept / Math.max(old.length, fresh.length, 1) > REWRITTEN_LINE_SHARE) rewritten += 1;
     }
@@ -108,13 +110,18 @@ export function enhanceDiffBlocks(root: ParentNode): void {
     const source = code.textContent;
     if (code.classList.contains("language-diff")) {
       code.parentElement?.classList.add("diff");
-      code.replaceChildren(...source.replace(/\n$/u, "").split("\n").map((line) => {
-        const span = document.createElement("span");
-        span.className = diffLineClass(line);
-        // The newline keeps Copy and selection line-based; a block's trailing newline adds no line.
-        span.textContent = `${line}\n`;
-        return span;
-      }));
+      code.replaceChildren(
+        ...source
+          .replace(/\n$/u, "")
+          .split("\n")
+          .map((line) => {
+            const span = document.createElement("span");
+            span.className = diffLineClass(line);
+            // The newline keeps Copy and selection line-based; a block's trailing newline adds no line.
+            span.textContent = `${line}\n`;
+            return span;
+          }),
+      );
       return;
     }
     const parsed = parseWordDiff(source);

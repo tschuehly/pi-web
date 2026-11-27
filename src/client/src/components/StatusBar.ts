@@ -48,7 +48,10 @@ export class StatusBar extends LitElement {
     const warningControl = statusBarWarningControlContent(this.warningCount, this.warningsExpanded);
     return html`
       <div class="bar">
-        ${warningControl === undefined || this.onToggleWarnings === undefined ? null : html`
+        ${
+          warningControl === undefined || this.onToggleWarnings === undefined
+            ? null
+            : html`
           <button
             type="button"
             class="warning-toggle"
@@ -60,7 +63,8 @@ export class StatusBar extends LitElement {
             ${renderSessionWarningIcon("warning", "warning-toggle-icon")}
             <span>${warningControl.countText}</span>
           </button>
-        `}
+        `
+        }
         <span>↑${formatTokenCount(tokens.input)}</span>
         <span>↓${formatTokenCount(tokens.output)}</span>
         <span class="context">${contextText}</span>

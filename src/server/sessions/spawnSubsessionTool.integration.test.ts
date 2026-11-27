@@ -88,10 +88,11 @@ async function runYieldBatch(subsessions: SubsessionSummary[], includeSentinel =
     list,
     join: async (parentId, parentFile) => ({ subsessions: await list(parentId, parentFile), completions: [] }),
     check: vi.fn(() => Promise.resolve({ sessionId: "child-1", cwd: "/workspace", status: "idle" as const, finalText: "", messageCount: 0 })),
-    read: vi.fn(() => Promise.resolve({ sessionId: "child-1", cwd: "/workspace", status: "idle" as const, entries: [], total: 0, matched: 0, start: 0, hasMore: false })),
+    read: vi.fn(() =>
+      Promise.resolve({ sessionId: "child-1", cwd: "/workspace", status: "idle" as const, entries: [], total: 0, matched: 0, start: 0, hasMore: false }),
+    ),
   };
-  const yieldDefinition = createSubsessionToolDefinitions("/workspace", deps)
-    .find(({ name }) => name === "yield_to_subsessions");
+  const yieldDefinition = createSubsessionToolDefinitions("/workspace", deps).find(({ name }) => name === "yield_to_subsessions");
   if (yieldDefinition === undefined) throw new Error("missing yield_to_subsessions");
 
   const sentinel = vi.fn(() => Promise.resolve({ content: [{ type: "text" as const, text: "sentinel complete" }], details: {} }));
@@ -104,14 +105,9 @@ async function runYieldBatch(subsessions: SubsessionSummary[], includeSentinel =
   };
   const firstContent: AssistantMessage["content"] = [
     { type: "toolCall", id: "yield-call", name: "yield_to_subsessions", arguments: {} },
-    ...(includeSentinel
-      ? [{ type: "toolCall" as const, id: "sentinel-call", name: "sentinel", arguments: {} }]
-      : []),
+    ...(includeSentinel ? [{ type: "toolCall" as const, id: "sentinel-call", name: "sentinel", arguments: {} }] : []),
   ];
-  const streamFn = streamSequence([
-    message("toolUse", firstContent),
-    message("stop", [{ type: "text", text: "normal follow-up" }]),
-  ]);
+  const streamFn = streamSequence([message("toolUse", firstContent), message("stop", [{ type: "text", text: "normal follow-up" }])]);
   const events: AgentEvent[] = [];
 
   const messages = await runAgentLoop(
@@ -121,7 +117,9 @@ async function runYieldBatch(subsessions: SubsessionSummary[], includeSentinel =
       tools: [wrapDefinition(yieldDefinition, extensionContext()), sentinelTool],
     },
     { model, convertToLlm: (agentMessages) => agentMessages.filter(isLlmMessage) },
-    (event) => { events.push(event); },
+    (event) => {
+      events.push(event);
+    },
     undefined,
     streamFn,
   );
@@ -131,9 +129,7 @@ async function runYieldBatch(subsessions: SubsessionSummary[], includeSentinel =
 
 describe("yield_to_subsessions Pi agent-loop integration", () => {
   it("ends the run after one provider call when invoked alone with a working child", async () => {
-    const result = await runYieldBatch([
-      { sessionId: "child-1", cwd: "/workspace", status: "working" },
-    ]);
+    const result = await runYieldBatch([{ sessionId: "child-1", cwd: "/workspace", status: "working" }]);
 
     expect(result.streamFn).toHaveBeenCalledTimes(1);
     expect(result.list).toHaveBeenCalledWith("parent-1", "/sessions/parent-1.jsonl");
@@ -153,9 +149,7 @@ describe("yield_to_subsessions Pi agent-loop integration", () => {
   });
 
   it("does not terminate a mixed batch with a non-terminating sibling tool", async () => {
-    const result = await runYieldBatch([
-      { sessionId: "child-1", cwd: "/workspace", status: "working" },
-    ], true);
+    const result = await runYieldBatch([{ sessionId: "child-1", cwd: "/workspace", status: "working" }], true);
 
     expect(result.sentinel).toHaveBeenCalledTimes(1);
     expect(result.streamFn).toHaveBeenCalledTimes(2);

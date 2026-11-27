@@ -28,17 +28,28 @@ it("loads saved Markdown Preview through the bundled Files plugin without crossi
     workspaceId: "workspace",
     selectedPath: "notes.md",
     modeStore: { adopt: () => "preview", publish: () => undefined },
-    contentRendering: createContentRenderingCapability(() => [{
-      id: "diagram", label: "Diagram", renderer: { id: "diagram", render: ({ text }) => html`<b>${text}</b>` },
-    }]),
+    contentRendering: createContentRenderingCapability(() => [
+      {
+        id: "diagram",
+        label: "Diagram",
+        renderer: { id: "diagram", render: ({ text }) => html`<b>${text}</b>` },
+      },
+    ]),
   });
   document.body.append(viewer);
   await viewer.updateComplete;
   expect(viewer.shadowRoot.querySelector('[role="status"]').textContent).toContain("Loading notes.md");
 
   viewer.file = {
-    path: "notes.md", mediaType: "markdown", language: "markdown", encoding: "utf8",
-    size: text.length, modifiedAt: "2026-10-06T00:00:00.000Z", content: text, truncated: false, binary: false,
+    path: "notes.md",
+    mediaType: "markdown",
+    language: "markdown",
+    encoding: "utf8",
+    size: text.length,
+    modifiedAt: "2026-10-06T00:00:00.000Z",
+    content: text,
+    truncated: false,
+    binary: false,
   };
   await viewer.updateComplete;
   const boundary = viewer.shadowRoot.querySelector("pi-web-content-rendering-boundary");

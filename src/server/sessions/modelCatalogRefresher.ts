@@ -32,8 +32,7 @@ const DEFAULT_RETRY_DELAY_MS = 5 * 60 * 1000;
 type RefreshMode = "scheduled" | "forced";
 
 /** A queued follow-up must keep the strongest mode requested while a run was in flight. */
-const strongestMode = (left: RefreshMode | undefined, right: RefreshMode): RefreshMode =>
-  left === "forced" || right === "forced" ? "forced" : "scheduled";
+const strongestMode = (left: RefreshMode | undefined, right: RefreshMode): RefreshMode => (left === "forced" || right === "forced" ? "forced" : "scheduled");
 
 /** Whether a run finished with a complete picture, or earned a retry. */
 type RunOutcome = "complete" | "incomplete";
@@ -61,9 +60,15 @@ export interface ModelCatalogRefresherOptions {
 }
 
 const noopLogger: ModelCatalogRefresherLogger = {
-  info() { /* no-op */ },
-  warn() { /* no-op */ },
-  error() { /* no-op */ },
+  info() {
+    /* no-op */
+  },
+  warn() {
+    /* no-op */
+  },
+  error() {
+    /* no-op */
+  },
 };
 
 /**
@@ -123,9 +128,13 @@ export class ModelCatalogRefresher {
       this.logger.info({}, "offline mode is enabled; skipping background model catalog refreshes");
       return;
     }
-    this.initialTimer = setTimeout(() => { this.queueRefresh("scheduled"); }, this.initialDelayMs);
+    this.initialTimer = setTimeout(() => {
+      this.queueRefresh("scheduled");
+    }, this.initialDelayMs);
     this.initialTimer.unref();
-    this.intervalTimer = setInterval(() => { this.queueRefresh("scheduled"); }, this.intervalMs);
+    this.intervalTimer = setInterval(() => {
+      this.queueRefresh("scheduled");
+    }, this.intervalMs);
     this.intervalTimer.unref();
   }
 

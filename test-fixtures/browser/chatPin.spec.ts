@@ -24,10 +24,16 @@ test.beforeEach(async ({ page }) => {
 
 test("follows an attachment above the viewport whose dimensions arrive after the message", async ({ page }) => {
   let received!: (route: Route) => void;
-  const pending = new Promise<Route>((resolve) => { received = resolve; });
+  const pending = new Promise<Route>((resolve) => {
+    received = resolve;
+  });
   await page.route("**/media/**", received);
   await view(page).evaluate((el: ChatView) => {
-    el.messages = [...el.messages.slice(0, -8), { role: "user", parts: [{ type: "image", mediaId: "a".repeat(64), mimeType: "image/svg+xml", byteSize: 100 }] }, ...el.messages.slice(-8)];
+    el.messages = [
+      ...el.messages.slice(0, -8),
+      { role: "user", parts: [{ type: "image", mediaId: "a".repeat(64), mimeType: "image/svg+xml", byteSize: 100 }] },
+      ...el.messages.slice(-8),
+    ];
   });
   const route = await pending;
   await pinned(page);
@@ -40,7 +46,9 @@ test("follows an attachment above the viewport whose dimensions arrive after the
 });
 
 test("follows a status-only update that adds the compacting notice", async ({ page }) => {
-  await view(page).evaluate((el: ChatView) => { el.isCompacting = true; });
+  await view(page).evaluate((el: ChatView) => {
+    el.isCompacting = true;
+  });
   await expect(chat(page).locator(".compacting")).toBeVisible();
   await pinned(page);
 });
@@ -49,8 +57,11 @@ test("follows a replacement snapshot with both earlier and newer messages", asyn
   await view(page).evaluate((el: ChatView) => {
     el.messageStart = 19;
     const lines = structuredClone(el.messages);
-    el.messages = [{ entryId: "earlier", role: "bash", parts: [{ type: "text", text: "Earlier" }] }, ...lines,
-      { entryId: "latest", role: "bash", parts: [{ type: "text", text: "Latest" }] }];
+    el.messages = [
+      { entryId: "earlier", role: "bash", parts: [{ type: "text", text: "Earlier" }] },
+      ...lines,
+      { entryId: "latest", role: "bash", parts: [{ type: "text", text: "Latest" }] },
+    ];
   });
   await expect(chat(page).locator('[data-entry-id="latest"]')).toHaveCount(1);
   await pinned(page);
@@ -58,24 +69,45 @@ test("follows a replacement snapshot with both earlier and newer messages", asyn
 
 test("scrolling within tool output does not pause the transcript", async ({ page }) => {
   await view(page).evaluate((el: ChatView) => {
-    el.messages = [...el.messages, { role: "assistant", parts: [{ type: "backgroundBash", details: { id: "job", command: "build", state: "complete", elapsedSeconds: 2, logPath: "build.log" }, output: "output\n".repeat(80) }] }];
+    el.messages = [
+      ...el.messages,
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "backgroundBash",
+            details: { id: "job", command: "build", state: "complete", elapsedSeconds: 2, logPath: "build.log" },
+            output: "output\n".repeat(80),
+          },
+        ],
+      },
+    ];
   });
   const card = chat(page).locator(".background-bash-card");
-  await card.evaluate((el: HTMLDetailsElement) => { el.open = true; });
+  await card.evaluate((el: HTMLDetailsElement) => {
+    el.open = true;
+  });
   const output = card.locator("pre");
-  await output.evaluate((el) => { el.scrollTop = 500; });
+  await output.evaluate((el) => {
+    el.scrollTop = 500;
+  });
   await pinned(page);
   await output.hover();
   await page.mouse.wheel(0, -80);
   await expect.poll(() => output.evaluate((el) => el.scrollTop)).toBeLessThan(500);
   await pinned(page);
-  await view(page).evaluate((el: ChatView) => { el.messages = [...el.messages, { role: "assistant", parts: [{ type: "text", text: "more output" }] }]; });
+  await view(page).evaluate((el: ChatView) => {
+    el.messages = [...el.messages, { role: "assistant", parts: [{ type: "text", text: "more output" }] }];
+  });
   await pinned(page);
 });
 
 test("follows tool details expanded inside a child shadow root", async ({ page }) => {
   await view(page).evaluate((el: ChatView) => {
-    el.messages = [...el.messages, { role: "assistant", parts: [{ type: "toolExecution", toolName: "bash", summary: "build", status: "success", resultText: "line\n".repeat(50) }] }];
+    el.messages = [
+      ...el.messages,
+      { role: "assistant", parts: [{ type: "toolExecution", toolName: "bash", summary: "build", status: "success", resultText: "line\n".repeat(50) }] },
+    ];
   });
   const details = chat(page).locator("tool-execution-view .text-body");
   await expect(details).toHaveCount(1);
@@ -83,7 +115,9 @@ test("follows tool details expanded inside a child shadow root", async ({ page }
   await details.locator("summary").click();
   await expect(details).toHaveAttribute("open", "");
   await pinned(page);
-  await details.evaluate((el: HTMLDetailsElement) => { el.open = false; });
+  await details.evaluate((el: HTMLDetailsElement) => {
+    el.open = false;
+  });
   await pinned(page);
   await expect(view(page).locator(".scroll-to-bottom")).toHaveCount(0);
 });
@@ -93,7 +127,9 @@ test("keeps a reader's place during growth and follows again after jumping to th
   await page.mouse.wheel(0, -500);
   const jump = view(page).getByRole("button", { name: "Scroll to bottom" });
   await expect(jump).toBeVisible();
-  await view(page).evaluate((el: ChatView) => { el.isCompacting = true; });
+  await view(page).evaluate((el: ChatView) => {
+    el.isCompacting = true;
+  });
   await expect.poll(() => gap(page)).toBeGreaterThan(100);
   await jump.click();
   await pinned(page);
@@ -101,7 +137,11 @@ test("keeps a reader's place during growth and follows again after jumping to th
     const history = el.messages;
     for (let i = 1; i <= 30; i++) {
       el.messages = [...history, { role: "assistant", streamId: "turn", parts: [{ type: "text", text: "streaming\n\n".repeat(i) }] }];
-      await new Promise<void>((resolve) => requestAnimationFrame(() => { resolve(); }));
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => {
+          resolve();
+        }),
+      );
     }
   });
   await expect(jump).toHaveCount(0);

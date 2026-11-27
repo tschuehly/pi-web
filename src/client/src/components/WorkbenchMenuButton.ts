@@ -32,7 +32,10 @@ export class WorkbenchMenuButton extends LitElement {
   }
 
   private toggle(): void {
-    if (this.open) { this.close(false); return; }
+    if (this.open) {
+      this.close(false);
+      return;
+    }
     this.open = true;
     document.addEventListener("click", this.onDocumentClick);
     document.addEventListener("keydown", this.onDocumentKeyDown);
@@ -59,7 +62,9 @@ export class WorkbenchMenuButton extends LitElement {
 
   override render() {
     return html`
-      <button type="button" class="trigger" title=${this.label} aria-label=${this.label} aria-expanded=${String(this.open)} aria-controls="menu" @click=${() => { this.toggle(); }}>${renderBuiltinTabIcon("menu")}</button>
+      <button type="button" class="trigger" title=${this.label} aria-label=${this.label} aria-expanded=${String(this.open)} aria-controls="menu" @click=${() => {
+        this.toggle();
+      }}>${renderBuiltinTabIcon("menu")}</button>
       <div id="menu" class="menu" role="group" aria-label=${this.label} ?hidden=${!this.open}><slot></slot></div>
     `;
   }

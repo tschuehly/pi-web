@@ -17,10 +17,22 @@ import { createWorkspaceDiscoveryHooks } from "./workspaceDiscoveryHooks.js";
 
 const temporaryRoots: string[] = [];
 const gitLocalEnvironmentKeys = [
-  "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_CONFIG", "GIT_CONFIG_COUNT",
-  "GIT_CONFIG_PARAMETERS", "GIT_DIR", "GIT_GRAFT_FILE", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE",
-  "GIT_NO_REPLACE_OBJECTS", "GIT_OBJECT_DIRECTORY", "GIT_PREFIX", "GIT_QUARANTINE_PATH",
-  "GIT_REPLACE_REF_BASE", "GIT_SHALLOW_FILE", "GIT_WORK_TREE",
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_CONFIG",
+  "GIT_CONFIG_COUNT",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_DIR",
+  "GIT_GRAFT_FILE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_PREFIX",
+  "GIT_QUARANTINE_PATH",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_SHALLOW_FILE",
+  "GIT_WORK_TREE",
 ];
 const signal = () => new AbortController().signal;
 const gitEnvironment = { ...process.env };
@@ -31,10 +43,12 @@ Object.assign(gitEnvironment, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_SYSTEM: "/d
 const configHelp = spawnSync("git", ["help", "--config"], { encoding: "utf8", env: gitEnvironment, timeout: 10_000 });
 const advertisedConfig = configHelp.status === 0 ? configHelp.stdout.split(/\r?\n/u) : [];
 const gitAvailable = configHelp.error === undefined && configHelp.status !== null;
-const namedHooksSupported = configHelp.status === 0
-  && advertisedConfig.includes("hook.<friendly-name>.command") && advertisedConfig.includes("hook.<friendly-name>.event");
+const namedHooksSupported =
+  configHelp.status === 0 && advertisedConfig.includes("hook.<friendly-name>.command") && advertisedConfig.includes("hook.<friendly-name>.event");
 
-beforeEach(() => { vi.stubEnv("PI_WEB_INSTANCE_NAMESPACE", ""); });
+beforeEach(() => {
+  vi.stubEnv("PI_WEB_INSTANCE_NAMESPACE", "");
+});
 
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -78,9 +92,7 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
 
     const linked = join(fixture.root, "new ' worktree with spaces");
     fixture.git(["worktree", "add", "-b", "feature", linked]);
-    expect(await fixture.notifications()).toEqual([
-      fixture.expectedNotification(first.id), fixture.expectedNotification(second.id),
-    ]);
+    expect(await fixture.notifications()).toEqual([fixture.expectedNotification(first.id), fixture.expectedNotification(second.id)]);
     expect(await readFile(traditionalMarker, "utf8")).toBe("traditional");
     expect(await readFile(otherMarker, "utf8")).toBe("other");
     expect(fixture.git(["hook", "list", "post-checkout"])).toContain("other");
@@ -127,10 +139,13 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
     const config = join(fixture.project.path, ".git", "config");
     const metadata = fixture.registrationForProject(context.dataDirectory, fixture.project.id);
     const originalMetadata = await readFile(metadata, "utf8");
-    const unchangedState = async () => Promise.all([helper, metadata, config].map(async (path) => {
-      const { ino, mtimeNs, ctimeNs } = await stat(path, { bigint: true });
-      return { ino, mtimeNs, ctimeNs };
-    }));
+    const unchangedState = async () =>
+      Promise.all(
+        [helper, metadata, config].map(async (path) => {
+          const { ino, mtimeNs, ctimeNs } = await stat(path, { bigint: true });
+          return { ino, mtimeNs, ctimeNs };
+        }),
+      );
     const before = await unchangedState();
     fixture.execFile.mockClear();
 
@@ -239,9 +254,11 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
     const originalCommand = context.workspaceNotifications?.command(fixture.project.id);
     if (originalCommand === undefined) throw new Error("Expected host notification command");
     const nextArguments = ["--daemon-target", "replacement daemon ' target", "--project", fixture.project.id, ""];
-    const refreshed = await fixture.activate({ workspaceNotifications: {
-      command: () => [...originalCommand.slice(0, 3), ...nextArguments],
-    } });
+    const refreshed = await fixture.activate({
+      workspaceNotifications: {
+        command: () => [...originalCommand.slice(0, 3), ...nextArguments],
+      },
+    });
     fixture.execFile.mockClear();
 
     await refreshed.integration.reconcile(fixture.project, signal());
@@ -250,8 +267,10 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
     expect(fixture.execFile.mock.calls.filter(([request]) => request.args?.includes("--replace-all") === true)).toHaveLength(1);
     const currentCommand = fixture.git(["config", "--local", commandKey]).trim();
     expect(currentCommand).not.toBe(oldCommand);
-    expect(JSON.parse(await readFile(fixture.registrationForProject(context.dataDirectory, fixture.project.id), "utf8")))
-      .toEqual({ version: 1, commands: [currentCommand] });
+    expect(JSON.parse(await readFile(fixture.registrationForProject(context.dataDirectory, fixture.project.id), "utf8"))).toEqual({
+      version: 1,
+      commands: [currentCommand],
+    });
     fixture.git(["worktree", "add", "-b", "new-daemon", join(fixture.root, "new daemon checkout")]);
     expect(await fixture.notifications()).toEqual([nextArguments]);
   });
@@ -392,7 +411,8 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
     const fixture = await repositoryFixture();
     const { integration, context } = await fixture.activate();
     const legacyIdentity = createHash("sha256")
-      .update(JSON.stringify([context.pluginId, resolve(context.dataDirectory), fixture.project.id])).digest("hex");
+      .update(JSON.stringify([context.pluginId, resolve(context.dataDirectory), fixture.project.id]))
+      .digest("hex");
     const legacyName = `pi-web-workspace-discovery-${legacyIdentity}`;
     const directory = join(context.dataDirectory, "workspace-discovery");
     await mkdir(directory, { recursive: true });
@@ -435,8 +455,7 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
     if (execute === undefined) throw new Error("Expected Git execution fixture");
     let pendingCommands: string[] = [];
     fixture.execFile.mockImplementation(async (request) => {
-      if (request.args?.includes("--replace-all") === true
-        && request.args.includes(commandKey.replace(/\.command$/u, `.${failedKey}`))) {
+      if (request.args?.includes("--replace-all") === true && request.args.includes(commandKey.replace(/\.command$/u, `.${failedKey}`))) {
         const pending: unknown = JSON.parse(await readFile(registration, "utf8"));
         expect(pending).toHaveProperty("version", 1);
         if (typeof pending !== "object" || pending === null) throw new Error("Expected pending record");
@@ -453,8 +472,7 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
       return execute(request);
     });
 
-    await expect(createWorkspaceDiscoveryHooks(context, fixture.runGit).reconcile(fixture.project, signal()))
-      .rejects.toThrow("injected config failure");
+    await expect(createWorkspaceDiscoveryHooks(context, fixture.runGit).reconcile(fixture.project, signal())).rejects.toThrow("injected config failure");
     expect(JSON.parse(await readFile(registration, "utf8"))).toEqual({ version: 1, commands: pendingCommands });
     fixture.execFile.mockImplementation(execute);
     await createWorkspaceDiscoveryHooks(context, fixture.runGit).reconcile(fixture.project, signal());
@@ -512,10 +530,7 @@ describe.skipIf(process.platform === "win32" || !namedHooksSupported)("Git-owned
     const second = { id: "second repo", name: "Second", path: secondPath };
     const firstActivation = await fixture.activate();
     const secondActivation = await fixture.activate();
-    await Promise.all([
-      firstActivation.integration.reconcile(fixture.project, signal()),
-      secondActivation.integration.reconcile(second, signal()),
-    ]);
+    await Promise.all([firstActivation.integration.reconcile(fixture.project, signal()), secondActivation.integration.reconcile(second, signal())]);
     const registrations = await fixture.registrations(firstActivation.context.dataDirectory);
     expect(registrations).toHaveLength(2);
     expect((await readdir(join(firstActivation.context.dataDirectory, "workspace-discovery"))).sort()).toEqual(registrationFiles(registrations));
@@ -539,25 +554,28 @@ describe("workspace discovery settings and unsupported Git boundary", () => {
     expect(context.execFile).not.toHaveBeenCalled();
   });
 
-  it.skipIf(process.platform === "win32" || !gitAvailable || namedHooksSupported)("leaves real old-Git config and scripts untouched when named hooks are unavailable", async () => {
-    const fixture = await repositoryFixture();
-    fixture.git(["config", "hook.other.command", "external-command"]);
-    fixture.git(["config", "hook.other.event", "post-checkout"]);
-    const traditionalHook = join(fixture.project.path, ".git", "hooks", "post-checkout");
-    const script = "#!/bin/sh\nexit 0\n";
-    await writeFile(traditionalHook, script, { mode: 0o755 });
-    const config = join(fixture.project.path, ".git", "config");
-    const before = await readFile(config, "utf8");
-    const { integration, context } = await fixture.activate();
+  it.skipIf(process.platform === "win32" || !gitAvailable || namedHooksSupported)(
+    "leaves real old-Git config and scripts untouched when named hooks are unavailable",
+    async () => {
+      const fixture = await repositoryFixture();
+      fixture.git(["config", "hook.other.command", "external-command"]);
+      fixture.git(["config", "hook.other.event", "post-checkout"]);
+      const traditionalHook = join(fixture.project.path, ".git", "hooks", "post-checkout");
+      const script = "#!/bin/sh\nexit 0\n";
+      await writeFile(traditionalHook, script, { mode: 0o755 });
+      const config = join(fixture.project.path, ".git", "config");
+      const before = await readFile(config, "utf8");
+      const { integration, context } = await fixture.activate();
 
-    await integration.reconcile(fixture.project, signal());
+      await integration.reconcile(fixture.project, signal());
 
-    expect(fixture.ownedKeys()).toEqual([]);
-    expect(await readFile(config, "utf8")).toBe(before);
-    expect(await readFile(traditionalHook, "utf8")).toBe(script);
-    await expect(readdir(context.dataDirectory)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(context.logger.debug).toHaveBeenCalledWith(expect.stringContaining("unavailable"), { projectId: fixture.project.id });
-  });
+      expect(fixture.ownedKeys()).toEqual([]);
+      expect(await readFile(config, "utf8")).toBe(before);
+      expect(await readFile(traditionalHook, "utf8")).toBe(script);
+      await expect(readdir(context.dataDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(context.logger.debug).toHaveBeenCalledWith(expect.stringContaining("unavailable"), { projectId: fixture.project.id });
+    },
+  );
 
   it.each([129, 0])("leaves unsupported named hooks alone (detection exit %s)", async (exitCode) => {
     const execFile = vi.fn<ServerPluginActivationContext["execFile"]>(() => Promise.resolve(result({ exitCode, stdout: "core.hooksPath\n" })));
@@ -569,14 +587,17 @@ describe("workspace discovery settings and unsupported Git boundary", () => {
     expect(context.logger.debug).toHaveBeenCalledWith(expect.stringContaining("unavailable"), { projectId: "project" });
   });
 
-  it.each([{ value: null }, { value: "true" }, { value: 1 }, { value: {} }, { value: [] }])("rejects malformed settings before mutation or accepting hints: $value", async ({ value }) => {
-    const execFile = vi.fn<ServerPluginActivationContext["execFile"]>();
-    const { integration } = await activate(activationContext({ execFile, settings: { workspaceDiscoveryHooks: value } }));
-    const project = { id: "project", name: "Project", path: "/repo" };
-    await expect(integration.reconcile(project, signal())).rejects.toThrow("must be a boolean");
-    await expect(integration.acceptNotification(project, signal())).rejects.toThrow("must be a boolean");
-    expect(execFile).not.toHaveBeenCalled();
-  });
+  it.each([{ value: null }, { value: "true" }, { value: 1 }, { value: {} }, { value: [] }])(
+    "rejects malformed settings before mutation or accepting hints: $value",
+    async ({ value }) => {
+      const execFile = vi.fn<ServerPluginActivationContext["execFile"]>();
+      const { integration } = await activate(activationContext({ execFile, settings: { workspaceDiscoveryHooks: value } }));
+      const project = { id: "project", name: "Project", path: "/repo" };
+      await expect(integration.reconcile(project, signal())).rejects.toThrow("must be a boolean");
+      await expect(integration.acceptNotification(project, signal())).rejects.toThrow("must be a boolean");
+      expect(execFile).not.toHaveBeenCalled();
+    },
+  );
 
   it("defaults on, honors resolved settings rather than remerging fixed snapshots, and forwards the invocation signal", async () => {
     const project = { id: "project", name: "Project", path: "/repo" };
@@ -602,11 +623,17 @@ async function activate(context: ServerPluginActivationContext): Promise<{ provi
 
 function activationContext(overrides: Partial<ServerPluginActivationContext> = {}): ServerPluginActivationContext {
   return {
-    apiVersion: 3, pluginId: "git", packageRoot: resolve("pi-web-plugins/git"), dataDirectory: "/unused/git-plugin-data",
-    settings: {}, execFile: vi.fn(),
+    apiVersion: 3,
+    pluginId: "git",
+    packageRoot: resolve("pi-web-plugins/git"),
+    dataDirectory: "/unused/git-plugin-data",
+    settings: {},
+    execFile: vi.fn(),
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     workspaceNotifications: { command: (projectId) => ["host-notifier", "--project", projectId] },
-    signal: signal(), lifetimeSignal: signal(), ...overrides,
+    signal: signal(),
+    lifetimeSignal: signal(),
+    ...overrides,
   };
 }
 
@@ -633,18 +660,28 @@ async function repositoryFixture() {
   const recorder = join(root, "notification ' recorder.cjs");
   await writeFile(recorder, 'require("node:fs").appendFileSync(process.argv[2], JSON.stringify(process.argv.slice(3)) + "\\n");\n');
   const expectedNotification = (projectId: string) => ["--daemon-target", "socket ' with spaces \" $`", "--project", projectId, ""];
-  const execFile = vi.fn(createServerPluginExecFile({ env: {
-    ...env, GIT_DIR: "/missing/poisoned-git-dir", GIT_WORK_TREE: "/missing/poisoned-worktree",
-    GIT_CONFIG: "/missing/poisoned-config", GIT_CONFIG_COUNT: "99", GIT_CONFIG_PARAMETERS: "malformed",
-  } }));
+  const execFile = vi.fn(
+    createServerPluginExecFile({
+      env: {
+        ...env,
+        GIT_DIR: "/missing/poisoned-git-dir",
+        GIT_WORK_TREE: "/missing/poisoned-worktree",
+        GIT_CONFIG: "/missing/poisoned-config",
+        GIT_CONFIG_COUNT: "99",
+        GIT_CONFIG_PARAMETERS: "malformed",
+      },
+    }),
+  );
   const dataDirectory = join(root, "plugin's persistent data");
   const fixtureActivate = async (overrides: Partial<ServerPluginActivationContext> = {}) => {
     const context = activationContext({
-      packageRoot, dataDirectory, execFile,
+      packageRoot,
+      dataDirectory,
+      execFile,
       workspaceNotifications: { command: (id) => [process.execPath, recorder, log, ...expectedNotification(id)] },
       ...overrides,
     });
-    return { ...await activate(context), context };
+    return { ...(await activate(context)), context };
   };
   const ownedKeys = () => {
     const outcome = gitOutcome(["config", "--local", "--name-only", "--get-regexp", "^hook\\.pi-web-workspace-discovery-.*\\.(command|event)$"]);
@@ -653,32 +690,60 @@ async function repositoryFixture() {
     if (outcome.status !== 0) throw new Error(`Unable to read owned keys: ${outcome.stderr}`);
     return outcome.stdout.trim().split("\n").filter(Boolean);
   };
-  const runGit = (cwd: string, args: readonly string[], invocationSignal: AbortSignal) => execFile({
-    file: "git", args: ["-C", cwd, ...args], unsetEnv: gitLocalEnvironmentKeys,
-    timeoutMs: 10_000, signal: invocationSignal,
-  });
-  const registrations = async (directory: string) => (await readdir(join(directory, "workspace-discovery")))
-    .filter((file) => file.endsWith(".registration.json")).map((file) => join(directory, "workspace-discovery", file));
+  const runGit = (cwd: string, args: readonly string[], invocationSignal: AbortSignal) =>
+    execFile({
+      file: "git",
+      args: ["-C", cwd, ...args],
+      unsetEnv: gitLocalEnvironmentKeys,
+      timeoutMs: 10_000,
+      signal: invocationSignal,
+    });
+  const registrations = async (directory: string) =>
+    (await readdir(join(directory, "workspace-discovery")))
+      .filter((file) => file.endsWith(".registration.json"))
+      .map((file) => join(directory, "workspace-discovery", file));
   const registrationForProject = (directory: string, id: string) => {
-    const identity = createHash("sha256").update(JSON.stringify(["packaged-helper", "git", resolve(directory), id])).digest("hex");
+    const identity = createHash("sha256")
+      .update(JSON.stringify(["packaged-helper", "git", resolve(directory), id]))
+      .digest("hex");
     return join(directory, "workspace-discovery", `pi-web-workspace-discovery-${identity}.registration.json`);
   };
   return {
-    root, project, packageRoot, helper, globalConfig, git, gitOutcome, execFile, runGit, activate: fixtureActivate,
-    ownedKeys, registrations, registrationForProject,
+    root,
+    project,
+    packageRoot,
+    helper,
+    globalConfig,
+    git,
+    gitOutcome,
+    execFile,
+    runGit,
+    activate: fixtureActivate,
+    ownedKeys,
+    registrations,
+    registrationForProject,
     expectedNotification,
     async notifications(): Promise<unknown[]> {
-      try { return (await readFile(log, "utf8")).trim().split("\n").filter(Boolean).map((line): unknown => JSON.parse(line)); }
-      catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return []; throw error; }
+      try {
+        return (await readFile(log, "utf8"))
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line): unknown => JSON.parse(line));
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") return [];
+        throw error;
+      }
     },
-
   };
 }
 
 function registrationFiles(registrations: readonly string[]): string[] {
   return registrations.map((registration) => basename(registration)).sort();
 }
-function quote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'`; }
+function quote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 function result(overrides: Partial<ServerPluginExecFileResult> = {}): ServerPluginExecFileResult {
   return { exitCode: 0, signal: null, stdout: "", stderr: "", stdoutTruncated: false, stderrTruncated: false, ...overrides };
 }

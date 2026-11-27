@@ -71,11 +71,7 @@ function isModelsOnlyProviderUpdate(baseline: RegisteredProviderConfig, incoming
  * Compare plain config objects recursively so a real OAuth setting change is
  * not hidden just because that object also contains callbacks.
  */
-function matchesIgnoringFunctionReferences(
-  baseline: unknown,
-  incoming: unknown,
-  compared = new WeakMap<object, WeakSet<object>>(),
-): boolean {
+function matchesIgnoringFunctionReferences(baseline: unknown, incoming: unknown, compared = new WeakMap<object, WeakSet<object>>()): boolean {
   if (isDeepStrictEqual(baseline, incoming)) return true;
   if (typeof baseline === "function" && typeof incoming === "function") return true;
   if (typeof baseline !== "object" || baseline === null || typeof incoming !== "object" || incoming === null) return false;
@@ -87,14 +83,17 @@ function matchesIgnoringFunctionReferences(
   compared.set(baseline, paired);
   const baselineFields = new Map(Object.entries(baseline));
   const incomingFields = Object.entries(incoming);
-  return baselineFields.size === incomingFields.length && incomingFields.every(([field, value]) =>
-    baselineFields.has(field) && matchesIgnoringFunctionReferences(baselineFields.get(field), value, compared));
+  return (
+    baselineFields.size === incomingFields.length
+    && incomingFields.every(([field, value]) => baselineFields.has(field) && matchesIgnoringFunctionReferences(baselineFields.get(field), value, compared))
+  );
 }
 
 function ignoredConfigReason(baseline: RegisteredProviderConfig, incoming: RegisteredProviderConfig): IgnoredMutationReason | undefined {
   const baselineFields = new Map(Object.entries(baseline));
-  const changedFields = Object.entries(incoming).filter(([field, value]) =>
-    field !== MODELS_FIELD && value !== undefined && !isDeepStrictEqual(value, baselineFields.get(field)));
+  const changedFields = Object.entries(incoming).filter(
+    ([field, value]) => field !== MODELS_FIELD && value !== undefined && !isDeepStrictEqual(value, baselineFields.get(field)),
+  );
   if (changedFields.length === 0) return undefined; // Unchanged replay: no diagnostic needed.
   return changedFields.every(([field, value]) => matchesIgnoringFunctionReferences(baselineFields.get(field), value))
     ? "implementation-unverified"
@@ -108,7 +107,8 @@ type IgnoredMutationReason =
   | "native-registration-frozen"
   | "unregistration-frozen";
 
-const PROVIDER_RECOVERY_GUIDANCE = "The startup provider, if any, remains in use. "
+const PROVIDER_RECOVERY_GUIDANCE =
+  "The startup provider, if any, remains in use. "
   + "Provider registrations are shared across sessions and fixed at daemon startup. "
   + "For a global extension, register providers in its factory in the active agent directory, then manually restart "
   + "the session daemon when safe; this interrupts active sessions and terminals. Project-only or session_start-only "
@@ -131,32 +131,17 @@ async function loadGlobalExtensionServices(runtime: ModelRuntime, agentDir: stri
  * that event, so emit it through a throwaway runner, as Pi does on quit.
  * Called after the freeze, so shutdown handlers cannot alter the baseline.
  */
-async function shutDownBootstrapExtensions(
-  services: AgentSessionServices,
-  logger: GlobalProviderBootstrapLogger,
-): Promise<void> {
+async function shutDownBootstrapExtensions(services: AgentSessionServices, logger: GlobalProviderBootstrapLogger): Promise<void> {
   const { extensions, runtime } = services.resourceLoader.getExtensions();
-  const runner = new ExtensionRunner(
-    extensions,
-    runtime,
-    services.cwd,
-    SessionManager.inMemory(services.cwd),
-    new ModelRegistry(services.modelRuntime),
-  );
+  const runner = new ExtensionRunner(extensions, runtime, services.cwd, SessionManager.inMemory(services.cwd), new ModelRegistry(services.modelRuntime));
   runner.onError((extensionError) => {
-    logger.error(
-      { context: LOG_CONTEXT, error: extensionError.error },
-      "global extension failed during provider bootstrap shutdown",
-    );
+    logger.error({ context: LOG_CONTEXT, error: extensionError.error }, "global extension failed during provider bootstrap shutdown");
   });
   await runner.emit({ type: "session_shutdown", reason: "quit" });
   // Not invalidated: frozen provider implementations may still use their captured `pi`.
 }
 
-function logBootstrapDiagnostic(
-  logger: GlobalProviderBootstrapLogger,
-  diagnostic: AgentSessionRuntimeDiagnostic,
-): void {
+function logBootstrapDiagnostic(logger: GlobalProviderBootstrapLogger, diagnostic: AgentSessionRuntimeDiagnostic): void {
   const details = {
     context: LOG_CONTEXT,
     diagnosticType: diagnostic.type,
@@ -182,8 +167,8 @@ function rejectVirtualModelMutations(runtime: ModelRuntime): void {
     // Never echo model definitions or IDs: they may contain sensitive values.
     throw new Error(
       `PI WEB does not support ${operation}(): virtual-model routers capture session-bound context, `
-      + "but the model runtime is shared across sessions. Disable this extension's virtual-model feature "
-      + "and select a physical model instead.",
+        + "but the model runtime is shared across sessions. Disable this extension's virtual-model feature "
+        + "and select a physical model instead.",
     );
   };
   const rejectedMethods: Pick<ModelRuntime, "registerVirtualModel" | "unregisterVirtualModel"> = {
@@ -193,11 +178,7 @@ function rejectVirtualModelMutations(runtime: ModelRuntime): void {
   Object.assign(runtime, rejectedMethods);
 }
 
-function freezeProviderMutations(
-  runtime: ModelRuntime,
-  logger: GlobalProviderBootstrapLogger,
-  configBaseline: Map<string, RegisteredProviderConfig>,
-): void {
+function freezeProviderMutations(runtime: ModelRuntime, logger: GlobalProviderBootstrapLogger, configBaseline: Map<string, RegisteredProviderConfig>): void {
   const originalMethods: ProviderMutationMethods = {
     registerNativeProvider: runtime.registerNativeProvider.bind(runtime),
     registerProvider: runtime.registerProvider.bind(runtime),
@@ -236,9 +217,12 @@ function freezeProviderMutations(
     registerProvider(providerId, config) {
       const baseline = configBaseline.get(providerId);
       if (!baseline || !isModelsOnlyProviderUpdate(baseline, config)) {
-        const reason = baseline === undefined
-          ? (startupProviderIds.has(providerId) ? "configuration-change" : "not-in-startup-baseline")
-          : ignoredConfigReason(baseline, config);
+        const reason =
+          baseline === undefined
+            ? startupProviderIds.has(providerId)
+              ? "configuration-change"
+              : "not-in-startup-baseline"
+            : ignoredConfigReason(baseline, config);
         if (reason !== undefined) logIgnoredMutation("registerProvider", providerId, reason);
         return;
       }
@@ -261,7 +245,9 @@ function freezeProviderMutations(
     registerNativeProvider(provider) {
       const reason = configBaseline.has(provider.id)
         ? "configuration-change"
-        : startupProviderIds.has(provider.id) ? "native-registration-frozen" : "not-in-startup-baseline";
+        : startupProviderIds.has(provider.id)
+          ? "native-registration-frozen"
+          : "not-in-startup-baseline";
       logIgnoredMutation("registerNativeProvider", provider.id, reason);
     },
     unregisterProvider(providerId) {
@@ -315,13 +301,7 @@ export async function bootstrapAndFreezeGlobalExtensionProviders(
 
   for (const diagnostic of services.diagnostics) logBootstrapDiagnostic(logger, diagnostic);
   for (const extensionError of services.resourceLoader.getExtensions().errors) {
-    logger.error(
-      { context: LOG_CONTEXT, error: extensionError.error },
-      "global extension failed during provider bootstrap",
-    );
+    logger.error({ context: LOG_CONTEXT, error: extensionError.error }, "global extension failed during provider bootstrap");
   }
-  logger.info(
-    { context: LOG_CONTEXT, providerIds },
-    "global extension provider baseline bootstrapped and frozen",
-  );
+  logger.info({ context: LOG_CONTEXT, providerIds }, "global extension provider baseline bootstrapped and frozen");
 }

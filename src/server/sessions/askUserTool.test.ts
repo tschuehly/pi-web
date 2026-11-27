@@ -36,7 +36,14 @@ const context = "**Finding:** the cache is stale. Postgres keeps one store; SQLi
 const twoQuestions = {
   context,
   questions: [
-    { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] },
+    {
+      id: "db",
+      question: "Which database?",
+      options: [
+        { value: "pg", label: "Postgres", recommended: true },
+        { value: "sqlite", label: "SQLite" },
+      ],
+    },
     { id: "why", question: "Why?", options: [] },
   ],
 };
@@ -89,14 +96,23 @@ describe("createAskUserToolDefinition", () => {
       sessionId: "session-1",
       context,
       questions: [
-        { id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres", recommended: true }, { value: "sqlite", label: "SQLite" }] },
+        {
+          id: "db",
+          question: "Which database?",
+          options: [
+            { value: "pg", label: "Postgres", recommended: true },
+            { value: "sqlite", label: "SQLite" },
+          ],
+        },
         { id: "why", question: "Why?", options: [] },
       ],
     });
     expect(result).not.toHaveProperty("terminate");
     // The posting session id lets a rebuild skip asks a fork copied from its parent.
     expect(result.details).toMatchObject({ ask: { askId: "abc-1", context, questions: [{ id: "db" }, { id: "why" }] }, sessionId: "session-1" });
-    expect(firstText(result.content)).toContain("Posted 2 questions to the user as question chips above their composer, ask abc-1 (abc.db, abc.why). You are not paused");
+    expect(firstText(result.content)).toContain(
+      "Posted 2 questions to the user as question chips above their composer, ask abc-1 (abc.db, abc.why). You are not paused",
+    );
   });
 
   it("keeps earlier sets open when another is posted", async () => {
@@ -112,15 +128,22 @@ describe("createAskUserToolDefinition", () => {
   it("requires a self-contained context for a new set", async () => {
     const { tool } = toolOverStore();
 
-    await expect(tool.execute("call-bare", { questions: twoQuestions.questions }, undefined, undefined, ctxFor("session-1")))
-      .rejects.toThrow(/context is required/);
+    await expect(tool.execute("call-bare", { questions: twoQuestions.questions }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(
+      /context is required/,
+    );
   });
 
   it("revises an open set in place, or confirms it when nothing else is sent", async () => {
     const { tool, update, store } = toolOverStore();
     await tool.execute("call-1", twoQuestions, undefined, undefined, ctxFor("session-1"));
 
-    const revised = await tool.execute("call-2", { update: "abc-1", questions: [{ id: "db", question: "Which store now?" }] }, undefined, undefined, ctxFor("session-1"));
+    const revised = await tool.execute(
+      "call-2",
+      { update: "abc-1", questions: [{ id: "db", question: "Which store now?" }] },
+      undefined,
+      undefined,
+      ctxFor("session-1"),
+    );
     const confirmed = await tool.execute("call-3", { update: "abc-1" }, undefined, undefined, ctxFor("session-1"));
 
     expect(update).toHaveBeenLastCalledWith({ sessionId: "session-1", askId: "abc-1", context: undefined, questions: undefined });
@@ -139,8 +162,12 @@ describe("createAskUserToolDefinition", () => {
     expect(result.details).toMatchObject({ withdrawn: { askId: "abc-1", reason: "withdrawn", unansweredIds: ["db", "why"] } });
     expect(store.pendingAsks("session-1")).toEqual([]);
     await expect(tool.execute("call-3", { withdraw: "abc-1" }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/No open question set abc-1/);
-    await expect(tool.execute("call-4", { withdraw: "abc-1", context }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/withdraw takes no other parameters/);
-    await expect(tool.execute("call-5", { withdraw: "abc-1", approval: false }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(/withdraw takes no other parameters/);
+    await expect(tool.execute("call-4", { withdraw: "abc-1", context }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(
+      /withdraw takes no other parameters/,
+    );
+    await expect(tool.execute("call-5", { withdraw: "abc-1", approval: false }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(
+      /withdraw takes no other parameters/,
+    );
   });
 
   it("defaults a question without options to an empty option list so free text alone is expressible", async () => {
@@ -157,7 +184,10 @@ describe("createAskUserToolDefinition", () => {
       id: "targets",
       question: "Which targets?",
       detail: "Pick every platform we should build for.",
-      options: [{ value: "web", label: "Web", detail: "Chromium and Firefox" }, { value: "cli", label: "CLI" }],
+      options: [
+        { value: "web", label: "Web", detail: "Chromium and Firefox" },
+        { value: "cli", label: "CLI" },
+      ],
       multiple: true,
     };
 
@@ -175,21 +205,38 @@ describe("createAskUserToolDefinition", () => {
 
     expect(store.pendingAsks("session-1")[0]?.questions[1]?.showIf).toEqual({ question: "db", values: ["pg"] });
     expect(tool.description).toContain("Give a follow-up question `showIf` instead of writing 'If X:' in its text");
-    expect(tool.description).toContain("The user can edit the context; treat an edited context as his version, so put text for approval (a plan, draft or message) there.");
+    expect(tool.description).toContain(
+      "The user can edit the context; treat an edited context as his version, so put text for approval (a plan, draft or message) there.",
+    );
     expect(tool.description).toContain("Unlike ask_human (Telegram, blocks until he replies), it stays in this Chat.");
-    await expect(tool.execute("call-bad", { context, questions: [{ ...dependent, showIf: { question: "later", values: ["pg"] } }] }, undefined, undefined, ctxFor("session-1")))
-      .rejects.toThrow(/must name an earlier question/);
+    await expect(
+      tool.execute(
+        "call-bad",
+        { context, questions: [{ ...dependent, showIf: { question: "later", values: ["pg"] } }] },
+        undefined,
+        undefined,
+        ctxFor("session-1"),
+      ),
+    ).rejects.toThrow(/must name an earlier question/);
   });
 
   it("propagates a rejected question set so the agent loop reports it to the model", async () => {
     const { tool } = toolOverStore();
 
-    await expect(tool.execute("call-dup", {
-      context,
-      questions: [
-        { id: "same", question: "First?", options: [{ value: "a", label: "A" }] },
-        { id: "same", question: "Second?", options: [{ value: "b", label: "B" }] },
-      ],
-    }, undefined, undefined, ctxFor("session-1"))).rejects.toThrow(PendingAskValidationError);
+    await expect(
+      tool.execute(
+        "call-dup",
+        {
+          context,
+          questions: [
+            { id: "same", question: "First?", options: [{ value: "a", label: "A" }] },
+            { id: "same", question: "Second?", options: [{ value: "b", label: "B" }] },
+          ],
+        },
+        undefined,
+        undefined,
+        ctxFor("session-1"),
+      ),
+    ).rejects.toThrow(PendingAskValidationError);
   });
 });

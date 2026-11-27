@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { EXTENSION_STATUS_LIMIT } from "../../shared/apiTypes.js";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const SESSION_ID = "session-1";
 
@@ -33,7 +41,9 @@ describe("PiSessionService extension status bridge", () => {
 
     ui.setStatus("working-mode", "selected");
     expect((await service.status(sessionRef(SESSION_ID))).extensionStatuses).toEqual({ "working-mode": "selected" });
-    expect(events.sessionEvents.some(({ event }) => event.type === "status.update" && event.status.extensionStatuses?.["working-mode"] === "selected")).toBe(true);
+    expect(events.sessionEvents.some(({ event }) => event.type === "status.update" && event.status.extensionStatuses?.["working-mode"] === "selected")).toBe(
+      true,
+    );
 
     ui.setStatus("working-mode", undefined);
     expect((await service.status(sessionRef(SESSION_ID))).extensionStatuses).toBeUndefined();

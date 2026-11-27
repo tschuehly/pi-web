@@ -20,7 +20,11 @@ function fixture(): { base: string; workspaceId: string; project: string; root: 
 
 async function requests(sessionId: string): Promise<{ label: string; sections?: string[] }[]> {
   const log = await readFile(join(fixture().root, "data", "durable", sessionId, "requests.log"), "utf8").catch(() => "");
-  return log.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as { label: string });
+  return log
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { label: string });
 }
 
 test("a proposed pi-run block runs only after Run once, in its folder, and its exit code wakes the idle agent", async ({ page }) => {
@@ -65,7 +69,9 @@ test("a proposed pi-run block runs only after Run once, in its folder, and its e
 
   // It runs once: the same proposal again is refused.
   const entryId = await proposal.first().getAttribute("data-entry-id");
-  const again = await page.request.post(`${base}api/sessions/${encodeURIComponent(sessionId)}/owner-runs`, { data: { cwd: project, entryId, proposal: { mode: "run", cwd: project, command: "pwd; exit 7" } } });
+  const again = await page.request.post(`${base}api/sessions/${encodeURIComponent(sessionId)}/owner-runs`, {
+    data: { cwd: project, entryId, proposal: { mode: "run", cwd: project, command: "pwd; exit 7" } },
+  });
   expect(again.status()).toBe(400);
   expect(await again.json()).toEqual({ error: "This command already ran" });
 });

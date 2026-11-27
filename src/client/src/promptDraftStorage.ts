@@ -4,12 +4,19 @@ export type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 /** All writers in a Workbench window share this boundary, including late async composer/controller callbacks. */
 export function ownedDraftStorage(owns: (sessionKey: string) => boolean, storage: DraftStorage | undefined = browserStorage()): DraftStorage {
   const check = (key: string) => {
-    if (!key.startsWith(draftStoragePrefix) || !owns(key.slice(draftStoragePrefix.length))) throw new Error("Only the Chat's owning window may write its draft");
+    if (!key.startsWith(draftStoragePrefix) || !owns(key.slice(draftStoragePrefix.length)))
+      throw new Error("Only the Chat's owning window may write its draft");
   };
   return {
     getItem: (key) => storage?.getItem(key) ?? null,
-    setItem: (key, value) => { check(key); storage?.setItem(key, value); },
-    removeItem: (key) => { check(key); storage?.removeItem(key); },
+    setItem: (key, value) => {
+      check(key);
+      storage?.setItem(key, value);
+    },
+    removeItem: (key) => {
+      check(key);
+      storage?.removeItem(key);
+    },
   };
 }
 

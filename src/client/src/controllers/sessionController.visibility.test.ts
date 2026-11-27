@@ -12,9 +12,12 @@ function harness(initiallyVisible = false) {
   let state: AppState = {
     ...initialAppState(),
     selectedProject: { id: workspace.projectId, name: "Project", path: workspace.path, createdAt: "now" },
-    selectedWorkspace: workspace, sessions: [oldSession, replacementSession],
+    selectedWorkspace: workspace,
+    sessions: [oldSession, replacementSession],
   };
-  const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
+  const setState = (patch: Partial<AppState>) => {
+    state = { ...state, ...patch };
+  };
   const snapshot = deferred<SessionTranscriptSnapshot>();
   const api: typeof defaultApi = {
     ...defaultApi,
@@ -25,20 +28,41 @@ function harness(initiallyVisible = false) {
   };
   const cache = { read: vi.fn(), write: vi.fn(), remove: vi.fn() };
   const notifications = {
-    prepareSelectedSession: vi.fn(), clearSelectedSession: vi.fn(),
-    refreshSelectedSession: vi.fn().mockResolvedValue(undefined), applyInboxEvent: vi.fn(),
+    prepareSelectedSession: vi.fn(),
+    clearSelectedSession: vi.fn(),
+    refreshSelectedSession: vi.fn().mockResolvedValue(undefined),
+    applyInboxEvent: vi.fn(),
   };
   const socket = new FakeSocket();
   const memory = new InMemorySessionSelectionMemory();
   const updateUrl = vi.fn();
   const ready = vi.fn();
   const controller = new SessionController(() => state, setState, updateUrl, memory, {
-    api, socket, notifications, transcripts: new ChatTranscriptStore(cache),
-    isChatVisible: () => visible, onSelectedSessionReady: ready,
+    api,
+    socket,
+    notifications,
+    transcripts: new ChatTranscriptStore(cache),
+    isChatVisible: () => visible,
+    onSelectedSessionReady: ready,
   });
   return {
-    controller, api, cache, notifications, socket, memory, updateUrl, ready, snapshot,
-    state: () => state, setState, showChat: () => { visible = true; }, hideChat: () => { visible = false; },
+    controller,
+    api,
+    cache,
+    notifications,
+    socket,
+    memory,
+    updateUrl,
+    ready,
+    snapshot,
+    state: () => state,
+    setState,
+    showChat: () => {
+      visible = true;
+    },
+    hideChat: () => {
+      visible = false;
+    },
   };
 }
 

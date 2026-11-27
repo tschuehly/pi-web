@@ -11,9 +11,7 @@ export interface NodePtyNativeModuleCheckOptions {
   load?: LoadNodePty;
 }
 
-export type NodePtyNativeModuleCheck =
-  | { status: "ok" }
-  | { status: "load-failed"; message: string };
+export type NodePtyNativeModuleCheck = { status: "ok" } | { status: "load-failed"; message: string };
 
 export interface FormattedNodePtyNativeModuleCheck {
   ok: boolean;

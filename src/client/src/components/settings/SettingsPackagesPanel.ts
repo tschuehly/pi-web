@@ -7,7 +7,20 @@ import { uiFormStyles } from "../ui/formStyles";
 import { uiSettingsStyles } from "../ui/settingsStyles";
 import "./SettingsPanelFrame";
 import type { SettingsNotice } from "./SettingsPanelFrame";
-import { isPiPackageOperationPending, normalizePiPackageSource, piPackageFilteredLabel, piPackageInstalledPathLabel, piPackageScopeLabel, piPackageSourceValidationMessage, piPackageTargetContext, piPackageTargetLabel, piPackageUpdateDisabledReason, updateAllPiPackagesDisabledReason, type PiPackageOperationState, type PiPackageTargetContext } from "./piPackageSettings";
+import {
+  isPiPackageOperationPending,
+  normalizePiPackageSource,
+  piPackageFilteredLabel,
+  piPackageInstalledPathLabel,
+  piPackageScopeLabel,
+  piPackageSourceValidationMessage,
+  piPackageTargetContext,
+  piPackageTargetLabel,
+  piPackageUpdateDisabledReason,
+  updateAllPiPackagesDisabledReason,
+  type PiPackageOperationState,
+  type PiPackageTargetContext,
+} from "./piPackageSettings";
 
 @customElement("settings-packages-panel")
 export class SettingsPackagesPanel extends LitElement {
@@ -100,17 +113,25 @@ export class SettingsPackagesPanel extends LitElement {
           <strong>${suggestion.label}</strong>
           <small>${suggestion.description}</small>
         </div>
-        <button class="ui-button ui-button--action ui-button--primary" title=${`Install ${suggestion.label}`} aria-label=${`Install ${suggestion.label}`} ?disabled=${this.isOperating} @click=${() => { void this.installKnownPackage(suggestion.source); }}>${installing ? "Installing…" : "Install"}</button>
+        <button class="ui-button ui-button--action ui-button--primary" title=${`Install ${suggestion.label}`} aria-label=${`Install ${suggestion.label}`} ?disabled=${this.isOperating} @click=${() => {
+          void this.installKnownPackage(suggestion.source);
+        }}>${installing ? "Installing…" : "Install"}</button>
       </article>
     `;
   }
 
   private renderInstallForm(targetLabel: string): TemplateResult {
     return html`
-      <form class="install-card ui-settings-section" @submit=${(event: Event) => { void this.installPackage(event); }}>
+      <form class="install-card ui-settings-section" @submit=${(event: Event) => {
+        void this.installPackage(event);
+      }}>
         <label class="ui-form-field" for="package-source">Pi package source</label>
         <div class="install-row">
-          <input class="ui-input" id="package-source" aria-describedby="package-source-help package-source-error" aria-invalid=${this.validationMessage !== "" ? "true" : "false"} .value=${this.installSource} ?disabled=${this.isOperating} placeholder="npm:@scope/package, git URL, or local path" @input=${(event: Event) => { this.updateInstallSource(event); }}>
+          <input class="ui-input" id="package-source" aria-describedby="package-source-help package-source-error" aria-invalid=${this.validationMessage !== "" ? "true" : "false"} .value=${this.installSource} ?disabled=${this.isOperating} placeholder="npm:@scope/package, git URL, or local path" @input=${(
+            event: Event,
+          ) => {
+            this.updateInstallSource(event);
+          }}>
           <button class="ui-button ui-button--action ui-button--primary" type="submit" title="Install this Pi package" ?disabled=${this.isOperating}>${isPiPackageOperationPending(this.operation, "install") ? "Installing…" : "Install"}</button>
         </div>
         <div id="package-source-error" class="field-error" role="alert">${this.validationMessage}</div>
@@ -131,7 +152,9 @@ export class SettingsPackagesPanel extends LitElement {
             <h3>Configured Pi packages</h3>
             <p>This list comes from Pi's package manager settings on ${targetLabel}.</p>
           </div>
-          <button class="secondary ui-button ui-button--action" title=${updateAllTitle} ?disabled=${this.isOperating || updateAllReason !== undefined} @click=${() => { void this.updatePackage(); }}>
+          <button class="secondary ui-button ui-button--action" title=${updateAllTitle} ?disabled=${this.isOperating || updateAllReason !== undefined} @click=${() => {
+            void this.updatePackage();
+          }}>
             ${isPiPackageOperationPending(this.operation, "update-all") ? "Updating…" : "Update all"}
           </button>
         </div>
@@ -165,8 +188,12 @@ export class SettingsPackagesPanel extends LitElement {
           ${updateReason === undefined ? null : html`<small class="action-note">${updateReason}</small>`}
         </div>
         <div class="package-actions ui-settings-actions">
-          <button class="secondary ui-button ui-button--action" aria-label=${`Update ${packageInfo.source}`} title=${updateReason ?? "Update this Pi package"} ?disabled=${this.isOperating || updateReason !== undefined} @click=${() => { void this.updatePackage(packageInfo.source); }}>${updating ? "Updating…" : "Update"}</button>
-          <button class="danger ui-button ui-button--action" aria-label=${`Remove ${packageInfo.source}`} title="Remove this Pi package" ?disabled=${this.isOperating} @click=${() => { void this.removePackage(packageInfo); }}>${removing ? "Removing…" : "Remove"}</button>
+          <button class="secondary ui-button ui-button--action" aria-label=${`Update ${packageInfo.source}`} title=${updateReason ?? "Update this Pi package"} ?disabled=${this.isOperating || updateReason !== undefined} @click=${() => {
+            void this.updatePackage(packageInfo.source);
+          }}>${updating ? "Updating…" : "Update"}</button>
+          <button class="danger ui-button ui-button--action" aria-label=${`Remove ${packageInfo.source}`} title="Remove this Pi package" ?disabled=${this.isOperating} @click=${() => {
+            void this.removePackage(packageInfo);
+          }}>${removing ? "Removing…" : "Remove"}</button>
         </div>
       </article>
     `;
@@ -227,7 +254,11 @@ export class SettingsPackagesPanel extends LitElement {
     return this.operation !== undefined;
   }
 
-  static override styles = [uiButtonStyles, uiFormStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiFormStyles,
+    uiSettingsStyles,
+    css`
     :host { display: block; }
     .package-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px; }
     .package-toolbar > div { flex: 1 1 240px; min-width: 0; }
@@ -252,7 +283,8 @@ export class SettingsPackagesPanel extends LitElement {
       .install-row > .ui-button { justify-self: start; }
       .package-main { flex-basis: 100%; }
     }
-  `];
+  `,
+  ];
 }
 
 function packagesDescription(targetLabel: string): TemplateResult {

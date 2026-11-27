@@ -9,7 +9,10 @@ const b = { id: "test:b", url: "https://example.test/b.css" };
 function deferredSheet() {
   let resolve!: (sheet: CSSStyleSheet) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<CSSStyleSheet>((res, rej) => { resolve = res; reject = rej; });
+  const promise = new Promise<CSSStyleSheet>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   return { promise, resolve, reject };
 }
 
@@ -17,7 +20,9 @@ function shadowRoot(mode: ShadowRootMode = "open") {
   return document.createElement("div").attachShadow({ mode });
 }
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+});
 
 describe("PluginStyleRegistry", () => {
   it("shares one loaded sheet per file across the document, existing and later closed roots", async () => {
@@ -49,7 +54,7 @@ describe("PluginStyleRegistry", () => {
   it("orders by order then identity, not completion, without disturbing component sheets", async () => {
     const first = deferredSheet();
     const second = deferredSheet();
-    const registry = new PluginStyleRegistry((url) => url === a.url ? first.promise : second.promise);
+    const registry = new PluginStyleRegistry((url) => (url === a.url ? first.promise : second.promise));
     const root = shadowRoot();
     registry.registerRoot(root);
     registry.registerRoot(document);
@@ -64,7 +69,9 @@ describe("PluginStyleRegistry", () => {
     const aSheet = new CSSStyleSheet();
     const bSheet = new CSSStyleSheet();
     second.resolve(bSheet);
-    await vi.waitFor(() => { expect(snapshots).toEqual([[bSheet]]); });
+    await vi.waitFor(() => {
+      expect(snapshots).toEqual([[bSheet]]);
+    });
     expect(settled).not.toHaveBeenCalled();
     const later = shadowRoot("closed");
     registry.registerRoot(later);
@@ -77,7 +84,10 @@ describe("PluginStyleRegistry", () => {
     unsubscribe();
     const local = new CSSStyleSheet();
     root.adoptedStyleSheets = [local, ...root.adoptedStyleSheets];
-    await registry.setContributions([{ ...a, order: 20 }, { ...b, order: 10 }]);
+    await registry.setContributions([
+      { ...a, order: 20 },
+      { ...b, order: 10 },
+    ]);
     expect(root.adoptedStyleSheets).toEqual([local, bSheet, aSheet]);
     registry.clear();
   });
@@ -102,7 +112,9 @@ describe("PluginStyleRegistry", () => {
     const update = registry.setContributions([b, theme]);
     expect(root.adoptedStyleSheets).toEqual([]);
     replacement.resolve(themeSheet);
-    await vi.waitFor(() => { expect(root.adoptedStyleSheets).toEqual([themeSheet]); });
+    await vi.waitFor(() => {
+      expect(root.adoptedStyleSheets).toEqual([themeSheet]);
+    });
     expect(signals.get(a.url)?.aborted).toBe(true);
     expect(signals.get(b.url)?.aborted).toBe(false);
     unrelated.resolve(unrelatedSheet);
@@ -115,14 +127,14 @@ describe("PluginStyleRegistry", () => {
   it("does not publish a late load after clear, even when its URL is reused", async () => {
     const stale = deferredSheet();
     const current = deferredSheet();
-    const load = vi.fn<PluginStylesheetLoader>()
-      .mockReturnValueOnce(stale.promise)
-      .mockReturnValueOnce(current.promise);
+    const load = vi.fn<PluginStylesheetLoader>().mockReturnValueOnce(stale.promise).mockReturnValueOnce(current.promise);
     const registry = new PluginStyleRegistry(load);
     const root = shadowRoot();
     registry.registerRoot(root);
     const obsolete = registry.setContributions([a]);
-    await vi.waitFor(() => { expect(load).toHaveBeenCalledTimes(1); });
+    await vi.waitFor(() => {
+      expect(load).toHaveBeenCalledTimes(1);
+    });
     registry.clear();
     registry.registerRoot(root);
     const update = registry.setContributions([a]);
@@ -166,18 +178,19 @@ describe("PluginStyleRegistry", () => {
     const failed = deferredSheet();
     const aSheet = new CSSStyleSheet();
     const bSheet = new CSSStyleSheet();
-    const load = vi.fn<PluginStylesheetLoader>()
-      .mockResolvedValueOnce(aSheet)
-      .mockReturnValueOnce(failed.promise)
-      .mockResolvedValueOnce(bSheet);
+    const load = vi.fn<PluginStylesheetLoader>().mockResolvedValueOnce(aSheet).mockReturnValueOnce(failed.promise).mockResolvedValueOnce(bSheet);
     const registry = new PluginStyleRegistry(load);
     const root = shadowRoot();
     registry.registerRoot(root);
-    const listener = vi.fn(() => { expect(root.adoptedStyleSheets).toContain(aSheet); });
+    const listener = vi.fn(() => {
+      expect(root.adoptedStyleSheets).toContain(aSheet);
+    });
     const unsubscribe = registry.subscribe(listener);
     const update = registry.setContributions([a, b]);
     const failure = expect(update).rejects.toThrow("Failed to load stylesheet test:b (https://example.test/b.css)");
-    await vi.waitFor(() => { expect(root.adoptedStyleSheets).toEqual([aSheet]); });
+    await vi.waitFor(() => {
+      expect(root.adoptedStyleSheets).toEqual([aSheet]);
+    });
     expect(listener).toHaveBeenCalledOnce();
     failed.reject(new Error("network failed"));
     await failure;
@@ -193,9 +206,7 @@ describe("PluginStyleRegistry", () => {
   it("reports all failed contributions while adopting successful sheets in order", async () => {
     const aSheet = new CSSStyleSheet();
     const c = { id: "test:c", url: "https://example.test/c.css" };
-    const registry = new PluginStyleRegistry((url) => url === a.url
-      ? Promise.resolve(aSheet)
-      : Promise.reject(new Error("unavailable")));
+    const registry = new PluginStyleRegistry((url) => (url === a.url ? Promise.resolve(aSheet) : Promise.reject(new Error("unavailable"))));
     const root = shadowRoot();
     registry.registerRoot(root);
     let failure: unknown;
@@ -217,7 +228,7 @@ describe("PluginStyleRegistry", () => {
   it("notifies after adoption in all roots, including removal, but not unchanged or obsolete loads", async () => {
     const pending = deferredSheet();
     const sheet = new CSSStyleSheet();
-    const registry = new PluginStyleRegistry((url) => url === a.url ? Promise.resolve(sheet) : pending.promise);
+    const registry = new PluginStyleRegistry((url) => (url === a.url ? Promise.resolve(sheet) : pending.promise));
     const root = shadowRoot();
     registry.registerRoot(document);
     registry.registerRoot(root);
@@ -255,7 +266,9 @@ describe("PluginStyleRegistry", () => {
     registry.registerRoot(root);
     const failure = new Error("consumer failed");
     const report = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const releaseFailing = registry.subscribe(() => { throw failure; });
+    const releaseFailing = registry.subscribe(() => {
+      throw failure;
+    });
     const listener = vi.fn();
     const release = registry.subscribe(listener);
     try {
@@ -341,7 +354,10 @@ describe("shared UI root opt-in", () => {
 
   it("clears shared-only roots and ignores stale releases after registration is renewed", () => {
     const shared = new CSSStyleSheet();
-    const registry = new PluginStyleRegistry(() => Promise.resolve(new CSSStyleSheet()), () => shared);
+    const registry = new PluginStyleRegistry(
+      () => Promise.resolve(new CSSStyleSheet()),
+      () => shared,
+    );
     const root = shadowRoot();
     const oldRelease = registry.registerRoot(root, { sharedUi: true });
     registry.clear();
@@ -355,8 +371,11 @@ describe("shared UI root opt-in", () => {
 
   it("does not retain a registration when shared stylesheet creation fails", () => {
     const shared = new CSSStyleSheet();
-    const createShared = vi.fn<() => CSSStyleSheet>()
-      .mockImplementationOnce(() => { throw new Error("Cannot compile shared styles"); })
+    const createShared = vi
+      .fn<() => CSSStyleSheet>()
+      .mockImplementationOnce(() => {
+        throw new Error("Cannot compile shared styles");
+      })
       .mockReturnValue(shared);
     const registry = new PluginStyleRegistry(() => Promise.resolve(new CSSStyleSheet()), createShared);
     const root = shadowRoot();
@@ -369,7 +388,10 @@ describe("shared UI root opt-in", () => {
 
   it("restores the shared opt-in when a Lit element reconnects", async () => {
     const shared = new CSSStyleSheet();
-    const registry = new PluginStyleRegistry(() => Promise.resolve(new CSSStyleSheet()), () => shared);
+    const registry = new PluginStyleRegistry(
+      () => Promise.resolve(new CSSStyleSheet()),
+      () => shared,
+    );
     class SharedStyledElement extends LitElement {
       constructor() {
         super();
@@ -399,7 +421,9 @@ it("integrates with the normal Lit root lifecycle, including reconnecting", asyn
       super();
       new PluginStylesController(this, registry);
     }
-    override render() { return html`<button>Example</button>`; }
+    override render() {
+      return html`<button>Example</button>`;
+    }
   }
   customElements.define("test-plugin-styles-lifecycle", StyledElement);
   const element = new StyledElement();

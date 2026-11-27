@@ -46,7 +46,12 @@ describe("extension-dialog-card confirm dialog", () => {
 
   it("disables the answer controls while a close is in flight", async () => {
     let resolveAnswer: (() => void) | undefined;
-    const onAnswer = vi.fn<ExtensionDialogAnswerCallback>(() => new Promise<void>((resolve) => { resolveAnswer = resolve; }));
+    const onAnswer = vi.fn<ExtensionDialogAnswerCallback>(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAnswer = resolve;
+        }),
+    );
     const card = await mountOpenDialog(openDialog(), { onAnswer });
     const root = renderRoot(card);
 
@@ -68,11 +73,14 @@ describe("extension-dialog-card confirm dialog", () => {
 describe("extension-dialog-card select dialog", () => {
   it("answers with the clicked option", async () => {
     const onAnswer = vi.fn<ExtensionDialogAnswerCallback>();
-    const card = await mountOpenDialog(openDialog({
-      kind: "select",
-      title: "Deploy where?",
-      options: ["Staging", "Production"],
-    }), { onAnswer });
+    const card = await mountOpenDialog(
+      openDialog({
+        kind: "select",
+        title: "Deploy where?",
+        options: ["Staging", "Production"],
+      }),
+      { onAnswer },
+    );
     const root = renderRoot(card);
 
     expect(buttonsWithText(root, "Yes")).toHaveLength(0);
@@ -87,11 +95,14 @@ describe("extension-dialog-card select dialog", () => {
 describe("extension-dialog-card input dialog", () => {
   it("sends the typed text and keeps the placeholder and length bound", async () => {
     const onAnswer = vi.fn<ExtensionDialogAnswerCallback>();
-    const card = await mountOpenDialog(openDialog({
-      kind: "input",
-      title: "Name the branch",
-      placeholder: "feature/…",
-    }), { onAnswer });
+    const card = await mountOpenDialog(
+      openDialog({
+        kind: "input",
+        title: "Name the branch",
+        placeholder: "feature/…",
+      }),
+      { onAnswer },
+    );
     const root = renderRoot(card);
     const input = requiredElement(root.querySelector("input"), "dialog input");
 
@@ -298,7 +309,9 @@ function buttonsWithText(root: ShadowRoot, text: string): HTMLButtonElement[] {
 async function flushClose(card: ExtensionDialogCard): Promise<void> {
   // The card's close promise chain settles over several microtasks; a macrotask
   // flush waits for all of them plus the state change they schedule.
-  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
   await card.updateComplete;
 }
 

@@ -20,7 +20,9 @@ async function open(): Promise<InstallLatestDialog> {
   openInstallLatestDialog();
   const dialog = document.querySelector("install-latest-dialog");
   if (dialog === null) throw new Error("no dialog");
-  await vi.waitFor(() => { expect(dialog.renderRoot.querySelector("[role=status]")).toBeNull(); });
+  await vi.waitFor(() => {
+    expect(dialog.renderRoot.querySelector("[role=status]")).toBeNull();
+  });
   await dialog.updateComplete;
   return dialog;
 }
@@ -36,7 +38,9 @@ it("lists the merges and pairs, then installs exactly the installed and latest p
   expect(text).toContain("6438f69 → 7549a70");
   expect(dialog.renderRoot.querySelector(".merges")?.textContent).toContain("pi-web 7549a70 Install latest menu item");
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(dialog.renderRoot.textContent).toContain("Installing, PI WEB restarts in a few seconds."); });
+  await vi.waitFor(() => {
+    expect(dialog.renderRoot.textContent).toContain("Installing, PI WEB restarts in a few seconds.");
+  });
   expect(install).toHaveBeenCalledWith(PREVIEW.installed, PREVIEW.latest, 1);
   expect(button(dialog)).toBeNull();
 });
@@ -67,15 +71,21 @@ it("shows the script's refusal and Check again reloads the preview", async () =>
   const install = vi.spyOn(piWebApi, "installLatest").mockRejectedValueOnce(new Error(moved)).mockResolvedValue({ status: "scheduled" });
   const dialog = await open();
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(dialog.renderRoot.querySelector("[role=alert]")?.textContent).toBe(moved); });
+  await vi.waitFor(() => {
+    expect(dialog.renderRoot.querySelector("[role=alert]")?.textContent).toBe(moved);
+  });
   expect(button(dialog)?.disabled).toBe(false);
   dialog.renderRoot.querySelector<HTMLButtonElement>(".recheck")?.click();
-  await vi.waitFor(() => { expect(dialog.renderRoot.textContent).toContain("1aa26dc → 3cc48fe"); });
+  await vi.waitFor(() => {
+    expect(dialog.renderRoot.textContent).toContain("1aa26dc → 3cc48fe");
+  });
   expect(preview).toHaveBeenCalledTimes(2);
   expect(dialog.renderRoot.querySelector("[role=alert]")).toBeNull();
   expect(dialog.renderRoot.querySelector(".recheck")).toBeNull();
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(install).toHaveBeenLastCalledWith(PREVIEW.installed, newer.latest, 1); });
+  await vi.waitFor(() => {
+    expect(install).toHaveBeenLastCalledWith(PREVIEW.installed, newer.latest, 1);
+  });
 });
 
 it("shows a failed check and offers no install", async () => {
@@ -94,5 +104,7 @@ it("nothing installed yet offers the first install of the latest pair", async ()
   expect(dialog.renderRoot.querySelector(".warning")?.textContent).toContain("refuses if another install happened");
   expect(dialog.renderRoot.querySelector(".warning")?.textContent).toContain("A macOS confirmation appears on this Mac first");
   button(dialog)?.click();
-  await vi.waitFor(() => { expect(install).toHaveBeenCalledWith(none, PREVIEW.latest, 0); });
+  await vi.waitFor(() => {
+    expect(install).toHaveBeenCalledWith(none, PREVIEW.latest, 0);
+  });
 });

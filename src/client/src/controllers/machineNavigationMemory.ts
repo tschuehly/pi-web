@@ -71,10 +71,7 @@ export function emptyMachineNavigationSnapshot(machineId: string): MachineNaviga
   return { machineId, surface: {} };
 }
 
-export function machineNavigationSnapshotFromState(
-  state: AppState,
-  contributionQuery: Readonly<ContributionQueryRecord> = {},
-): MachineNavigationSnapshot {
+export function machineNavigationSnapshotFromState(state: AppState, contributionQuery: Readonly<ContributionQueryRecord> = {}): MachineNavigationSnapshot {
   const hasWorkspace = state.selectedWorkspace !== undefined;
   const boundedQuery = hasWorkspace ? normalizeContributionQueryRecord(contributionQuery) : {};
   const selectedSessionId = state.selectedSession?.id;

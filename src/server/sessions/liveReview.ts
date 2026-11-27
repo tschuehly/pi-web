@@ -21,8 +21,16 @@ export interface LiveReviewPairing {
 export function isLiveReviewPairing(value: unknown): value is LiveReviewPairing {
   if (!isRecord(value)) return false;
   const { reviewerId, model, thinking, trigger, brief, turn, digests, startedAt } = value;
-  return typeof reviewerId === "string" && typeof model === "string" && thinking === "low" && TRIGGERS.some((name) => name === trigger) && BRIEFS.some((name) => name === brief)
-    && Number.isInteger(turn) && Number.isInteger(digests) && typeof startedAt === "string";
+  return (
+    typeof reviewerId === "string"
+    && typeof model === "string"
+    && thinking === "low"
+    && TRIGGERS.some((name) => name === trigger)
+    && BRIEFS.some((name) => name === brief)
+    && Number.isInteger(turn)
+    && Number.isInteger(digests)
+    && typeof startedAt === "string"
+  );
 }
 
 export const LIVE_REVIEW_MODEL = "openai/gpt-6.2-sol";
@@ -62,9 +70,12 @@ export function parsePairCommand(args: string): { stop: true } | { model: string
 
 const cut = (line: string) => (line.length <= MAX_LINE ? line : `${line.slice(0, MAX_LINE)}… (cut)`);
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
-const textOf = (content: unknown) => (typeof content === "string" ? content : Array.isArray(content)
-  ? content.flatMap((part: unknown) => (isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? [part["text"]] : [])).join("\n")
-  : "");
+const textOf = (content: unknown) =>
+  typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.flatMap((part: unknown) => (isRecord(part) && part["type"] === "text" && typeof part["text"] === "string" ? [part["text"]] : [])).join("\n")
+      : "";
 const omitted = (calls: number, lines: number) => `[… ${String(calls)} earlier tool calls and ${String(lines)} earlier lines omitted; read the files listed]`;
 /** Newest paths first, as many as fit in {@link MAX_FILES}; the rest are counted. */
 function filesLine(files: string[]): string {
@@ -80,20 +91,41 @@ function filesLine(files: string[]): string {
 }
 
 /** One field, redacted whole before anything cuts or escapes it (a cut key or an escaped backslash hides a secret). */
-const clean = (text: string, redact: Redact) => redact(text).then((result) => (typeof result === "string" ? result : UNREDACTED), () => UNREDACTED);
+const clean = (text: string, redact: Redact) =>
+  redact(text).then(
+    (result) => (typeof result === "string" ? result : UNREDACTED),
+    () => UNREDACTED,
+  );
 /** Every string in an argument value, each redacted whole, so JSON escaping comes after. */
 async function cleanDeep(value: unknown, redact: Redact): Promise<unknown> {
   if (typeof value === "string") return clean(value, redact);
   if (Array.isArray(value)) return Promise.all(value.map((item) => cleanDeep(item, redact)));
   if (!isRecord(value)) return value;
   // Keys too: a key can hold a secret. Keys the host cannot redact all read as UNREDACTED and collapse into one.
-  return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, item]) => [await clean(key, redact), await cleanDeep(item, redact)] as const)));
+  return Object.fromEntries(
+    await Promise.all(Object.entries(value).map(async ([key, item]) => [await clean(key, redact), await cleanDeep(item, redact)] as const)),
+  );
 }
 
-interface ReviewedEvent { type: string; message?: unknown; toolName?: string; isError?: boolean; text?: string }
-interface Line { text: string; call: boolean }
+interface ReviewedEvent {
+  type: string;
+  message?: unknown;
+  toolName?: string;
+  isError?: boolean;
+  text?: string;
+}
+interface Line {
+  text: string;
+  call: boolean;
+}
 /** A digest taken for delivery; `putBack` returns it when the reviewer did not take it. */
-export interface LiveReviewDigest { text: string; lines: Line[]; files: string[]; omitted: number; omittedLines: number }
+export interface LiveReviewDigest {
+  text: string;
+  lines: Line[];
+  files: string[];
+  omitted: number;
+  omittedLines: number;
+}
 
 /**
  * The main Chat's work since the last digest: owner and assistant text, reasoning, tool calls with their arguments as they
@@ -135,8 +167,15 @@ export class LiveReviewCollector {
     }
     if (event.type !== "message.end" || !isRecord(event.message)) return;
     const { role, content, customType, details } = event.message;
-    if (role === "custom" && customType === "workbench:chat-message" && isRecord(details) && isRecord(details["liveReview"]) && details["liveReview"]["kind"] === "reviewer"
-      && (details["delivery"] === "started" || details["delivery"] === "queued") && !this.#reviewerTurn) {
+    if (
+      role === "custom"
+      && customType === "workbench:chat-message"
+      && isRecord(details)
+      && isRecord(details["liveReview"])
+      && details["liveReview"]["kind"] === "reviewer"
+      && (details["delivery"] === "started" || details["delivery"] === "queued")
+      && !this.#reviewerTurn
+    ) {
       // The owner's turn ended at the boundary this message opened: its part is due, as at a turn end.
       if (this.#fresh) this.#fire();
       [this.#reviewerTurn, this.#calls] = [true, 0];
@@ -149,8 +188,10 @@ export class LiveReviewCollector {
     if (role !== "assistant" || !Array.isArray(content)) return;
     for (const part of content) {
       if (!isRecord(part)) continue;
-      if (part["type"] === "thinking" && typeof part["thinking"] === "string" && part["thinking"].trim() !== "") this.#push(`Reasoning: ${await clean(part["thinking"].trim(), redact)}`);
-      if (part["type"] === "text" && typeof part["text"] === "string" && part["text"].trim() !== "") this.#push(`Assistant: ${await clean(part["text"].trim(), redact)}`);
+      if (part["type"] === "thinking" && typeof part["thinking"] === "string" && part["thinking"].trim() !== "")
+        this.#push(`Reasoning: ${await clean(part["thinking"].trim(), redact)}`);
+      if (part["type"] === "text" && typeof part["text"] === "string" && part["text"].trim() !== "")
+        this.#push(`Assistant: ${await clean(part["text"].trim(), redact)}`);
       if (part["type"] === "toolCall" && typeof part["name"] === "string") {
         const args = await cleanDeep(part["arguments"] ?? {}, redact);
         this.#push(`Tool call ${part["name"]} ${JSON.stringify(args)}`, true);
@@ -209,5 +250,9 @@ export class LiveReviewCollector {
 }
 
 function digestText({ lines, files, omitted: calls, omittedLines }: Omit<LiveReviewDigest, "text">): string {
-  return [...(calls + omittedLines === 0 ? [] : [omitted(calls, omittedLines)]), ...lines.map((line) => line.text), ...(files.length === 0 ? [] : [filesLine(files)])].join("\n");
+  return [
+    ...(calls + omittedLines === 0 ? [] : [omitted(calls, omittedLines)]),
+    ...lines.map((line) => line.text),
+    ...(files.length === 0 ? [] : [filesLine(files)]),
+  ].join("\n");
 }

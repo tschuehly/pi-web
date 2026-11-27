@@ -13,8 +13,16 @@ const session: SessionInfo = { id: "session", path: "/repo/session.jsonl", cwd: 
 const apps = new Set<PiWebApp>();
 
 function status(sessionId = session.id, active = false): SessionStatus {
-  return { sessionId, isStreaming: active, isCompacting: false, isBashRunning: false, pendingMessageCount: 0,
-    queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+  return {
+    sessionId,
+    isStreaming: active,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+  };
 }
 
 async function fixture() {
@@ -25,7 +33,13 @@ async function fixture() {
   const ready: unknown = Reflect.get(app, "builtInPluginsReady");
   if (!(ready instanceof Promise)) throw new Error("Expected built-in plugins");
   await ready;
-  Reflect.set(app, "state", { ...initialAppState(), selectedWorkspace: workspace, selectedSession: session, sessions: [session], status: status(session.id, true) });
+  Reflect.set(app, "state", {
+    ...initialAppState(),
+    selectedWorkspace: workspace,
+    selectedSession: session,
+    sessions: [session],
+    status: status(session.id, true),
+  });
   const invalidate = vi.fn().mockResolvedValue(undefined);
   Reflect.set(app, "invalidateWorkspaceResources", invalidate);
   const sessions: unknown = Reflect.get(app, "sessions");
@@ -72,7 +86,8 @@ describe("PiWebApp runtime-driven file invalidation", () => {
     test.event({ type: "status.update", status: status() });
     await Promise.resolve();
     expect(test.invalidate).toHaveBeenCalledExactlyOnceWith(workspace, expect.objectContaining({ id: "local" }), {
-      reason: "agent-activity", resources: ["workspace.files"],
+      reason: "agent-activity",
+      resources: ["workspace.files"],
     });
   });
 
@@ -99,7 +114,10 @@ describe("PiWebApp runtime-driven file invalidation", () => {
   it.each(["throw", "reject"] as const)("does not turn an independent file-refresh failure into a transcript failure: %s", async (failureMode) => {
     const test = await fixture();
     const failure = new Error("Files unavailable");
-    if (failureMode === "throw") test.invalidate.mockImplementationOnce(() => { throw failure; });
+    if (failureMode === "throw")
+      test.invalidate.mockImplementationOnce(() => {
+        throw failure;
+      });
     else test.invalidate.mockRejectedValueOnce(failure);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await test.readActiveSnapshot();
@@ -114,7 +132,12 @@ describe("PiWebApp runtime-driven file invalidation", () => {
     // Isolate the selected-workspace tool's own explicit navigation refresh.
     Reflect.set(test.app, "refreshSelectedWorkspaceTool", () => undefined);
     Reflect.set(test.app, "refreshWorkspaceDeletionRuns", () => Promise.resolve());
-    invoke(test.app, "setState", { selectedWorkspace: { ...workspace, id: "other", path: "/other" }, selectedSession: undefined, sessions: [], status: undefined } satisfies Partial<AppState>);
+    invoke(test.app, "setState", {
+      selectedWorkspace: { ...workspace, id: "other", path: "/other" },
+      selectedSession: undefined,
+      sessions: [],
+      status: undefined,
+    } satisfies Partial<AppState>);
     test.event({ type: "status.update", status: status() });
     expect(test.invalidate).not.toHaveBeenCalled();
   });

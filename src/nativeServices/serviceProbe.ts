@@ -89,11 +89,7 @@ export class SystemdNativeServiceProbe implements NativeServiceAuthoritativeProb
   }
 
   private async cleanupTimedOutUnit(unitName: string): Promise<NativeServiceProbeResult | null> {
-    const stop = await this.dependencies.commandRunner.run(
-      "systemctl",
-      ["--user", "stop", unitName],
-      this.dependencies.commandTimeoutMs,
-    );
+    const stop = await this.dependencies.commandRunner.run("systemctl", ["--user", "stop", unitName], this.dependencies.commandTimeoutMs);
     const inspected = await this.dependencies.commandRunner.run(
       "systemctl",
       ["--user", "show", unitName, "--property=LoadState", "--value"],
@@ -102,10 +98,7 @@ export class SystemdNativeServiceProbe implements NativeServiceAuthoritativeProb
     if (inspected.kind === "completed" && inspected.status === 0 && inspected.stdout.trim() === "not-found") {
       return null;
     }
-    const details = [
-      `stop: ${commandFailureDetail(stop)}`,
-      `load state: ${commandFailureDetail(inspected)}`,
-    ].join("; ");
+    const details = [`stop: ${commandFailureDetail(stop)}`, `load state: ${commandFailureDetail(inspected)}`].join("; ");
     return infrastructureFailure("cleanup", `Could not confirm cleanup of timed-out transient systemd unit ${unitName}: ${details}`);
   }
 }
@@ -128,31 +121,19 @@ export class LaunchdNativeServiceProbe implements NativeServiceAuthoritativeProb
     let result: NativeServiceProbeResult;
 
     try {
-      directory = await this.dependencies.fileSystem.createTemporaryDirectory(
-        posixPath.join(tmpdir(), "pi-web-launchd-probe-"),
-      );
+      directory = await this.dependencies.fileSystem.createTemporaryDirectory(posixPath.join(tmpdir(), "pi-web-launchd-probe-"));
       const plistPath = posixPath.join(directory, "probe.plist");
       const stdoutPath = posixPath.join(directory, "stdout.log");
       const stderrPath = posixPath.join(directory, "stderr.log");
       const pendingResultPath = posixPath.join(directory, "result.pending");
       const resultPath = posixPath.join(directory, "result.log");
-      const command = prerequisiteProbeCommand(
-        request.shell.name,
-        request.prerequisites,
-        outputPrefix,
-        { pendingPath: pendingResultPath, completedPath: resultPath },
-      );
-      await this.dependencies.fileSystem.writeFile(
-        plistPath,
-        launchdProbePlist(request, label, command, stdoutPath, stderrPath),
-        0o600,
-      );
+      const command = prerequisiteProbeCommand(request.shell.name, request.prerequisites, outputPrefix, {
+        pendingPath: pendingResultPath,
+        completedPath: resultPath,
+      });
+      await this.dependencies.fileSystem.writeFile(plistPath, launchdProbePlist(request, label, command, stdoutPath, stderrPath), 0o600);
 
-      const bootstrap = await this.dependencies.commandRunner.run(
-        "launchctl",
-        ["bootstrap", domain, plistPath],
-        this.dependencies.commandTimeoutMs,
-      );
+      const bootstrap = await this.dependencies.commandRunner.run("launchctl", ["bootstrap", domain, plistPath], this.dependencies.commandTimeoutMs);
       if (bootstrap.kind !== "completed" || bootstrap.status !== 0) {
         bootstrapState = bootstrap.kind === "spawn-failure" ? "not-loaded" : "uncertain";
         result = commandInfrastructureFailure("bootstrap launchd probe", bootstrap);
@@ -177,11 +158,7 @@ export class LaunchdNativeServiceProbe implements NativeServiceAuthoritativeProb
     const deadline = this.dependencies.now() + this.dependencies.probeTimeoutMs;
     while (this.dependencies.now() < deadline) {
       const remainingMs = Math.max(0, deadline - this.dependencies.now());
-      const boundedRead = await readOptionalFileBounded(
-        this.dependencies.fileSystem,
-        resultPath,
-        remainingMs,
-      );
+      const boundedRead = await readOptionalFileBounded(this.dependencies.fileSystem, resultPath, remainingMs);
       if (boundedRead.kind === "deadline") break;
       if (boundedRead.kind === "read-failure") {
         return infrastructureFailure("manager", `Could not read launchd probe result: ${errorMessage(boundedRead.error)}`);
@@ -205,15 +182,8 @@ export class LaunchdNativeServiceProbe implements NativeServiceAuthoritativeProb
       // Bootout is the only race-free cleanup; an explicit not-loaded response
       // is success when bootstrap completion was uncertain.
       const absenceIsSuccess = bootstrapState === "uncertain";
-      const bootout = await this.dependencies.commandRunner.run(
-        "launchctl",
-        ["bootout", target],
-        this.dependencies.commandTimeoutMs,
-      );
-      if (
-        (bootout.kind !== "completed" || bootout.status !== 0)
-        && !(absenceIsSuccess && launchdTargetNotLoaded(bootout))
-      ) {
+      const bootout = await this.dependencies.commandRunner.run("launchctl", ["bootout", target], this.dependencies.commandTimeoutMs);
+      if ((bootout.kind !== "completed" || bootout.status !== 0) && !(absenceIsSuccess && launchdTargetNotLoaded(bootout))) {
         failures.push(`bootout failed: ${commandFailureDetail(bootout)}`);
       }
     }
@@ -224,9 +194,7 @@ export class LaunchdNativeServiceProbe implements NativeServiceAuthoritativeProb
         failures.push(`temporary-file removal failed: ${errorMessage(error)}`);
       }
     }
-    return failures.length === 0
-      ? null
-      : infrastructureFailure("cleanup", `Launchd probe cleanup failed for ${target}: ${failures.join("; ")}`);
+    return failures.length === 0 ? null : infrastructureFailure("cleanup", `Launchd probe cleanup failed for ${target}: ${failures.join("; ")}`);
   }
 }
 
@@ -248,15 +216,11 @@ export function createNativeServiceAuthoritativeProbe(): NativeServiceAuthoritat
     pollIntervalMs: defaultPollIntervalMs,
   });
   return {
-    run: (request) => request.backend.kind === "systemd" ? systemd.run(request) : launchd.run(request),
+    run: (request) => (request.backend.kind === "systemd" ? systemd.run(request) : launchd.run(request)),
   };
 }
 
-export function systemdRunArguments(
-  request: NativeServiceProbeRequest,
-  unitName: string,
-  shellCommand: string,
-): readonly string[] {
+export function systemdRunArguments(request: NativeServiceProbeRequest, unitName: string, shellCommand: string): readonly string[] {
   return [
     "--user",
     "--wait",
@@ -279,23 +243,16 @@ function escapeSystemdCommandExpansion(value: string): string {
   return value.replaceAll("$", () => "$$");
 }
 
-export function launchdProbePlist(
-  request: NativeServiceProbeRequest,
-  label: string,
-  shellCommand: string,
-  stdoutPath: string,
-  stderrPath: string,
-): string {
+export function launchdProbePlist(request: NativeServiceProbeRequest, label: string, shellCommand: string, stdoutPath: string, stderrPath: string): string {
   const argumentsXml = ["/usr/bin/env", request.shell.executable, "-lc", shellCommand]
     .map((argument) => `    <string>${xmlEscape(argument)}</string>`)
     .join("\n");
   const environmentEntries = Object.entries(request.environment);
-  const environmentXml = environmentEntries.length === 0
-    ? ""
-    : `  <key>EnvironmentVariables</key>\n  <dict>\n${environmentEntries.map(([key, value]) => plistString(key, value, "    ")).join("")}  </dict>\n`;
-  const workingDirectoryXml = request.workingDirectory === null
-    ? ""
-    : plistString("WorkingDirectory", request.workingDirectory);
+  const environmentXml =
+    environmentEntries.length === 0
+      ? ""
+      : `  <key>EnvironmentVariables</key>\n  <dict>\n${environmentEntries.map(([key, value]) => plistString(key, value, "    ")).join("")}  </dict>\n`;
+  const workingDirectoryXml = request.workingDirectory === null ? "" : plistString("WorkingDirectory", request.workingDirectory);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -352,9 +309,15 @@ export class SpawnProbeCommandRunner implements ProbeCommandRunner {
 
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => { capture("stdout", chunk); });
-      child.stderr.on("data", (chunk: string) => { capture("stderr", chunk); });
-      child.on("error", (error) => { spawnFailure = error.message; });
+      child.stdout.on("data", (chunk: string) => {
+        capture("stdout", chunk);
+      });
+      child.stderr.on("data", (chunk: string) => {
+        capture("stderr", chunk);
+      });
+      child.on("error", (error) => {
+        spawnFailure = error.message;
+      });
       const timeout = setTimeout(() => {
         finish({ kind: "timeout", stdout, stderr }, true);
       }, timeoutMs);
@@ -387,26 +350,25 @@ function readOptionalFileBounded(
   fileSystem: LaunchdProbeFileSystem,
   path: string,
   timeoutMs: number,
-): Promise<
-  | { kind: "read"; output: string | null }
-  | { kind: "read-failure"; error: unknown }
-  | { kind: "deadline" }
-> {
+): Promise<{ kind: "read"; output: string | null } | { kind: "read-failure"; error: unknown } | { kind: "deadline" }> {
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (result:
-      | { kind: "read"; output: string | null }
-      | { kind: "read-failure"; error: unknown }
-      | { kind: "deadline" }): void => {
+    const finish = (result: { kind: "read"; output: string | null } | { kind: "read-failure"; error: unknown } | { kind: "deadline" }): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       resolve(result);
     };
-    const timeout = setTimeout(() => { finish({ kind: "deadline" }); }, timeoutMs);
+    const timeout = setTimeout(() => {
+      finish({ kind: "deadline" });
+    }, timeoutMs);
     void fileSystem.readOptionalFile(path).then(
-      (output) => { finish({ kind: "read", output }); },
-      (error: unknown) => { finish({ kind: "read-failure", error }); },
+      (output) => {
+        finish({ kind: "read", output });
+      },
+      (error: unknown) => {
+        finish({ kind: "read-failure", error });
+      },
     );
   });
 }
@@ -418,13 +380,16 @@ function prerequisiteProbeCommand(
   resultFiles?: { pendingPath: string; completedPath: string },
 ): string {
   const markerPath = resultFiles?.pendingPath;
-  const checks = prerequisites.map((prerequisite) => {
-    const check = nativeServicePrerequisiteShellCheck(shell, prerequisite);
-    const encodedId = Buffer.from(prerequisite.id, "utf8").toString("base64");
-    const satisfied = markerCommand(shell, outputPrefix, encodedId, "satisfied", markerPath);
-    const unsatisfied = markerCommand(shell, outputPrefix, encodedId, "unsatisfied", markerPath);
-    return `${check} >/dev/null 2>&1 && ${satisfied} || ${unsatisfied}`;
-  }).join("; ") || ":";
+  const checks =
+    prerequisites
+      .map((prerequisite) => {
+        const check = nativeServicePrerequisiteShellCheck(shell, prerequisite);
+        const encodedId = Buffer.from(prerequisite.id, "utf8").toString("base64");
+        const satisfied = markerCommand(shell, outputPrefix, encodedId, "satisfied", markerPath);
+        const unsatisfied = markerCommand(shell, outputPrefix, encodedId, "unsatisfied", markerPath);
+        return `${check} >/dev/null 2>&1 && ${satisfied} || ${unsatisfied}`;
+      })
+      .join("; ") || ":";
   if (resultFiles === undefined) return checks;
   const pending = shellQuote(shell, resultFiles.pendingPath);
   const completed = shellQuote(shell, resultFiles.completedPath);
@@ -442,7 +407,8 @@ export function nativeServicePrerequisiteShellCheck(shell: NativeServiceShellNam
       return `test -f ${path} && test -r ${path}`;
     }
     case "package-scripts": {
-      const script = "const p=require(process.argv[1]);const names=process.argv.slice(2);process.exit(names.every((name)=>typeof p.scripts?.[name]==='string')?0:1)";
+      const script =
+        "const p=require(process.argv[1]);const names=process.argv.slice(2);process.exit(names.every((name)=>typeof p.scripts?.[name]==='string')?0:1)";
       return externalExecutableShellCheck(shell, "node", ["-e", script, prerequisite.packageJsonPath, ...prerequisite.scripts]);
     }
   }
@@ -453,11 +419,7 @@ export function nodeVersionCheckScript(minimumVersion: string): string {
   return `const version=process.argv[1]??process.versions.node;console.log(process.version);const current=version.split('.').map(Number);const minimum=${encodedMinimum}.split('.').map(Number);const length=Math.max(current.length,minimum.length);let comparison=0;for(let index=0;index<length;index+=1){const left=current[index]??0;const right=minimum[index]??0;if(left!==right){comparison=left>right?1:-1;break}}process.exit(comparison>=0?0:1)`;
 }
 
-function externalExecutableShellCheck(
-  shell: NativeServiceShellName,
-  command: string,
-  arguments_: readonly string[] = [],
-): string {
+function externalExecutableShellCheck(shell: NativeServiceShellName, command: string, arguments_: readonly string[] = []): string {
   const quotedCommand = shellQuote(shell, command);
   const quotedArguments = arguments_.map((argument) => shellQuote(shell, argument)).join(" ");
   if (shell === "fish") {
@@ -479,15 +441,8 @@ function markerCommand(
   return `printf '%s\\t%s\\t%s\\n' ${shellQuote(shell, outputPrefix)} ${shellQuote(shell, encodedId)} ${shellQuote(shell, status)}${redirect}`;
 }
 
-function parseProbeOutput(
-  stdout: string,
-  prerequisites: readonly NativeServicePrerequisite[],
-  outputPrefix: string,
-): NativeServiceProbeResult {
-  const expected = new Map(prerequisites.map((prerequisite) => [
-    Buffer.from(prerequisite.id, "utf8").toString("base64"),
-    prerequisite,
-  ]));
+function parseProbeOutput(stdout: string, prerequisites: readonly NativeServicePrerequisite[], outputPrefix: string): NativeServiceProbeResult {
+  const expected = new Map(prerequisites.map((prerequisite) => [Buffer.from(prerequisite.id, "utf8").toString("base64"), prerequisite]));
   const outcomes = new Map<string, NativeServicePrerequisiteOutcome>();
   for (const line of stdout.split(/\r?\n/u)) {
     if (!line.startsWith(`${outputPrefix}\t`)) continue;
@@ -531,13 +486,14 @@ function unsatisfiedDetail(prerequisite: NativeServicePrerequisite): string {
 }
 
 function shellQuote(shell: NativeServiceShellName, value: string): string {
-  return shell === "fish"
-    ? `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`
-    : `'${value.replaceAll("'", "'\\''")}'`;
+  return shell === "fish" ? `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'` : `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function safeUniqueId(value: string): string {
-  const safe = value.toLowerCase().replaceAll(/[^a-z0-9-]/gu, "").slice(0, 48);
+  const safe = value
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9-]/gu, "")
+    .slice(0, 48);
   return safe === "" ? "probe" : safe;
 }
 
@@ -551,12 +507,7 @@ function plistString(key: string, value: string, indent = "  "): string {
 }
 
 function xmlEscape(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
 function commandInfrastructureFailure(action: string, result: ProbeCommandResult): NativeServiceProbeResult {
@@ -571,16 +522,16 @@ function commandFailureDetail(result: ProbeCommandResult): string {
   return firstOutput(result.stderr, result.stdout, `exit status ${String(result.status)}`);
 }
 
-function infrastructureFailure(
-  reason: "manager" | "timeout" | "malformed-output" | "cleanup",
-  message: string,
-): NativeServiceProbeResult {
+function infrastructureFailure(reason: "manager" | "timeout" | "malformed-output" | "cleanup", message: string): NativeServiceProbeResult {
   return { kind: "infrastructure-failure", reason, message };
 }
 
 function firstOutput(...values: string[]): string {
   for (const value of values) {
-    const line = value.trim().split(/\r?\n/u).find((candidate) => candidate.trim() !== "");
+    const line = value
+      .trim()
+      .split(/\r?\n/u)
+      .find((candidate) => candidate.trim() !== "");
     if (line !== undefined) return line.trim();
   }
   return "no output";

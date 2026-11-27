@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import type { ExtensionDialogCloseResponse, ExtensionDialogKind, PendingExtensionDialog } from "../api";
 import { SessionController } from "./sessionController";
-import { defaultApi, EmitSocket, emptyPage, FakeSocket, oldSession, status, workspace, type AppState, type SessionStatus } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  EmitSocket,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  status,
+  workspace,
+  type AppState,
+  type SessionStatus,
+} from "./sessionController.testSupport";
 
 function dialog(dialogId: string, kind: ExtensionDialogKind = "confirm"): PendingExtensionDialog {
   return {
@@ -65,7 +75,9 @@ async function liveSession(patch: Partial<AppState> = {}, sessionStatus = status
   let state = selectedState({ selectedSession: undefined, ...patch });
   const controller = new SessionController(
     () => state,
-    (statePatch) => { state = { ...state, ...statePatch }; },
+    (statePatch) => {
+      state = { ...state, ...statePatch };
+    },
     () => undefined,
     undefined,
     { api: selectableApi(sessionStatus), socket },
@@ -184,7 +196,9 @@ describe("SessionController extension dialog answers", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -214,7 +228,9 @@ describe("SessionController extension dialog answers", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -235,7 +251,9 @@ describe("SessionController extension dialog answers", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -253,7 +271,9 @@ describe("SessionController extension dialog answers", () => {
     const api: typeof defaultApi = { ...defaultApi, answerDialog: () => Promise.reject(new Error("answer failed")) };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -279,7 +299,9 @@ describe("SessionController extension dialog answers", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

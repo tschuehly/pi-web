@@ -62,20 +62,14 @@ export function createGitWorkspaceProvider(context: ServerPluginActivationContex
       if (result.signal !== null) throw new Error(`git repository probe ended from signal ${result.signal}`);
       if (result.exitCode !== 0) return "pass";
       if (result.stdout.trim() !== "true") return "pass";
-      const root = await requireGit(
-        runGit(context, project.path, ["rev-parse", "--show-toplevel"], signal),
-        "resolve the Git worktree root",
-      );
+      const root = await requireGit(runGit(context, project.path, ["rev-parse", "--show-toplevel"], signal), "resolve the Git worktree root");
       if (root.stdout.trim() === "") throw new Error("Git returned an empty worktree root");
       // Folder projects keep their exact working directory; only checkout
       // roots opt into worktree discovery and management.
       return resolve(root.stdout.trim()) === resolve(project.path) ? "claim" : "pass";
     },
     async list(project: ProjectInput, signal: AbortSignal): Promise<ProviderWorkspace[]> {
-      const rootResult = await requireGit(
-        runGit(context, project.path, ["rev-parse", "--show-toplevel"], signal),
-        "resolve the Git worktree root",
-      );
+      const rootResult = await requireGit(runGit(context, project.path, ["rev-parse", "--show-toplevel"], signal), "resolve the Git worktree root");
       const mainRootOutput = rootResult.stdout.trim();
       if (mainRootOutput === "") throw new Error("Git returned an empty worktree root");
       const mainRoot = resolve(mainRootOutput);
@@ -87,10 +81,7 @@ export function createGitWorkspaceProvider(context: ServerPluginActivationContex
       if (commonDirectoryOutput === "") throw new Error("Git returned an empty common directory");
       const commonDirectory = resolve(project.path, commonDirectoryOutput);
 
-      const listResult = await requireGit(
-        runGit(context, project.path, ["worktree", "list", "--porcelain", "-z"], signal),
-        "list Git worktrees",
-      );
+      const listResult = await requireGit(runGit(context, project.path, ["worktree", "list", "--porcelain", "-z"], signal), "list Git worktrees");
       const worktrees = parseGitWorktreeList(listResult.stdout)
         .filter((worktree) => worktree.bare !== true)
         .map((worktree) => {
@@ -100,9 +91,7 @@ export function createGitWorkspaceProvider(context: ServerPluginActivationContex
       // Prefer the checkout Git identifies for the registered project. A
       // submodule is the exception: its sole worktree record points at common
       // storage under the superproject instead of at --show-toplevel.
-      const mainWorkspacePath = worktrees.some(({ path }) => path === mainRoot)
-        ? mainRoot
-        : commonDirectory;
+      const mainWorkspacePath = worktrees.some(({ path }) => path === mainRoot) ? mainRoot : commonDirectory;
       const selectable = worktrees
         .map(({ worktree, path }) => ({ worktree, path, isMain: path === mainWorkspacePath }))
         .filter(({ worktree, path, isMain }) => worktree.prunable !== true || isMain || path === project.path);
@@ -138,8 +127,7 @@ export function createGitWorkspaceProvider(context: ServerPluginActivationContex
         runGit(context, project.path, ["worktree", "list", "--porcelain", "-z"], signal),
         "validate the Git worktree before removal",
       );
-      const current = parseGitWorktreeList(listResult.stdout)
-        .find((worktree) => resolve(worktree.path) === workspace.path);
+      const current = parseGitWorktreeList(listResult.stdout).find((worktree) => resolve(worktree.path) === workspace.path);
       if (current === undefined || current.prunable === true) {
         throw new Error("Git worktree is no longer available for removal");
       }
@@ -206,12 +194,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-async function runGit(
-  context: ServerPluginActivationContext,
-  cwd: string,
-  args: readonly string[],
-  signal: AbortSignal,
-): Promise<ServerPluginExecFileResult> {
+async function runGit(context: ServerPluginActivationContext, cwd: string, args: readonly string[], signal: AbortSignal): Promise<ServerPluginExecFileResult> {
   const result = await context.execFile({
     file: "git",
     args: ["-C", cwd, ...args],
@@ -225,10 +208,7 @@ async function runGit(
   return result;
 }
 
-async function requireGit(
-  resultPromise: Promise<ServerPluginExecFileResult>,
-  action: string,
-): Promise<ServerPluginExecFileResult> {
+async function requireGit(resultPromise: Promise<ServerPluginExecFileResult>, action: string): Promise<ServerPluginExecFileResult> {
   const result = await resultPromise;
   if (result.signal === null && result.exitCode === 0) return result;
   const detail = result.stderr.trim();

@@ -14,7 +14,10 @@ export class PanelCollapseController implements ReactiveController {
     return;
   }
 
-  constructor(private readonly host: ReactiveControllerHost, options: { storage?: PanelCollapseStorage } = {}) {
+  constructor(
+    private readonly host: ReactiveControllerHost,
+    options: { storage?: PanelCollapseStorage } = {},
+  ) {
     host.addController(this);
     this.storage = options.storage ?? browserPanelCollapseStorage();
     try {
@@ -53,11 +56,14 @@ export class PanelCollapseController implements ReactiveController {
 
   private persistAndUpdate(): void {
     try {
-      this.storage?.setItem(PANEL_COLLAPSE_STORAGE_KEY, JSON.stringify({
-        version: 1,
-        navigationPanelCollapsed: this.navigationPanelCollapsed,
-        workspacePanelCollapsed: this.workspacePanelCollapsed,
-      }));
+      this.storage?.setItem(
+        PANEL_COLLAPSE_STORAGE_KEY,
+        JSON.stringify({
+          version: 1,
+          navigationPanelCollapsed: this.navigationPanelCollapsed,
+          workspacePanelCollapsed: this.workspacePanelCollapsed,
+        }),
+      );
     } catch (error) {
       // Storage restrictions must not prevent changing the layout in this tab.
       console.warn("Could not save panel collapse preferences", error);

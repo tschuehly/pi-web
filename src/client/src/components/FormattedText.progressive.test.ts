@@ -10,27 +10,48 @@ import * as markdown from "../formatting/markdown";
 import { advanceContentFrame, settleDeferredContent, useDeferredContent } from "../formatting/deferredContent.testSupport";
 
 useDeferredContent();
-afterEach(() => { localStorage.clear(); });
+afterEach(() => {
+  localStorage.clear();
+});
 
 function viewport() {
   const targets = new Map<Element, { callback: IntersectionObserverCallback; observer: IntersectionObserver }>();
-  vi.stubGlobal("IntersectionObserver", class implements IntersectionObserver {
-    readonly root = null;
-    readonly rootMargin = "0px";
-    readonly scrollMargin = "0px";
-    readonly thresholds = [0];
-    constructor(private readonly callback: IntersectionObserverCallback) {}
-    observe(target: Element) { targets.set(target, { callback: this.callback, observer: this }); }
-    unobserve(target: Element) { targets.delete(target); }
-    takeRecords(): IntersectionObserverEntry[] { return []; }
-    disconnect() { for (const [target, entry] of targets) if (entry.observer === this) targets.delete(target); }
-  });
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class implements IntersectionObserver {
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly scrollMargin = "0px";
+      readonly thresholds = [0];
+      constructor(private readonly callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        targets.set(target, { callback: this.callback, observer: this });
+      }
+      unobserve(target: Element) {
+        targets.delete(target);
+      }
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      disconnect() {
+        for (const [target, entry] of targets) if (entry.observer === this) targets.delete(target);
+      }
+    },
+  );
   return (target: Element, ...intersections: boolean[]) => {
     const entry = targets.get(target);
-    entry?.callback(intersections.map((isIntersecting) => ({
-      target, isIntersecting, time: performance.now(), intersectionRatio: isIntersecting ? 1 : 0,
-      boundingClientRect: target.getBoundingClientRect(), intersectionRect: new DOMRectReadOnly(), rootBounds: null,
-    })), entry.observer);
+    entry?.callback(
+      intersections.map((isIntersecting) => ({
+        target,
+        isIntersecting,
+        time: performance.now(),
+        intersectionRatio: isIntersecting ? 1 : 0,
+        boundingClientRect: target.getBoundingClientRect(),
+        intersectionRect: new DOMRectReadOnly(),
+        rootBounds: null,
+      })),
+      entry.observer,
+    );
   };
 }
 
@@ -39,7 +60,7 @@ it("paints escaped source before Markdown, renderer inspection, and plugin execu
   const draw = vi.fn<ContentRendererContribution["render"]>(() => html`<b>Enhanced</b>`);
   const select = vi.fn(() => [{ id: "test", label: "Test", renderer: { id: "test", renderMode: "automatic" as const, render: draw } }]);
   const view = new FormattedText();
-  view.text = '**Readable**\n\n```test\n<script>unsafe()</script>\n```';
+  view.text = "**Readable**\n\n```test\n<script>unsafe()</script>\n```";
   view.contentRendering = createContentRenderingService(select);
   document.body.append(view);
   await view.updateComplete;
@@ -103,7 +124,9 @@ it("falls back to the latest source if formatting a streaming update fails", asy
   view.text = "**Original**";
   document.body.append(view);
   await settleDeferredContent(view);
-  vi.spyOn(markdown, "toSafeMarkdownHtml").mockImplementation(() => { throw new Error("Formatting failed"); });
+  vi.spyOn(markdown, "toSafeMarkdownHtml").mockImplementation(() => {
+    throw new Error("Formatting failed");
+  });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   view.text += " latest words";
   await settleDeferredContent(view);
@@ -218,7 +241,9 @@ it("cancels queued formatting on detach and resumes the latest content on reconn
 
 it("keeps Markdown readable when inspection fails and lets other content finish", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-  const inspect = vi.fn(() => { throw new Error("Plugin inspection failed"); });
+  const inspect = vi.fn(() => {
+    throw new Error("Plugin inspection failed");
+  });
   const first = new FormattedText();
   first.text = "**First**";
   first.contentRendering = { renderMarkdown: inspect };
@@ -294,8 +319,12 @@ it("announces a formatting swap before it moves layout, so a scroller without na
   document.body.append(view);
   await view.updateComplete;
   const seen: string[] = [];
-  view.addEventListener("content-layout-will-change", () => { seen.push(`will:${String(view.renderRoot.querySelector("strong") !== null)}`); });
-  view.addEventListener("content-layout-changed", () => { seen.push(`changed:${String(view.renderRoot.querySelector("strong") !== null)}`); });
+  view.addEventListener("content-layout-will-change", () => {
+    seen.push(`will:${String(view.renderRoot.querySelector("strong") !== null)}`);
+  });
+  view.addEventListener("content-layout-changed", () => {
+    seen.push(`changed:${String(view.renderRoot.querySelector("strong") !== null)}`);
+  });
   await advanceContentFrame(view);
   expect(seen).toEqual(["will:false", "changed:true"]);
 });

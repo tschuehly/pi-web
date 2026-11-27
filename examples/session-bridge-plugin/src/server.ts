@@ -49,7 +49,10 @@ const plugin = {
           try {
             // Persist before starting work. Browser cancellation after admission does not own the run.
             await store.save(scope, record);
-          } catch (error) { active.delete(scope); throw error; }
+          } catch (error) {
+            active.delete(scope);
+            throw error;
+          }
           const task = (async () => {
             try {
               host.lifetimeSignal.throwIfAborted();
@@ -58,27 +61,42 @@ const plugin = {
               await store.save(scope, record);
               host.lifetimeSignal.throwIfAborted();
               const connection = await sessionEvents.connect({ ...selection, sessionId: record.sessionId });
-              try { record.text = await collectReview(connection, record.id, host.lifetimeSignal); }
-              finally { connection.close(); }
+              try {
+                record.text = await collectReview(connection, record.id, host.lifetimeSignal);
+              } finally {
+                connection.close();
+              }
               record.status = "completed";
             } catch (error) {
               record.status = "failed";
               record.text = (error instanceof Error ? error.message : String(error)).slice(0, 4000);
             }
-            try { await store.save(scope, record); }
-            catch (error) {
+            try {
+              await store.save(scope, record);
+            } catch (error) {
               record.status = "failed";
-              record.text = `Could not save review: ${error instanceof Error ? error.message : String(error)}. Inspect session ${record.sessionId}.`.slice(0, 4000);
+              record.text = `Could not save review: ${error instanceof Error ? error.message : String(error)}. Inspect session ${record.sessionId}.`.slice(
+                0,
+                4000,
+              );
               unsaved.set(record.id, { ...record });
               host.logger.error(record.text);
-            } finally { active.delete(scope); }
+            } finally {
+              active.delete(scope);
+            }
           })();
           tasks.add(task);
-          void task.finally(() => { tasks.delete(task); });
+          void task.finally(() => {
+            tasks.delete(task);
+          });
           return { ...record };
         },
       },
-      async dispose() { await Promise.all(tasks); active.clear(); unsaved.clear(); },
+      async dispose() {
+        await Promise.all(tasks);
+        active.clear();
+        unsaved.clear();
+      },
     };
   },
 } satisfies PiWebServerPlugin;

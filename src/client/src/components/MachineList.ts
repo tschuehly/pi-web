@@ -30,13 +30,20 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
   @property({ attribute: false }) onFocusNextSection?: () => void | Promise<void>;
   @property({ attribute: false }) onCancelKeyboardNavigation?: () => void | Promise<void>;
   @state() private openMenuMachineId: string | undefined;
-  readonly actionMenu = createActionMenuController(this, () => {
-    const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-machine-id]")].find((item) => item.dataset["machineId"] === this.openMenuMachineId);
-    return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
-  }, () => { this.openMenuMachineId = undefined; });
+  readonly actionMenu = createActionMenuController(
+    this,
+    () => {
+      const row = [...this.renderRoot.querySelectorAll<HTMLElement>("[data-machine-id]")].find((item) => item.dataset["machineId"] === this.openMenuMachineId);
+      return row?.querySelector<HTMLElement>(".action-menu-toggle") ?? undefined;
+    },
+    () => {
+      this.openMenuMachineId = undefined;
+    },
+  );
 
   protected override updated(changed: PropertyValues<this>): void {
-    if (changed.has("machines") && this.openMenuMachineId !== undefined && !this.machines.some((machine) => machine.id === this.openMenuMachineId)) this.openMenuMachineId = undefined;
+    if (changed.has("machines") && this.openMenuMachineId !== undefined && !this.machines.some((machine) => machine.id === this.openMenuMachineId))
+      this.openMenuMachineId = undefined;
     if (changed.has("collapsed") && this.collapsed) this.openMenuMachineId = undefined;
   }
 
@@ -49,11 +56,15 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
     return html`
       <section>
         <h2 class="ui-toolbar">${this.renderHeading()}</h2>
-        ${this.collapsed ? null : html`
+        ${
+          this.collapsed
+            ? null
+            : html`
           <div class="list-body">
             ${this.machines.map((machine) => this.renderMachine(machine))}
           </div>
-        `}
+        `
+        }
       </section>
     `;
   }
@@ -68,11 +79,15 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
         tabindex="0"
         title=${machine.baseUrl ?? machine.name}
         data-machine-id=${machine.id}
-        @click=${(event: MouseEvent) => { activateSelectableRow(event, () => this.onSelect?.(machine)); }}
-        @keydown=${(event: KeyboardEvent) => { this.handleMachineKeydown(event, machine); }}
+        @click=${(event: MouseEvent) => {
+          activateSelectableRow(event, () => this.onSelect?.(machine));
+        }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.handleMachineKeydown(event, machine);
+        }}
       >
         <div class="action-main">
-          <span class="action-name machine-primary"><span class="machine-primary-label">${machine.name}</span></span><small>${machine.kind === "local" ? "Local Pi Web" : machine.baseUrl ?? "Remote Pi Web"} · ${statusLabel}</small>
+          <span class="action-name machine-primary"><span class="machine-primary-label">${machine.name}</span></span><small>${machine.kind === "local" ? "Local Pi Web" : (machine.baseUrl ?? "Remote Pi Web")} · ${statusLabel}</small>
           ${this.renderActivity(machine)}
         </div>
         ${hasRemoveAction ? this.renderMachineMenu(machine) : null}
@@ -101,13 +116,24 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
           aria-label=${`Actions for ${machine.name}`}
           aria-expanded=${String(open)}
           aria-controls=${menuId}
-          @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleMenu(machine.id); }}
+          @click=${(event: MouseEvent) => {
+            event.stopPropagation();
+            this.toggleMenu(machine.id);
+          }}
         >⋯</button>
-        ${open ? html`
-          <div popover="auto" class="action-menu-panel machine-menu-panel ui-menu" id=${menuId} @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
-            <button class="danger ui-button ui-menu-item" title=${`Remove ${machine.name}`} @click=${() => { this.removeMachine(machine); }}>Remove</button>
+        ${
+          open
+            ? html`
+          <div popover="auto" class="action-menu-panel machine-menu-panel ui-menu" id=${menuId} @click=${(event: MouseEvent) => {
+            event.stopPropagation();
+          }}>
+            <button class="danger ui-button ui-menu-item" title=${`Remove ${machine.name}`} @click=${() => {
+              this.removeMachine(machine);
+            }}>Remove</button>
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
     `;
   }
@@ -116,7 +142,9 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
     if (!this.collapsible) return html`<span>Machines</span>`;
     const selectedSummary = this.selected?.name ?? "No machine selected";
     const selectedTitle = this.selected?.baseUrl ?? selectedSummary;
-    return html`<button class="ui-button ui-toolbar-title section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => { this.onToggleCollapsed?.(); }}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} Machines</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.machines.length}</small></button>`;
+    return html`<button class="ui-button ui-toolbar-title section-toggle" aria-expanded=${String(!this.collapsed)} @click=${() => {
+      this.onToggleCollapsed?.();
+    }}><span class="section-title"><span class="section-name">${this.collapsed ? "▸" : "▾"} Machines</span>${this.collapsed ? html`<small class="section-selected" title=${selectedTitle}>${selectedSummary}</small>` : null}</span><small class="section-count">${this.machines.length}</small></button>`;
   }
 
   private toggleMenu(machineId: string): void {
@@ -141,8 +169,18 @@ export class MachineList extends LitElement implements KeyboardNavigableSection 
     }
     handleSelectableRowKeyboard(event, {
       activate: () => this.onSelect?.(machine),
-      nextSection: this.onFocusNextSection === undefined ? undefined : () => { void this.onFocusNextSection?.(); },
-      cancel: this.onCancelKeyboardNavigation === undefined ? undefined : () => { void this.onCancelKeyboardNavigation?.(); },
+      nextSection:
+        this.onFocusNextSection === undefined
+          ? undefined
+          : () => {
+              void this.onFocusNextSection?.();
+            },
+      cancel:
+        this.onCancelKeyboardNavigation === undefined
+          ? undefined
+          : () => {
+              void this.onCancelKeyboardNavigation?.();
+            },
     });
   }
 

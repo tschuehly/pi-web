@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const SESSION_ID = "session-1";
 
@@ -27,7 +36,15 @@ describe("PiSessionService attention requests", () => {
 
     const request = service.requestAttention(SESSION_ID, `Log in to npm so I can publish.\n${"x".repeat(200)}`);
 
-    expect(events.globalEvents).toContainEqual({ type: "session.attention", sessionId: SESSION_ID, cwd: "/workspace", sessionName: "Build Chat", kind: "attention", id: request.id, detail: "Log in to npm so I can publish." });
+    expect(events.globalEvents).toContainEqual({
+      type: "session.attention",
+      sessionId: SESSION_ID,
+      cwd: "/workspace",
+      sessionName: "Build Chat",
+      kind: "attention",
+      id: request.id,
+      detail: "Log in to npm so I can publish.",
+    });
     await service.dispose();
   });
 

@@ -14,13 +14,28 @@ describe("buildApp PI WEB plugin routes", () => {
   it("serves application-root plugin modules through the manifest and plugin-list APIs", async () => {
     const manifestResponse = await appTestContext.app.inject({ method: "GET", url: "/pi-web-plugins/manifest.json" });
     expect(manifestResponse.statusCode).toBe(200);
-    expect(manifestResponse.json()).toEqual({ lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] });
+    expect(manifestResponse.json()).toEqual({
+      lifecycleVersion: 2,
+      terminalMode: "recovery-disabled",
+      plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }],
+    });
 
     const pluginsResponse = await appTestContext.app.inject({ method: "GET", url: "/api/plugins" });
     expect(pluginsResponse.statusCode).toBe(200);
     expect(pluginsResponse.json()).toMatchObject({
       lifecycleVersion: 2,
-      plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true, discovered: true, conflict: false }],
+      plugins: [
+        {
+          id: "fake",
+          module: "/pi-web-plugins/fake/plugin.js?v=1",
+          source: "test",
+          scope: "local",
+          machineSpecific: false,
+          enabled: true,
+          discovered: true,
+          conflict: false,
+        },
+      ],
       diagnostics: [],
       serverRuntime: { status: "available", terminalMode: "recovery-disabled", restartRequired: false },
     });
@@ -77,22 +92,30 @@ describe("buildApp PI WEB plugin routes", () => {
     const pluginRoot = join(pluginsRoot, "route-revision");
     const browserPath = join(pluginRoot, "public", "browser.js");
     await mkdir(join(pluginRoot, "public"), { recursive: true });
-    await writeFile(join(pluginRoot, "package.json"), `${JSON.stringify({
-      piWeb: { plugins: [{ id: "route-revision", browserRoot: "public", module: "public/browser.js" }] },
-    }, null, 2)}\n`);
+    await writeFile(
+      join(pluginRoot, "package.json"),
+      `${JSON.stringify(
+        {
+          piWeb: { plugins: [{ id: "route-revision", browserRoot: "public", module: "public/browser.js" }] },
+        },
+        null,
+        2,
+      )}\n`,
+    );
     await writeFile(browserPath, "export const version = 'old';\n");
     const service = new PiWebPluginService({
       roots: [{ path: pluginsRoot, source: "test", scope: "local" }],
       packageProvider: false,
       runtimeProvider: {
-        providerRuntime: () => Promise.resolve({
-          protocolVersion: 2,
-          terminalMode: "recovery-disabled",
-          safeStart: "none",
-          records: [],
-          health: [],
-          diagnostics: [],
-        }),
+        providerRuntime: () =>
+          Promise.resolve({
+            protocolVersion: 2,
+            terminalMode: "recovery-disabled",
+            safeStart: "none",
+            records: [],
+            health: [],
+            diagnostics: [],
+          }),
       },
     });
     const routeApp = await buildApp({ piWebPlugins: service, clientDist: false, logger: false });
@@ -129,36 +152,75 @@ describe("buildApp PI WEB plugin routes", () => {
   });
 
   it("proxies remote machine plugin lists for settings", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json", "set-cookie": "secret=1" },
-      body: Readable.from([JSON.stringify({ plugins: [{ id: "remote-tools", module: "/pi-web-plugins/remote-tools/plugin.js", source: "local", scope: "local", machineSpecific: false, enabled: false }] })]),
-    }));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json", "set-cookie": "secret=1" },
+        body: Readable.from([
+          JSON.stringify({
+            plugins: [
+              { id: "remote-tools", module: "/pi-web-plugins/remote-tools/plugin.js", source: "local", scope: "local", machineSpecific: false, enabled: false },
+            ],
+          }),
+        ]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/plugins` });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["set-cookie"]).toBeUndefined();
-    expect(response.json()).toEqual({ plugins: [{ id: "remote-tools", module: "/pi-web-plugins/remote-tools/plugin.js", source: "local", scope: "local", machineSpecific: false, enabled: false }] });
+    expect(response.json()).toEqual({
+      plugins: [
+        { id: "remote-tools", module: "/pi-web-plugins/remote-tools/plugin.js", source: "local", scope: "local", machineSpecific: false, enabled: false },
+      ],
+    });
     expect(request).toHaveBeenCalledWith("GET", "/api/plugins", undefined);
   });
 
   it("rewrites existing root-style remote plugin manifests and proxies their assets", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const requestJson = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [{ id: "remote-tools", module: "/pi-web-plugins/remote-tools/pi-web-plugin.js?v=123", backendRevision: "server-r7", pairedRequestVersion: 1, pairedChannelVersion: 1, source: "local", scope: "local", machineSpecific: true }] },
-    }));
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/javascript", "set-cookie": "secret=1" },
-      body: Readable.from(["export default {};"]),
-    }));
+    const requestJson = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: {
+          lifecycleVersion: 2,
+          terminalMode: "recovery-disabled",
+          plugins: [
+            {
+              id: "remote-tools",
+              module: "/pi-web-plugins/remote-tools/pi-web-plugin.js?v=123",
+              backendRevision: "server-r7",
+              pairedRequestVersion: 1,
+              pairedChannelVersion: 1,
+              source: "local",
+              scope: "local",
+              machineSpecific: true,
+            },
+          ],
+        },
+      }),
+    );
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/javascript", "set-cookie": "secret=1" },
+        body: Readable.from(["export default {};"]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ requestJson, request });
 
     const manifestResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web-plugins/manifest.json` });
@@ -168,12 +230,25 @@ describe("buildApp PI WEB plugin routes", () => {
     expect(manifestResponse.json()).toEqual({
       lifecycleVersion: 2,
       terminalMode: "recovery-disabled",
-      plugins: [{ id: "remote-tools", module: rewrittenModule, backendRevision: "server-r7", pairedRequestVersion: 1, pairedChannelVersion: 1, source: "local", scope: "local", machineSpecific: true }],
+      plugins: [
+        {
+          id: "remote-tools",
+          module: rewrittenModule,
+          backendRevision: "server-r7",
+          pairedRequestVersion: 1,
+          pairedChannelVersion: 1,
+          source: "local",
+          scope: "local",
+          machineSpecific: true,
+        },
+      ],
     });
-    expect(new URL(rewrittenModule, `https://gateway.example.test/api/machines/${remote.id}/pi-web-plugins/manifest.json`).toString())
-      .toBe(`https://gateway.example.test/pi-web-plugins/${scopedPluginId}/pi-web-plugin.js?v=123`);
-    expect(new URL(rewrittenModule, `https://gateway.example.test/test/ai/api/machines/${remote.id}/pi-web-plugins/manifest.json`).toString())
-      .toBe(`https://gateway.example.test/test/ai/pi-web-plugins/${scopedPluginId}/pi-web-plugin.js?v=123`);
+    expect(new URL(rewrittenModule, `https://gateway.example.test/api/machines/${remote.id}/pi-web-plugins/manifest.json`).toString()).toBe(
+      `https://gateway.example.test/pi-web-plugins/${scopedPluginId}/pi-web-plugin.js?v=123`,
+    );
+    expect(new URL(rewrittenModule, `https://gateway.example.test/test/ai/api/machines/${remote.id}/pi-web-plugins/manifest.json`).toString()).toBe(
+      `https://gateway.example.test/test/ai/pi-web-plugins/${scopedPluginId}/pi-web-plugin.js?v=123`,
+    );
     expect(requestJson).toHaveBeenCalledWith("GET", "/pi-web-plugins/manifest.json", undefined, { timeoutMs: 10000 });
 
     const assetResponse = await appTestContext.app.inject({ method: "GET", url: `/pi-web-plugins/${scopedPluginId}/pi-web-plugin.js?v=123` });
@@ -185,31 +260,41 @@ describe("buildApp PI WEB plugin routes", () => {
   });
 
   it("federates the required bundled Terminal identity and proxies its package assets", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
-    const requestJson = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/json" },
-      body: {
-        lifecycleVersion: 2,
-        terminalMode: "required",
-        plugins: [{
-          id: "pi-web.terminal",
-          module: "/pi-web-plugins/pi-web.terminal/browser/pi-web-plugin.js?v=terminal-r1",
-          backendRevision: "terminal-server-r1",
-          pairedRequestVersion: 1,
-          pairedChannelVersion: 1,
-          source: "bundled",
-          scope: "bundled",
-          machineSpecific: true,
-        }],
-      },
-    }));
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: { "content-type": "application/javascript" },
-      body: Readable.from(["export default {};"]),
-    }));
+    const requestJson = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/json" },
+        body: {
+          lifecycleVersion: 2,
+          terminalMode: "required",
+          plugins: [
+            {
+              id: "pi-web.terminal",
+              module: "/pi-web-plugins/pi-web.terminal/browser/pi-web-plugin.js?v=terminal-r1",
+              backendRevision: "terminal-server-r1",
+              pairedRequestVersion: 1,
+              pairedChannelVersion: 1,
+              source: "bundled",
+              scope: "bundled",
+              machineSpecific: true,
+            },
+          ],
+        },
+      }),
+    );
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: { "content-type": "application/javascript" },
+        body: Readable.from(["export default {};"]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ requestJson, request });
 
     const manifestResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web-plugins/manifest.json` });
@@ -217,12 +302,14 @@ describe("buildApp PI WEB plugin routes", () => {
     expect(manifestResponse.statusCode).toBe(200);
     expect(manifestResponse.json()).toMatchObject({
       terminalMode: "required",
-      plugins: [{
-        id: "pi-web.terminal",
-        module: `../../../../pi-web-plugins/${scopedPluginId}/browser/pi-web-plugin.js?v=terminal-r1`,
-        source: "bundled",
-        scope: "bundled",
-      }],
+      plugins: [
+        {
+          id: "pi-web.terminal",
+          module: `../../../../pi-web-plugins/${scopedPluginId}/browser/pi-web-plugin.js?v=terminal-r1`,
+          source: "bundled",
+          scope: "bundled",
+        },
+      ],
     });
 
     const assetResponse = await appTestContext.app.inject({
@@ -234,14 +321,22 @@ describe("buildApp PI WEB plugin routes", () => {
   });
 
   it("returns an explicit mixed-version error instead of pairing a remote browser module with an unverified backend", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
-      requestJson: vi.fn(() => Promise.resolve({
-        statusCode: 200,
-        headers: { "content-type": "application/json" },
-        body: { plugins: [{ id: "old-provider", module: "/pi-web-plugins/old-provider/plugin.js?v=1", backendRevision: "server-r1", machineSpecific: true }] },
-      })),
+      requestJson: vi.fn(() =>
+        Promise.resolve({
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+          body: {
+            plugins: [{ id: "old-provider", module: "/pi-web-plugins/old-provider/plugin.js?v=1", backendRevision: "server-r1", machineSpecific: true }],
+          },
+        }),
+      ),
     });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web-plugins/manifest.json` });
@@ -258,9 +353,31 @@ describe("buildApp PI WEB plugin routes", () => {
   it.each([
     { label: "missing", body: { plugins: [{ id: "browser-only", module: "/pi-web-plugins/browser-only/plugin.js" }] } },
     { label: "future", body: { lifecycleVersion: 3, terminalMode: "recovery-disabled", plugins: [] } },
-    { label: "recovery Terminal", body: { lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [{ id: "pi-web.terminal", module: "/pi-web-plugins/pi-web.terminal/pi-web-plugin.js", backendRevision: "server-r1", pairedRequestVersion: 1, pairedChannelVersion: 1, source: "bundled", scope: "bundled", machineSpecific: true }] } },
+    {
+      label: "recovery Terminal",
+      body: {
+        lifecycleVersion: 2,
+        terminalMode: "recovery-disabled",
+        plugins: [
+          {
+            id: "pi-web.terminal",
+            module: "/pi-web-plugins/pi-web.terminal/pi-web-plugin.js",
+            backendRevision: "server-r1",
+            pairedRequestVersion: 1,
+            pairedChannelVersion: 1,
+            source: "bundled",
+            scope: "bundled",
+            machineSpecific: true,
+          },
+        ],
+      },
+    },
   ])("returns an explicit compatibility error for a $label remote lifecycle version", async ({ body }) => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
       requestJson: vi.fn(() => Promise.resolve({ statusCode: 200, headers: {}, body })),
@@ -273,7 +390,11 @@ describe("buildApp PI WEB plugin routes", () => {
   });
 
   it("reports a missing remote manifest as a lifecycle compatibility error", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
       requestJson: vi.fn(() => Promise.resolve({ statusCode: 404, headers: {}, body: { error: "Not Found" } })),
@@ -286,21 +407,27 @@ describe("buildApp PI WEB plugin routes", () => {
   });
 
   it("rejects duplicate remote manifest ids before exposing either module", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
-      requestJson: vi.fn(() => Promise.resolve({
-        statusCode: 200,
-        headers: {},
-        body: {
-          lifecycleVersion: 2,
-          terminalMode: "recovery-disabled",
-          plugins: [
-            { id: "duplicate", module: "/pi-web-plugins/duplicate/one.js" },
-            { id: "duplicate", module: "/pi-web-plugins/duplicate/two.js" },
-          ],
-        },
-      })),
+      requestJson: vi.fn(() =>
+        Promise.resolve({
+          statusCode: 200,
+          headers: {},
+          body: {
+            lifecycleVersion: 2,
+            terminalMode: "recovery-disabled",
+            plugins: [
+              { id: "duplicate", module: "/pi-web-plugins/duplicate/one.js" },
+              { id: "duplicate", module: "/pi-web-plugins/duplicate/two.js" },
+            ],
+          },
+        }),
+      ),
     });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web-plugins/manifest.json` });
@@ -314,18 +441,24 @@ describe("buildApp PI WEB plugin routes", () => {
     { id: "pi-web.tools", source: "npm:@acme/tools", scope: "user" },
     { id: "pi-web.tools", source: undefined, scope: undefined },
   ])("rejects remote $id entries that lack bundled host attribution", async ({ id, source, scope }) => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
-      requestJson: vi.fn(() => Promise.resolve({
-        statusCode: 200,
-        headers: {},
-        body: {
-          lifecycleVersion: 2,
-          terminalMode: "recovery-disabled",
-          plugins: [{ id, module: `/pi-web-plugins/${id}/plugin.js`, source, scope }],
-        },
-      })),
+      requestJson: vi.fn(() =>
+        Promise.resolve({
+          statusCode: 200,
+          headers: {},
+          body: {
+            lifecycleVersion: 2,
+            terminalMode: "recovery-disabled",
+            plugins: [{ id, module: `/pi-web-plugins/${id}/plugin.js`, source, scope }],
+          },
+        }),
+      ),
     });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web-plugins/manifest.json` });
@@ -335,25 +468,31 @@ describe("buildApp PI WEB plugin routes", () => {
   });
 
   it("accepts manifest-relative and legacy plugin-root-relative modules while dropping unsafe remote modules", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     appTestContext.remoteClient = fakeRemoteClient({
-      requestJson: vi.fn(() => Promise.resolve({
-        statusCode: 200,
-        headers: { "content-type": "application/json" },
-        body: {
-          lifecycleVersion: 2,
-          terminalMode: "recovery-disabled",
-          plugins: [
-            { id: "safe-tools", module: "./safe-tools/nested/pi-web-plugin.js?v=1", source: "local", scope: "local" },
-            { id: "legacy-tools", module: "nested/pi-web-plugin.js?v=2", source: "local", scope: "local" },
-            { id: "traversal-tools", module: "./traversal-tools/..%2F..%2Fapi%2Fconfig", source: "local", scope: "local" },
-            { id: "wrong-root", module: "/pi-web-plugins/other/pi-web-plugin.js", source: "local", scope: "local" },
-            { id: "cross-origin", module: "https://plugins.example.test/pi-web-plugin.js", source: "local", scope: "local" },
-            { id: "malformed", module: "nested/%E0%A4%A.js", source: "local", scope: "local" },
-          ],
-        },
-      })),
+      requestJson: vi.fn(() =>
+        Promise.resolve({
+          statusCode: 200,
+          headers: { "content-type": "application/json" },
+          body: {
+            lifecycleVersion: 2,
+            terminalMode: "recovery-disabled",
+            plugins: [
+              { id: "safe-tools", module: "./safe-tools/nested/pi-web-plugin.js?v=1", source: "local", scope: "local" },
+              { id: "legacy-tools", module: "nested/pi-web-plugin.js?v=2", source: "local", scope: "local" },
+              { id: "traversal-tools", module: "./traversal-tools/..%2F..%2Fapi%2Fconfig", source: "local", scope: "local" },
+              { id: "wrong-root", module: "/pi-web-plugins/other/pi-web-plugin.js", source: "local", scope: "local" },
+              { id: "cross-origin", module: "https://plugins.example.test/pi-web-plugin.js", source: "local", scope: "local" },
+              { id: "malformed", module: "nested/%E0%A4%A.js", source: "local", scope: "local" },
+            ],
+          },
+        }),
+      ),
     });
 
     const manifestResponse = await appTestContext.app.inject({ method: "GET", url: `/api/machines/${remote.id}/pi-web-plugins/manifest.json` });
@@ -363,14 +502,28 @@ describe("buildApp PI WEB plugin routes", () => {
       lifecycleVersion: 2,
       terminalMode: "recovery-disabled",
       plugins: [
-        { id: "safe-tools", module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "safe-tools")}/nested/pi-web-plugin.js?v=1`, source: "local", scope: "local" },
-        { id: "legacy-tools", module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "legacy-tools")}/nested/pi-web-plugin.js?v=2`, source: "local", scope: "local" },
+        {
+          id: "safe-tools",
+          module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "safe-tools")}/nested/pi-web-plugin.js?v=1`,
+          source: "local",
+          scope: "local",
+        },
+        {
+          id: "legacy-tools",
+          module: `../../../../pi-web-plugins/${machineScopedPluginId(remote.id, "legacy-tools")}/nested/pi-web-plugin.js?v=2`,
+          source: "local",
+          scope: "local",
+        },
       ],
     });
   });
 
   it("rejects remote machine plugin asset traversal before proxying", async () => {
-    const addResponse = await appTestContext.app.inject({ method: "POST", url: "/api/machines", payload: { name: "Remote", baseUrl: "https://remote.example.test/" } });
+    const addResponse = await appTestContext.app.inject({
+      method: "POST",
+      url: "/api/machines",
+      payload: { name: "Remote", baseUrl: "https://remote.example.test/" },
+    });
     const remote = addResponse.json<{ id: string }>();
     const request = vi.fn(() => Promise.resolve({ statusCode: 200, headers: {}, body: Readable.from([]) }));
     appTestContext.remoteClient = fakeRemoteClient({ request });

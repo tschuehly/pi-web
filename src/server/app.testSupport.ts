@@ -16,7 +16,14 @@ import { MachineStore } from "./machines/machineStore.js";
 import type { WorkspaceCatalog } from "./workspaces/workspaceCatalog.js";
 import type { PiPackageService } from "./piPackageService.js";
 import type { SessionProxyDaemon } from "./sessiond/sessionProxyRoutes.js";
-import type { ActiveAgentProfileDescriptor, PiPackageInfo, PiWebConfigResponse, PiWebConfigValues, WorkspaceListing, WorkspaceProviderAuthorityResolution } from "../shared/apiTypes.js";
+import type {
+  ActiveAgentProfileDescriptor,
+  PiPackageInfo,
+  PiWebConfigResponse,
+  PiWebConfigValues,
+  WorkspaceListing,
+  WorkspaceProviderAuthorityResolution,
+} from "../shared/apiTypes.js";
 import type { SessionDaemonAgentProfileResult } from "../sessiond/sessionDaemonClient.js";
 
 interface AppTestContext {
@@ -106,38 +113,56 @@ export function registerAppTestHooks(): void {
           return remoteClient;
         },
         now: () => new Date("2026-05-25T00:00:00.000Z"),
-        localRuntime: () => Promise.resolve({
-          packageName: "@jmfederico/pi-web",
-          generatedAt: "2026-05-25T00:00:00.000Z",
-          components: {
-            web: { component: "web", label: "PI WEB", available: true, capabilities: [] },
-            sessiond: { component: "sessiond", label: "PI WEB Session Daemon", available: true, capabilities: [] },
-          },
-          capabilities: [],
-        }),
+        localRuntime: () =>
+          Promise.resolve({
+            packageName: "@jmfederico/pi-web",
+            generatedAt: "2026-05-25T00:00:00.000Z",
+            components: {
+              web: { component: "web", label: "PI WEB", available: true, capabilities: [] },
+              sessiond: { component: "sessiond", label: "PI WEB Session Daemon", available: true, capabilities: [] },
+            },
+            capabilities: [],
+          }),
       }),
       sessionDaemon,
       agentProfileProvider: { getActiveAgentProfile: () => Promise.resolve(agentProfileResult) },
       config: fakeConfigService(),
       piPackages: fakePiPackageService(),
       piWebPlugins: {
-        manifest: () => Promise.resolve({ lifecycleVersion: 2, terminalMode: "recovery-disabled", plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }] }),
-        plugins: () => Promise.resolve({
-          lifecycleVersion: 2,
-          plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false, enabled: true, discovered: true, conflict: false }],
-          diagnostics: [],
-          serverRuntime: {
-            status: "available",
+        manifest: () =>
+          Promise.resolve({
+            lifecycleVersion: 2,
             terminalMode: "recovery-disabled",
-            restartRequired: false,
-            recovery: {
-              showSafeStart: "pi-web plugins safe-start show",
-              bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
-              noServerPlugins: "pi-web plugins safe-start set none --restart",
-              clearSafeStart: "pi-web plugins safe-start clear --restart",
+            plugins: [{ id: "fake", module: "/pi-web-plugins/fake/plugin.js?v=1", source: "test", scope: "local", machineSpecific: false }],
+          }),
+        plugins: () =>
+          Promise.resolve({
+            lifecycleVersion: 2,
+            plugins: [
+              {
+                id: "fake",
+                module: "/pi-web-plugins/fake/plugin.js?v=1",
+                source: "test",
+                scope: "local",
+                machineSpecific: false,
+                enabled: true,
+                discovered: true,
+                conflict: false,
+              },
+            ],
+            diagnostics: [],
+            serverRuntime: {
+              status: "available",
+              terminalMode: "recovery-disabled",
+              restartRequired: false,
+              recovery: {
+                showSafeStart: "pi-web plugins safe-start show",
+                bundledOnly: "pi-web plugins safe-start set bundled-only --restart",
+                noServerPlugins: "pi-web plugins safe-start set none --restart",
+                clearSafeStart: "pi-web plugins safe-start clear --restart",
+              },
             },
-          },
-        }),
+          }),
         readAsset: fakePiWebPluginAsset,
       },
       clientDist: false,
@@ -167,7 +192,8 @@ export function registerAppTestHooks(): void {
 function fakePiWebPluginAsset(pluginId: string, assetPath: string): Promise<{ content: Buffer; contentType: string } | undefined> {
   if (pluginId !== "fake") return Promise.resolve(undefined);
   if (assetPath === "plugin.js") return Promise.resolve({ content: Buffer.from("export default {};"), contentType: "application/javascript; charset=utf-8" });
-  if (assetPath === "assets/icon.svg") return Promise.resolve({ content: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), contentType: "image/svg+xml" });
+  if (assetPath === "assets/icon.svg")
+    return Promise.resolve({ content: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), contentType: "image/svg+xml" });
   return Promise.resolve(undefined);
 }
 
@@ -206,7 +232,10 @@ export class AppTestWorkspaceCatalog implements WorkspaceCatalog {
 
   set(projectId: string, workspaces: readonly WorkspaceListing[]): void {
     this.resolutionOverrides.delete(projectId);
-    this.overrides.set(projectId, workspaces.map((workspace) => ({ ...workspace })));
+    this.overrides.set(
+      projectId,
+      workspaces.map((workspace) => ({ ...workspace })),
+    );
   }
 
   setResolution(resolution: WorkspaceProviderAuthorityResolution): void {
@@ -222,21 +251,21 @@ export class AppTestWorkspaceCatalog implements WorkspaceCatalog {
     const configured = this.overrides.get(projectId);
     if (configured !== undefined) return configured.map((workspace) => ({ ...workspace }));
     const project = await this.projects.requireProject(projectId);
-    return [{
-      id: createHash("sha1").update(`${project.id}:${project.path}`).digest("hex").slice(0, 12),
-      projectId: project.id,
-      path: project.path,
-      label: project.name,
-      isMain: true,
-    }];
+    return [
+      {
+        id: createHash("sha1").update(`${project.id}:${project.path}`).digest("hex").slice(0, 12),
+        projectId: project.id,
+        path: project.path,
+        label: project.name,
+        isMain: true,
+      },
+    ];
   }
 }
 
 function commonWorkspaceOwner(workspaces: readonly WorkspaceListing[]): string | undefined {
   const owner = workspaces[0]?.provider?.pluginId;
-  return owner !== undefined && workspaces.every((workspace) => workspace.provider?.pluginId === owner)
-    ? owner
-    : undefined;
+  return owner !== undefined && workspaces.every((workspace) => workspace.provider?.pluginId === owner) ? owner : undefined;
 }
 
 function cloneWorkspaceResolution(resolution: WorkspaceProviderAuthorityResolution): WorkspaceProviderAuthorityResolution {
@@ -375,7 +404,11 @@ function fakeSessionDaemon(projects: ProjectService): SessionProxyDaemon & { clo
       const captured = { method, path, ...(body === undefined ? {} : { body }) } satisfies CapturedSessionDaemonRequest;
       sessionDaemonRequests.push(captured);
       if ((method === "POST" && path === "/projects") || (method === "DELETE" && path.startsWith("/projects/"))) {
-        const response = await daemonApp.inject({ method, url: path, ...(body === undefined ? {} : { payload: JSON.stringify(body), headers: { "content-type": "application/json" } }) });
+        const response = await daemonApp.inject({
+          method,
+          url: path,
+          ...(body === undefined ? {} : { payload: JSON.stringify(body), headers: { "content-type": "application/json" } }),
+        });
         return { statusCode: response.statusCode, headers: { "content-type": "application/json" }, body: response.body };
       }
       return Promise.resolve({
@@ -384,7 +417,9 @@ function fakeSessionDaemon(projects: ProjectService): SessionProxyDaemon & { clo
         body: JSON.stringify(captured),
       });
     },
-    connectWebSocket: () => { throw new Error("WebSocket not configured for test"); },
+    connectWebSocket: () => {
+      throw new Error("WebSocket not configured for test");
+    },
   };
 }
 
@@ -392,7 +427,9 @@ export function fakeRemoteClient(overrides: Partial<MachineClient>): MachineClie
   return {
     request: () => Promise.resolve({ statusCode: 200, headers: {}, body: Readable.from([]) }),
     requestJson: () => Promise.resolve({ statusCode: 200, headers: {}, body: undefined }),
-    connectWebSocket: () => { throw new Error("WebSocket not configured for test"); },
+    connectWebSocket: () => {
+      throw new Error("WebSocket not configured for test");
+    },
     ...overrides,
   };
 }

@@ -90,16 +90,22 @@ export interface SubsessionToolDeps {
 }
 
 const SpawnSubsessionParams = Type.Object({
-  thinkingLevel: Type.Optional(Type.Enum(KNOWN_THINKING_LEVELS, {
-    type: "string",
-    description: "Thinking level override for the child session. Set this field only when instructed to use a specific thinking level or to choose an appropriate one. Otherwise omit it to inherit this session's thinking level. An unknown value is rejected; valid levels are clamped to the selected model's capabilities.",
-  })),
+  thinkingLevel: Type.Optional(
+    Type.Enum(KNOWN_THINKING_LEVELS, {
+      type: "string",
+      description:
+        "Thinking level override for the child session. Set this field only when instructed to use a specific thinking level or to choose an appropriate one. Otherwise omit it to inherit this session's thinking level. An unknown value is rejected; valid levels are clamped to the selected model's capabilities.",
+    }),
+  ),
   prompt: Type.String({
     description: "Initial instruction for the tracked child.",
   }),
-  model: Type.Optional(Type.String({
-    description: 'Model override for the child session, as an exact "provider/model-id". Set this field only when instructed to use a specific model or to choose an appropriate one. Otherwise omit it to inherit this session\'s model. An unknown value is rejected.',
-  })),
+  model: Type.Optional(
+    Type.String({
+      description:
+        'Model override for the child session, as an exact "provider/model-id". Set this field only when instructed to use a specific model or to choose an appropriate one. Otherwise omit it to inherit this session\'s model. An unknown value is rejected.',
+    }),
+  ),
 });
 
 const ListSubsessionsParams = Type.Object({});
@@ -115,32 +121,44 @@ const ReadSubsessionParams = Type.Object({
   sessionId: Type.String({
     description: "Tracked child id from spawn_subsession or list_subsessions.",
   }),
-  roles: Type.Optional(Type.Array(
-    Type.Union([Type.Literal("assistant"), Type.Literal("user"), Type.Literal("tool"), Type.Literal("system"), Type.Literal("custom")]),
-    { description: "Roles to include; omit for all." },
-  )),
-  include: Type.Optional(Type.Array(
-    Type.Union([Type.Literal("text"), Type.Literal("thinking"), Type.Literal("tool_call"), Type.Literal("tool_result"), Type.Literal("image")]),
-    { description: "Content kinds to include; omit for all." },
-  )),
-  search: Type.Optional(Type.String({
-    description: "Case-insensitive text or tool-name substring; searches full content before maxChars truncation.",
-  })),
-  maxChars: Type.Optional(Type.Integer({
-    minimum: 0,
-    description: "Maximum characters per text, thinking, or tool-result value; omit for no truncation.",
-  })),
-  includeToolArgs: Type.Optional(Type.Boolean({
-    description: "Include raw tool-call arguments; summaries are always included.",
-  })),
-  before: Type.Optional(Type.Integer({
-    minimum: 0,
-    description: "Return messages before this index; use the previous start to page backward.",
-  })),
-  limit: Type.Optional(Type.Integer({
-    minimum: 1,
-    description: "Maximum recent matches, in chronological order. Defaults to 50.",
-  })),
+  roles: Type.Optional(
+    Type.Array(Type.Union([Type.Literal("assistant"), Type.Literal("user"), Type.Literal("tool"), Type.Literal("system"), Type.Literal("custom")]), {
+      description: "Roles to include; omit for all.",
+    }),
+  ),
+  include: Type.Optional(
+    Type.Array(Type.Union([Type.Literal("text"), Type.Literal("thinking"), Type.Literal("tool_call"), Type.Literal("tool_result"), Type.Literal("image")]), {
+      description: "Content kinds to include; omit for all.",
+    }),
+  ),
+  search: Type.Optional(
+    Type.String({
+      description: "Case-insensitive text or tool-name substring; searches full content before maxChars truncation.",
+    }),
+  ),
+  maxChars: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "Maximum characters per text, thinking, or tool-result value; omit for no truncation.",
+    }),
+  ),
+  includeToolArgs: Type.Optional(
+    Type.Boolean({
+      description: "Include raw tool-call arguments; summaries are always included.",
+    }),
+  ),
+  before: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "Return messages before this index; use the previous start to page backward.",
+    }),
+  ),
+  limit: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      description: "Maximum recent matches, in chronological order. Defaults to 50.",
+    }),
+  ),
 });
 
 function statusLine(summary: SubsessionSummary): string {
@@ -153,7 +171,10 @@ function workingInspectionGuidance(sessionId: string): string {
 
 function renderEntry(entry: TranscriptEntry): string {
   const header = `#${String(entry.index)} ${entry.role}`;
-  const body = entry.parts.map(renderPart).filter((line) => line !== "").join("\n");
+  const body = entry.parts
+    .map(renderPart)
+    .filter((line) => line !== "")
+    .join("\n");
   return body === "" ? header : `${header}\n${body}`;
 }
 
@@ -173,7 +194,8 @@ function renderPart(part: TranscriptEntry["parts"][number]): string {
     const args = "args" in part && part.args !== undefined ? `\n  args: ${JSON.stringify(part.args)}` : "";
     return `[tool ${part.toolName}] ${part.summary}${args}`;
   }
-  if (part.kind === "tool_result") return `[result${part.isError ? " error" : ""}${part.toolName === undefined ? "" : ` ${part.toolName}`}] ${part.text}${clipNotice(part)}`;
+  if (part.kind === "tool_result")
+    return `[result${part.isError ? " error" : ""}${part.toolName === undefined ? "" : ` ${part.toolName}`}] ${part.text}${clipNotice(part)}`;
   return "[image]";
 }
 
@@ -181,20 +203,22 @@ function renderTranscript(result: SubsessionReadResult): string {
   const last = result.entries[result.entries.length - 1];
   // Distinguish "nothing matched at all" (widen filters) from "matches exist but
   // this page/window is empty" (page differently) so the agent isn't misled.
-  const range = last === undefined
-    ? (result.matched === 0
-      ? "no messages matched your filters"
-      : `no messages in this window (${String(result.matched)} matched outside it)`)
-    : `messages ${String(result.start)}–${String(last.index)} of ${String(result.total)} (${String(result.matched)} matched)`;
+  const range =
+    last === undefined
+      ? result.matched === 0
+        ? "no messages matched your filters"
+        : `no messages in this window (${String(result.matched)} matched outside it)`
+      : `messages ${String(result.start)}–${String(last.index)} of ${String(result.total)} (${String(result.matched)} matched)`;
   const more = result.hasMore ? ` Earlier matching messages exist before index ${String(result.start)}.` : "";
   // Empty entries with matches means the `before` cursor excluded every match
   // (they all sit at index >= before): the agent paged too far back and should
   // raise `before` or omit it, not page back further.
-  const body = result.entries.length > 0
-    ? result.entries.map(renderEntry).join("\n\n")
-    : (result.matched === 0
-      ? "(no messages matched the filters)"
-      : `(no messages before index ${String(result.start)}; all ${String(result.matched)} matches have later indexes)`);
+  const body =
+    result.entries.length > 0
+      ? result.entries.map(renderEntry).join("\n\n")
+      : result.matched === 0
+        ? "(no messages matched the filters)"
+        : `(no messages before index ${String(result.start)}; all ${String(result.matched)} matches have later indexes)`;
   const error = result.errorDetail === undefined ? "" : `Error: ${result.errorDetail}\n\n`;
   return `Subsession ${result.sessionId} [${result.status}] — ${range}.${more}\n\n${error}--- SUBSESSION TRANSCRIPT: ${result.sessionId} ---\n${body}`;
 }
@@ -213,7 +237,8 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
   const spawnTool = defineTool<typeof SpawnSubsessionParams, SpawnSubsessionResult>({
     name: "spawn_subsession",
     label: "Spawn subsession",
-    description: "Start a tracked child session in this session's working directory to carry out part of the current task and return immediately. Its transcript and result are available here after it finishes.",
+    description:
+      "Start a tracked child session in this session's working directory to carry out part of the current task and return immediately. Its transcript and result are available here after it finishes.",
     promptSnippet: "spawn_subsession: tracked child work in this workspace; result available after completion",
     parameters: SpawnSubsessionParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -231,7 +256,12 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
       });
       const modelNote = result.model === undefined ? "" : ` using model ${result.model}`;
       return {
-        content: [{ type: "text", text: `Started tracked subsession ${result.sessionId} in ${result.cwd}${modelNote}. Continue other work, then join with yield_to_subsessions; do not poll.` }],
+        content: [
+          {
+            type: "text",
+            text: `Started tracked subsession ${result.sessionId} in ${result.cwd}${modelNote}. Continue other work, then join with yield_to_subsessions; do not poll.`,
+          },
+        ],
         details: result,
       };
     },
@@ -247,9 +277,7 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
       const parentSessionId = ctx.sessionManager.getSessionId();
       const parentSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
       const subsessions = await deps.list(parentSessionId, parentSessionFile);
-      const text = subsessions.length === 0
-        ? "No tracked subsessions."
-        : `Tracked subsessions:\n${subsessions.map(statusLine).join("\n")}`;
+      const text = subsessions.length === 0 ? "No tracked subsessions." : `Tracked subsessions:\n${subsessions.map(statusLine).join("\n")}`;
       return { content: [{ type: "text", text }], details: { subsessions } };
     },
   });
@@ -257,7 +285,8 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
   const checkTool = defineTool<typeof CheckSubsessionParams, SubsessionCheckResult>({
     name: "check_subsession",
     label: "Check subsession",
-    description: "Get a tracked child's status and latest output. Receiving a completed result marks it read, so it will not arrive again automatically. Working output is withheld. Never yields; do not poll.",
+    description:
+      "Get a tracked child's status and latest output. Receiving a completed result marks it read, so it will not arrive again automatically. Working output is withheld. Never yields; do not poll.",
     promptSnippet: "check_subsession: inspect child status and available output; never yields",
     parameters: CheckSubsessionParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -265,9 +294,10 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
       const parentSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
       const result = await deps.check(parentSessionId, params.sessionId, parentSessionFile, _toolCallId);
       const body = result.finalText === "" ? "(no output yet)" : result.finalText;
-      const text = result.status === "working"
-        ? workingInspectionGuidance(result.sessionId)
-        : `Subsession ${result.sessionId} [${result.status}].\n\n${result.errorDetail === undefined ? "" : `Error: ${result.errorDetail}\n\n`}--- SUBSESSION OUTPUT: ${result.sessionId} ---\n${body}`;
+      const text =
+        result.status === "working"
+          ? workingInspectionGuidance(result.sessionId)
+          : `Subsession ${result.sessionId} [${result.status}].\n\n${result.errorDetail === undefined ? "" : `Error: ${result.errorDetail}\n\n`}--- SUBSESSION OUTPUT: ${result.sessionId} ---\n${body}`;
       return {
         content: [{ type: "text", text }],
         details: result,
@@ -278,7 +308,8 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
   const readTool = defineTool<typeof ReadSubsessionParams, SubsessionReadResult>({
     name: "read_subsession",
     label: "Read subsession",
-    description: "Read a tracked child's filtered transcript. Returning its complete latest final output marks that completion read; filtered or historical-only reads do not. Working transcripts are withheld. Never yields; do not poll.",
+    description:
+      "Read a tracked child's filtered transcript. Returning its complete latest final output marks that completion read; filtered or historical-only reads do not. Working transcripts are withheld. Never yields; do not poll.",
     promptSnippet: "read_subsession: inspect an available child transcript; never yields",
     parameters: ReadSubsessionParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -286,9 +317,7 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
       const parentSessionFile = ctx.sessionManager.getSessionFile() ?? undefined;
       const { sessionId, ...query } = params;
       const result = await deps.read(parentSessionId, sessionId, query, parentSessionFile, _toolCallId);
-      const text = result.status === "working"
-        ? workingInspectionGuidance(result.sessionId)
-        : renderTranscript(result);
+      const text = result.status === "working" ? workingInspectionGuidance(result.sessionId) : renderTranscript(result);
       return {
         content: [{ type: "text", text }],
         details: result,
@@ -301,7 +330,8 @@ export function createSubsessionToolDefinitions(spawningCwd: string, deps: Subse
     // Nested tools cannot terminate the outer agent run.
     exposure: "model-only",
     label: "Yield to subsessions",
-    description: "Collect unread child results at a join point. Ready results are returned and marked read. If none are ready but children are working, end this run; a new result wakes you. If nothing is outstanding, continue. Call alone and last; do not poll.",
+    description:
+      "Collect unread child results at a join point. Ready results are returned and marked read. If none are ready but children are working, end this run; a new result wakes you. If nothing is outstanding, continue. Call alone and last; do not poll.",
     promptSnippet: "yield_to_subsessions: collect unread results or end the run until a result arrives; call alone and last",
     promptGuidelines: [
       "After calling spawn_subsession, continue independent work, then call yield_to_subsessions alone and last at the join point. It returns unread results now or ends the run until a result arrives; do not poll. Receiving a completed result marks it read, so it will not arrive again automatically.",

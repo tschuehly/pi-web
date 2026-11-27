@@ -111,22 +111,27 @@ it("opens the touch source group and synchronously activates each native picker"
 it("reconciles native dismissal and Escape, and can reopen", async () => {
   stubAttachSourceMedia(true);
   const { editor, attach, panel } = await mountAttachmentControls();
-  attach.click(); await editor.updateComplete;
-  panel.hidePopover(); await editor.updateComplete;
+  attach.click();
+  await editor.updateComplete;
+  panel.hidePopover();
+  await editor.updateComplete;
   expect(attach.getAttribute("aria-expanded")).toBe("false");
-  attach.click(); await editor.updateComplete;
+  attach.click();
+  await editor.updateComplete;
   window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   await editor.updateComplete;
   expect(attach.getAttribute("aria-expanded")).toBe("false");
   expect(editor.shadowRoot?.activeElement).toBe(attach);
-  attach.click(); await editor.updateComplete;
+  attach.click();
+  await editor.updateComplete;
   expect(attach.getAttribute("aria-expanded")).toBe("true");
 });
 
 it.each(["disabled", "sending"] as const)("closes the touch picker and disables its items when %s changes", async (property) => {
   stubAttachSourceMedia(true);
   const { editor, attach, panel, photos } = await mountAttachmentControls();
-  attach.click(); await editor.updateComplete;
+  attach.click();
+  await editor.updateComplete;
   const hide = vi.spyOn(panel, "hidePopover");
   const pick = vi.spyOn(photos, "click").mockImplementation(() => undefined);
   editor[property] = true;
@@ -149,13 +154,15 @@ it.each(["disabled", "sending"] as const)("closes the touch picker and disables 
 it("closes the source popup when switching sessions or removing the composer", async () => {
   stubAttachSourceMedia(true);
   const { editor, attach, panel } = await mountAttachmentControls();
-  attach.click(); await editor.updateComplete;
+  attach.click();
+  await editor.updateComplete;
   const hide = vi.spyOn(panel, "hidePopover");
   editor.sessionId = "another-session";
   await editor.updateComplete;
   expect(hide).toHaveBeenCalledOnce();
   expect(attach.getAttribute("aria-expanded")).toBe("false");
-  attach.click(); await editor.updateComplete;
+  attach.click();
+  await editor.updateComplete;
   editor.remove();
   expect(hide).toHaveBeenCalledTimes(2);
 });
@@ -173,7 +180,10 @@ it.each(["photos", "camera"] as const)("stages %s selections through the existin
 
 it("keeps attachment delivery and removal wired through native shared controls", async () => {
   const key = "local:appearance-controls";
-  saveStagedAttachments(key, { ...emptyStagedAttachmentDraft(), attachments: [{ id: "file-1", kind: "file", name: "screenshot.png", mimeType: "text/plain", data: "QUJD", size: 3 }] });
+  saveStagedAttachments(key, {
+    ...emptyStagedAttachmentDraft(),
+    attachments: [{ id: "file-1", kind: "file", name: "screenshot.png", mimeType: "text/plain", data: "QUJD", size: 3 }],
+  });
   const editor = new PromptEditor();
   editor.sessionId = "appearance-controls";
   document.body.append(editor);
@@ -196,7 +206,14 @@ it("keeps attachment delivery and removal wired through native shared controls",
 
 it("removes plugin context by identity and retains the disabled contract", async () => {
   const editor = new PromptEditor();
-  const chip = { id: "context", key: "context-key", pluginId: "test", target: { machineId: "local", sessionId: "appearance-controls" }, label: "Context", text: "Context content" };
+  const chip = {
+    id: "context",
+    key: "context-key",
+    pluginId: "test",
+    target: { machineId: "local", sessionId: "appearance-controls" },
+    label: "Context",
+    text: "Context content",
+  };
   editor.promptChips = [chip];
   editor.onRemoveChip = vi.fn();
   document.body.append(editor);
@@ -237,7 +254,17 @@ it.each(["disabled", "sending"] as const)("opens the file picker and respects th
 
 it("hides attachments and blocks shell input visibly in a Durable Chat that supports neither", async () => {
   const editor = new PromptEditor();
-  editor.status = { sessionId: "durable-1", isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0, capabilities: [] };
+  editor.status = {
+    sessionId: "durable-1",
+    isStreaming: false,
+    isCompacting: false,
+    isBashRunning: false,
+    pendingMessageCount: 0,
+    queuedMessages: [],
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    cost: 0,
+    capabilities: [],
+  };
   const onSend = vi.fn();
   editor.onSend = onSend;
   document.body.append(editor);

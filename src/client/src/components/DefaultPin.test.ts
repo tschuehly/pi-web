@@ -21,7 +21,10 @@ for (const Picker of [CommandPicker, ModelPicker]) {
   describe(`${Picker.name} default pins`, () => {
     async function mount(onSetDefault?: (value: string) => Promise<unknown>) {
       const picker = new Picker();
-      picker.options = [{ value: "p/a", label: "Alpha" }, { value: "p/b", label: "Beta" }];
+      picker.options = [
+        { value: "p/a", label: "Alpha" },
+        { value: "p/b", label: "Beta" },
+      ];
       picker.defaultValue = "p/a";
       if (onSetDefault) picker.onSetDefault = onSetDefault;
       picker.onPick = vi.fn();
@@ -72,7 +75,12 @@ for (const Picker of [CommandPicker, ModelPicker]) {
 
     it("blocks duplicate saves while pending and loading, and recovers after rejection", async () => {
       let reject!: (reason: Error) => void;
-      const save = vi.fn(() => new Promise<unknown>((_resolve, fail) => { reject = fail; }));
+      const save = vi.fn(
+        () =>
+          new Promise<unknown>((_resolve, fail) => {
+            reject = fail;
+          }),
+      );
       const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const picker = await mount(save);
       requiredElement(pins(picker)[1], "pin").click();
@@ -123,7 +131,10 @@ it("shows model pins in both modes and disables unavailable models without toggl
   document.body.append(picker);
   await settleRenderedDialog(picker);
   expect(root(picker).querySelectorAll(".default-pin")).toHaveLength(1);
-  const all = requiredElement([...root(picker).querySelectorAll<HTMLButtonElement>(".scope-toggle button")].find((button) => button.textContent === "All models"), "All models");
+  const all = requiredElement(
+    [...root(picker).querySelectorAll<HTMLButtonElement>(".scope-toggle button")].find((button) => button.textContent === "All models"),
+    "All models",
+  );
   all.click();
   await settleRenderedDialog(picker);
   const pins = [...root(picker).querySelectorAll<HTMLButtonElement>(".default-pin")];

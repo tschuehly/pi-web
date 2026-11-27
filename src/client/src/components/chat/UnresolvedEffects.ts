@@ -21,12 +21,26 @@ export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpg
           ${pin.pending === true ? html`<p>Upgrade pending: it restarts on the current code once no turn, tool or child runs.</p>` : null}
           <p id="durable-host-upgrade-recovery">Upgrade now restarts this Chat's host; the Chat resumes by itself. Open questions, queued input, background bash and Atelier Pages carry over.
             ${repeats.length === 0 ? "Nothing repeats." : `Repeats: ${repeats.join("; ")}.`}</p>
-          ${onUpgrade === undefined ? null : html`
+          ${
+            onUpgrade === undefined
+              ? null
+              : html`
             <div class="durable-host-pin-actions">
-              <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => { onUpgrade("quiet"); }}>Upgrade host</button>
-              <button type="button" class="ui-button ui-button--compact" aria-describedby="durable-host-upgrade-recovery" @click=${() => { onUpgrade("now"); }}>Upgrade now</button>
-              ${pin.pending === true ? html`<button type="button" class="ui-button ui-button--compact" title="Keep this Chat on its host code until you upgrade it" @click=${() => { onUpgrade("cancel"); }}>Cancel</button>` : null}
-            </div>`}
+              <button type="button" class="ui-button ui-button--compact" title="Restart this Chat's host on the current code; refused while it is busy" @click=${() => {
+                onUpgrade("quiet");
+              }}>Upgrade host</button>
+              <button type="button" class="ui-button ui-button--compact" aria-describedby="durable-host-upgrade-recovery" @click=${() => {
+                onUpgrade("now");
+              }}>Upgrade now</button>
+              ${
+                pin.pending === true
+                  ? html`<button type="button" class="ui-button ui-button--compact" title="Keep this Chat on its host code until you upgrade it" @click=${() => {
+                      onUpgrade("cancel");
+                    }}>Cancel</button>`
+                  : null
+              }
+            </div>`
+          }
         </div>
       </details>
     </aside>
@@ -37,11 +51,15 @@ export function renderDurableHostPin(pin: SessionStatus["durableHostPin"], onUpg
  * A Durable Chat's interrupted unsafe tool calls: each blocks its tool until the user says whether it ran. The
  * resolution is recorded in the Chat and the agent is told.
  */
-export function renderUnresolvedEffects(effects: readonly SessionUnresolvedEffect[] | undefined, onResolve: ((id: string, resolution: SessionEffectResolution) => void) | undefined) {
+export function renderUnresolvedEffects(
+  effects: readonly SessionUnresolvedEffect[] | undefined,
+  onResolve: ((id: string, resolution: SessionEffectResolution) => void) | undefined,
+) {
   if (effects === undefined || effects.length === 0) return null;
   return html`
     <aside class="session-warnings unresolved-effects" role="alert" aria-live="polite">
-      ${effects.map((effect) => html`
+      ${effects.map(
+        (effect) => html`
         <div class="session-warning warning ui-transcript-surface" data-effect-id=${effect.id}>
           <div class="session-warning-head">
             ${renderSessionWarningIcon("warning", "session-warning-icon")}
@@ -50,16 +68,25 @@ export function renderUnresolvedEffects(effects: readonly SessionUnresolvedEffec
           <div class="session-warning-body">
             <p class="session-warning-message">An interrupted <code>${effect.toolName}</code> call may have run. Did it?</p>
             <p class="session-warning-path">${effect.arguments}</p>
-            ${onResolve === undefined ? null : html`
+            ${
+              onResolve === undefined
+                ? null
+                : html`
               <div class="unresolved-effect-actions">
-                ${RESOLUTIONS.map((option) => html`
-                  <button type="button" class="ui-button ui-button--compact" title=${option.title} @click=${() => { onResolve(effect.id, option.resolution); }}>${option.label}</button>
-                `)}
+                ${RESOLUTIONS.map(
+                  (option) => html`
+                  <button type="button" class="ui-button ui-button--compact" title=${option.title} @click=${() => {
+                    onResolve(effect.id, option.resolution);
+                  }}>${option.label}</button>
+                `,
+                )}
               </div>
-            `}
+            `
+            }
           </div>
         </div>
-      `)}
+      `,
+      )}
     </aside>
   `;
 }

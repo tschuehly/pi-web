@@ -51,7 +51,10 @@ export class PanelResizeController implements ReactiveController {
   private readonly storage: PanelSizeStorage | undefined;
   private panelSizes: PanelSizePreferences;
 
-  constructor(private readonly host: ReactiveControllerHost, options: PanelResizeControllerOptions = {}) {
+  constructor(
+    private readonly host: ReactiveControllerHost,
+    options: PanelResizeControllerOptions = {},
+  ) {
     host.addController(this);
     this.storage = options.storage ?? browserPanelSizeStorage();
     this.panelSizes = readStoredPanelSizes(this.storage);
@@ -98,10 +101,14 @@ export class PanelResizeController implements ReactiveController {
   shellStyle(constraintsBySide: PanelResizeConstraintsBySide = {}): string {
     const declarations: string[] = [];
     if (this.panelSizes.navigationPanelWidth !== undefined) {
-      declarations.push(`--navigation-panel-size: ${formatPanelWidth(clampPanelWidth("navigation", this.panelSizes.navigationPanelWidth, constraintsBySide.navigation))};`);
+      declarations.push(
+        `--navigation-panel-size: ${formatPanelWidth(clampPanelWidth("navigation", this.panelSizes.navigationPanelWidth, constraintsBySide.navigation))};`,
+      );
     }
     if (this.panelSizes.workspacePanelWidth !== undefined) {
-      declarations.push(`--workspace-panel-size: ${formatPanelWidth(clampPanelWidth("workspace", this.panelSizes.workspacePanelWidth, constraintsBySide.workspace))};`);
+      declarations.push(
+        `--workspace-panel-size: ${formatPanelWidth(clampPanelWidth("workspace", this.panelSizes.workspacePanelWidth, constraintsBySide.workspace))};`,
+      );
     }
     return declarations.join(" ");
   }
@@ -119,11 +126,22 @@ export function panelResizeDelta(side: ResizablePanelSide, startClientX: number,
   return side === "navigation" ? currentClientX - startClientX : startClientX - currentClientX;
 }
 
-export function panelWidthFromDrag(side: ResizablePanelSide, startWidth: number, startClientX: number, currentClientX: number, constraints = panelResizeConstraints(side)): number {
+export function panelWidthFromDrag(
+  side: ResizablePanelSide,
+  startWidth: number,
+  startClientX: number,
+  currentClientX: number,
+  constraints = panelResizeConstraints(side),
+): number {
   return clampPanelWidth(side, startWidth + panelResizeDelta(side, startClientX, currentClientX), constraints);
 }
 
-export function panelWidthFromKeyboard(side: ResizablePanelSide, currentWidth: number, key: string, options: PanelKeyboardResizeOptions = {}): number | undefined {
+export function panelWidthFromKeyboard(
+  side: ResizablePanelSide,
+  currentWidth: number,
+  key: string,
+  options: PanelKeyboardResizeOptions = {},
+): number | undefined {
   const constraints = options.constraints ?? panelResizeConstraints(side);
   if (key === "Home") return constraints.minWidth;
   if (key === "End") return constraints.maxWidth;

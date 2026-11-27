@@ -1,10 +1,18 @@
 /** WCAG 2.x contrast arithmetic for theme tokens (hex colors, 3/6/8-digit forms; alpha is dropped). */
 
-interface Rgb { r: number; g: number; b: number }
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
 
 function hexToRgb(hex: string): Rgb {
   let value = hex.replace("#", "");
-  if (value.length === 3) value = value.split("").map((digit) => digit + digit).join("");
+  if (value.length === 3)
+    value = value
+      .split("")
+      .map((digit) => digit + digit)
+      .join("");
   if (value.length === 8) value = value.slice(0, 6);
   const n = Number.parseInt(value, 16);
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };

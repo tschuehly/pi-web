@@ -28,7 +28,9 @@ describe("node-pty macOS spawn-helper diagnostics", () => {
       platform: "darwin",
       arch: "arm64",
       nodePtyPackageJsonPath: fixture.packageJsonPath,
-      access: () => { throw new Error("not executable"); },
+      access: () => {
+        throw new Error("not executable");
+      },
     });
 
     expect(check).toMatchObject({

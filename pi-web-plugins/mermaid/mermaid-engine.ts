@@ -16,8 +16,16 @@ let started = false;
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (event.source !== parent || started) return;
   const data = event.data;
-  if (typeof data !== "object" || data === null || !("type" in data) || data.type !== "mermaid-render"
-    || !("text" in data) || typeof data.text !== "string" || data.text.length > 100_000) return;
+  if (
+    typeof data !== "object"
+    || data === null
+    || !("type" in data)
+    || data.type !== "mermaid-render"
+    || !("text" in data)
+    || typeof data.text !== "string"
+    || data.text.length > 100_000
+  )
+    return;
   started = true;
   void draw(data.text);
 });

@@ -1,24 +1,40 @@
 import type { TemplateResult } from "lit";
-import type { HtmlTemplateTag, PiWebComponentStatus, PiWebPlugin, PiWebStatusMessage, PluginRuntimeState, WorkspacePanelTerminal } from "@jmfederico/pi-web/plugin-api";
-import { additionalCommands, fallbackDockerStatus, formatVersion, installationLabel, messageCount, recommendedCommand, shouldShowUpdatesPanel, statusFor, type CommandEntry, type UpdatesRuntimeHint } from "./updatesLogic.js";
+import type {
+  HtmlTemplateTag,
+  PiWebComponentStatus,
+  PiWebPlugin,
+  PiWebStatusMessage,
+  PluginRuntimeState,
+  WorkspacePanelTerminal,
+} from "@jmfederico/pi-web/plugin-api";
+import {
+  additionalCommands,
+  fallbackDockerStatus,
+  formatVersion,
+  installationLabel,
+  messageCount,
+  recommendedCommand,
+  shouldShowUpdatesPanel,
+  statusFor,
+  type CommandEntry,
+  type UpdatesRuntimeHint,
+} from "./updatesLogic.js";
 
 function runCommandInTerminal(terminal: WorkspacePanelTerminal, label: string, command: string): void {
-  void terminal.runCommand({
-    title: label,
-    command,
-    open: true,
-    metadata: { "pi.plugin": "updates" },
-  }).catch((error: unknown) => {
-    console.error(`Updates plugin failed to run "${label}"`, error);
-  });
+  void terminal
+    .runCommand({
+      title: label,
+      command,
+      open: true,
+      metadata: { "pi.plugin": "updates" },
+    })
+    .catch((error: unknown) => {
+      console.error(`Updates plugin failed to run "${label}"`, error);
+    });
 }
 
 function renderComponent(html: HtmlTemplateTag, component: PiWebComponentStatus): TemplateResult {
-  const status = !component.available
-    ? "unavailable"
-    : component.stale
-      ? "restart needed"
-      : "current";
+  const status = !component.available ? "unavailable" : component.stale ? "restart needed" : "current";
   return html`
     <div class="updates-version-row">
       <strong>${component.label}</strong>
@@ -32,8 +48,16 @@ function renderComponent(html: HtmlTemplateTag, component: PiWebComponentStatus)
 function renderCommandActions(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal | undefined, label: string, command: string): TemplateResult {
   return html`
     <span class="updates-command-actions">
-      <button type="button" class="ui-button ui-button--action ui-button--compact" @click=${() => { void navigator.clipboard.writeText(command); }}>Copy</button>
-      ${terminal === undefined ? null : html`<button type="button" class="ui-button ui-button--action ui-button--compact ui-button--primary" @click=${() => { runCommandInTerminal(terminal, label, command); }}>Run</button>`}
+      <button type="button" class="ui-button ui-button--action ui-button--compact" @click=${() => {
+        void navigator.clipboard.writeText(command);
+      }}>Copy</button>
+      ${
+        terminal === undefined
+          ? null
+          : html`<button type="button" class="ui-button ui-button--action ui-button--compact ui-button--primary" @click=${() => {
+              runCommandInTerminal(terminal, label, command);
+            }}>Run</button>`
+      }
     </span>
   `;
 }
@@ -80,19 +104,31 @@ function renderNotices(html: HtmlTemplateTag, messages: readonly PiWebStatusMess
   `;
 }
 
-function renderRecommended(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal | undefined, recommended: CommandEntry, messages: readonly PiWebStatusMessage[]): TemplateResult {
+function renderRecommended(
+  html: HtmlTemplateTag,
+  terminal: WorkspacePanelTerminal | undefined,
+  recommended: CommandEntry,
+  messages: readonly PiWebStatusMessage[],
+): TemplateResult {
   return html`
     <section class="updates-recommended">
       <strong>Recommended</strong>
-      ${messages.length === 0
-        ? html`<p class="muted">Run the recommended command. Updates require confirmation in the terminal and may interrupt active sessions; the CLI will provide instructions if this terminal cannot safely run the update.</p>`
-        : messages.map((message) => renderNotice(html, message))}
+      ${
+        messages.length === 0
+          ? html`<p class="muted">Run the recommended command. Updates require confirmation in the terminal and may interrupt active sessions; the CLI will provide instructions if this terminal cannot safely run the update.</p>`
+          : messages.map((message) => renderNotice(html, message))
+      }
       ${renderCommand(html, terminal, recommended.label, recommended.command)}
     </section>
   `;
 }
 
-function renderAdditionalCommands(html: HtmlTemplateTag, terminal: WorkspacePanelTerminal | undefined, additional: readonly CommandEntry[], hasRecommended: boolean): TemplateResult | undefined {
+function renderAdditionalCommands(
+  html: HtmlTemplateTag,
+  terminal: WorkspacePanelTerminal | undefined,
+  additional: readonly CommandEntry[],
+  hasRecommended: boolean,
+): TemplateResult | undefined {
   if (additional.length === 0) return undefined;
   return html`
     <section>
@@ -141,9 +177,7 @@ function renderUpdatesPanel(html: HtmlTemplateTag, terminal: WorkspacePanelTermi
     </style>
     <section class="ui-toolbar updates-toolbar"><strong class="ui-toolbar-title">Updates</strong>${messages.length > 0 ? html`<span class="stale">${String(messages.length)}</span>` : null}</section>
     <section class="viewer updates-status">
-      ${recommended === undefined
-        ? renderNotices(html, messages)
-        : renderRecommended(html, terminal, recommended, messages)}
+      ${recommended === undefined ? renderNotices(html, messages) : renderRecommended(html, terminal, recommended, messages)}
 
       <section>
         <strong>Installed services</strong>

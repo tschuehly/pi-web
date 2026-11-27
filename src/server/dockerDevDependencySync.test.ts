@@ -87,16 +87,21 @@ async function createSyncFixture(): Promise<SyncFixture> {
 
 function runSync(fixture: SyncFixture): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolvePromise) => {
-    execFile("bash", [syncScript], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PI_WEB_DEV_WORKSPACE_DIR: fixture.workspaceDir,
-        PI_WEB_DEV_DEPENDENCY_SEED_DIR: fixture.seedDir,
+    execFile(
+      "bash",
+      [syncScript],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PI_WEB_DEV_WORKSPACE_DIR: fixture.workspaceDir,
+          PI_WEB_DEV_DEPENDENCY_SEED_DIR: fixture.seedDir,
+        },
       },
-    }, (error, stdout, stderr) => {
-      const exitCode = typeof error === "object" && error !== null && "code" in error && typeof error.code === "number" ? error.code : 0;
-      resolvePromise({ stdout, stderr, exitCode });
-    });
+      (error, stdout, stderr) => {
+        const exitCode = typeof error === "object" && error !== null && "code" in error && typeof error.code === "number" ? error.code : 0;
+        resolvePromise({ stdout, stderr, exitCode });
+      },
+    );
   });
 }

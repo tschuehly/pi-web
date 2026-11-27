@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { normalizeMessage } from "../client/src/chatMessages.js";
 import type { MessagePage } from "../shared/apiTypes.js";
-import { projectBrowserMessage, projectBrowserMessageResponse, projectBrowserSessionEvent, projectBrowserTranscriptSnapshot } from "./browserMessageProjection.js";
+import {
+  projectBrowserMessage,
+  projectBrowserMessageResponse,
+  projectBrowserSessionEvent,
+  projectBrowserTranscriptSnapshot,
+} from "./browserMessageProjection.js";
 import { SessionMediaIndex } from "./sessions/sessionMediaIndex.js";
 
 function signedAssistantMessage() {
@@ -68,7 +73,10 @@ describe("browser message projection", () => {
     const index = new SessionMediaIndex();
     const images = (block: Record<string, unknown>) => index.reference({ id: "s1", cwd: "/workspace" }, block);
     const reference = images(image);
-    const projectedMessage = { ...message, content: [{ type: "thinking", thinking: "private chain", redacted: true }, ...message.content.slice(1, -1), reference] };
+    const projectedMessage = {
+      ...message,
+      content: [{ type: "thinking", thinking: "private chain", redacted: true }, ...message.content.slice(1, -1), reference],
+    };
     const page = { messages: [message], start: 0, total: 1 };
     expect(projectBrowserMessageResponse(page, images)).toEqual({ ...page, messages: [projectedMessage] });
     for (const type of ["assistant.start", "message.append", "message.end"] as const) {
@@ -80,8 +88,26 @@ describe("browser message projection", () => {
       expect(projectBrowserSessionEvent(event, images)).toEqual({ ...event, content: [reference] });
       expect(projectBrowserSessionEvent(event)).toBe(event);
     }
-    const snapshot = { seq: 5, page, partial: message, status: { sessionId: "s1", isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 } };
-    expect(projectBrowserTranscriptSnapshot(snapshot, images)).toEqual({ ...snapshot, page: { ...page, messages: [projectedMessage] }, partial: projectedMessage });
+    const snapshot = {
+      seq: 5,
+      page,
+      partial: message,
+      status: {
+        sessionId: "s1",
+        isStreaming: true,
+        isCompacting: false,
+        isBashRunning: false,
+        pendingMessageCount: 0,
+        queuedMessages: [],
+        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        cost: 0,
+      },
+    };
+    expect(projectBrowserTranscriptSnapshot(snapshot, images)).toEqual({
+      ...snapshot,
+      page: { ...page, messages: [projectedMessage] },
+      partial: projectedMessage,
+    });
     expect(message).toEqual(original);
     expect(reference).toMatchObject({ type: "image", mimeType: "image/png", byteSize: Buffer.from(data, "base64").byteLength, width: 1, height: 1 });
     expect(reference?.mediaId).toMatch(/^[0-9a-f]{64}$/u);

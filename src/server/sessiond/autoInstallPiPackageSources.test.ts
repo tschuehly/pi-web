@@ -27,9 +27,16 @@ beforeEach(async () => {
   profile = join(root, "agent");
   packageRoot = join(root, "current", "node_modules", "@jmfederico", "pi-web");
   current = resolveShippedPiPackagePath(relays, packageRoot);
-  await Promise.all([mkdir(cwd), mkdir(profile), writePackage(current, relays.id), writePackage(resolveShippedPiPackagePath(workflows, packageRoot), workflows.id)]);
+  await Promise.all([
+    mkdir(cwd),
+    mkdir(profile),
+    writePackage(current, relays.id),
+    writePackage(resolveShippedPiPackagePath(workflows, packageRoot), workflows.id),
+  ]);
 });
-afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true });
+});
 
 async function writePackage(path: string, name: string) {
   await mkdir(path, { recursive: true });
@@ -48,14 +55,15 @@ function reconcile(knownPackages = [relays], dismissed = false) {
   const warn = vi.fn();
   return {
     warn,
-    run: () => reconcileAutoInstallablePiPackages({
-      profileDir: profile,
-      ...createAutoInstallPiPackageProfile(profile),
-      dismissalChecker: { isDismissed: () => Promise.resolve(dismissed) },
-      packageRoot,
-      knownPackages,
-      logger: { warn },
-    }),
+    run: () =>
+      reconcileAutoInstallablePiPackages({
+        profileDir: profile,
+        ...createAutoInstallPiPackageProfile(profile),
+        dismissalChecker: { isDismissed: () => Promise.resolve(dismissed) },
+        packageRoot,
+        knownPackages,
+        logger: { warn },
+      }),
   };
 }
 
@@ -186,7 +194,8 @@ describe("managed bundled package source migration", () => {
     await migration.run();
     expect(migration.warn).not.toHaveBeenCalled();
     expect(new DefaultPiPackageProvider(cwd, profile).listPackages().map(({ installedPath }) => installedPath)).toEqual([
-      current, resolveShippedPiPackagePath(workflows, packageRoot),
+      current,
+      resolveShippedPiPackagePath(workflows, packageRoot),
     ]);
   });
 
@@ -218,9 +227,9 @@ describe("managed bundled package source migration", () => {
   it("leaves malformed settings untouched and reports the failed replacement", async () => {
     const file = join(profile, "settings.json");
     await writeFile(file, "{broken");
-    await expect(createAutoInstallPiPackageProfile(profile).installer.replaceSources([
-      { source: "old", scope: "user" },
-    ], current)).rejects.toThrow("Could not reconcile Pi package settings");
+    await expect(createAutoInstallPiPackageProfile(profile).installer.replaceSources([{ source: "old", scope: "user" }], current)).rejects.toThrow(
+      "Could not reconcile Pi package settings",
+    );
     expect(await readFile(file, "utf8")).toBe("{broken");
   });
 });

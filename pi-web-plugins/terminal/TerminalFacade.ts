@@ -78,7 +78,11 @@ export class TerminalFacade implements RequiredTerminalBrowserFacadeV1 {
   constructor(options: TerminalFacadeOptions = {}) {
     this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
     this.setTimer = options.setTimeout ?? ((handler, timeout) => globalThis.setTimeout(handler, timeout));
-    this.clearTimer = options.clearTimeout ?? ((id) => { globalThis.clearTimeout(id); });
+    this.clearTimer =
+      options.clearTimeout
+      ?? ((id) => {
+        globalThis.clearTimeout(id);
+      });
   }
 
   createWorkspaceTerminal(binding: RequiredTerminalWorkspaceBindingV1): WorkspacePanelTerminal {
@@ -110,9 +114,8 @@ export class TerminalFacade implements RequiredTerminalBrowserFacadeV1 {
   private openTerminal(binding: RequiredTerminalWorkspaceBindingV1, options?: { terminalId?: string | undefined }): void {
     const contributionId: QualifiedContributionId = `${binding.registrationPluginId}:${TERMINAL_PANEL_LOCAL_ID}`;
     const terminalId = options?.terminalId;
-    const query: Record<string, ContributionQueryValue | undefined> = terminalId === undefined
-      ? { start: String(++this.openRequestSequence) }
-      : { terminal: terminalId, start: undefined };
+    const query: Record<string, ContributionQueryValue | undefined> =
+      terminalId === undefined ? { start: String(++this.openRequestSequence) } : { terminal: terminalId, start: undefined };
     void binding.host.navigateWorkspaceContribution(binding.workspace, {
       contributionId,
       query,
@@ -172,23 +175,28 @@ function waitForCommandRunCompletion(
       cleanup();
       reject(error instanceof Error ? error : new Error(String(error)));
     };
-    const abort = (): void => { fail(abortReason(signal)); };
+    const abort = (): void => {
+      fail(abortReason(signal));
+    };
     signal.addEventListener("abort", abort, { once: true });
 
     const poll = (): void => {
       if (settled || signal.aborted) return;
-      void client.getCommandRun(initialRun.id, signal).then((run) => {
-        if (settled || signal.aborted) return;
-        if (run === undefined) {
-          fail(new Error(`Terminal command run ${initialRun.id} is no longer available`));
-          return;
-        }
-        if (isTerminalCommandRunFinal(run)) {
-          finish(run);
-          return;
-        }
-        timer = setTimer(poll, pollIntervalMs);
-      }).catch(fail);
+      void client
+        .getCommandRun(initialRun.id, signal)
+        .then((run) => {
+          if (settled || signal.aborted) return;
+          if (run === undefined) {
+            fail(new Error(`Terminal command run ${initialRun.id} is no longer available`));
+            return;
+          }
+          if (isTerminalCommandRunFinal(run)) {
+            finish(run);
+            return;
+          }
+          timer = setTimer(poll, pollIntervalMs);
+        })
+        .catch(fail);
     };
 
     timer = setTimer(poll, pollIntervalMs);
@@ -213,7 +221,9 @@ function snapshotTerminalBrowserFacade(value: unknown): RequiredTerminalBrowserF
       const terminal: unknown = Reflect.apply(createWorkspaceTerminal, value, [binding]);
       if (!isWorkspacePanelTerminal(terminal)) throw new Error("Terminal browser facade returned an invalid workspace terminal");
       return Object.freeze({
-        open(options?: { terminalId?: string | undefined }): void { terminal.open(options); },
+        open(options?: { terminalId?: string | undefined }): void {
+          terminal.open(options);
+        },
         runCommand: (input: WorkspaceTerminalCommandInput) => terminal.runCommand(input),
       });
     },
@@ -232,8 +242,12 @@ function snapshotTerminalBrowserFacade(value: unknown): RequiredTerminalBrowserF
 function linkAbortSignals(lifetime: AbortSignal, caller: AbortSignal | undefined): { signal: AbortSignal; dispose(): void } {
   if (caller === undefined || caller === lifetime) return { signal: lifetime, dispose: () => undefined };
   const controller = new AbortController();
-  const abortFromLifetime = (): void => { controller.abort(abortReason(lifetime)); };
-  const abortFromCaller = (): void => { controller.abort(abortReason(caller)); };
+  const abortFromLifetime = (): void => {
+    controller.abort(abortReason(lifetime));
+  };
+  const abortFromCaller = (): void => {
+    controller.abort(abortReason(caller));
+  };
   if (lifetime.aborted) abortFromLifetime();
   else if (caller.aborted) abortFromCaller();
   else {

@@ -8,8 +8,7 @@ function externalImageSource(image: HTMLImageElement): string | undefined {
 }
 
 function loadedDimensions(image: HTMLImageElement, source: string): ImageDimensions | undefined {
-  return image.complete && image.currentSrc === source
-    ? validImageDimensions(image.naturalWidth, image.naturalHeight) : undefined;
+  return image.complete && image.currentSrc === source ? validImageDimensions(image.naturalWidth, image.naturalHeight) : undefined;
 }
 
 function applyDimensions(image: HTMLImageElement, dimensions: ImageDimensions): void {

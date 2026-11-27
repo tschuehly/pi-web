@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { defaultNavigationSection, expandedNavigationSection, isNavigationSectionCollapsed, toggleCollapsedNavigationSection, toggleNavigationSection } from "./navigationState";
+import {
+  defaultNavigationSection,
+  expandedNavigationSection,
+  isNavigationSectionCollapsed,
+  toggleCollapsedNavigationSection,
+  toggleNavigationSection,
+} from "./navigationState";
 
 describe("navigationState", () => {
   it("defaults to the first incomplete selection section", () => {
@@ -59,5 +65,4 @@ describe("navigationState", () => {
     expect(toggleCollapsedNavigationSection(["machines", "projects"], "projects")).toEqual(["machines"]);
     expect(toggleCollapsedNavigationSection(["sessions"], "machines")).toEqual(["machines", "sessions"]);
   });
-
 });

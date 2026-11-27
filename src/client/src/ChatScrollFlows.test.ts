@@ -13,12 +13,16 @@ class ManualScheduler implements ChatScrollFrameScheduler, ChatScrollScheduler {
     this.callbacks.set(id, callback);
     return id;
   });
-  readonly cancel = vi.fn((id: number): void => { this.callbacks.delete(id); });
+  readonly cancel = vi.fn((id: number): void => {
+    this.callbacks.delete(id);
+  });
   readonly setTimeout = vi.fn((callback: () => void, delay: number): number => {
     void delay;
     return this.request(callback);
   });
-  readonly clearTimeout = vi.fn((id: number): void => { this.cancel(id); });
+  readonly clearTimeout = vi.fn((id: number): void => {
+    this.cancel(id);
+  });
 
   get pending(): number {
     return this.callbacks.size;
@@ -35,8 +39,12 @@ class ManualScheduler implements ChatScrollFrameScheduler, ChatScrollScheduler {
 class MemoryStorage implements ChatScrollStorage {
   readonly values = new Map<string, string>();
   readonly getItem = vi.fn((key: string): string | null => this.values.get(key) ?? null);
-  readonly setItem = vi.fn((key: string, value: string): void => { this.values.set(key, value); });
-  readonly removeItem = vi.fn((key: string): void => { this.values.delete(key); });
+  readonly setItem = vi.fn((key: string, value: string): void => {
+    this.values.set(key, value);
+  });
+  readonly removeItem = vi.fn((key: string): void => {
+    this.values.delete(key);
+  });
 
   seed(sessionId: string, position: ChatScrollPosition): void {
     this.values.set(chatScrollStorageKey(sessionId), JSON.stringify(position));
@@ -78,7 +86,9 @@ function fixture(behaviors: ChatBehaviors = DEFAULT_CHAT_BEHAVIORS) {
   const readTop = vi.fn(() => state.top);
   const readHeight = vi.fn(() => state.height);
   const readViewport = vi.fn(() => state.viewport);
-  const writeTop = vi.fn((top: number) => { state.top = Math.max(0, Math.min(top, state.height - state.viewport)); });
+  const writeTop = vi.fn((top: number) => {
+    state.top = Math.max(0, Math.min(top, state.height - state.viewport));
+  });
   Object.defineProperties(scroller, {
     scrollTop: { get: readTop, set: writeTop },
     scrollHeight: { get: readHeight },
@@ -94,7 +104,9 @@ function fixture(behaviors: ChatBehaviors = DEFAULT_CHAT_BEHAVIORS) {
     isHistoryReady: () => state.ready,
     isLoadingMore: () => state.loading,
     canRequestEarlier: () => state.canRequest,
-    requestEarlier: vi.fn(() => { state.loading = true; }),
+    requestEarlier: vi.fn(() => {
+      state.loading = true;
+    }),
     getOpenForm: vi.fn(() => state.openForm),
     onFollowingChange: vi.fn(),
   };
@@ -349,13 +361,18 @@ describe("position flow", () => {
   });
 
   it("waits for initial history before treating a remembered anchor as gone", () => {
-    const f = fixture(); f.state.ready = false; f.state.top = 200;
+    const f = fixture();
+    f.state.ready = false;
+    f.state.top = 200;
     f.storage.seed("s1", { mode: "anchor", anchorId: "old", offset: -10 });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     expect(f.writeTop).not.toHaveBeenCalled();
     expect(f.host.requestEarlier).not.toHaveBeenCalled();
-    f.state.ready = true; f.state.anchors = [f.element(100, "old")];
-    f.update({ historyChanged: true }); f.frames.flush();
+    f.state.ready = true;
+    f.state.anchors = [f.element(100, "old")];
+    f.update({ historyChanged: true });
+    f.frames.flush();
     expect(f.state.top).toBe(110);
     expect(f.writeTop).toHaveBeenCalledOnce();
   });
@@ -365,13 +382,16 @@ describe("position flow", () => {
     f.state.top = 200;
     const saved: ChatScrollPosition = { mode: "anchor", anchorId: "removed", offset: 12 };
     f.storage.seed("s1", saved);
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     expect(f.state.top).toBe(200);
     expect(f.writeTop).not.toHaveBeenCalled();
     expect(f.host.requestEarlier).not.toHaveBeenCalled();
     f.flows.savePosition();
     expect(f.storage.values.get(chatScrollStorageKey("s1"))).toBe(JSON.stringify(saved));
-    f.state.height = 1300; f.update(); f.frames.flush();
+    f.state.height = 1300;
+    f.update();
+    f.frames.flush();
     expect(f.state.top).toBe(200);
     // Restoration has ended: a subsequent valid reading position can be saved.
     f.state.anchors = [f.element(200, "current")];
@@ -379,7 +399,8 @@ describe("position flow", () => {
     expect(f.storage.values.get(chatScrollStorageKey("s1"))).toBe(JSON.stringify({ mode: "anchor", anchorId: "current", offset: 0 }));
     // Missing restoration does not prevent one manual return to bottom from
     // entering the separate tail-follow mode.
-    f.state.top = 1000; f.flows.onScroll();
+    f.state.top = 1000;
+    f.flows.onScroll();
     expect(f.flows.followingLive).toBe(true);
   });
 
@@ -387,12 +408,16 @@ describe("position flow", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, rememberPosition: true, followTail });
     f.state.hasMore = true;
     f.storage.seed("s1", { mode: "anchor", anchorId: "old", offset: 12 });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     expect(f.host.requestEarlier).toHaveBeenCalledOnce();
     f.flows.onInteraction();
-    f.state.top = 350; f.flows.onScroll();
-    f.state.loading = false; f.state.anchors = [f.element(100, "old")];
-    f.update({ historyChanged: true }); f.frames.flush();
+    f.state.top = 350;
+    f.flows.onScroll();
+    f.state.loading = false;
+    f.state.anchors = [f.element(100, "old")];
+    f.update({ historyChanged: true });
+    f.frames.flush();
     expect(f.writeTop).not.toHaveBeenCalled();
     expect(f.state.top).toBe(350);
   });
@@ -404,11 +429,13 @@ describe("position flow", () => {
     f.storage.seed("s1", { mode: "anchor", anchorId: "saved", offset: 0 });
     f.start();
     f.flows.onInteraction();
-    f.state.top = 700; f.flows.onScroll();
+    f.state.top = 700;
+    f.flows.onScroll();
     expect(f.flows.followingLive).toBe(true);
     expect(f.host.onFollowingChange.mock.calls).toEqual([[true]]);
     f.state.height += 100;
-    f.update(); f.frames.flush();
+    f.update();
+    f.frames.flush();
     expect(f.state.top).toBe(800);
     expect(f.writeTop).toHaveBeenCalledOnce();
   });
@@ -454,10 +481,13 @@ describe("position flow", () => {
 describe("tail and forms", () => {
   it.each([false, true])("keeps following through bottom rebound (content grows during bounce: %s)", (growsDuringBounce) => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
-    f.start(); f.frames.flush();
-    f.state.top = 720; f.flows.onScroll();
+    f.start();
+    f.frames.flush();
+    f.state.top = 720;
+    f.flows.onScroll();
     if (growsDuringBounce) {
-      f.state.height += 100; f.update();
+      f.state.height += 100;
+      f.update();
     }
     for (const top of [710, 700]) {
       f.state.top = top;
@@ -465,7 +495,8 @@ describe("tail and forms", () => {
       expect(f.flows.followingLive).toBe(true);
     }
     if (!growsDuringBounce) {
-      f.state.height += 100; f.update();
+      f.state.height += 100;
+      f.update();
     }
     f.frames.flush();
     expect(f.state.top).toBe(800);
@@ -474,7 +505,8 @@ describe("tail and forms", () => {
 
   it("does not cancel a queued follow-scroll when content growth emits a stationary scroll", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     f.state.height += 150;
     f.update();
     f.flows.onScroll();
@@ -486,7 +518,8 @@ describe("tail and forms", () => {
 
   it("coalesces layout-change notifications into one cancellable follow-scroll", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     f.writeTop.mockClear();
     f.state.height += 500;
     f.flows.onContentLayoutChanged();
@@ -500,7 +533,8 @@ describe("tail and forms", () => {
 
     f.state.height += 100;
     f.flows.onContentLayoutChanged();
-    f.flows.onUpIntent(); f.frames.flush();
+    f.flows.onUpIntent();
+    f.frames.flush();
     expect(f.state.top).toBe(1200);
     expect(f.writeTop).toHaveBeenCalledOnce();
     expect(f.flows.followingLive).toBe(false);
@@ -508,12 +542,16 @@ describe("tail and forms", () => {
 
   it("leaves a paused reading viewport alone after a layout-change notification", () => {
     const f = fixture();
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     f.flows.onUpIntent();
-    f.state.top = 200; f.flows.onScroll();
-    f.writeTop.mockClear(); f.host.requestEarlier.mockClear();
+    f.state.top = 200;
+    f.flows.onScroll();
+    f.writeTop.mockClear();
+    f.host.requestEarlier.mockClear();
     f.state.height += 500;
-    f.flows.onContentLayoutChanged(); f.frames.flush();
+    f.flows.onContentLayoutChanged();
+    f.frames.flush();
     expect(f.state.top).toBe(200);
     expect(f.flows.followingLive).toBe(false);
     expect(f.writeTop).not.toHaveBeenCalled();
@@ -523,10 +561,12 @@ describe("tail and forms", () => {
 
   it("holdReadingPlace keeps a paused reader's place across late formatting and transcript resizes", () => {
     const f = fixture({ ...DEFAULT_CHAT_BEHAVIORS, holdReadingPlace: true });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     f.flows.onUpIntent();
     f.state.anchors = [f.element(180, "reading")];
-    f.state.top = 200; f.flows.onScroll();
+    f.state.top = 200;
+    f.flows.onScroll();
     // Formatting above the anchor grows it by 40px; the browser (anchoring off) leaves scrollTop alone.
     f.flows.holdReadingPlace();
     f.state.height += 40;
@@ -539,80 +579,101 @@ describe("tail and forms", () => {
     expect(f.state.top).toBe(220);
     expect(f.flows.followingLive).toBe(false);
     // The reader's own scroll is the new place.
-    f.state.top = 100; f.flows.onScroll();
+    f.state.top = 100;
+    f.flows.onScroll();
     f.flows.onViewportResize();
     expect(f.state.top).toBe(100);
   });
 
   it("leaves reading-place layout to the browser without holdReadingPlace, and never holds while following", () => {
     const off = fixture();
-    off.start(); off.frames.flush();
+    off.start();
+    off.frames.flush();
     off.flows.onUpIntent();
     off.state.anchors = [off.element(180, "reading")];
-    off.state.top = 200; off.flows.onScroll();
+    off.state.top = 200;
+    off.flows.onScroll();
     off.flows.holdReadingPlace();
     off.state.anchors = [off.element(220, "reading")];
     off.flows.onViewportResize();
     expect(off.state.top).toBe(200);
 
     const following = fixture({ ...DEFAULT_CHAT_BEHAVIORS, holdReadingPlace: true });
-    following.start(); following.frames.flush();
+    following.start();
+    following.frames.flush();
     following.state.anchors = [following.element(700, "tail")];
     following.flows.onScroll();
     following.flows.holdReadingPlace();
     following.state.anchors = [following.element(740, "tail")];
-    following.flows.onViewportResize(); following.frames.flush();
+    following.flows.onViewportResize();
+    following.frames.flush();
     expect(following.state.top).toBe(following.state.height - following.state.viewport);
   });
 
   it("does not change modes because layout changed the scroll range or anchored position", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     f.state.height = 1200;
     f.state.top = 600;
     f.flows.onScroll();
     expect(f.flows.followingLive).toBe(true);
-    f.update(); f.frames.flush();
+    f.update();
+    f.frames.flush();
     expect(f.state.top).toBe(900);
 
     f.flows.onUpIntent();
-    f.state.top = 200; f.flows.onScroll();
+    f.state.top = 200;
+    f.flows.onScroll();
     f.state.height = 1500;
-    f.state.top = 1200; f.flows.onScroll(); // Layout anchoring, not a manual bottom return.
-    f.update(); f.frames.flush();
+    f.state.top = 1200;
+    f.flows.onScroll(); // Layout anchoring, not a manual bottom return.
+    f.update();
+    f.frames.flush();
     expect(f.flows.followingLive).toBe(false);
     expect(f.state.top).toBe(1200);
   });
 
   it("resumes only after scrolling down to the actual bottom, not a nearby or stationary event", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
-    f.start(); f.frames.flush();
+    f.start();
+    f.frames.flush();
     f.flows.onUpIntent();
     f.flows.onScroll();
     expect(f.flows.followingLive).toBe(false);
     for (const top of [650, 670, 698]) {
-      f.state.top = top; f.flows.onScroll();
+      f.state.top = top;
+      f.flows.onScroll();
       expect(f.flows.followingLive).toBe(false);
     }
-    f.state.top = 699; f.flows.onScroll();
+    f.state.top = 699;
+    f.flows.onScroll();
     expect(f.flows.followingLive).toBe(true);
     f.state.height += 100;
-    f.update(); f.frames.flush();
+    f.update();
+    f.frames.flush();
     expect(f.state.top).toBe(800);
   });
 
   it("reports mode transitions only and never treats the end arrow as an off switch", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, followTail: true });
-    f.start(); f.frames.flush();
-    f.flows.onScroll(); f.flows.jumpToEnd();
-    f.flows.onUpIntent(); f.flows.onUpIntent();
-    f.state.top = 600; f.flows.onScroll();
-    f.state.top = 500; f.flows.onScroll();
-    f.flows.jumpToEnd(); f.flows.jumpToEnd();
+    f.start();
+    f.frames.flush();
+    f.flows.onScroll();
+    f.flows.jumpToEnd();
+    f.flows.onUpIntent();
+    f.flows.onUpIntent();
+    f.state.top = 600;
+    f.flows.onScroll();
+    f.state.top = 500;
+    f.flows.onScroll();
+    f.flows.jumpToEnd();
+    f.flows.jumpToEnd();
     expect(f.flows.followingLive).toBe(true);
     expect(f.host.onFollowingChange.mock.calls).toEqual([[true], [false], [true]]);
     f.state.behaviors = MANUAL_CHAT_BEHAVIORS;
-    f.flows.configure(); f.flows.jumpToEnd();
+    f.flows.configure();
+    f.flows.jumpToEnd();
     expect(f.flows.followingLive).toBe(false);
     expect(f.host.onFollowingChange.mock.calls).toEqual([[true], [false], [true], [false]]);
   });
@@ -692,7 +753,10 @@ describe("automatic history", () => {
   it("does not schedule frames during scrolling far from the top, even with earlier history", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, automaticHistory: true });
     f.state.hasMore = true;
-    for (const top of [700, 650, 600]) { f.state.top = top; f.flows.onScroll(); }
+    for (const top of [700, 650, 600]) {
+      f.state.top = top;
+      f.flows.onScroll();
+    }
     expect(f.frames.request).not.toHaveBeenCalled();
     expect(f.readHeight).not.toHaveBeenCalled();
     expect(f.readViewport).not.toHaveBeenCalled();
@@ -792,7 +856,8 @@ describe("prepend and cleanup", () => {
 
   it("does not correct a prepend when no durable anchor exists", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, anchorPrepends: true });
-    f.start(); f.state.top = 200;
+    f.start();
+    f.state.top = 200;
     f.state.anchors = [f.element(180)];
     f.flows.beforeRender({ sessionChanged: false, prepend: true });
     f.state.height += 300;
@@ -866,20 +931,23 @@ describe("prepend and cleanup", () => {
 
   it("does not reclaim the viewport after user interaction", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, anchorPrepends: true });
-    f.start(); f.state.top = 200;
+    f.start();
+    f.state.top = 200;
     f.state.anchors = [f.element(180, "reading")];
     f.flows.beforeRender({ sessionChanged: false, prepend: true });
     f.state.height = 1300;
     f.state.anchors = [f.element(480, "reading")];
     f.update({ historyChanged: true });
     f.flows.onInteraction();
-    f.state.top = 160; f.frames.flush();
+    f.state.top = 160;
+    f.frames.flush();
     expect(f.writeTop).not.toHaveBeenCalled();
   });
 
   it("does not jump elsewhere when the captured message disappears", () => {
     const f = fixture({ ...MANUAL_CHAT_BEHAVIORS, anchorPrepends: true });
-    f.start(); f.state.top = 200;
+    f.start();
+    f.state.top = 200;
     f.state.anchors = [f.element(180, "reading")];
     f.flows.beforeRender({ sessionChanged: false, prepend: true });
     f.state.height += 300;

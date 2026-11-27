@@ -60,7 +60,9 @@ describe("AuthController", () => {
       {
         startInteractiveApiKeyLogin: (providerId, machineId) => {
           calls.push({ providerId, machineId });
-          return Promise.resolve(oauthFlow({ providerId, providerName: "Amazon Bedrock", select: { requestId: "request-1", message: "Choose method", options: [] } }));
+          return Promise.resolve(
+            oauthFlow({ providerId, providerName: "Amazon Bedrock", select: { requestId: "request-1", message: "Choose method", options: [] } }),
+          );
         },
       },
     );
@@ -137,7 +139,10 @@ describe("AuthController", () => {
       clearInterval: () => undefined,
     });
     const provider = authProvider("anthropic", "oauth");
-    const flow = oauthFlow({ auth: { url: "https://provider.example/authorize" }, prompt: { requestId: "request-1", message: "Paste callback", promptType: "manual_code" } });
+    const flow = oauthFlow({
+      auth: { url: "https://provider.example/authorize" },
+      prompt: { requestId: "request-1", message: "Paste callback", promptType: "manual_code" },
+    });
     const startCalls: { providerId: string; machineId: string | undefined }[] = [];
     const pollCalls: { flowId: string; machineId: string | undefined }[] = [];
     const cancelCalls: { flowId: string; machineId: string | undefined }[] = [];
@@ -208,7 +213,9 @@ describe("AuthController", () => {
           return Promise.resolve(refreshedStatus);
         },
       },
-      (status) => { appliedStatuses.push(status); },
+      (status) => {
+        appliedStatuses.push(status);
+      },
     );
 
     await controller.respondOAuth();
@@ -333,14 +340,14 @@ describe("AuthController", () => {
         pollCallback = callback;
         return 7;
       },
-      clearInterval: (timer: number) => { clearedTimers.push(timer); },
+      clearInterval: (timer: number) => {
+        clearedTimers.push(timer);
+      },
     });
     const { controller, getState, setState } = createController(
       { selectedMachine: remoteMachine("remote-a") },
       {
-        authProviders: (options) => options?.machineId === "remote-a"
-          ? staleProviderLookup.promise
-          : Promise.resolve({ providers: [provider] }),
+        authProviders: (options) => (options?.machineId === "remote-a" ? staleProviderLookup.promise : Promise.resolve({ providers: [provider] })),
         startOAuthLogin: (providerId, machineId) => {
           startCalls.push({ providerId, machineId });
           return Promise.resolve(oauthFlow({ flowId: machineId === "remote-b" ? "flow-b" : "flow-a" }));
@@ -446,9 +453,7 @@ describe("AuthController", () => {
     const { controller, getState, setState } = createController(
       { selectedMachine: remoteMachine("remote-a") },
       {
-        authProviders: (options) => options?.machineId === "remote-a"
-          ? staleProviderLookup.promise
-          : Promise.resolve({ providers: [provider] }),
+        authProviders: (options) => (options?.machineId === "remote-a" ? staleProviderLookup.promise : Promise.resolve({ providers: [provider] })),
         logoutProvider: (_providerId, machineId) => {
           logoutMachines.push(machineId);
           return Promise.resolve({ accepted: true as const });
@@ -475,7 +480,10 @@ describe("AuthController", () => {
     const flow = oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", promptType: "manual_code" } });
     const { controller, getState } = createController(
       { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback", responding: true } },
-      { respondOAuthFlow: () => Promise.resolve(oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", promptType: "manual_code" }, progress: ["Still waiting"] })) },
+      {
+        respondOAuthFlow: () =>
+          Promise.resolve(oauthFlow({ prompt: { requestId: "request-1", message: "Paste callback", promptType: "manual_code" }, progress: ["Still waiting"] })),
+      },
     );
 
     await controller.respondOAuth();
@@ -508,10 +516,13 @@ describe("AuthController", () => {
     const { controller, getState } = createController(
       { authDialog: { step: "oauth", flow, machineId: "local", inputValue: "https://callback", responding: true } },
       {
-        respondOAuthFlow: () => Promise.resolve(oauthFlow({
-          select: { requestId: "request-2", message: "Choose an account", options: [{ value: "acct-1", label: "Account 1" }] },
-          progress: ["Need account selection"],
-        })),
+        respondOAuthFlow: () =>
+          Promise.resolve(
+            oauthFlow({
+              select: { requestId: "request-2", message: "Choose an account", options: [{ value: "acct-1", label: "Account 1" }] },
+              progress: ["Need account selection"],
+            }),
+          ),
       },
     );
 
@@ -544,7 +555,9 @@ describe("AuthController", () => {
           return Promise.resolve(refreshedStatus);
         },
       },
-      (status) => { appliedStatuses.push(status); },
+      (status) => {
+        appliedStatuses.push(status);
+      },
     );
 
     await controller.respondOAuth();
@@ -577,7 +590,9 @@ describe("AuthController", () => {
           return Promise.resolve(sessionStatus("session-2"));
         },
       },
-      (status) => { appliedStatuses.push(status); },
+      (status) => {
+        appliedStatuses.push(status);
+      },
     );
 
     await controller.respondOAuth();
@@ -607,7 +622,9 @@ describe("AuthController", () => {
           return statusResponse.promise;
         },
       },
-      (status) => { appliedStatuses.push(status); },
+      (status) => {
+        appliedStatuses.push(status);
+      },
     );
 
     await controller.respondOAuth();
@@ -670,7 +687,10 @@ describe("AuthController", () => {
       select: {
         requestId: "request-1",
         message: "Choose an account",
-        options: [{ value: "acct-1", label: "Account 1" }, { value: "acct-2", label: "Account 2" }],
+        options: [
+          { value: "acct-1", label: "Account 1" },
+          { value: "acct-2", label: "Account 2" },
+        ],
       },
     });
     const response = deferred<OAuthFlowState>();
@@ -980,13 +1000,10 @@ function createController(
 ) {
   let state: AppState = { ...initialAppState(), ...statePatch };
   const api = { ...defaultApi, ...apiPatch };
-  const setState = (patch: Partial<AppState>) => { state = { ...state, ...patch }; };
-  const controller = new AuthController(
-    () => state,
-    setState,
-    applyStatus,
-    { api },
-  );
+  const setState = (patch: Partial<AppState>) => {
+    state = { ...state, ...patch };
+  };
+  const controller = new AuthController(() => state, setState, applyStatus, { api });
   return { controller, getState: () => state, setState };
 }
 
@@ -997,7 +1014,9 @@ async function flushMicrotasks(): Promise<void> {
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolveDeferred: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolveDeferred = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
   if (resolveDeferred === undefined) throw new Error("Deferred promise was not initialized");
   return { promise, resolve: resolveDeferred };
 }

@@ -25,9 +25,7 @@ export class ChatRenderKeys {
     const provisional = new Map(this.previous.filter((item) => item.identity === undefined).map((item) => [item.slot, item.key]));
     this.previous = items.map((item) => ({
       ...item,
-      key: (item.identity === undefined ? undefined : identities.get(item.identity))
-        ?? provisional.get(item.slot)
-        ?? `render:${String(this.sequence++)}`,
+      key: (item.identity === undefined ? undefined : identities.get(item.identity)) ?? provisional.get(item.slot) ?? `render:${String(this.sequence++)}`,
     }));
     // Retain only the rendered window, not every message ever visited.
     return this.previous.map((item) => item.key);

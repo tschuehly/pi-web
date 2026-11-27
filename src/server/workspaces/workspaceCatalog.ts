@@ -1,10 +1,7 @@
 import type { ServerPluginSafeStart } from "../../serverPluginRecovery.js";
 import { terminalPluginModeForSafeStart, type TerminalPluginMode } from "../../shared/requiredTerminalPlugin.js";
 import type { WorkspaceListing, WorkspaceProviderAuthorityResolution } from "../../shared/apiTypes.js";
-import type {
-  ServerPluginHealthInspection,
-  ServerPluginRuntimeRecord,
-} from "../plugins/serverPluginRuntime.js";
+import type { ServerPluginHealthInspection, ServerPluginRuntimeRecord } from "../plugins/serverPluginRuntime.js";
 import type { PiWebPluginCatalogDiagnostic } from "../piWebPluginCatalog.js";
 
 export const WORKSPACE_PROVIDER_RUNTIME_PROTOCOL_VERSION = 2;
@@ -43,10 +40,14 @@ export function createWorkspaceProviderRuntimeSnapshot(
     terminalMode: terminalPluginModeForSafeStart(safeStart),
     ...(safeStart === undefined ? {} : { safeStart }),
     records: Object.freeze(records.map((record) => Object.freeze({ ...record }))),
-    health: Object.freeze(health.map((inspection) => Object.freeze({
-      ...inspection,
-      health: Object.freeze({ ...inspection.health }),
-    }))),
+    health: Object.freeze(
+      health.map((inspection) =>
+        Object.freeze({
+          ...inspection,
+          health: Object.freeze({ ...inspection.health }),
+        }),
+      ),
+    ),
     diagnostics: Object.freeze(diagnostics.map((diagnostic) => Object.freeze({ ...diagnostic }))),
   });
 }
@@ -62,7 +63,10 @@ export class WorkspaceCatalogProtocolError extends Error {
 export class WorkspaceCatalogRequestError extends Error {
   override name = "WorkspaceCatalogRequestError";
 
-  constructor(message: string, readonly statusCode: number) {
+  constructor(
+    message: string,
+    readonly statusCode: number,
+  ) {
     super(message);
   }
 }

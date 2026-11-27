@@ -70,7 +70,7 @@ function parseOptionalUpdateSource(body: unknown): string | undefined {
 
 function parseOptionalScope(value: unknown): PiPackageScope | undefined {
   if (value === undefined) return undefined;
-  if (value !== "user" && value !== "project") throw new PiPackageRequestValidationError("Pi package scope must be \"user\" or \"project\"");
+  if (value !== "user" && value !== "project") throw new PiPackageRequestValidationError('Pi package scope must be "user" or "project"');
   return value;
 }
 
@@ -80,11 +80,7 @@ function requireRequestObject(value: unknown): Record<string, unknown> {
 }
 
 function sendPiPackageError(reply: FastifyReply, error: unknown): FastifyReply {
-  const status = error instanceof PiPackageRequestValidationError
-    ? 400
-    : error instanceof ActiveAgentProfileAccessError
-      ? 503
-      : 500;
+  const status = error instanceof PiPackageRequestValidationError ? 400 : error instanceof ActiveAgentProfileAccessError ? 503 : 500;
   return reply.code(status).send({ error: errorMessage(error) });
 }
 

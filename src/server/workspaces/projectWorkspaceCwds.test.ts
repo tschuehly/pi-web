@@ -4,10 +4,12 @@ import { RegisteredProjectWorkspaceCwds } from "./projectWorkspaceCwds.js";
 
 describe("RegisteredProjectWorkspaceCwds", () => {
   it("returns every workspace path of the project containing the cwd", async () => {
-    const locator = new RegisteredProjectWorkspaceCwds(deps({
-      "project-1": ["/srv/dev/pi-web", "/srv/dev/pi-web-feature"],
-      "project-2": ["/srv/dev/other"],
-    }));
+    const locator = new RegisteredProjectWorkspaceCwds(
+      deps({
+        "project-1": ["/srv/dev/pi-web", "/srv/dev/pi-web-feature"],
+        "project-2": ["/srv/dev/other"],
+      }),
+    );
 
     expect(await locator.forCwd("/srv/dev/pi-web-feature")).toEqual(["/srv/dev/pi-web", "/srv/dev/pi-web-feature"]);
   });

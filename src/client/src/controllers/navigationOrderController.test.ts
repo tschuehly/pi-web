@@ -4,7 +4,9 @@ import { NavigationOrderController, type NavigationOrderPort, type NavigationOrd
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 const projects: NavigationOrderScope = { kind: "projects", machineId: "local" };
@@ -14,7 +16,7 @@ describe("NavigationOrderController", () => {
   it("coalesces loads and keeps late results in their own scope", async () => {
     const first = deferred<NavigationOrderSnapshot>();
     const second = deferred<NavigationOrderSnapshot>();
-    const load = vi.fn((scope: NavigationOrderScope) => scope.machineId === "local" ? first.promise : second.promise);
+    const load = vi.fn((scope: NavigationOrderScope) => (scope.machineId === "local" ? first.promise : second.promise));
     const controller = new NavigationOrderController({ load, save: vi.fn() });
     const a = controller.ensure(projects);
     expect(controller.ensure({ ...projects })).toBe(a);
@@ -33,11 +35,13 @@ describe("NavigationOrderController", () => {
 
   it("serializes repeated moves against resulting state and updated revisions", async () => {
     const saving = deferred<NavigationOrderSnapshot>();
-    const save = vi.fn<NavigationOrderPort["save"]>()
+    const save = vi
+      .fn<NavigationOrderPort["save"]>()
       .mockImplementationOnce(() => saving.promise)
       .mockResolvedValueOnce({ ids: ["c", "b", "a", "hidden"], revision: 3 });
     const controller = new NavigationOrderController({
-      load: vi.fn().mockResolvedValue({ ids: ["a", "hidden", "b", "c"], revision: 1 }), save,
+      load: vi.fn().mockResolvedValue({ ids: ["a", "hidden", "b", "c"], revision: 1 }),
+      save,
     });
     await controller.ensure(projects);
     const first = controller.mutate(projects, (ids) => moveOrderedId(ids, ["a", "b", "c"], "b", "a", "before"));
@@ -58,9 +62,14 @@ describe("NavigationOrderController", () => {
     const error = new Error(message);
     const onError = vi.fn();
     const onChange = vi.fn();
-    const load = vi.fn().mockResolvedValueOnce({ ids: ["a"], revision: 1 })
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce({ ids: ["a"], revision: 1 })
       .mockResolvedValueOnce({ ids: ["external", "a"], revision: 8 });
-    const save = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce({ ids: ["external", "a", "new"], revision: 9 });
+    const save = vi
+      .fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({ ids: ["external", "a", "new"], revision: 9 });
     const controller = new NavigationOrderController({ load, save }, { onError, onChange });
     await controller.ensure(projects);
     await expect(controller.mutate(projects, () => ["bad"])).rejects.toBe(error);
@@ -74,11 +83,15 @@ describe("NavigationOrderController", () => {
 
   it("retries failed loads and reloads before queued writes when recovery failed", async () => {
     const failure = new Error("offline");
-    const load = vi.fn().mockRejectedValueOnce(failure)
+    const load = vi
+      .fn()
+      .mockRejectedValueOnce(failure)
       .mockResolvedValueOnce({ ids: ["a"], revision: 1 })
       .mockRejectedValueOnce(failure)
       .mockResolvedValueOnce({ ids: ["server"], revision: 4 });
-    const save = vi.fn().mockRejectedValueOnce(failure)
+    const save = vi
+      .fn()
+      .mockRejectedValueOnce(failure)
       .mockResolvedValueOnce({ ids: ["server", "new"], revision: 5 });
     const controller = new NavigationOrderController({ load, save });
     await expect(controller.ensure(projects)).rejects.toBe(failure);

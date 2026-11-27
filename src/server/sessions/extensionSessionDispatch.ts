@@ -16,8 +16,12 @@ interface DispatchDependencies {
 export function createExtensionSessionDispatch(cwd: string, deps: DispatchDependencies): ExtensionFactory {
   return (pi) => {
     let context: ExtensionContext | undefined;
-    pi.on("session_start", (_event, ctx) => { context = ctx; });
-    pi.on("session_shutdown", () => { context = undefined; });
+    pi.on("session_start", (_event, ctx) => {
+      context = ctx;
+    });
+    pi.on("session_shutdown", () => {
+      context = undefined;
+    });
     pi.events.on(SESSION_DISPATCH_CHANNEL, (request) => {
       if (!isRecord(request)) return;
       const accept = request["accept"];

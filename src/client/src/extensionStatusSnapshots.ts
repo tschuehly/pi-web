@@ -12,7 +12,7 @@ const INVISIBLE_SPOOF_GLOBAL = /(?:(?!\u200d)\p{Cf})|[\u115f\u2800\u3164\uffa0]/
 const GOAL_ID_DISALLOWED = /[\p{Cc}\p{Cf}\u115f\u2800\u3164\uffa0]/u;
 
 export const GOAL_STATUS_STATE_VALUES = ["active", "waiting", "paused", "blocked", "usage_limited", "budget_limited"] as const;
-export type GoalStatusState = typeof GOAL_STATUS_STATE_VALUES[number];
+export type GoalStatusState = (typeof GOAL_STATUS_STATE_VALUES)[number];
 export interface GoalStatusSnapshot {
   schemaVersion: 1;
   goalId: string;
@@ -28,7 +28,7 @@ export const WORKING_MODE_AXES = {
 } as const;
 export type WorkingModeAxis = keyof typeof WORKING_MODE_AXES;
 export const WORKING_MODE_AXIS_NAMES: readonly WorkingModeAxis[] = ["alignment", "attention", "checking", "orchestration"];
-export type WorkingModeState = { [A in WorkingModeAxis]: typeof WORKING_MODE_AXES[A][number] };
+export type WorkingModeState = { [A in WorkingModeAxis]: (typeof WORKING_MODE_AXES)[A][number] };
 const WORKING_MODE_DEFAULTS: WorkingModeState = { alignment: "Default", attention: "Default", checking: "Default", orchestration: "Main" };
 export interface WorkingModeSnapshot {
   schemaVersion: 2;
@@ -59,37 +59,63 @@ export function parseWatcherStatusSnapshot(text: string | undefined): WatcherSta
   for (const entry of value["watchers"]) {
     if (!record(entry)) return [];
     const { logicalId, handleId, label, mode, scope, state, consecutiveFailures, startedAt } = entry;
-    if (!safeStatusId(logicalId, 256) || !safeStatusId(handleId, 64) || ids.has(logicalId)
-      || (label !== undefined && (typeof label !== "string" || Array.from(label).length > 48)) || typeof scope !== "string" || Array.from(scope).length > 240
+    if (
+      !safeStatusId(logicalId, 256)
+      || !safeStatusId(handleId, 64)
+      || ids.has(logicalId)
+      || (label !== undefined && (typeof label !== "string" || Array.from(label).length > 48))
+      || typeof scope !== "string"
+      || Array.from(scope).length > 240
       || (mode !== "spawn" && mode !== "poll" && mode !== "file")
       || (state !== "watching" && state !== "retrying" && state !== "suspended" && state !== "quarantined")
-      || typeof consecutiveFailures !== "number" || !Number.isSafeInteger(consecutiveFailures) || consecutiveFailures < 0
-      || !validStatusTime(startedAt)) return [];
+      || typeof consecutiveFailures !== "number"
+      || !Number.isSafeInteger(consecutiveFailures)
+      || consecutiveFailures < 0
+      || !validStatusTime(startedAt)
+    )
+      return [];
     ids.add(logicalId);
     const normalizedLabel = label === undefined ? "" : normalizeGoalText(label.replace(/\u200d/gu, ""));
-    items.push({ logicalId, handleId, ...(normalizedLabel === "" ? {} : { label: normalizedLabel }), mode,
+    items.push({
+      logicalId,
+      handleId,
+      ...(normalizedLabel === "" ? {} : { label: normalizedLabel }),
+      mode,
       scope: normalizeGoalText(scope.replace(/\u200d/gu, "")),
-      state, consecutiveFailures, startedAt });
+      state,
+      consecutiveFailures,
+      startedAt,
+    });
   }
   return items;
 }
 
 function safeStatusId(value: unknown, max: number): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= max
-    && value.trim() === value && !/[\s\p{Cc}\p{Cf}\u115f\u2800\u3164\uffa0]/u.test(value);
+  return (
+    typeof value === "string" && value.length > 0 && value.length <= max && value.trim() === value && !/[\s\p{Cc}\p{Cf}\u115f\u2800\u3164\uffa0]/u.test(value)
+  );
 }
 
 function validStatusTime(value: unknown): value is string {
-  return typeof value === "string" && value.length <= 64
-    && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/u.test(value)
-    && Number.isFinite(Date.parse(value));
+  return (
+    typeof value === "string" && value.length <= 64 && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/u.test(value) && Number.isFinite(Date.parse(value))
+  );
 }
 
 /** `toolCallId`: the running `bash` call that launched the job, when the publisher names it (Durable Chats). */
-export interface BackgroundBashStatusItem { id: string; elapsedSeconds: number; bytes: number; command?: string; description?: string; output?: string; logPath?: string; toolCallId?: string }
+export interface BackgroundBashStatusItem {
+  id: string;
+  elapsedSeconds: number;
+  bytes: number;
+  command?: string;
+  description?: string;
+  output?: string;
+  logPath?: string;
+  toolCallId?: string;
+}
 
 // Optional preview text: kept only when it is a bounded string, otherwise dropped without rejecting the job.
-const previewText = (value: unknown, max: number): string | undefined => typeof value === "string" && value.length <= max ? value : undefined;
+const previewText = (value: unknown, max: number): string | undefined => (typeof value === "string" && value.length <= max ? value : undefined);
 
 export function parseBackgroundBashStatusSnapshot(text: string | undefined): BackgroundBashStatusItem[] {
   if (text === undefined || text.length > 32_768) return [];
@@ -100,16 +126,33 @@ export function parseBackgroundBashStatusSnapshot(text: string | undefined): Bac
   for (const entry of value["jobs"]) {
     if (!record(entry)) return [];
     const { id, elapsedSeconds, bytes } = entry;
-    if (!safeStatusId(id, 128) || ids.has(id)
-      || typeof elapsedSeconds !== "number" || !Number.isSafeInteger(elapsedSeconds) || elapsedSeconds < 0
-      || typeof bytes !== "number" || !Number.isSafeInteger(bytes) || bytes < 0) return [];
+    if (
+      !safeStatusId(id, 128)
+      || ids.has(id)
+      || typeof elapsedSeconds !== "number"
+      || !Number.isSafeInteger(elapsedSeconds)
+      || elapsedSeconds < 0
+      || typeof bytes !== "number"
+      || !Number.isSafeInteger(bytes)
+      || bytes < 0
+    )
+      return [];
     ids.add(id);
     const command = previewText(entry["command"], 240);
     const description = previewText(entry["description"], 120);
     const output = previewText(entry["output"], 1_200);
     const logPath = previewText(entry["logPath"], 1_024);
     const toolCallId = safeStatusId(entry["toolCallId"], 250) ? entry["toolCallId"] : undefined;
-    jobs.push({ id, elapsedSeconds, bytes, ...(command === undefined ? {} : { command }), ...(description === undefined ? {} : { description }), ...(output === undefined ? {} : { output }), ...(logPath === undefined ? {} : { logPath }), ...(toolCallId === undefined ? {} : { toolCallId }) });
+    jobs.push({
+      id,
+      elapsedSeconds,
+      bytes,
+      ...(command === undefined ? {} : { command }),
+      ...(description === undefined ? {} : { description }),
+      ...(output === undefined ? {} : { output }),
+      ...(logPath === undefined ? {} : { logPath }),
+      ...(toolCallId === undefined ? {} : { toolCallId }),
+    });
   }
   return jobs;
 }
@@ -121,14 +164,29 @@ export function visibleShellExecutions(value: unknown): ActiveToolExecution[] {
   const shells: ActiveToolExecution[] = [];
   for (const entry of value) {
     if (!record(entry)) return [];
-    if (entry["kind"] !== "shell" || !((entry["toolName"] === "bash" && entry["label"] === "Shell command")
-      || (entry["toolName"] === "shell" && entry["label"] === "Interactive shell"))) continue;
-    if (!safeStatusId(entry["id"], 256) || ids.has(entry["id"])
-      || (entry["startedAt"] !== undefined && (typeof entry["startedAt"] !== "string" || entry["startedAt"].length === 0
-        || entry["startedAt"].length > 64 || !Number.isFinite(Date.parse(entry["startedAt"]))))) return [];
+    if (
+      entry["kind"] !== "shell"
+      || !((entry["toolName"] === "bash" && entry["label"] === "Shell command") || (entry["toolName"] === "shell" && entry["label"] === "Interactive shell"))
+    )
+      continue;
+    if (
+      !safeStatusId(entry["id"], 256)
+      || ids.has(entry["id"])
+      || (entry["startedAt"] !== undefined
+        && (typeof entry["startedAt"] !== "string"
+          || entry["startedAt"].length === 0
+          || entry["startedAt"].length > 64
+          || !Number.isFinite(Date.parse(entry["startedAt"]))))
+    )
+      return [];
     ids.add(entry["id"]);
-    shells.push({ id: entry["id"], kind: "shell", toolName: entry["toolName"], label: entry["label"],
-      ...(entry["startedAt"] === undefined ? {} : { startedAt: entry["startedAt"] }) });
+    shells.push({
+      id: entry["id"],
+      kind: "shell",
+      toolName: entry["toolName"],
+      label: entry["label"],
+      ...(entry["startedAt"] === undefined ? {} : { startedAt: entry["startedAt"] }),
+    });
   }
   return shells;
 }
@@ -155,7 +213,11 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function parseJson(text: string | undefined): unknown {
   if (text === undefined) return undefined;
-  try { return JSON.parse(text); } catch { return undefined; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }
 
 function isGoalStatusState(value: unknown): value is GoalStatusState {
@@ -176,8 +238,7 @@ export function parseGoalStatusSnapshot(text: string | undefined): GoalStatusSna
 }
 
 export function validGoalId(value: unknown): value is string {
-  return typeof value === "string" && value !== "" && value === value.trim()
-    && !GOAL_ID_DISALLOWED.test(value) && Array.from(value).length <= 128;
+  return typeof value === "string" && value !== "" && value === value.trim() && !GOAL_ID_DISALLOWED.test(value) && Array.from(value).length <= 128;
 }
 
 export function parseLegacyGoalStatus(text: string | undefined): string | undefined {
@@ -218,7 +279,11 @@ export function workingModeSupersedes(later: number | undefined, earlier: number
 export function withNewerWorkingMode(kept: SessionStatus | undefined, next: SessionStatus): SessionStatus {
   const mode = kept?.extensionStatuses?.[WORKING_MODE_STATUS_KEY];
   if (kept === undefined || mode === undefined || workingModeSupersedes(next.workingModeVersion, kept.workingModeVersion)) return next;
-  return { ...next, extensionStatuses: { ...next.extensionStatuses, [WORKING_MODE_STATUS_KEY]: mode }, ...(kept.workingModeVersion === undefined ? {} : { workingModeVersion: kept.workingModeVersion }) };
+  return {
+    ...next,
+    extensionStatuses: { ...next.extensionStatuses, [WORKING_MODE_STATUS_KEY]: mode },
+    ...(kept.workingModeVersion === undefined ? {} : { workingModeVersion: kept.workingModeVersion }),
+  };
 }
 
 export function parseWorkingModeSnapshot(text: string | undefined): WorkingModeSnapshot | undefined {
@@ -250,18 +315,33 @@ export function parseDelegateActivitySnapshot(text: string | undefined): Delegat
   const items: DelegateActivityItem[] = [];
   const ids = new Set<string>();
   for (const candidate of value["items"]) {
-    if (!record(candidate) || !safeStatusId(candidate["id"], 128) || ids.has(candidate["id"])
-      || (candidate["kind"] !== "subagent" && candidate["kind"] !== "worker")) return [];
+    if (
+      !record(candidate)
+      || !safeStatusId(candidate["id"], 128)
+      || ids.has(candidate["id"])
+      || (candidate["kind"] !== "subagent" && candidate["kind"] !== "worker")
+    )
+      return [];
     ids.add(candidate["id"]);
     const item: DelegateActivityItem = { id: candidate["id"], kind: candidate["kind"] };
-    const name = optionalText(candidate["name"]); if (name !== undefined) item.name = name;
-    const role = optionalText(candidate["role"]); if (role !== undefined) item.role = role;
-    const model = optionalText(candidate["model"]); if (model !== undefined) item.model = model;
-    const effort = optionalText(candidate["effort"]); if (effort !== undefined) item.effort = effort;
-    const objective = optionalText(candidate["objective"]); if (objective !== undefined) item.objective = objective;
-    const activity = optionalText(candidate["activity"]); if (activity !== undefined) item.activity = activity;
-    const reportedStatus = optionalText(candidate["reportedStatus"]); if (reportedStatus !== undefined) item.reportedStatus = reportedStatus;
-    for (const key of ["startedAt", "reportedAt", "endedAt"] as const) { const time = candidate[key]; if (validStatusTime(time)) item[key] = time; }
+    const name = optionalText(candidate["name"]);
+    if (name !== undefined) item.name = name;
+    const role = optionalText(candidate["role"]);
+    if (role !== undefined) item.role = role;
+    const model = optionalText(candidate["model"]);
+    if (model !== undefined) item.model = model;
+    const effort = optionalText(candidate["effort"]);
+    if (effort !== undefined) item.effort = effort;
+    const objective = optionalText(candidate["objective"]);
+    if (objective !== undefined) item.objective = objective;
+    const activity = optionalText(candidate["activity"]);
+    if (activity !== undefined) item.activity = activity;
+    const reportedStatus = optionalText(candidate["reportedStatus"]);
+    if (reportedStatus !== undefined) item.reportedStatus = reportedStatus;
+    for (const key of ["startedAt", "reportedAt", "endedAt"] as const) {
+      const time = candidate[key];
+      if (validStatusTime(time)) item[key] = time;
+    }
     items.push(item);
   }
   return items;
@@ -287,14 +367,20 @@ export function activitySummary(status: Pick<SessionStatus, "extensionStatuses" 
   const watchers = parseWatcherStatusSnapshot(status?.extensionStatuses?.[WATCHER_STATUS_KEY]);
   const backgroundBash = parseBackgroundBashStatusSnapshot(status?.extensionStatuses?.[BACKGROUND_BASH_STATUS_KEY]);
   // A bash call running as a job is that job: one shell, shown with the job's description and output.
-  const launched = new Set(backgroundBash.flatMap((job) => job.toolCallId === undefined ? [] : [`tool:${job.toolCallId}`]));
+  const launched = new Set(backgroundBash.flatMap((job) => (job.toolCallId === undefined ? [] : [`tool:${job.toolCallId}`])));
   const shells = visibleShellExecutions(status?.activeToolExecutions).filter((shell) => !launched.has(shell.id));
   const outcomes = delegates.map(delegateOutcome);
   const tally = (outcome: DelegateOutcome) => outcomes.filter((candidate) => candidate === outcome).length;
   const shellCount = shells.length + backgroundBash.length;
   const label = [
-    counted(tally("failed"), "failed"), counted(tally("done"), "to collect"), counted(tally("cancelled"), "cancelled"), counted(tally("running"), "running"),
-    counted(watchers.length, "watcher", "watchers"), counted(shellCount, "shell", "shells"),
-  ].filter((part) => part !== undefined).join(" · ");
+    counted(tally("failed"), "failed"),
+    counted(tally("done"), "to collect"),
+    counted(tally("cancelled"), "cancelled"),
+    counted(tally("running"), "running"),
+    counted(watchers.length, "watcher", "watchers"),
+    counted(shellCount, "shell", "shells"),
+  ]
+    .filter((part) => part !== undefined)
+    .join(" · ");
   return { delegates, watchers, shells, backgroundBash, count: delegates.length + watchers.length + shellCount, label };
 }

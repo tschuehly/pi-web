@@ -1,5 +1,17 @@
 import type { FastifyInstance } from "fastify";
-import { loadPiWebConfig, parseAgentConfig, parseAttachmentsConfig, parseSessionArchiveConfig, parseSessionNamingConfig, parseUploadsConfig, resolveEffectivePiWebConfig, savePiWebConfig, type AgentPathHost, type LoadOptions, type PiWebConfig } from "../config.js";
+import {
+  loadPiWebConfig,
+  parseAgentConfig,
+  parseAttachmentsConfig,
+  parseSessionArchiveConfig,
+  parseSessionNamingConfig,
+  parseUploadsConfig,
+  resolveEffectivePiWebConfig,
+  savePiWebConfig,
+  type AgentPathHost,
+  type LoadOptions,
+  type PiWebConfig,
+} from "../config.js";
 import type { PiWebConfigEnvOverrides, PiWebConfigResponse, PiWebConfigValues } from "../shared/apiTypes.js";
 import { requireDefaultThemePreference } from "../shared/themePreference.js";
 import { requireDefaultStreamingBehavior } from "../shared/streamingBehavior.js";
@@ -150,7 +162,8 @@ function parseConfigRequest(value: unknown, agentPathHost: AgentPathHost = "curr
   if (allowedHosts !== undefined) config.allowedHosts = parseAllowedHostsRequest(allowedHosts);
   if (shortcuts !== undefined) config.shortcuts = parseShortcutsRequest(shortcuts);
   if (value["defaultTheme"] !== undefined) config.defaultTheme = requireDefaultThemePreference(value["defaultTheme"], "request");
-  if (value["defaultStreamingBehavior"] !== undefined) config.defaultStreamingBehavior = requireDefaultStreamingBehavior(value["defaultStreamingBehavior"], "request");
+  if (value["defaultStreamingBehavior"] !== undefined)
+    config.defaultStreamingBehavior = requireDefaultStreamingBehavior(value["defaultStreamingBehavior"], "request");
   if (value["sessionNaming"] !== undefined) config.sessionNaming = parseSessionNamingConfig(value["sessionNaming"], "request");
   if (value["sessionArchive"] !== undefined) config.sessionArchive = parseSessionArchiveConfig(value["sessionArchive"], "request");
   if (plugins !== undefined) config.plugins = parsePluginsRequest(plugins);
@@ -205,10 +218,13 @@ function parseAllowedHostsRequest(value: unknown): string[] | true {
 
 function parseShortcutsRequest(value: unknown): Record<string, string | null> {
   if (!isRecord(value)) throw new Error("PI WEB config shortcuts must be an object");
-  return Object.fromEntries(Object.entries(value).map(([actionId, shortcut]) => {
-    if (shortcut !== null && (typeof shortcut !== "string" || shortcut === "")) throw new Error("PI WEB config shortcut values must be non-empty strings or null");
-    return [actionId, shortcut];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([actionId, shortcut]) => {
+      if (shortcut !== null && (typeof shortcut !== "string" || shortcut === ""))
+        throw new Error("PI WEB config shortcut values must be non-empty strings or null");
+      return [actionId, shortcut];
+    }),
+  );
 }
 
 function parsePathAccessRequest(value: unknown): NonNullable<PiWebConfig["pathAccess"]> {
@@ -241,15 +257,17 @@ function parseAgentRequest(value: unknown, pathHost: AgentPathHost): NonNullable
 
 function parsePluginsRequest(value: unknown): NonNullable<PiWebConfig["plugins"]> {
   if (!isRecord(value) || Array.isArray(value)) throw new Error("PI WEB config plugins must be an object");
-  return Object.fromEntries(Object.entries(value).map(([pluginId, config]) => {
-    if (!isPiWebPluginId(pluginId)) throw new Error("PI WEB config plugin ids are invalid");
-    if (!isRecord(config) || Array.isArray(config)) throw new Error("PI WEB config plugin entries must be objects");
-    const enabled = config["enabled"];
-    if (enabled !== undefined && typeof enabled !== "boolean") throw new Error("PI WEB config plugin enabled values must be booleans");
-    const settings = config["settings"];
-    if (settings !== undefined && (!isRecord(settings) || Array.isArray(settings))) throw new Error("PI WEB config plugin settings must be objects");
-    return [pluginId, config];
-  }));
+  return Object.fromEntries(
+    Object.entries(value).map(([pluginId, config]) => {
+      if (!isPiWebPluginId(pluginId)) throw new Error("PI WEB config plugin ids are invalid");
+      if (!isRecord(config) || Array.isArray(config)) throw new Error("PI WEB config plugin entries must be objects");
+      const enabled = config["enabled"];
+      if (enabled !== undefined && typeof enabled !== "boolean") throw new Error("PI WEB config plugin enabled values must be booleans");
+      const settings = config["settings"];
+      if (settings !== undefined && (!isRecord(settings) || Array.isArray(settings))) throw new Error("PI WEB config plugin settings must be objects");
+      return [pluginId, config];
+    }),
+  );
 }
 
 function parsePiWebConfigEnvOverridesResponse(value: unknown, source: string): PiWebConfigEnvOverrides {

@@ -28,7 +28,11 @@ interface AuthChangeContext {
   authType?: AuthType;
 }
 
-const noopLogger: AuthServiceLogger = { error() { /* no-op */ } };
+const noopLogger: AuthServiceLogger = {
+  error() {
+    /* no-op */
+  },
+};
 
 /**
  * Model-runtime network policy for the shared runtime.
@@ -63,7 +67,9 @@ export class AuthService {
   }
 
   static async create(deps: AuthServiceDependencies = {}): Promise<AuthService> {
-    const runtime = deps.runtime ?? (deps.agentDir === undefined ? await ModelRuntime.create({ allowModelNetwork: false }) : await createModelRuntimeForAgentDir(deps.agentDir));
+    const runtime =
+      deps.runtime
+      ?? (deps.agentDir === undefined ? await ModelRuntime.create({ allowModelNetwork: false }) : await createModelRuntimeForAgentDir(deps.agentDir));
     const logger = deps.logger ?? noopLogger;
     const authFlows = deps.authFlows ?? new OAuthLoginFlowService({ logger });
     return new AuthService(runtime, authFlows, logger);

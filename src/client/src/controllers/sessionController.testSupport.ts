@@ -1,11 +1,30 @@
 import { afterEach, beforeEach, vi } from "vitest";
-import { api, type MessagePage, type SessionInfo, type SessionRef, type SessionStatus, type SessionStreamSnapshot, type SessionTranscriptSnapshot, type Workspace } from "../api";
+import {
+  api,
+  type MessagePage,
+  type SessionInfo,
+  type SessionRef,
+  type SessionStatus,
+  type SessionStreamSnapshot,
+  type SessionTranscriptSnapshot,
+  type Workspace,
+} from "../api";
 import { machineSessionKey } from "../machineKeys";
 import type { SessionUiEvent } from "../sessionSocket";
 import type { SessionEventSocket } from "./sessionController";
 
 export { api as defaultApi } from "../api";
-export type { MessagePage, PromptAttachment, SessionActivity, SessionInfo, SessionRef, SessionStatus, SessionStreamSnapshot, SessionTranscriptSnapshot, Workspace } from "../api";
+export type {
+  MessagePage,
+  PromptAttachment,
+  SessionActivity,
+  SessionInfo,
+  SessionRef,
+  SessionStatus,
+  SessionStreamSnapshot,
+  SessionTranscriptSnapshot,
+  Workspace,
+} from "../api";
 export type { AppState } from "../appState";
 
 export class MemoryStorage implements Storage {
@@ -59,13 +78,7 @@ export class EmitSocket implements SessionEventSocket {
   private onInitialOpen: (() => void) | undefined;
   private onReconnect: (() => void) | undefined;
 
-  connect(
-    session: SessionRef,
-    onEvent: (event: SessionUiEvent) => void,
-    onReconnect?: () => void,
-    _machineId?: string,
-    onInitialOpen?: () => void,
-  ): void {
+  connect(session: SessionRef, onEvent: (event: SessionUiEvent) => void, onReconnect?: () => void, _machineId?: string, onInitialOpen?: () => void): void {
     this.connectedSessionIds.push(session.id);
     this.handler = onEvent;
     this.onInitialOpen = onInitialOpen;
@@ -126,12 +139,13 @@ export const emptyPage: MessagePage = { messages: [], start: 0, total: 0 };
 /** API fixture for scenarios whose selected sessions have empty, idle transcripts. */
 export const emptyTranscriptApi: typeof api = {
   ...api,
-  transcriptSnapshot: (session) => Promise.resolve({
-    page: emptyPage,
-    status: status(sessionLookupId(session)),
-    seq: 0,
-    partial: null,
-  }),
+  transcriptSnapshot: (session) =>
+    Promise.resolve({
+      page: emptyPage,
+      status: status(sessionLookupId(session)),
+      seq: 0,
+      partial: null,
+    }),
 };
 
 /** Assemble explicit fixture responses; never fall back to the real API. */
@@ -189,7 +203,9 @@ beforeEach(() => {
     framesById.set(id, callback);
     return id;
   });
-  vi.stubGlobal("cancelAnimationFrame", (id: number) => { framesById.delete(id); });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    framesById.delete(id);
+  });
 });
 
 afterEach(() => {

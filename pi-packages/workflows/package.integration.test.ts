@@ -50,20 +50,23 @@ describe("shipped Workflows Pi package", () => {
       undefined,
       root,
     );
-    const reconcile = () => reconcileAutoInstallablePiPackages({
-      profileDir: agentDir,
-      ...createAutoInstallPiPackageProfile(agentDir),
-      dismissalChecker: dismissals,
-      packageRoot: root,
-      knownPackages: [known],
-    });
+    const reconcile = () =>
+      reconcileAutoInstallablePiPackages({
+        profileDir: agentDir,
+        ...createAutoInstallPiPackageProfile(agentDir),
+        dismissalChecker: dismissals,
+        packageRoot: root,
+        knownPackages: [known],
+      });
 
     await reconcile();
-    expect(await loadPrompts()).toEqual([expect.objectContaining({
-      name: "worktree",
-      argumentHint: "Purpose and/or base branch",
-      filePath: join(source, "prompts", "worktree.md"),
-    })]);
+    expect(await loadPrompts()).toEqual([
+      expect.objectContaining({
+        name: "worktree",
+        argumentHint: "Purpose and/or base branch",
+        filePath: join(source, "prompts", "worktree.md"),
+      }),
+    ]);
     const configured = (await service.list()).packages.find(({ installedPath }) => installedPath === source);
     if (configured === undefined) throw new Error("Workflows was not auto-installed");
 

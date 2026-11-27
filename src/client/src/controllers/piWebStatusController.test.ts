@@ -95,7 +95,9 @@ function createHarness(machineId = "local") {
   const onRefreshError = vi.fn<(machineId: string, error: unknown) => void>();
   const controller = new PiWebStatusController(
     () => state,
-    (patch) => { state = { ...state, ...patch }; },
+    (patch) => {
+      state = { ...state, ...patch };
+    },
     { api: { piWebStatus, checkForUpdates }, onRefreshError },
   );
   return {
@@ -104,8 +106,12 @@ function createHarness(machineId = "local") {
     checkForUpdates,
     onRefreshError,
     state: () => state,
-    setStatus: (piWebStatusValue: PiWebStatusResponse) => { state = { ...state, piWebStatus: piWebStatusValue }; },
-    selectMachine: (id: string) => { state = { ...state, selectedMachine: machine(id) }; },
+    setStatus: (piWebStatusValue: PiWebStatusResponse) => {
+      state = { ...state, piWebStatus: piWebStatusValue };
+    },
+    selectMachine: (id: string) => {
+      state = { ...state, selectedMachine: machine(id) };
+    },
   };
 }
 

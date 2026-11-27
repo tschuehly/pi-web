@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { imageReferenceInsertion, isLeadingKnownCommandDraft, PromptEditor, sanitizeDraftImageReferences } from "./components/PromptEditor";
 import { removeImageReferenceTokensFromText } from "../../shared/promptAttachments";
 import { clearStagedAttachments, loadStagedAttachmentDraft, moveStagedAttachments } from "./promptAttachmentStaging";
-import { capturePromptAttachments, DEFAULT_FILE_MIME_TYPE, effectivePromptAttachmentDelivery, READ_FAILURE_MESSAGE, type CapturableFile } from "./promptAttachmentCapture";
+import {
+  capturePromptAttachments,
+  DEFAULT_FILE_MIME_TYPE,
+  effectivePromptAttachmentDelivery,
+  READ_FAILURE_MESSAGE,
+  type CapturableFile,
+} from "./promptAttachmentCapture";
 import { templateEventHandlerAfterMarker, templateEventHandlerAfterValue } from "./templateInspection.testSupport";
 
 function file(name: string, type: string, size = 10): CapturableFile {
@@ -11,9 +17,8 @@ function file(name: string, type: string, size = 10): CapturableFile {
 
 describe("capturePromptAttachments", () => {
   it("reads supported images as native inline image attachments", async () => {
-    const result = await capturePromptAttachments(
-      [file("shot.png", "image/png"), file("pic.webp", "image/webp")],
-      (f) => Promise.resolve(`data-for-${f.name}`),
+    const result = await capturePromptAttachments([file("shot.png", "image/png"), file("pic.webp", "image/webp")], (f) =>
+      Promise.resolve(`data-for-${f.name}`),
     );
 
     expect(result.error).toBeUndefined();
@@ -24,9 +29,8 @@ describe("capturePromptAttachments", () => {
   });
 
   it("captures generic files with their browser MIME type", async () => {
-    const result = await capturePromptAttachments(
-      [file("report.pdf", "application/pdf", 1234), file("vector.svg", "image/svg+xml")],
-      (f) => Promise.resolve(`data-for-${f.name}`),
+    const result = await capturePromptAttachments([file("report.pdf", "application/pdf", 1234), file("vector.svg", "image/svg+xml")], (f) =>
+      Promise.resolve(`data-for-${f.name}`),
     );
 
     expect(result.error).toBeUndefined();
@@ -43,18 +47,14 @@ describe("capturePromptAttachments", () => {
   });
 
   it("derives fallback names for unnamed pasted attachments", async () => {
-    const result = await capturePromptAttachments(
-      [file("", "image/jpeg"), file("", "application/pdf")],
-      () => Promise.resolve("x"),
-    );
+    const result = await capturePromptAttachments([file("", "image/jpeg"), file("", "application/pdf")], () => Promise.resolve("x"));
 
     expect(result.attachments.map((attachment) => attachment.name)).toEqual(["pasted-image.jpg", "pasted-file.bin"]);
   });
 
   it("reports a read failure without dropping other attachments", async () => {
-    const result = await capturePromptAttachments(
-      [file("bad.png", "image/png"), file("good.txt", "text/plain")],
-      (f) => f.name === "bad.png" ? Promise.reject(new Error("boom")) : Promise.resolve("ok"),
+    const result = await capturePromptAttachments([file("bad.png", "image/png"), file("good.txt", "text/plain")], (f) =>
+      f.name === "bad.png" ? Promise.reject(new Error("boom")) : Promise.resolve("ok"),
     );
 
     expect(result.error).toBe(READ_FAILURE_MESSAGE);
@@ -77,10 +77,12 @@ describe("effectivePromptAttachmentDelivery", () => {
   });
 
   it("forces folder delivery when any attachment is a generic file", () => {
-    expect(effectivePromptAttachmentDelivery("inline", [
-      { kind: "image", mimeType: "image/png" },
-      { kind: "file", mimeType: "application/pdf" },
-    ])).toBe("folder");
+    expect(
+      effectivePromptAttachmentDelivery("inline", [
+        { kind: "image", mimeType: "image/png" },
+        { kind: "file", mimeType: "application/pdf" },
+      ]),
+    ).toBe("folder");
   });
 });
 
@@ -116,9 +118,7 @@ describe("prompt image references", () => {
   });
 
   it("removes dangling restored references but preserves staged mappings", () => {
-    expect(sanitizeDraftImageReferences("keep [PIC_2], drop [PIC_1] [PIC_3]", [
-      { kind: "image", reference: "[PIC_2]" },
-    ])).toBe("keep [PIC_2], drop");
+    expect(sanitizeDraftImageReferences("keep [PIC_2], drop [PIC_1] [PIC_3]", [{ kind: "image", reference: "[PIC_2]" }])).toBe("keep [PIC_2], drop");
     expect(sanitizeDraftImageReferences("reading [PIC_4]", [], ["[PIC_4]"])).toBe("reading [PIC_4]");
     expect(sanitizeDraftImageReferences("reload [PIC_9]", [])).toBe("reload");
   });
@@ -174,7 +174,13 @@ describe("PromptEditor attachment wiring", () => {
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
       await flushMicrotasks();
 
-      expect(onSend).toHaveBeenCalledWith(`/${commandName} describe this [PIC_1]`, undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+      expect(onSend).toHaveBeenCalledWith(
+        `/${commandName} describe this [PIC_1]`,
+        undefined,
+        [expect.objectContaining({ reference: "[PIC_1]" })],
+        "inline",
+        undefined,
+      );
     } finally {
       restoreFileReader();
     }
@@ -191,7 +197,13 @@ describe("PromptEditor attachment wiring", () => {
       templateEventHandlerAfterMarker(editor.render(), "@paste=")(pasteEventWithFiles([new File(["image"], "image.png", { type: "image/png" })]));
       await flushMicrotasks();
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
-      expect(onSend).toHaveBeenCalledWith("/stalled-command inspect [PIC_1]", undefined, [expect.objectContaining({ reference: "[PIC_1]" })], "inline", undefined);
+      expect(onSend).toHaveBeenCalledWith(
+        "/stalled-command inspect [PIC_1]",
+        undefined,
+        [expect.objectContaining({ reference: "[PIC_1]" })],
+        "inline",
+        undefined,
+      );
     } finally {
       restoreFileReader();
     }
@@ -202,7 +214,13 @@ describe("PromptEditor attachment wiring", () => {
     const onSend = vi.fn<NonNullable<PromptEditor["onSend"]>>();
     editor.onSend = onSend;
     let resolveCatalog: (commands: { name: string; source: "extension" }[]) => void = () => undefined;
-    setPromptEditorPrivate(editor, "commandCatalogRequest", new Promise((resolve) => { resolveCatalog = resolve; }));
+    setPromptEditorPrivate(
+      editor,
+      "commandCatalogRequest",
+      new Promise((resolve) => {
+        resolveCatalog = resolve;
+      }),
+    );
     setPromptEditorPrivate(editor, "draft", "/late-command inspect [PIC_1]");
     setPromptEditorPrivate(editor, "attachments", [{ id: "attachment-1", kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "SU1BR0U=" }]);
 
@@ -282,9 +300,13 @@ describe("PromptEditor attachment wiring", () => {
       // the paste is wired to capture, the data URL prefix is stripped, and a failed read does not
       // drop the other attachment.
       expect(onSend).toHaveBeenCalledTimes(1);
-      expect(onSend).toHaveBeenCalledWith("inspect attachments [PIC_1]", undefined, [
-        { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "UE5H", name: "shot.png" },
-      ], "inline", undefined);
+      expect(onSend).toHaveBeenCalledWith(
+        "inspect attachments [PIC_1]",
+        undefined,
+        [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "UE5H", name: "shot.png" }],
+        "inline",
+        undefined,
+      );
     } finally {
       restoreFileReader();
     }
@@ -307,11 +329,17 @@ describe("PromptEditor attachment wiring", () => {
       await flushMicrotasks();
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
 
-      expect(onSend).toHaveBeenCalledWith("[PIC_1] [PIC_2]", undefined, [
-        expect.objectContaining({ reference: "[PIC_1]", name: "same.png", data: "RklSU1Q=" }),
-        expect.objectContaining({ reference: "[PIC_2]", name: "same.png", data: "U0VDT05E" }),
-        expect.objectContaining({ kind: "file", name: "notes.txt", data: "RklMRQ==" }),
-      ], "folder", ".pi-web/attachments");
+      expect(onSend).toHaveBeenCalledWith(
+        "[PIC_1] [PIC_2]",
+        undefined,
+        [
+          expect.objectContaining({ reference: "[PIC_1]", name: "same.png", data: "RklSU1Q=" }),
+          expect.objectContaining({ reference: "[PIC_2]", name: "same.png", data: "U0VDT05E" }),
+          expect.objectContaining({ kind: "file", name: "notes.txt", data: "RklMRQ==" }),
+        ],
+        "folder",
+        ".pi-web/attachments",
+      );
     } finally {
       restoreFileReader();
     }
@@ -332,7 +360,7 @@ describe("PromptEditor attachment wiring", () => {
       await flushMicrotasks();
 
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
-      expect(onSend.mock.calls[0]?.[2]?.map((attachment) => attachment.kind === "image" ? attachment.reference : "file")).toEqual(["[PIC_1]", "[PIC_2]"]);
+      expect(onSend.mock.calls[0]?.[2]?.map((attachment) => (attachment.kind === "image" ? attachment.reference : "file"))).toEqual(["[PIC_1]", "[PIC_2]"]);
     } finally {
       readers.restore();
     }
@@ -434,9 +462,7 @@ describe("PromptEditor attachment wiring", () => {
     templateEventHandlerAfterValue(editor.render(), "Remove [PIC_1] image first.png", "@click=")(new Event("click"));
     templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
 
-    expect(onSend).toHaveBeenCalledWith("compare with [PIC_2]", undefined, [
-      expect.objectContaining({ reference: "[PIC_2]" }),
-    ], "inline", undefined);
+    expect(onSend).toHaveBeenCalledWith("compare with [PIC_2]", undefined, [expect.objectContaining({ reference: "[PIC_2]" })], "inline", undefined);
   });
 
   it("preserves the reference gap when an image is removed and another is pasted", async () => {
@@ -458,7 +484,7 @@ describe("PromptEditor attachment wiring", () => {
       templateEventHandlerAfterMarker(editor.render(), "send-button")(new Event("click"));
 
       expect(onSend.mock.calls[0]?.[0]).toBe("[PIC_2] [PIC_3]");
-      expect(onSend.mock.calls[0]?.[2]?.map((attachment) => attachment.kind === "image" ? attachment.reference : "file")).toEqual(["[PIC_2]", "[PIC_3]"]);
+      expect(onSend.mock.calls[0]?.[2]?.map((attachment) => (attachment.kind === "image" ? attachment.reference : "file"))).toEqual(["[PIC_2]", "[PIC_3]"]);
     } finally {
       restoreFileReader();
     }
@@ -483,15 +509,17 @@ describe("PromptEditor attachment wiring", () => {
     // onSend receives only the image, proving the remove handler dropped report.pdf while leaving
     // shot.png queued (folder delivery is not forced because no generic file remains).
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledWith("please review", undefined, [
-      { kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "UE5H", name: "shot.png" },
-    ], "inline", undefined);
+    expect(onSend).toHaveBeenCalledWith(
+      "please review",
+      undefined,
+      [{ kind: "image", reference: "[PIC_1]", mimeType: "image/png", data: "UE5H", name: "shot.png" }],
+      "inline",
+      undefined,
+    );
   });
 });
 
-type StubFileReaderOutcome =
-  | { kind: "load"; result: string }
-  | { kind: "error"; error: DOMException };
+type StubFileReaderOutcome = { kind: "load"; result: string } | { kind: "error"; error: DOMException };
 
 function setPromptEditorPrivate(editor: PromptEditor, property: string, value: unknown): void {
   if (!Reflect.set(editor, property, value)) throw new Error(`Failed to set PromptEditor ${property}`);
@@ -530,8 +558,11 @@ function installFileReaderStub(outcomes: StubFileReaderOutcome[]): () => void {
   };
 }
 
-
-function installControlledFileReaderStub(): { resolve: (index: number, result: string) => void; reject: (index: number, error: DOMException) => void; restore: () => void } {
+function installControlledFileReaderStub(): {
+  resolve: (index: number, result: string) => void;
+  reject: (index: number, error: DOMException) => void;
+  restore: () => void;
+} {
   const hadFileReader = Reflect.has(globalThis, "FileReader");
   const previousFileReader = Reflect.get(globalThis, "FileReader");
   const readers: { reader: ControlledFileReader }[] = [];

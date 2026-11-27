@@ -47,15 +47,17 @@ function resultNames(root) {
 describe("website plugin search", () => {
   it("queries both keywords, merges duplicates, and renders untrusted metadata as text", async () => {
     const shared = { ...pkg("@scope/shared"), description: '<img src=x onerror="alert(1)">' };
-    const fetch = vi.fn(async (url) => response(url.searchParams.get("text").includes("pi-web.dev-plugin")
-      ? [shared, pkg("specific", ["pi-web.dev-plugin"])]
-      : [shared, pkg("broad", ["pi-web-plugin"]), pkg("unrelated", ["other"])]));
+    const fetch = vi.fn(async (url) =>
+      response(
+        url.searchParams.get("text").includes("pi-web.dev-plugin")
+          ? [shared, pkg("specific", ["pi-web.dev-plugin"])]
+          : [shared, pkg("broad", ["pi-web-plugin"]), pkg("unrelated", ["other"])],
+      ),
+    );
     const { root, status } = setup(fetch);
     expect(status.textContent).toBe("Searching npm…");
     await vi.waitFor(() => expect(status.textContent).toBe("3 packages shown."));
-    expect(fetch.mock.calls.map(([url]) => url.searchParams.get("text"))).toEqual([
-      "keywords:pi-web.dev-plugin", "keywords:pi-web-plugin",
-    ]);
+    expect(fetch.mock.calls.map(([url]) => url.searchParams.get("text"))).toEqual(["keywords:pi-web.dev-plugin", "keywords:pi-web-plugin"]);
     expect(root.querySelectorAll(".plugin-result")).toHaveLength(3);
     expect(root.querySelector("img")).toBeNull();
     expect(root.textContent).toContain(shared.description);
@@ -84,7 +86,8 @@ describe("website plugin search", () => {
   it("shows a manually copyable source when clipboard access fails", async () => {
     const { window, root, status } = setup(async () => response([pkg("@scope/plugin")]));
     Object.defineProperty(window.navigator, "clipboard", {
-      value: { writeText: vi.fn().mockRejectedValue(new Error("Permission denied")) }, configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("Permission denied")) },
+      configurable: true,
     });
     await vi.waitFor(() => expect(status.textContent).toBe("1 package shown."));
     root.querySelector(".plugin-copy").click();
@@ -119,7 +122,8 @@ describe("website plugin search", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(6));
     await vi.waitFor(() => expect(status.textContent).toContain("20 of 102 packages shown"));
     expect(fetch.mock.calls.slice(3, 5).map(([url]) => url.searchParams.get("text"))).toEqual([
-      "files & tools keywords:pi-web.dev-plugin", "files & tools keywords:pi-web-plugin",
+      "files & tools keywords:pi-web.dev-plugin",
+      "files & tools keywords:pi-web-plugin",
     ]);
     expect(root.querySelectorAll(".plugin-result")).toHaveLength(20);
   });
@@ -147,9 +151,11 @@ describe("website plugin search", () => {
       { ...pkg("old-package"), date: "2026-10-19", monthlyDownloads: 1000 },
       { ...pkg("@scope/new-package"), date: "2026-10-01", monthlyDownloads: 1 },
     ];
-    const fetch = vi.fn(async (url) => url.pathname === "/-/v1/search"
-      ? response(entries)
-      : { ok: true, json: async () => ({ time: { created: url.pathname.includes("old-package") ? "2024-01-01" : "2026-10-01" } }) });
+    const fetch = vi.fn(async (url) =>
+      url.pathname === "/-/v1/search"
+        ? response(entries)
+        : { ok: true, json: async () => ({ time: { created: url.pathname.includes("old-package") ? "2024-01-01" : "2026-10-01" } }) },
+    );
     const { window, root, status } = setup(fetch);
     await vi.waitFor(() => expect(status.textContent).toBe("2 packages shown."));
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -167,7 +173,7 @@ describe("website plugin search", () => {
   });
 
   it("preserves the previous ordering and allows retry when creation metadata fails", async () => {
-    const fetch = vi.fn(async (url) => url.pathname === "/-/v1/search" ? response([pkg("plugin")]) : { ok: false, status: 429 });
+    const fetch = vi.fn(async (url) => (url.pathname === "/-/v1/search" ? response([pkg("plugin")]) : { ok: false, status: 429 }));
     const { window, root, status } = setup(fetch);
     await vi.waitFor(() => expect(status.textContent).toBe("1 package shown."));
     changeSort(window, root, "newest");
@@ -212,18 +218,21 @@ describe("website plugin search", () => {
   });
 
   it("does not present one keyword's results as a complete search when the other fails", async () => {
-    const fetch = vi.fn(async (url) => url.searchParams.get("text").includes("pi-web.dev-plugin")
-      ? response([pkg("specific")])
-      : { ok: false, status: 503 });
+    const fetch = vi.fn(async (url) => (url.searchParams.get("text").includes("pi-web.dev-plugin") ? response([pkg("specific")]) : { ok: false, status: 503 }));
     const { root, status } = setup(fetch);
     await vi.waitFor(() => expect(status.textContent).toContain("Could not search npm"));
     expect(root.querySelectorAll(".plugin-result")).toHaveLength(0);
   });
 
   it("does not display a partially fetched catalog when a later page fails", async () => {
-    const fetch = vi.fn(async (url) => url.searchParams.get("from") === "0"
-      ? response(Array.from({ length: 100 }, (_, i) => pkg(`plugin-${i}`)), 101)
-      : { ok: false, status: 503 });
+    const fetch = vi.fn(async (url) =>
+      url.searchParams.get("from") === "0"
+        ? response(
+            Array.from({ length: 100 }, (_, i) => pkg(`plugin-${i}`)),
+            101,
+          )
+        : { ok: false, status: 503 },
+    );
     const { root, status } = setup(fetch);
     await vi.waitFor(() => expect(status.textContent).toContain("Could not search npm"));
     expect(root.querySelectorAll(".plugin-result")).toHaveLength(0);

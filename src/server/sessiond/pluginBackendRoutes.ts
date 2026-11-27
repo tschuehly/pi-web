@@ -12,10 +12,7 @@ import {
 } from "../../shared/pluginBackendProtocol.js";
 import { requestCancellation } from "../requestCancellation.js";
 import type { Project } from "../types.js";
-import {
-  PluginBackendRequestError,
-  type PluginBackendRequest,
-} from "../plugins/pluginBackendRegistry.js";
+import { PluginBackendRequestError, type PluginBackendRequest } from "../plugins/pluginBackendRegistry.js";
 
 interface PluginBackendRouteParams {
   pluginId: string;
@@ -45,10 +42,8 @@ export interface PluginBackendRouteDependencies {
 
 /** JSON-only sessiond boundary for one revision-paired package and current workspace. */
 export function registerPairedPluginBackendRoutes(app: FastifyInstance, dependencies: PluginBackendRouteDependencies): void {
-  for (const path of PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS) app.post<{ Params: PluginBackendRouteParams; Body: unknown }>(
-    path,
-    { bodyLimit: PLUGIN_BACKEND_REQUEST_BODY_MAX_BYTES },
-    async (request, reply) => {
+  for (const path of PAIRED_PLUGIN_BACKEND_REQUEST_ROUTE_PATHS)
+    app.post<{ Params: PluginBackendRouteParams; Body: unknown }>(path, { bodyLimit: PLUGIN_BACKEND_REQUEST_BODY_MAX_BYTES }, async (request, reply) => {
       const { pluginId, projectId, workspaceId } = request.params;
       let operation = request.params.operation;
       let envelope: PluginBackendRequestEnvelope;
@@ -80,15 +75,18 @@ export function registerPairedPluginBackendRoutes(app: FastifyInstance, dependen
 
       const cancellation = requestCancellation(request, reply);
       try {
-        const result = await dependencies.backends.request({
-          pluginId,
-          moduleRevision: envelope.revision,
-          scope: pluginBackendScopeFromRoute(request.params, envelope),
-          project,
-          workspaceId,
-          operation,
-          input: envelope.input,
-        }, cancellation.signal);
+        const result = await dependencies.backends.request(
+          {
+            pluginId,
+            moduleRevision: envelope.revision,
+            scope: pluginBackendScopeFromRoute(request.params, envelope),
+            project,
+            workspaceId,
+            operation,
+            input: envelope.input,
+          },
+          cancellation.signal,
+        );
         const serialized = serializeBoundedPluginBackendJson(
           result,
           `Server plugin ${pluginId} operation ${operation} result`,
@@ -101,37 +99,17 @@ export function registerPairedPluginBackendRoutes(app: FastifyInstance, dependen
         dependencies.onWorkspacesMutated();
         cancellation.dispose();
       }
-    },
-  );
+    });
 }
 
-function pluginBackendRequestFailed(
-  reply: FastifyReply,
-  error: unknown,
-  pluginId: string,
-  operation: string,
-): FastifyReply {
+function pluginBackendRequestFailed(reply: FastifyReply, error: unknown, pluginId: string, operation: string): FastifyReply {
   if (error instanceof PluginBackendRequestError) {
     return attributedError(reply, error.statusCode, error.message, error.code, pluginId, operation);
   }
-  return attributedError(
-    reply,
-    502,
-    `Plugin backend request failed: ${boundedErrorMessage(error)}`,
-    "request-failed",
-    pluginId,
-    operation,
-  );
+  return attributedError(reply, 502, `Plugin backend request failed: ${boundedErrorMessage(error)}`, "request-failed", pluginId, operation);
 }
 
-function attributedError(
-  reply: FastifyReply,
-  statusCode: number,
-  message: string,
-  code: string,
-  pluginId: string,
-  operation: string,
-): FastifyReply {
+function attributedError(reply: FastifyReply, statusCode: number, message: string, code: string, pluginId: string, operation: string): FastifyReply {
   return reply.code(statusCode).send({ error: message, code, pluginId, operation });
 }
 

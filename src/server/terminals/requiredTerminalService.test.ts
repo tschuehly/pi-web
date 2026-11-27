@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  REQUIRED_TERMINAL_SERVICE_CAPABILITY,
-  snapshotRequiredTerminalService,
-  unavailableRequiredTerminalService,
-} from "./requiredTerminalService.js";
+import { REQUIRED_TERMINAL_SERVICE_CAPABILITY, snapshotRequiredTerminalService, unavailableRequiredTerminalService } from "./requiredTerminalService.js";
 
 const run = {
   id: "run-1",
@@ -59,26 +55,32 @@ describe("required Terminal server composition port", () => {
       runCommand: () => ({ id: "incomplete" }),
       bindActivitySink: vi.fn(),
     });
-    expect(() => service.runCommand({
-      projectId: "project-1",
-      workspaceId: "workspace-1",
-      cwd: "/repo",
-      origin: "core",
-      title: "Remove workspace",
-      command: "true",
-    })).toThrow("invalid command run");
+    expect(() =>
+      service.runCommand({
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        cwd: "/repo",
+        origin: "core",
+        title: "Remove workspace",
+        command: "true",
+      }),
+    ).toThrow("invalid command run");
   });
 
   it("fails recovery commands before callers can report success", () => {
     const service = unavailableRequiredTerminalService();
-    expect(() => { service.closeForCwd("/repo"); }).toThrow("unavailable in recovery safe start");
-    expect(() => service.runCommand({
-      projectId: "project-1",
-      workspaceId: "workspace-1",
-      cwd: "/repo",
-      origin: "core",
-      title: "Remove workspace",
-      command: "true",
-    })).toThrow("unavailable in recovery safe start");
+    expect(() => {
+      service.closeForCwd("/repo");
+    }).toThrow("unavailable in recovery safe start");
+    expect(() =>
+      service.runCommand({
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        cwd: "/repo",
+        origin: "core",
+        title: "Remove workspace",
+        command: "true",
+      }),
+    ).toThrow("unavailable in recovery safe start");
   });
 });

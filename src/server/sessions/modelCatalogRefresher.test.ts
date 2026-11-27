@@ -130,7 +130,8 @@ describe("ModelCatalogRefresher", () => {
 
   it("coalesces overlapping requests into a single follow-up run", async () => {
     const gate = deferred<RefreshResult>();
-    const refresh = vi.fn()
+    const refresh = vi
+      .fn()
       .mockImplementationOnce(() => gate.promise)
       .mockResolvedValue(okResult());
     const refresher = new ModelCatalogRefresher({ runtime: { refresh } });
@@ -181,7 +182,9 @@ describe("ModelCatalogRefresher", () => {
     const refresh = vi.fn((options?: RefreshCall) => {
       observed = options?.signal;
       return new Promise<RefreshResult>((resolve) => {
-        options?.signal?.addEventListener("abort", () => { resolve(abortedResult()); });
+        options?.signal?.addEventListener("abort", () => {
+          resolve(abortedResult());
+        });
       });
     });
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, logger });
@@ -202,9 +205,14 @@ describe("ModelCatalogRefresher", () => {
 
   it("does not report a refresh that rejects because dispose aborted it as a failure", async () => {
     const { logger, info, warn, error } = createLogger();
-    const refresh = vi.fn((options?: RefreshCall) => new Promise<RefreshResult>((_resolve, reject) => {
-      options?.signal?.addEventListener("abort", () => { reject(new Error("This operation was aborted")); });
-    }));
+    const refresh = vi.fn(
+      (options?: RefreshCall) =>
+        new Promise<RefreshResult>((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => {
+            reject(new Error("This operation was aborted"));
+          });
+        }),
+    );
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, logger });
 
     refresher.requestRefresh();
@@ -250,10 +258,7 @@ describe("ModelCatalogRefresher", () => {
 
   it("retries once after an aborted run and then waits for the schedule", async () => {
     const { logger, info } = createLogger();
-    const refresh = vi.fn()
-      .mockResolvedValueOnce(abortedResult())
-      .mockResolvedValueOnce(abortedResult())
-      .mockResolvedValue(okResult());
+    const refresh = vi.fn().mockResolvedValueOnce(abortedResult()).mockResolvedValueOnce(abortedResult()).mockResolvedValue(okResult());
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, logger, retryDelayMs: 30_000, intervalMs: 3_600_000 });
 
     refresher.requestRefresh();
@@ -272,9 +277,7 @@ describe("ModelCatalogRefresher", () => {
 
   it("retries once after a run reports provider errors", async () => {
     const errors = new Map<string, Error>([["openrouter", new Error("boom")]]);
-    const refresh = vi.fn()
-      .mockResolvedValueOnce({ aborted: false, errors })
-      .mockResolvedValue(okResult());
+    const refresh = vi.fn().mockResolvedValueOnce({ aborted: false, errors }).mockResolvedValue(okResult());
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, retryDelayMs: 30_000 });
 
     refresher.requestRefresh();
@@ -298,9 +301,7 @@ describe("ModelCatalogRefresher", () => {
   });
 
   it("drops a pending retry when dispose happens first", async () => {
-    const refresh = vi.fn()
-      .mockResolvedValueOnce(abortedResult())
-      .mockResolvedValue(okResult());
+    const refresh = vi.fn().mockResolvedValueOnce(abortedResult()).mockResolvedValue(okResult());
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, retryDelayMs: 30_000 });
 
     refresher.requestRefresh();
@@ -312,9 +313,7 @@ describe("ModelCatalogRefresher", () => {
   });
 
   it("lets a new request supersede a pending retry instead of running both", async () => {
-    const refresh = vi.fn()
-      .mockResolvedValueOnce(abortedResult())
-      .mockResolvedValue(okResult());
+    const refresh = vi.fn().mockResolvedValueOnce(abortedResult()).mockResolvedValue(okResult());
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, retryDelayMs: 30_000 });
 
     refresher.requestRefresh();
@@ -395,19 +394,14 @@ describe("ModelCatalogRefresher", () => {
     refresher.requestRefresh();
     await flushMicrotasks();
 
-    expect(warn).toHaveBeenCalledWith(
-      { providers: ["openrouter: boom"] },
-      "model catalog refresh failed for some providers; keeping cached catalogs",
-    );
+    expect(warn).toHaveBeenCalledWith({ providers: ["openrouter: boom"] }, "model catalog refresh failed for some providers; keeping cached catalogs");
     refresher.dispose();
   });
 
   it("logs and swallows a rejecting refresh so timers stay alive", async () => {
     const { logger, error } = createLogger();
     const failure = new Error("refresh exploded");
-    const refresh = vi.fn()
-      .mockRejectedValueOnce(failure)
-      .mockResolvedValue(okResult());
+    const refresh = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(okResult());
     const refresher = new ModelCatalogRefresher({ runtime: { refresh }, logger, initialDelayMs: 1_000, intervalMs: 60_000 });
 
     refresher.requestRefresh();

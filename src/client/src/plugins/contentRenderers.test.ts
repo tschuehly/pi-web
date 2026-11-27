@@ -21,8 +21,16 @@ describe("content renderer registry", () => {
     let finishFirst!: () => void;
     let finishSecond!: () => void;
     const completed: import("./types").PiWebPluginRegistration[] = [];
-    const first = new Promise<void>((resolve) => { finishFirst = resolve; }).then(() => { completed.push({ id: "z-first", plugin: plugin() }); });
-    const second = new Promise<void>((resolve) => { finishSecond = resolve; }).then(() => { completed.push({ id: "a-second", plugin: plugin() }); });
+    const first = new Promise<void>((resolve) => {
+      finishFirst = resolve;
+    }).then(() => {
+      completed.push({ id: "z-first", plugin: plugin() });
+    });
+    const second = new Promise<void>((resolve) => {
+      finishSecond = resolve;
+    }).then(() => {
+      completed.push({ id: "a-second", plugin: plugin() });
+    });
     finishSecond();
     await second;
     finishFirst();
@@ -36,17 +44,39 @@ describe("content renderer registry", () => {
   it("validates dynamic eligibility and titles, restricts selectors, and isolates supports failures", async () => {
     const registry = new PluginRegistry();
     const supports = vi.fn((value: import("../../../plugin-api").ContentRenderRequest) => value.machineId === "remote");
-    await registry.register({ id: "dynamic", plugin: { ...plugin(), activate: () => ({ contributions: { contentRenderers: [
-      { id: "dynamic", title: "Highlighted", supports, render: () => html`preview` },
-      { ...contribution(), id: "restricted", supports: () => false },
-      { ...contribution(), id: "broken", supports: () => { throw new Error("bad eligibility"); } },
-    ] } }) } });
+    await registry.register({
+      id: "dynamic",
+      plugin: {
+        ...plugin(),
+        activate: () => ({
+          contributions: {
+            contentRenderers: [
+              { id: "dynamic", title: "Highlighted", supports, render: () => html`preview` },
+              { ...contribution(), id: "restricted", supports: () => false },
+              {
+                ...contribution(),
+                id: "broken",
+                supports: () => {
+                  throw new Error("bad eligibility");
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    expect(registry.contentRendering.listRenderers(request)).toEqual([{ id: "dynamic:dynamic", label: "Highlighted", title: "Highlighted", renderMode: "manual" }]);
+    expect(registry.contentRendering.listRenderers(request)).toEqual([
+      { id: "dynamic:dynamic", label: "Highlighted", title: "Highlighted", renderMode: "manual" },
+    ]);
     expect(supports).toHaveBeenCalledWith(request);
     expect(warn).toHaveBeenCalledWith("Content renderer eligibility failed", expect.anything(), expect.any(Error));
     warn.mockRestore();
-    for (const [key, value] of [["supports", true], ["title", 12], ["title", " "]] as const) {
+    for (const [key, value] of [
+      ["supports", true],
+      ["title", 12],
+      ["title", " "],
+    ] as const) {
       const invalid = contribution();
       Reflect.set(invalid, key, value);
       expect(() => snapshotContentRenderer(invalid)).toThrow(key);
@@ -56,9 +86,17 @@ describe("content renderer registry", () => {
   it("does not call retained eligibility callbacks after the owning plugin shuts down", async () => {
     const registry = new PluginRegistry();
     const supports = vi.fn(() => true);
-    await registry.register({ id: "owner", plugin: { ...plugin(), activate: () => ({ contributions: {
-      contentRenderers: [{ ...contribution(), supports }],
-    } }) } });
+    await registry.register({
+      id: "owner",
+      plugin: {
+        ...plugin(),
+        activate: () => ({
+          contributions: {
+            contentRenderers: [{ ...contribution(), supports }],
+          },
+        }),
+      },
+    });
     const retained = registry.matchContentRenderers(request)[0];
     if (retained === undefined) throw new Error("Expected matching renderer");
     supports.mockClear();
@@ -146,11 +184,22 @@ describe("content renderer registry", () => {
   it("orders by discovery and contribution declaration, not qualified IDs", async () => {
     const registry = new PluginRegistry();
     await registry.register({ id: "aaa-runtime", sourcePluginId: "z-plugin", machineId: "remote", plugin: plugin() });
-    await registry.register({ id: "zzz-runtime", sourcePluginId: "a-plugin", machineId: "remote", plugin: {
-      ...plugin(), activate: () => ({ contributions: { contentRenderers: [
-        { ...contribution(), id: "z-last" }, { ...contribution(), id: "a-first" },
-      ] } }),
-    } });
+    await registry.register({
+      id: "zzz-runtime",
+      sourcePluginId: "a-plugin",
+      machineId: "remote",
+      plugin: {
+        ...plugin(),
+        activate: () => ({
+          contributions: {
+            contentRenderers: [
+              { ...contribution(), id: "z-last" },
+              { ...contribution(), id: "a-first" },
+            ],
+          },
+        }),
+      },
+    });
     expect(registry.contentRendering.listRenderers(request)).toEqual([
       { id: "aaa-runtime:diagram", label: "z-plugin / diagram", renderMode: "manual" },
       { id: "zzz-runtime:z-last", label: "a-plugin / z-last", renderMode: "manual" },
@@ -164,7 +213,20 @@ describe("content renderer registry", () => {
     await registry.register({ id: "two", plugin: plugin() });
     expect(registry.matchContentRenderers(request).map(({ id }) => id)).toEqual(["one:diagram", "two:diagram"]);
     const rendering = registry.getChatContentRendering(request.machineId);
-    await expect(registry.register({ id: "failed", plugin: { ...plugin(), activate: () => ({ contributions: { contentRenderers: [contribution()] }, start: () => { throw new Error("start failure"); } }) } })).rejects.toThrow("start failure");
+    await expect(
+      registry.register({
+        id: "failed",
+        plugin: {
+          ...plugin(),
+          activate: () => ({
+            contributions: { contentRenderers: [contribution()] },
+            start: () => {
+              throw new Error("start failure");
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("start failure");
     expect(registry.getChatContentRendering(request.machineId)).toBe(rendering);
     expect(registry.matchContentRenderers(request).map(({ id }) => id)).toEqual(["one:diagram", "two:diagram"]);
   });
@@ -172,7 +234,26 @@ describe("content renderer registry", () => {
   it("aborts active renderer work and ignores late failures when the owning plugin shuts down", async () => {
     let input: import("../../../plugin-api").ContentRendererInput | undefined;
     const registry = new PluginRegistry();
-    await registry.register({ id: "owner", plugin: { apiVersion: 4, name: "Owner", activate: () => ({ contributions: { contentRenderers: [{ ...contribution(), render: (value) => { input = value; return html`preview`; } }] } }) } });
+    await registry.register({
+      id: "owner",
+      plugin: {
+        apiVersion: 4,
+        name: "Owner",
+        activate: () => ({
+          contributions: {
+            contentRenderers: [
+              {
+                ...contribution(),
+                render: (value) => {
+                  input = value;
+                  return html`preview`;
+                },
+              },
+            ],
+          },
+        }),
+      },
+    });
     const fail = vi.fn();
     registry.matchContentRenderers(request)[0]?.renderer.render({ text: request.text, signal: new AbortController().signal, fail });
     expect(input?.signal.aborted).toBe(false);
@@ -186,15 +267,36 @@ describe("content renderer registry", () => {
   it("provides the exact versioned public host capability through requires/start", async () => {
     const registry = new PluginRegistry();
     const resolved = vi.fn();
-    await registry.register({ id: "consumer", plugin: { apiVersion: 4, name: "Consumer", requires: [contentRenderingCapabilityToken], activate: () => ({ contributions: {}, start: ({ capabilities }) => { resolved(capabilities.resolve(contentRenderingCapabilityToken)); } }) } });
+    await registry.register({
+      id: "consumer",
+      plugin: {
+        apiVersion: 4,
+        name: "Consumer",
+        requires: [contentRenderingCapabilityToken],
+        activate: () => ({
+          contributions: {},
+          start: ({ capabilities }) => {
+            resolved(capabilities.resolve(contentRenderingCapabilityToken));
+          },
+        }),
+      },
+    });
     expect(resolved).toHaveBeenCalledWith(registry.contentRendering);
-    await expect(registry.register({ id: "wrong", plugin: { apiVersion: 4, name: "Wrong", requires: [{ ...contentRenderingCapabilityToken, version: 2 }], activate: () => ({ contributions: {} }) } })).rejects.toThrow("requires unavailable capability");
+    await expect(
+      registry.register({
+        id: "wrong",
+        plugin: { apiVersion: 4, name: "Wrong", requires: [{ ...contentRenderingCapabilityToken, version: 2 }], activate: () => ({ contributions: {} }) },
+      }),
+    ).rejects.toThrow("requires unavailable capability");
   });
 
   it("validates and snapshots activation policy without invoking render while listing or probing", async () => {
     const draw = vi.fn(() => html`preview`);
     const registry = new PluginRegistry();
-    await registry.register({ id: "manual", plugin: { ...plugin(), activate: () => ({ contributions: { contentRenderers: [{ ...contribution(), render: draw }] } }) } });
+    await registry.register({
+      id: "manual",
+      plugin: { ...plugin(), activate: () => ({ contributions: { contentRenderers: [{ ...contribution(), render: draw }] } }) },
+    });
     registry.contentRendering.listRenderers(request);
     registry.contentRendering.renderText(request);
     expect(draw).not.toHaveBeenCalled();
@@ -210,7 +312,9 @@ describe("content renderer registry", () => {
     expect(() => snapshotContentRenderer({ ...contribution(), fileExtensions: [".mmd"] })).toThrow("selectors");
     expect(() => snapshotContentRenderer({ ...contribution(), languages: [], fileExtensions: [] })).toThrow("selector");
     const registry = new PluginRegistry();
-    await expect(registry.register({ id: "bad", plugin: { ...plugin(), activate: () => ({ contributions: { contentRenderers: [contribution(), contribution()] } }) } })).rejects.toThrow("Duplicate contribution id");
+    await expect(
+      registry.register({ id: "bad", plugin: { ...plugin(), activate: () => ({ contributions: { contentRenderers: [contribution(), contribution()] } }) } }),
+    ).rejects.toThrow("Duplicate contribution id");
     expect(registry.matchContentRenderers(request)).toEqual([]);
   });
 });

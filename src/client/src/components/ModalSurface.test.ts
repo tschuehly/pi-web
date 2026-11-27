@@ -15,7 +15,9 @@ describe("modal-surface rendering", () => {
   it("renders a self-contained accessible name around slotted content", async () => {
     const surface = await mountSurface({
       content: `<h1 id="greeting">Hello</h1>`,
-      configure: (element) => { element.label = "Greeting dialog"; },
+      configure: (element) => {
+        element.label = "Greeting dialog";
+      },
     });
     const section = dialogSection(surface);
 
@@ -35,7 +37,9 @@ describe("modal-surface initial focus", () => {
   it("focuses the designated initial target when opened", async () => {
     const surface = await mountSurface({
       content: `<button>First</button><input aria-label="Query">`,
-      configure: (element) => { element.initialFocus = "input"; },
+      configure: (element) => {
+        element.initialFocus = "input";
+      },
     });
 
     expect(document.activeElement).toBe(surface.querySelector("input"));
@@ -50,7 +54,9 @@ describe("modal-surface initial focus", () => {
   it("falls back to the section when the initial-focus selector matches nothing", async () => {
     const surface = await mountSurface({
       content: `<button>Only</button>`,
-      configure: (element) => { element.initialFocus = "textarea"; },
+      configure: (element) => {
+        element.initialFocus = "textarea";
+      },
     });
 
     expect(surface.shadowRoot?.activeElement).toBe(dialogSection(surface));
@@ -59,7 +65,9 @@ describe("modal-surface initial focus", () => {
   it("falls back to the section when the initial-focus selector is invalid", async () => {
     const surface = await mountSurface({
       content: `<button>Only</button>`,
-      configure: (element) => { element.initialFocus = "input["; },
+      configure: (element) => {
+        element.initialFocus = "input[";
+      },
     });
 
     expect(surface.shadowRoot?.activeElement).toBe(dialogSection(surface));
@@ -81,7 +89,9 @@ describe("modal-surface refocus on request", () => {
   it("moves focus to the designated initial target when one is set", async () => {
     const surface = await mountSurface({
       content: `<input aria-label="Query">`,
-      configure: (element) => { element.initialFocus = "input"; },
+      configure: (element) => {
+        element.initialFocus = "input";
+      },
     });
     const outside = appendFocusTarget("Outside");
     outside.focus();
@@ -109,11 +119,14 @@ describe("modal-surface close contract", () => {
   it("prevents native cancel from bypassing busy state or the close callback", async () => {
     const onClose = vi.fn();
     const onBusyEscape = vi.fn();
-    const surface = await mountSurface({ content: `<button>Inside</button>`, configure: (element) => {
-      element.onClose = onClose;
-      element.onBusyEscape = onBusyEscape;
-      element.busy = true;
-    } });
+    const surface = await mountSurface({
+      content: `<button>Inside</button>`,
+      configure: (element) => {
+        element.onClose = onClose;
+        element.onBusyEscape = onBusyEscape;
+        element.busy = true;
+      },
+    });
     const dialog = requiredElement(surface.shadowRoot?.querySelector("dialog"), "native dialog");
     const cancel = new Event("cancel", { cancelable: true });
     dialog.dispatchEvent(cancel);
@@ -128,7 +141,12 @@ describe("modal-surface close contract", () => {
 
   it("ignores lower-layer events and refocus while a plugin modal is active", async () => {
     const onClose = vi.fn();
-    const surface = await mountSurface({ content: `<button>Inside</button>`, configure: (element) => { element.onClose = onClose; } });
+    const surface = await mountSurface({
+      content: `<button>Inside</button>`,
+      configure: (element) => {
+        element.onClose = onClose;
+      },
+    });
     const plugin = document.createElement("dialog");
     plugin.tabIndex = -1;
     document.body.append(plugin);
@@ -145,7 +163,12 @@ describe("modal-surface close contract", () => {
 
   it("does not dismiss on composing or already-handled Escape", async () => {
     const onClose = vi.fn();
-    const surface = await mountSurface({ content: `<button>Inside</button>`, configure: (element) => { element.onClose = onClose; } });
+    const surface = await mountSurface({
+      content: `<button>Inside</button>`,
+      configure: (element) => {
+        element.onClose = onClose;
+      },
+    });
     contentButton(surface).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true, cancelable: true }));
     const handled = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
     handled.preventDefault();
@@ -156,7 +179,9 @@ describe("modal-surface close contract", () => {
     const onClose = vi.fn<() => void>();
     const surface = await mountSurface({
       content: `<button>Inside</button>`,
-      configure: (element) => { element.onClose = onClose; },
+      configure: (element) => {
+        element.onClose = onClose;
+      },
     });
     const bodySpy = vi.fn();
     document.body.addEventListener("keydown", bodySpy);
@@ -208,7 +233,9 @@ describe("modal-surface close contract", () => {
     const onClose = vi.fn<() => void>();
     const surface = await mountSurface({
       content: `<button>Inside</button>`,
-      configure: (element) => { element.onClose = onClose; },
+      configure: (element) => {
+        element.onClose = onClose;
+      },
     });
 
     backdrop(surface).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, composed: true }));
@@ -224,7 +251,9 @@ describe("modal-surface close contract", () => {
     const onClose = vi.fn<() => void>();
     const surface = await mountSurface({
       content: `<button>Inside</button>`,
-      configure: (element) => { element.onClose = onClose; },
+      configure: (element) => {
+        element.onClose = onClose;
+      },
     });
 
     contentButton(surface).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, composed: true }));
@@ -472,7 +501,9 @@ describe("modal-surface nested shadow content", () => {
     const onClose = vi.fn<() => void>();
     const surface = await mountSurface({
       content: `<modal-surface-test-nested></modal-surface-test-nested>`,
-      configure: (element) => { element.onClose = onClose; },
+      configure: (element) => {
+        element.onClose = onClose;
+      },
     });
 
     nestedFocusButton(surface).focus();
@@ -549,7 +580,9 @@ describe("modal-surface focus restoration", () => {
     trigger.focus();
     const lower = await mountSurface({
       content: `<button id="lower-control">Lower dialog</button>`,
-      configure: (surface) => { surface.initialFocus = "button"; },
+      configure: (surface) => {
+        surface.initialFocus = "button";
+      },
     });
     const lowerControl = requiredElement(lower.querySelector<HTMLButtonElement>("#lower-control"), "lower dialog control");
     const higher = await mountSurface({ content: `<button>Higher dialog</button>` });

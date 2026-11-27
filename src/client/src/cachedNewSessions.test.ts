@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { SessionInfo } from "./api";
-import { forgetCachedNewSession, isCachedNewSessionInfo, loadCachedNewSessions, mergeCachedNewSessions, rememberCachedNewSession, stripCachedNewSessionMarker } from "./cachedNewSessions";
+import {
+  forgetCachedNewSession,
+  isCachedNewSessionInfo,
+  loadCachedNewSessions,
+  mergeCachedNewSessions,
+  rememberCachedNewSession,
+  stripCachedNewSessionMarker,
+} from "./cachedNewSessions";
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();

@@ -10,5 +10,7 @@ if (args.length === 3 && /^(?:0{40}|0{64})$/.test(args[0]) && args[2] === "1") {
     if (Array.isArray(command) && command.length > 0 && command.every((value) => typeof value === "string")) {
       spawnSync(command[0], command.slice(1), { stdio: "ignore", timeout: 2000, killSignal: "SIGKILL" });
     }
-  } catch { /* Invalid arguments, missing commands, and daemon failures must not affect Git. */ }
+  } catch {
+    /* Invalid arguments, missing commands, and daemon failures must not affect Git. */
+  }
 }

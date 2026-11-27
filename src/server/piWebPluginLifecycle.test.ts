@@ -67,7 +67,12 @@ describe("PI WEB plugin desired/active lifecycle reconciliation", () => {
     expect(plugin(reconciled, "stale-settings").server).toMatchObject({ state: "active", staleRevision: true, restartRequired: true });
     expect(plugin(reconciled, "stale-source").server).toMatchObject({ state: "active", staleRevision: true, restartRequired: true });
     expect(plugin(reconciled, "failed").server).toMatchObject({ state: "failed", phase: "start", message: "startup exploded", restartRequired: true });
-    expect(plugin(reconciled, "health-threw").server).toMatchObject({ state: "active", phase: "health", message: "probe exploded", health: { status: "unhealthy" } });
+    expect(plugin(reconciled, "health-threw").server).toMatchObject({
+      state: "active",
+      phase: "health",
+      message: "probe exploded",
+      health: { status: "unhealthy" },
+    });
     expect(plugin(reconciled, "incompatible").server).toMatchObject({ state: "incompatible", phase: "validate", message: "future API", restartRequired: true });
     expect(plugin(reconciled, "missing").server).toMatchObject({ state: "missing", restartRequired: true });
     expect(plugin(reconciled, "active-only")).toMatchObject({ discovered: false, enabled: false, server: { state: "active", restartRequired: true } });
@@ -116,10 +121,7 @@ describe("PI WEB plugin desired/active lifecycle reconciliation", () => {
   });
 
   it("never publishes a Terminal browser entry in no-plugin recovery", () => {
-    const desired = snapshot([
-      entry("pi-web.terminal", { browser: "browser-1" }),
-      entry("browser-only", { browser: "browser-1" }),
-    ]);
+    const desired = snapshot([entry("pi-web.terminal", { browser: "browser-1" }), entry("browser-only", { browser: "browser-1" })]);
     const runtime = createWorkspaceProviderRuntimeSnapshot([], [], "none");
 
     const reconciled = reconcilePiWebPluginLifecycle(desired, { status: "available", snapshot: runtime }, moduleUrl, "none");
@@ -130,10 +132,7 @@ describe("PI WEB plugin desired/active lifecycle reconciliation", () => {
   });
 
   it.each(["unavailable", "incompatible"] as const)("withholds every ordinary browser module while required runtime state is %s", (status) => {
-    const desired = snapshot([
-      entry("browser-only", { browser: "browser-1" }),
-      entry("server-backed", { browser: "browser-1", server: "server-1" }),
-    ]);
+    const desired = snapshot([entry("browser-only", { browser: "browser-1" }), entry("server-backed", { browser: "browser-1", server: "server-1" })]);
 
     const reconciled = reconcilePiWebPluginLifecycle(
       desired,
@@ -150,10 +149,7 @@ describe("PI WEB plugin desired/active lifecycle reconciliation", () => {
   });
 });
 
-function entry(
-  id: string,
-  options: { browser?: string; server?: string; enabled?: boolean; settingsRevision?: string } = {},
-): PiWebPluginCatalogEntry {
+function entry(id: string, options: { browser?: string; server?: string; enabled?: boolean; settingsRevision?: string } = {}): PiWebPluginCatalogEntry {
   return {
     id,
     packageRoot: `/plugins/${id}`,
@@ -168,11 +164,7 @@ function entry(
   };
 }
 
-function record(
-  pluginId: string,
-  state: ServerPluginRuntimeRecord["state"],
-  patch: Partial<ServerPluginRuntimeRecord> = {},
-): ServerPluginRuntimeRecord {
+function record(pluginId: string, state: ServerPluginRuntimeRecord["state"], patch: Partial<ServerPluginRuntimeRecord> = {}): ServerPluginRuntimeRecord {
   return {
     pluginId,
     source: "fixture",
@@ -186,10 +178,7 @@ function record(
   };
 }
 
-function snapshot(
-  plugins: PiWebPluginCatalogEntry[],
-  diagnostics: PiWebPluginCatalogSnapshot["diagnostics"] = [],
-): PiWebPluginCatalogSnapshot {
+function snapshot(plugins: PiWebPluginCatalogEntry[], diagnostics: PiWebPluginCatalogSnapshot["diagnostics"] = []): PiWebPluginCatalogSnapshot {
   return { plugins, diagnostics: [...diagnostics] };
 }
 

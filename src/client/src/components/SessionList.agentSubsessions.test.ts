@@ -3,7 +3,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionInfo } from "../api";
 import * as sessionPaths from "../sessionPaths";
-import { agentChildOffsets, agentSessionGroups, SessionList, sessionNavigationCandidates, sessionRowsForCurrentTree, visibleAgentSessionRows } from "./SessionList";
+import {
+  agentChildOffsets,
+  agentSessionGroups,
+  SessionList,
+  sessionNavigationCandidates,
+  sessionRowsForCurrentTree,
+  visibleAgentSessionRows,
+} from "./SessionList";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -14,9 +21,15 @@ afterEach(() => {
 
 function session(id: string, overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
-    id, path: `/sessions/${id}.jsonl`, cwd: "/workspace",
-    created: "2026-06-09T00:00:00.000Z", modified: "2026-06-09T00:00:00.000Z",
-    messageCount: 1, firstMessage: id, persisted: true, ...overrides,
+    id,
+    path: `/sessions/${id}.jsonl`,
+    cwd: "/workspace",
+    created: "2026-06-09T00:00:00.000Z",
+    modified: "2026-06-09T00:00:00.000Z",
+    messageCount: 1,
+    firstMessage: id,
+    persisted: true,
+    ...overrides,
   };
 }
 
@@ -58,8 +71,9 @@ function agentToggle(list: SessionList, id: string): HTMLButtonElement {
 }
 
 function toolbarButton(list: SessionList, text: string): HTMLButtonElement {
-  const result = Array.from(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".selection-toolbar button") ?? [])
-    .find((item) => item.textContent.trim() === text);
+  const result = Array.from(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".selection-toolbar button") ?? []).find(
+    (item) => item.textContent.trim() === text,
+  );
   if (!result) throw new Error(`Missing toolbar button: ${text}`);
   return result;
 }
@@ -84,11 +98,16 @@ describe("conservative agent child projection", () => {
     const other = session("other");
     const rows = sessionRowsForCurrentTree([other, parent, user, firstAgent, unknown, secondAgent, nestedUser, nestedAgent]);
     expect(rows.map(({ session: item }) => item.id)).toEqual([
-      "other", "parent", "first-agent", "nested-agent", "nested-user", "second-agent", "user", "unknown",
+      "other",
+      "parent",
+      "first-agent",
+      "nested-agent",
+      "nested-user",
+      "second-agent",
+      "user",
+      "unknown",
     ]);
-    expect(visibleAgentSessionRows(rows, new Set()).map(({ session: item }) => item.id)).toEqual([
-      "other", "parent", "nested-user", "user", "unknown",
-    ]);
+    expect(visibleAgentSessionRows(rows, new Set()).map(({ session: item }) => item.id)).toEqual(["other", "parent", "nested-user", "user", "unknown"]);
   });
 
   it("counts only verified direct children and preserves user/unknown descendants and orphans", () => {
@@ -101,8 +120,18 @@ describe("conservative agent child projection", () => {
     const orphan = session("orphan", { parentSessionPath: "/missing.jsonl", agentSubsession: true });
     const rows = sessionRowsForCurrentTree([parent, agent, nestedAgent, user, unknown, userAgent, orphan]);
     const groups = agentSessionGroups(rows);
-    expect([...groups.countByParentId]).toEqual([["parent", 1], ["agent", 1], ["user", 1]]);
-    expect(agentChildOffsets(rows, groups)).toEqual(new Map([["agent", 12], ["nested-agent", 24], ["user-agent", 12]]));
+    expect([...groups.countByParentId]).toEqual([
+      ["parent", 1],
+      ["agent", 1],
+      ["user", 1],
+    ]);
+    expect(agentChildOffsets(rows, groups)).toEqual(
+      new Map([
+        ["agent", 12],
+        ["nested-agent", 24],
+        ["user-agent", 12],
+      ]),
+    );
     const visible = (expanded: string[]) => visibleAgentSessionRows(rows, new Set(expanded), groups).map((item) => item.session.id);
     expect(visible([])).toEqual(["parent", "unknown", "user", "orphan"]);
     expect(visible(["user"])).toEqual(["parent", "unknown", "user", "user-agent", "orphan"]);
@@ -119,7 +148,13 @@ describe("conservative agent child projection", () => {
     const rows = sessionRowsForCurrentTree([parent, first, last, child("user", parent), other, otherChild]);
     const groups = agentSessionGroups(rows);
     const visible = visibleAgentSessionRows(rows, new Set(["parent", "other"]), groups);
-    expect(agentChildOffsets(visible, groups)).toEqual(new Map([["first", 12], ["last", 12], ["other-child", 12]]));
+    expect(agentChildOffsets(visible, groups)).toEqual(
+      new Map([
+        ["first", 12],
+        ["last", 12],
+        ["other-child", 12],
+      ]),
+    );
     expect(agentChildOffsets(visibleAgentSessionRows(rows, new Set(), groups), groups).size).toBe(0);
   });
 

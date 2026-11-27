@@ -4,12 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const publicApiDeclarationPaths = [
-  "plugin-api.d.ts",
-  "server-plugin-api.d.ts",
-  "shared/pluginApiTypes.d.ts",
-  "shared/pluginCatalogTypes.d.ts",
-];
+const publicApiDeclarationPaths = ["plugin-api.d.ts", "server-plugin-api.d.ts", "shared/pluginApiTypes.d.ts", "shared/pluginCatalogTypes.d.ts"];
 
 describe("public API delivery artifacts", () => {
   it("keeps the browser API type-only and exports the supported server runtime contract", async () => {
@@ -35,14 +30,10 @@ describe("public API delivery artifacts", () => {
         readFile(join(repoRoot, "dist", declarationPath), "utf8"),
         readFile(join(repoRoot, "test-fixtures", "plugin-api-baseline", declarationPath), "utf8"),
       ]);
-      expect(
-        normalizeLineEndings(actual),
-        `${declarationPath} changed; update the baseline only for an intentional public API change`,
-      ).toBe(normalizeLineEndings(baseline));
-      expect(
-        actual,
-        `${declarationPath} must not expose the host-internal terminal command-run filter`,
-      ).not.toContain("TerminalCommandRunFilter");
+      expect(normalizeLineEndings(actual), `${declarationPath} changed; update the baseline only for an intentional public API change`).toBe(
+        normalizeLineEndings(baseline),
+      );
+      expect(actual, `${declarationPath} must not expose the host-internal terminal command-run filter`).not.toContain("TerminalCommandRunFilter");
     }
   });
 });

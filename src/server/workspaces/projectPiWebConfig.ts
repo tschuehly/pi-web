@@ -1,7 +1,14 @@
 import { constants } from "node:fs";
 import { open, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { effectiveAttachmentsConfig, effectiveUploadsConfig, parseAttachmentsConfig, parsePathAccessConfig, parseUploadsConfig, type PiWebConfig } from "../../config.js";
+import {
+  effectiveAttachmentsConfig,
+  effectiveUploadsConfig,
+  parseAttachmentsConfig,
+  parsePathAccessConfig,
+  parseUploadsConfig,
+  type PiWebConfig,
+} from "../../config.js";
 import type { JsonObject, JsonValue, PiWebAttachmentsConfig, PiWebPathAccessConfig, PiWebUploadsConfig } from "../../shared/apiTypes.js";
 import { isPiWebPluginId, piWebPluginIdPattern } from "../../shared/pluginIds.js";
 
@@ -91,17 +98,28 @@ function parseProjectPiWebConfig(value: Record<string, unknown>, path: string): 
 
 function parseProjectPlugins(value: unknown, path: string): NonNullable<ProjectPiWebConfig["plugins"]> {
   if (!isRecord(value)) throw new Error(`PI WEB project config plugins must be an object: ${path}`);
-  return Object.freeze(Object.fromEntries(Object.entries(value).map(([pluginId, config]) => {
-    if (!isPiWebPluginId(pluginId)) throw new Error(`PI WEB project config plugin ids must match ${piWebPluginIdPattern.source}: ${path}`);
-    if (!isRecord(config)) throw new Error(`PI WEB project config plugin entries must be objects: ${path}`);
-    if (Object.hasOwn(config, "enabled")) {
-      throw new Error(`PI WEB project config plugins.${pluginId}.enabled is not supported; plugin activation is global: ${path}`);
-    }
-    const settings = config["settings"];
-    return [pluginId, Object.freeze(settings === undefined ? {} : {
-      settings: snapshotPluginSettings(settings, `PI WEB project config plugins.${pluginId}.settings: ${path}`),
-    })];
-  })));
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(value).map(([pluginId, config]) => {
+        if (!isPiWebPluginId(pluginId)) throw new Error(`PI WEB project config plugin ids must match ${piWebPluginIdPattern.source}: ${path}`);
+        if (!isRecord(config)) throw new Error(`PI WEB project config plugin entries must be objects: ${path}`);
+        if (Object.hasOwn(config, "enabled")) {
+          throw new Error(`PI WEB project config plugins.${pluginId}.enabled is not supported; plugin activation is global: ${path}`);
+        }
+        const settings = config["settings"];
+        return [
+          pluginId,
+          Object.freeze(
+            settings === undefined
+              ? {}
+              : {
+                  settings: snapshotPluginSettings(settings, `PI WEB project config plugins.${pluginId}.settings: ${path}`),
+                },
+          ),
+        ];
+      }),
+    ),
+  );
 }
 
 /** Validates only JSON shape; setting meanings belong to the owning plugin. */

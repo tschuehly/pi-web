@@ -37,21 +37,14 @@ export interface InstalledNativeServiceDefinitionDependencies {
   warn: (message: string) => void;
 }
 
-const systemdInspectionProperties = [
-  "LoadState",
-  "FragmentPath",
-  "DropInPaths",
-  "NeedDaemonReload",
-  "EnvironmentFiles",
-  "Environment",
-] as const;
+const systemdInspectionProperties = ["LoadState", "FragmentPath", "DropInPaths", "NeedDaemonReload", "EnvironmentFiles", "Environment"] as const;
 
 const systemdBusDestination = "org.freedesktop.systemd1";
 const systemdUnitObjectPathPrefix = "/org/freedesktop/systemd1/unit/";
 const legacySystemdUnprintableValue = "[unprintable]";
 const managedEnvironmentKeys = ["PI_WEB_CONFIG", "PI_WEB_PI_PACKAGE_DIR"] as const;
 
-type SystemdInspectionProperty = typeof systemdInspectionProperties[number];
+type SystemdInspectionProperty = (typeof systemdInspectionProperties)[number];
 
 /**
  * Read installed definitions through a strict UTF-8 boundary, parse the
@@ -114,14 +107,7 @@ function inspectEffectiveSystemdDefinition(
   expectedEnvironment: Readonly<Record<string, string>>,
   dependencies: InstalledNativeServiceDefinitionDependencies,
 ): InstalledNativeServiceInspection<null> {
-  const args = [
-    "--user",
-    "--no-pager",
-    "show",
-    source.systemdName,
-    "--all",
-    ...systemdInspectionProperties.map((property) => `--property=${property}`),
-  ];
+  const args = ["--user", "--no-pager", "show", source.systemdName, "--all", ...systemdInspectionProperties.map((property) => `--property=${property}`)];
   const captured = dependencies.capture("systemctl", args);
   const result = decodeCommandResult(captured);
   if (result === undefined) {
@@ -172,9 +158,10 @@ function inspectEffectiveSystemdDefinition(
   if (needDaemonReload !== "no") {
     return {
       ok: false,
-      message: needDaemonReload === "yes"
-        ? `Systemd unit ${source.systemdName} has changed on disk; run \`systemctl --user daemon-reload\` before probing it.`
-        : `Systemd unit ${source.systemdName} reports unrecognized NeedDaemonReload=${JSON.stringify(needDaemonReload)}.`,
+      message:
+        needDaemonReload === "yes"
+          ? `Systemd unit ${source.systemdName} has changed on disk; run \`systemctl --user daemon-reload\` before probing it.`
+          : `Systemd unit ${source.systemdName} reports unrecognized NeedDaemonReload=${JSON.stringify(needDaemonReload)}.`,
     };
   }
   // Drop-ins (including package-owned global ones such as Fedora's
@@ -206,10 +193,7 @@ function inspectEffectiveSystemdDefinition(
     dependencies,
   );
   if (!effectiveEnvironment.ok) return effectiveEnvironment;
-  if (!recordsEqual(
-    managedEnvironmentValues(effectiveEnvironment.value),
-    managedEnvironmentValues(expectedEnvironment),
-  )) {
+  if (!recordsEqual(managedEnvironmentValues(effectiveEnvironment.value), managedEnvironmentValues(expectedEnvironment))) {
     return {
       ok: false,
       message: `Systemd unit ${source.systemdName} has an effective environment that differs from installed definition ${source.path}; run \`systemctl --user daemon-reload\` or reinstall the managed services before probing it.`,
@@ -290,9 +274,7 @@ interface ParsedSystemdInspectionProperties {
   propertiesWithAmbiguousTrailingCarriageReturn: ReadonlySet<SystemdInspectionProperty>;
 }
 
-function parseSystemdInspectionProperties(
-  output: string,
-): InstalledNativeServiceInspection<ParsedSystemdInspectionProperties> {
+function parseSystemdInspectionProperties(output: string): InstalledNativeServiceInspection<ParsedSystemdInspectionProperties> {
   const properties = new Map<SystemdInspectionProperty, string[]>();
   const propertiesWithAmbiguousTrailingCarriageReturn = new Set<SystemdInspectionProperty>();
   for (const property of systemdInspectionProperties) properties.set(property, []);
@@ -342,9 +324,7 @@ function inspectEffectiveSystemdEnvironment(
   dependencies: InstalledNativeServiceDefinitionDependencies,
 ): InstalledNativeServiceInspection<Readonly<Record<string, string>>> {
   const serialized = parseSystemdSerializedWords(systemctlValue);
-  const systemctlEnvironment = serialized === undefined
-    ? undefined
-    : environmentFromAssignments(serialized.words);
+  const systemctlEnvironment = serialized === undefined ? undefined : environmentFromAssignments(serialized.words);
   if (
     serialized !== undefined
     && serialized.demonstrablyLossless
@@ -378,9 +358,10 @@ function inspectEffectiveSystemdEnvironment(
   }
   if (result.status !== 0) {
     const detail = firstOutputLine(result.stderr, result.stdout);
-    const systemctlDetail = serialized?.words.includes(legacySystemdUnprintableValue) === true
-      ? `systemctl returned ${legacySystemdUnprintableValue}`
-      : "systemctl returned an Environment value that was not demonstrably lossless";
+    const systemctlDetail =
+      serialized?.words.includes(legacySystemdUnprintableValue) === true
+        ? `systemctl returned ${legacySystemdUnprintableValue}`
+        : "systemctl returned an Environment value that was not demonstrably lossless";
     return {
       ok: false,
       message: `Could not inspect effective systemd unit ${source.systemdName} losslessly: ${systemctlDetail}, and busctl exited with status ${String(result.status)}${detail === undefined ? "" : ` (${detail})`}.`,
@@ -390,9 +371,7 @@ function inspectEffectiveSystemdEnvironment(
   const assignments = parseBusctlStringArray(result.stdout);
   if (assignments === undefined) return unrecognizedSystemdEnvironment(source, "busctl");
   const environment = environmentFromAssignments(assignments);
-  return environment === undefined
-    ? unrecognizedSystemdEnvironment(source, "busctl")
-    : { ok: true, value: environment };
+  return environment === undefined ? unrecognizedSystemdEnvironment(source, "busctl") : { ok: true, value: environment };
 }
 
 function unrecognizedSystemdEnvironment(
@@ -405,9 +384,7 @@ function unrecognizedSystemdEnvironment(
   };
 }
 
-function managedEnvironmentValues(
-  environment: Readonly<Record<string, string>>,
-): Readonly<Record<string, string>> {
+function managedEnvironmentValues(environment: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
   const managed = new Map<string, string>();
   for (const key of managedEnvironmentKeys) {
     const value = ownEnvironmentValue(environment, key);
@@ -421,11 +398,7 @@ function environmentFromAssignments(assignments: readonly string[]): Readonly<Re
   for (const assignment of assignments) {
     const separator = assignment.indexOf("=");
     const key = assignment.slice(0, separator);
-    if (
-      separator <= 0
-      || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)
-      || environment.has(key)
-    ) return undefined;
+    if (separator <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) || environment.has(key)) return undefined;
     environment.set(key, assignment.slice(separator + 1));
   }
   return Object.fromEntries(environment);
@@ -447,8 +420,8 @@ function parseBusctlStringArray(output: string): string[] | undefined {
   const words: string[] = [];
   let offset = 0;
   while (offset < serializedWords.length) {
-    if (serializedWords[offset] !== " " || serializedWords[offset + 1] !== "\"") return undefined;
-    const parsed = systemdQuotedWord(serializedWords, offset + 1, "\"");
+    if (serializedWords[offset] !== " " || serializedWords[offset + 1] !== '"') return undefined;
+    const parsed = systemdQuotedWord(serializedWords, offset + 1, '"');
     if (parsed === undefined) return undefined;
     const decoded = decodeSystemdEscapes(parsed.raw);
     if (decoded === undefined) return undefined;
@@ -465,9 +438,7 @@ function systemdUnitObjectPath(unitName: string): string {
   for (const byte of new TextEncoder().encode(unitName)) {
     const isAsciiLetter = (byte >= 0x41 && byte <= 0x5a) || (byte >= 0x61 && byte <= 0x7a);
     const isNoninitialDigit = index > 0 && byte >= 0x30 && byte <= 0x39;
-    label += isAsciiLetter || isNoninitialDigit
-      ? String.fromCharCode(byte)
-      : `_${byte.toString(16).padStart(2, "0")}`;
+    label += isAsciiLetter || isNoninitialDigit ? String.fromCharCode(byte) : `_${byte.toString(16).padStart(2, "0")}`;
     index += 1;
   }
   return `${systemdUnitObjectPathPrefix}${label === "" ? "_" : label}`;
@@ -525,11 +496,7 @@ function decodeSystemdPrintedEscapes(value: string): string | undefined {
   return decodeSystemdEscapes(value.replaceAll("\\$", "$").replaceAll("\\`", "`"));
 }
 
-function systemdQuotedWord(
-  value: string,
-  quoteOffset: number,
-  quote: '"' | "'",
-): { raw: string; nextOffset: number } | undefined {
+function systemdQuotedWord(value: string, quoteOffset: number, quote: '"' | "'"): { raw: string; nextOffset: number } | undefined {
   let escaped = false;
   for (let offset = quoteOffset + 1; offset < value.length; offset += 1) {
     const character = value[offset];
@@ -560,34 +527,21 @@ interface LaunchdPrintGroup {
   records: LaunchdPrintRecord[];
 }
 
-type LaunchdPrintRecord =
-  | { kind: "scalar"; value: string }
-  | { kind: "group"; value: LaunchdPrintGroup };
+type LaunchdPrintRecord = { kind: "scalar"; value: string } | { kind: "group"; value: LaunchdPrintGroup };
 
-function parseLaunchdPrintDefinition(
-  output: string,
-  expectedTarget: string,
-): LaunchdPrintDefinition | undefined {
+function parseLaunchdPrintDefinition(output: string, expectedTarget: string): LaunchdPrintDefinition | undefined {
   const root = parseLaunchdPrintDocument(output, expectedTarget);
   if (root === undefined) return undefined;
 
   const pathPrefix = "path = ";
-  const paths = root.records.flatMap((record) => (
-    record.kind === "scalar" && record.value.startsWith(pathPrefix)
-      ? [record.value.slice(pathPrefix.length)]
-      : []
-  ));
-  const environments = root.records.flatMap((record) => (
-    record.kind === "group" && record.value.name === "environment"
-      ? [record.value]
-      : []
-  ));
+  const paths = root.records.flatMap((record) =>
+    record.kind === "scalar" && record.value.startsWith(pathPrefix) ? [record.value.slice(pathPrefix.length)] : [],
+  );
+  const environments = root.records.flatMap((record) => (record.kind === "group" && record.value.name === "environment" ? [record.value] : []));
   if (paths.length !== 1 || paths[0] === "" || environments.length !== 1) return undefined;
 
   const environment = parseLaunchdPrintEnvironment(environments[0]?.records ?? []);
-  return environment === undefined
-    ? undefined
-    : { path: paths[0] ?? "", environment };
+  return environment === undefined ? undefined : { path: paths[0] ?? "", environment };
 }
 
 /**
@@ -650,11 +604,7 @@ function launchdPrintGroupName(value: string): string | undefined {
  * closing brace. The enclosing group's sibling or closing brace instead makes
  * the marker part of the scalar value.
  */
-function launchdPrintRecordHasGroupBody(
-  lines: readonly string[],
-  recordIndex: number,
-  depth: number,
-): boolean {
+function launchdPrintRecordHasGroupBody(lines: readonly string[], recordIndex: number, depth: number): boolean {
   let nextIndex = recordIndex + 1;
   while (lines[nextIndex] === "") nextIndex += 1;
   const nextLine = lines[nextIndex];
@@ -666,28 +616,20 @@ function launchdPrintRecordHasGroupBody(
   return nextLine.startsWith(childIndent) && !nextLine.startsWith(`${childIndent}\t`);
 }
 
-function parseLaunchdPrintEnvironment(
-  records: readonly LaunchdPrintRecord[],
-): Readonly<Record<string, string>> | undefined {
+function parseLaunchdPrintEnvironment(records: readonly LaunchdPrintRecord[]): Readonly<Record<string, string>> | undefined {
   const environment = new Map<string, string>();
   const separator = " => ";
   for (const record of records) {
     if (record.kind !== "scalar") return undefined;
     const separatorOffset = record.value.indexOf(separator);
     const key = record.value.slice(0, separatorOffset);
-    if (
-      separatorOffset <= 0
-      || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key)
-      || environment.has(key)
-    ) return undefined;
+    if (separatorOffset <= 0 || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key) || environment.has(key)) return undefined;
     environment.set(key, record.value.slice(separatorOffset + separator.length));
   }
   return Object.fromEntries(environment);
 }
 
-function decodeCommandResult(
-  result: InstalledNativeServiceDefinitionCommandResult,
-): DecodedInstalledNativeServiceDefinitionCommandResult | undefined {
+function decodeCommandResult(result: InstalledNativeServiceDefinitionCommandResult): DecodedInstalledNativeServiceDefinitionCommandResult | undefined {
   let stdout: string;
   let stderr: string;
   try {
@@ -708,14 +650,10 @@ function launchdServiceIsMissing(result: DecodedInstalledNativeServiceDefinition
   return /could not find (?:specified )?service|service (?:was )?not found/iu.test(output);
 }
 
-function recordsEqual(
-  first: Readonly<Record<string, string>>,
-  second: Readonly<Record<string, string>>,
-): boolean {
+function recordsEqual(first: Readonly<Record<string, string>>, second: Readonly<Record<string, string>>): boolean {
   const firstEntries = Object.entries(first);
   const secondEntries = Object.entries(second);
-  return firstEntries.length === secondEntries.length
-    && firstEntries.every(([key, value]) => Object.hasOwn(second, key) && second[key] === value);
+  return firstEntries.length === secondEntries.length && firstEntries.every(([key, value]) => Object.hasOwn(second, key) && second[key] === value);
 }
 
 function definitionLabel(backend: NativeServiceBackend, id: NativeServiceId): string {
@@ -724,7 +662,10 @@ function definitionLabel(backend: NativeServiceBackend, id: NativeServiceId): st
 
 function firstOutputLine(...values: readonly string[]): string | undefined {
   for (const value of values) {
-    const line = value.trim().split("\n").find((candidate) => candidate.trim() !== "");
+    const line = value
+      .trim()
+      .split("\n")
+      .find((candidate) => candidate.trim() !== "");
     if (line !== undefined) return line.trim();
   }
   return undefined;

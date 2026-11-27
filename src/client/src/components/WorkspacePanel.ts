@@ -71,17 +71,25 @@ export class WorkspacePanel extends LitElement {
 
   override render() {
     const workspace = this.workspace;
-    if (workspace === undefined && this.panels.length === 0) return this.renderEmptyState(this.error !== "" ? { title: this.error } : this.emptyState ?? {
-      title: "Select a workspace",
-      body: "Choose a workspace to use its tools.",
-    }, true);
+    if (workspace === undefined && this.panels.length === 0)
+      return this.renderEmptyState(
+        this.error !== ""
+          ? { title: this.error }
+          : (this.emptyState ?? {
+              title: "Select a workspace",
+              body: "Choose a workspace to use its tools.",
+            }),
+        true,
+      );
     const visiblePanels = this.panels;
     // An unresolved route may leave a valid remembered tool, but its content is not displayed.
-    const selectedPanel = this.error !== "" ? undefined
-      : this.tool === undefined ? visiblePanels[0] : visiblePanels.find((panel) => panel.id === this.tool);
+    const selectedPanel = this.error !== "" ? undefined : this.tool === undefined ? visiblePanels[0] : visiblePanels.find((panel) => panel.id === this.tool);
     const pinnedPanels = pinnedNavigationTabs(visiblePanels, this.pinnedIds);
     return html`
-      ${this.hideToolTabs ? null : html`
+      ${
+        this.hideToolTabs
+          ? null
+          : html`
         <header>
           <div class=${this.workspaceHeaderFrameClass()}>
             <div class="workspace-header-strip" @scroll=${this.onWorkspaceHeaderScroll}>
@@ -91,7 +99,9 @@ export class WorkspacePanel extends LitElement {
                   const badge = panel.badge?.();
                   const ariaLabel = this.panelTabAriaLabel(panel, badge);
                   return html`
-                    <button class=${this.panelTabClass(panel, selected)} title=${ariaLabel} aria-label=${ariaLabel} aria-pressed=${String(selected)} @click=${() => { this.onSelectTool(panel.id); }}>
+                    <button class=${this.panelTabClass(panel, selected)} title=${ariaLabel} aria-label=${ariaLabel} aria-pressed=${String(selected)} @click=${() => {
+                      this.onSelectTool(panel.id);
+                    }}>
                       ${this.renderPanelTabContent(panel, badge)}
                     </button>
                   `;
@@ -102,23 +112,26 @@ export class WorkspacePanel extends LitElement {
           ${this.renderNavigationButton(selectedPanel !== undefined && !pinnedPanels.some((panel) => panel.id === selectedPanel.id))}
           ${renderPanelToggleButton("workspace", false, this.onTogglePanel)}
         </header>
-      `}
-      ${this.error !== "" ? this.renderEmptyState({ title: this.error }) : selectedPanel === undefined ? this.renderEmptyState({
-        title: this.tool === undefined ? "No workspace tools available" : `Workspace panel unavailable: ${this.tool}`,
-      }) : html`
+      `
+      }
+      ${
+        this.error !== ""
+          ? this.renderEmptyState({ title: this.error })
+          : selectedPanel === undefined
+            ? this.renderEmptyState({
+                title: this.tool === undefined ? "No workspace tools available" : `Workspace panel unavailable: ${this.tool}`,
+              })
+            : html`
         <div class="panel-content">
           ${selectedPanel.render()}
         </div>
-      `}
+      `
+      }
     `;
   }
 
   private panelTabClass(panel: WorkspaceToolPanel, selected: boolean): string {
-    return [
-      "ui-button", "ui-tab",
-      ...(panel.icon === undefined ? [] : ["icon-tab"]),
-      ...(selected ? ["selected"] : []),
-    ].join(" ");
+    return ["ui-button", "ui-tab", ...(panel.icon === undefined ? [] : ["icon-tab"]), ...(selected ? ["selected"] : [])].join(" ");
   }
 
   private panelTabAriaLabel(panel: WorkspaceToolPanel, badge: WorkspacePanelBadge): string {
@@ -140,7 +153,9 @@ export class WorkspacePanel extends LitElement {
   }
 
   private renderNavigationButton(hiddenActiveDestination = false) {
-    return this.onShowNavigation === undefined ? null : html`<button type="button" class=${`ui-button ui-button--icon navigation-menu-button${hiddenActiveDestination ? " selected" : ""}`} title="Navigation" aria-label="Navigation" aria-haspopup="dialog" @click=${this.onShowNavigation}>${renderNavigationMenuIcon()}</button>`;
+    return this.onShowNavigation === undefined
+      ? null
+      : html`<button type="button" class=${`ui-button ui-button--icon navigation-menu-button${hiddenActiveDestination ? " selected" : ""}`} title="Navigation" aria-label="Navigation" aria-haspopup="dialog" @click=${this.onShowNavigation}>${renderNavigationMenuIcon()}</button>`;
   }
 
   private renderEmptyState(state: WorkspacePanelEmptyState, showNavigation = false): TemplateResult {

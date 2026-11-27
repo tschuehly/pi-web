@@ -22,7 +22,10 @@ export interface PiWebStatusCache {
   invalidate(): void;
 }
 
-export function createPiWebStatusCache(load: (options: PiWebStatusCacheLoadOptions) => Promise<PiWebStatusResponse>, options: PiWebStatusCacheOptions = {}): PiWebStatusCache {
+export function createPiWebStatusCache(
+  load: (options: PiWebStatusCacheLoadOptions) => Promise<PiWebStatusResponse>,
+  options: PiWebStatusCacheOptions = {},
+): PiWebStatusCache {
   const ttlMs = options.ttlMs ?? DEFAULT_PI_WEB_STATUS_CACHE_TTL_MS;
   const now = options.now ?? Date.now;
   let cached: { status: PiWebStatusResponse; expiresAt: number } | undefined;
@@ -51,7 +54,9 @@ export function createPiWebStatusCache(load: (options: PiWebStatusCacheLoadOptio
     async get(): Promise<PiWebStatusResponse> {
       if (cached !== undefined) {
         if (cached.expiresAt > now()) return cached.status;
-        void refresh().catch((error: unknown) => { options.onError?.(error); });
+        void refresh().catch((error: unknown) => {
+          options.onError?.(error);
+        });
         return cached.status;
       }
       return refresh();

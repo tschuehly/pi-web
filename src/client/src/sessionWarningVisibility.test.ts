@@ -9,16 +9,18 @@ import {
   toggleSessionWarnings,
 } from "./sessionWarningVisibility";
 
-const subscriptionWarning: SessionWarning = { severity: "warning", message: "subscription auth is active", source: "anthropic", dismiss: { id: "anthropicExtraUsage" } };
+const subscriptionWarning: SessionWarning = {
+  severity: "warning",
+  message: "subscription auth is active",
+  source: "anthropic",
+  dismiss: { id: "anthropicExtraUsage" },
+};
 const skillWarning: SessionWarning = { severity: "error", message: "skill failed to load", source: "skill", path: "/skills/a.md" };
 const warnings: SessionWarning[] = [subscriptionWarning, skillWarning];
 
 describe("sessionWarningSetSignature", () => {
   it("identifies an equivalent warning set across object replacement and ordering", () => {
-    const replacement = [
-      { ...skillWarning },
-      { ...subscriptionWarning, dismiss: { id: "anthropicExtraUsage" } },
-    ] satisfies SessionWarning[];
+    const replacement = [{ ...skillWarning }, { ...subscriptionWarning, dismiss: { id: "anthropicExtraUsage" } }] satisfies SessionWarning[];
 
     expect(sessionWarningSetSignature(replacement)).toBe(sessionWarningSetSignature(warnings));
   });
@@ -68,7 +70,11 @@ describe("session warning visibility transitions", () => {
     const firstCollapsed = collapseSessionWarnings(firstVisible);
     const secondVisible = reconcileSessionWarningVisibility(firstCollapsed, "session-2", warnings);
     const secondCollapsed = collapseSessionWarnings(secondVisible);
-    const returnedToFirst = reconcileSessionWarningVisibility(secondCollapsed, "session-1", warnings.map((warning) => ({ ...warning })));
+    const returnedToFirst = reconcileSessionWarningVisibility(
+      secondCollapsed,
+      "session-1",
+      warnings.map((warning) => ({ ...warning })),
+    );
 
     expect(secondVisible.collapsed).toBe(false);
     expect(returnedToFirst.collapsed).toBe(true);

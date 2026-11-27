@@ -60,7 +60,12 @@ describe("browser error scopes", () => {
 
   it("clears only the captured recoverable error after a successful read", () => {
     let state = initialAppState();
-    const reporter = new BrowserErrorReporter(() => state, (patch) => { state = { ...state, ...patch }; });
+    const reporter = new BrowserErrorReporter(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    );
     reporter.report(sessionA, "refresh unavailable", "session-refresh");
     reporter.report(workspaceA, "prompt delivery failed");
     const captured = reporter.captureRecovery(sessionA, "session-refresh");
@@ -74,7 +79,12 @@ describe("browser error scopes", () => {
 
   it("preserves replacement failures, including identical text, when an older read recovers", () => {
     let state = initialAppState();
-    const reporter = new BrowserErrorReporter(() => state, (patch) => { state = { ...state, ...patch }; });
+    const reporter = new BrowserErrorReporter(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+    );
     reporter.report(sessionA, "refresh unavailable", "session-refresh");
     const captured = reporter.captureRecovery(sessionA, "session-refresh");
     reporter.report(sessionA, "refresh unavailable", "session-refresh");

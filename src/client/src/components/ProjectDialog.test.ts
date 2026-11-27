@@ -163,7 +163,11 @@ describe("project-dialog modal surface", () => {
     expect(onSubmit).toHaveBeenCalledWith("/work/proj", true, { trusted: false, changed: false });
 
     let resolveTrust: ((value: { path: string; decision: boolean; trusted: boolean }) => void) | undefined;
-    vi.mocked(trustApi.projectTrust).mockReturnValue(new Promise((resolve) => { resolveTrust = resolve; }));
+    vi.mocked(trustApi.projectTrust).mockReturnValue(
+      new Promise((resolve) => {
+        resolveTrust = resolve;
+      }),
+    );
     buttonByText(dialog, "Retry trust check").click();
     await settleRenderedDialog(dialog);
     expect(trustCheckbox(dialog).disabled).toBe(true);
@@ -180,7 +184,11 @@ describe("project-dialog modal surface", () => {
     const dialog = await mountDialog();
     vi.mocked(api.projectDirectories).mockResolvedValue([{ path: "/work/proj/", kind: "other" }]);
     let resolveTrust: ((value: { path: string; decision: boolean | null; trusted: boolean }) => void) | undefined;
-    vi.mocked(trustApi.projectTrust).mockReturnValue(new Promise((resolve) => { resolveTrust = resolve; }));
+    vi.mocked(trustApi.projectTrust).mockReturnValue(
+      new Promise((resolve) => {
+        resolveTrust = resolve;
+      }),
+    );
     const input = pathInput(dialog);
     input.value = "/work/proj";
     input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
@@ -220,7 +228,10 @@ function descriptions(dialog: ProjectDialog, control: Element): string {
 }
 
 function buttonByText(dialog: ProjectDialog, text: string): HTMLButtonElement {
-  return requiredElement(Array.from(dialog.shadowRoot?.querySelectorAll("button") ?? []).find((button) => button.textContent.trim() === text), text);
+  return requiredElement(
+    Array.from(dialog.shadowRoot?.querySelectorAll("button") ?? []).find((button) => button.textContent.trim() === text),
+    text,
+  );
 }
 
 interface ProjectDialogProps {
@@ -241,7 +252,9 @@ async function mountDialog(props: ProjectDialogProps = {}): Promise<ProjectDialo
 
 /** Waits until the trust read for the current path has resolved and rendered. */
 async function waitForTrustRead(dialog: ProjectDialog): Promise<void> {
-  await vi.waitFor(() => { expect(trustCheckbox(dialog).disabled).toBe(false); });
+  await vi.waitFor(() => {
+    expect(trustCheckbox(dialog).disabled).toBe(false);
+  });
   await settleRenderedDialog(dialog);
 }
 

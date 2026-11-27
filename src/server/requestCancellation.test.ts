@@ -28,7 +28,9 @@ describe("requestCancellation", () => {
     app.delete("/resource", async (request, reply) => {
       // Mirrors routes that resolve a project before starting the cancellable
       // operation: by now Node has auto-destroyed the fully read request body.
-      await new Promise((resolve) => { setImmediate(resolve); });
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
       const cancellation = requestCancellation(request, reply);
       try {
         return { abortedBeforeStart: cancellation.signal.aborted };
@@ -55,10 +57,14 @@ describe("requestCancellation", () => {
         const cancellation = requestCancellation(request, reply);
         try {
           await new Promise<void>((resolveAbort) => {
-            cancellation.signal.addEventListener("abort", () => {
-              abortReason = cancellation.signal.reason instanceof Error ? cancellation.signal.reason.message : "";
-              resolveAbort();
-            }, { once: true });
+            cancellation.signal.addEventListener(
+              "abort",
+              () => {
+                abortReason = cancellation.signal.reason instanceof Error ? cancellation.signal.reason.message : "";
+                resolveAbort();
+              },
+              { once: true },
+            );
           });
           resolveObserved();
           return {};
@@ -76,7 +82,9 @@ describe("requestCancellation", () => {
       body: JSON.stringify({ precondition: "v1.confirmed" }),
       signal: controller.signal,
     });
-    setTimeout(() => { controller.abort(); }, 20);
+    setTimeout(() => {
+      controller.abort();
+    }, 20);
     await expect(pending).rejects.toThrow();
 
     await observed;

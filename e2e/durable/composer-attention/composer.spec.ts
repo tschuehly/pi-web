@@ -3,7 +3,32 @@
 // Coverage boundaries: Workstream fleet-evidence/composer-attention/report-notes.md (not a full parity sign-off).
 import { readFile, writeFile, mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
-import { test, expect, mock, setup, create, send, fill, answer, idle, status, messages, get, post, id, chat, editor, killHost, project, root, url, PNG, PNG_BLUE, image, fixtureFile } from "./support";
+import {
+  test,
+  expect,
+  mock,
+  setup,
+  create,
+  send,
+  fill,
+  answer,
+  idle,
+  status,
+  messages,
+  get,
+  post,
+  id,
+  chat,
+  editor,
+  killHost,
+  project,
+  root,
+  url,
+  PNG,
+  PNG_BLUE,
+  image,
+  fixtureFile,
+} from "./support";
 setup();
 
 for (const runtime of ["durable", "legacy"] as const) {
@@ -18,13 +43,15 @@ for (const runtime of ["durable", "legacy"] as const) {
     await send(page, "follow-two", "Queue follow-up");
     await expect(page.locator(".queued-message")).toHaveCount(3);
     expect((await status(page)).queuedMessages.map(({ text, kind }) => ({ text, kind }))).toEqual([
-      { text: "steer-first", kind: "steer" }, { text: "follow-one", kind: "followUp" }, { text: "follow-two", kind: "followUp" },
+      { text: "steer-first", kind: "steer" },
+      { text: "follow-one", kind: "followUp" },
+      { text: "follow-two", kind: "followUp" },
     ]);
     if (process.env["FLEET_NEGATIVE"] === "queue") {
       // Fault the real browser/API boundary: omit one host-admitted item from snapshots.
       await page.route(/\/sessions\/[^/]+\/(status|transcript-snapshot)\?/, async (route) => {
         const response = await route.fetch();
-        const body = await response.json() as { queuedMessages?: unknown[]; status?: { queuedMessages: unknown[] } };
+        const body = (await response.json()) as { queuedMessages?: unknown[]; status?: { queuedMessages: unknown[] } };
         const projected = body.status ?? body;
         if (projected.queuedMessages !== undefined) projected.queuedMessages = projected.queuedMessages.slice(1);
         await route.fulfill({ response, json: body });
@@ -48,7 +75,8 @@ for (const runtime of ["durable", "legacy"] as const) {
   test(`AC-P013 ${runtime}: two inline images reach the mock in order; invalid input rejects`, async ({ page }) => {
     await create(page, runtime);
     await page.locator("input.attachment-input").setInputFiles([
-      { name: "first.png", mimeType: "image/png", buffer: PNG }, { name: "second.png", mimeType: "image/png", buffer: PNG_BLUE },
+      { name: "first.png", mimeType: "image/png", buffer: PNG },
+      { name: "second.png", mimeType: "image/png", buffer: PNG_BLUE },
     ]);
     await expect(page.locator(".attachment-chip")).toHaveCount(2);
     await mock.script({ match: "image-check", turns: ["Images received."] });
@@ -56,7 +84,7 @@ for (const runtime of ["durable", "legacy"] as const) {
     await answer(page, "Images received.");
     const [request] = await mock.journal({ kind: "chat", contains: "image-check" });
     const body = request!.body as { messages: { role: string; content: { type: string; source?: { data: string } }[] }[] };
-    const images = body.messages.flatMap((m) => Array.isArray(m.content) ? m.content.filter((c) => c.type === "image") : []);
+    const images = body.messages.flatMap((m) => (Array.isArray(m.content) ? m.content.filter((c) => c.type === "image") : []));
     expect(images).toHaveLength(2);
     expect(images.map((i) => i.source?.data)).toEqual([PNG.toString("base64"), PNG_BLUE.toString("base64")]);
     expect(JSON.stringify(request!.body)).toContain("1. [PIC_1]\\n2. [PIC_2]");
@@ -105,8 +133,21 @@ test("AC-P004 P007: queued kinds and order survive a real host kill; read-only r
   await mock.script({ match: marker, turns: [[{ text: "Committed partial" }, { barrier: marker }]] });
   await send(page, marker);
   await mock.waitForBarrier(marker);
-  for (const [text, mode] of [["steer", "steer"], ["first", "followUp"], ["second", "followUp"]] as const) {
-    expect((await post(page, session, "prompt", { text, streamingBehavior: mode, operationId: `${session}-${text}`, ...(text === "second" ? { attachments: [image()] } : {}) })).ok()).toBe(true);
+  for (const [text, mode] of [
+    ["steer", "steer"],
+    ["first", "followUp"],
+    ["second", "followUp"],
+  ] as const) {
+    expect(
+      (
+        await post(page, session, "prompt", {
+          text,
+          streamingBehavior: mode,
+          operationId: `${session}-${text}`,
+          ...(text === "second" ? { attachments: [image()] } : {}),
+        })
+      ).ok(),
+    ).toBe(true);
   }
   const queued = (await status(page)).queuedMessages;
   expect(queued).toHaveLength(3);
@@ -122,15 +163,26 @@ test("AC-P004 P007: queued kinds and order survive a real host kill; read-only r
 test("AC-P005: thinking and text stream before completion; host kill retains aborted partial", async ({ page }) => {
   await create(page);
   const marker = `stream-${id(page)}`;
-  await mock.script({ match: marker, turns: [[{ thinking: "Visible reasoning" }, { text: "Visible partial streaming " }, { barrier: marker }, { text: " final" }]] });
+  await mock.script({
+    match: marker,
+    turns: [[{ thinking: "Visible reasoning" }, { text: "Visible partial streaming " }, { barrier: marker }, { text: " final" }]],
+  });
   await send(page, marker);
   await mock.waitForBarrier(marker);
-  await expect(chat(page).getByText(/^Visible partial/).first()).toBeVisible();
-  const before = await (await get(page, id(page), "stream-snapshot")).json() as { partial: unknown };
+  await expect(
+    chat(page)
+      .getByText(/^Visible partial/)
+      .first(),
+  ).toBeVisible();
+  const before = (await (await get(page, id(page), "stream-snapshot")).json()) as { partial: unknown };
   expect(JSON.stringify(before.partial)).toContain("Visible reasoning");
   expect(JSON.stringify(before.partial)).not.toContain("signature");
   await page.reload();
-  await expect(chat(page).getByText(/^Visible partial/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/^Visible partial/)
+      .first(),
+  ).toBeVisible();
   await killHost(page);
   await page.reload();
   const restored = await (await get(page, id(page), "transcript-snapshot")).json();
@@ -149,25 +201,33 @@ test("AC-P006: paging preserves tool pairs and reconnect snapshot converges", as
   }
   const all = await messages(page);
   expect(all.total).toBe(104);
-  const newest = await (await get(page, id(page), "messages", { limit: "1" })).json() as typeof all;
-  const older = await (await get(page, id(page), "messages", { limit: "500", before: String(newest.start) })).json() as typeof all;
+  const newest = (await (await get(page, id(page), "messages", { limit: "1" })).json()) as typeof all;
+  const older = (await (await get(page, id(page), "messages", { limit: "500", before: String(newest.start) })).json()) as typeof all;
   expect([...older.messages, ...newest.messages]).toEqual(all.messages);
   expect(newest.messages.map((m) => m.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
   await page.reload();
   // Each entry into the top region loads one older page (ChatScrollFlows): leave and re-enter it until the first turn loads.
-  await expect.poll(async () => {
-    await chat(page).locator(".chat").evaluate(async (element) => {
-      element.scrollTop = element.scrollHeight;
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      element.scrollTop = 0;
-    });
-    return chat(page).getByText(`${marker} turn 0`, { exact: true }).count();
-  }).toBe(1);
+  await expect
+    .poll(async () => {
+      await chat(page)
+        .locator(".chat")
+        .evaluate(async (element) => {
+          element.scrollTop = element.scrollHeight;
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          element.scrollTop = 0;
+        });
+      return chat(page).getByText(`${marker} turn 0`, { exact: true }).count();
+    })
+    .toBe(1);
   await mock.script({ match: marker, turns: [[{ text: "Page partial streaming " }, { barrier: marker }, { text: "complete" }]] });
   await send(page, "final streaming turn");
   await mock.waitForBarrier(marker);
   await page.reload();
-  await expect(chat(page).getByText(/^Page partial/).first()).toBeVisible();
+  await expect(
+    chat(page)
+      .getByText(/^Page partial/)
+      .first(),
+  ).toBeVisible();
   await mock.release(marker);
   await expect(chat(page).getByText("complete", { exact: true })).toBeVisible();
   await idle(page);
@@ -208,8 +268,8 @@ test("AC-P014: folder delivery preserves bytes and collisions; traversal and sym
   const session = await create(page);
   const attachment = { kind: "file", name: "report.txt", mimeType: "text/plain", data: Buffer.from("original bytes").toString("base64") };
   const save = () => post(page, session, "attachments", { attachments: [attachment], folder: "fleet-files" });
-  const first = await (await save()).json() as { attachments: { path: string }[] };
-  const second = await (await save()).json() as typeof first;
+  const first = (await (await save()).json()) as { attachments: { path: string }[] };
+  const second = (await (await save()).json()) as typeof first;
   expect(first.attachments[0]!.path).toMatch(/^fleet-files\//);
   expect(first.attachments[0]!.path).not.toBe(second.attachments[0]!.path);
   for (const result of [first, second]) expect(await readFile(join(project(), result.attachments[0]!.path), "utf8")).toBe("original bytes");
@@ -229,17 +289,28 @@ test("AC-P015: media is scoped and survives host kill; gallery opens", async ({ 
   // A supported package fixture returns two images in ONE tool result: prompt previews are deliberately single-image,
   // while the legacy gallery navigates within a tool result (not across unrelated messages).
   const fixture = join(root(), "image-fixture");
-  await fixtureFile("image-fixture/package.json", JSON.stringify({ name: "pi-process-monitor", version: "0.0.0", type: "module", pi: { extensions: ["./index.mjs"] } }));
-  await fixtureFile("image-fixture/index.mjs", `export default function(pi) { pi.registerTool({ name: 'fleet_images', label: 'Fleet images', description: 'Return two local fixture images', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: ${JSON.stringify([PNG, PNG_BLUE].map((buffer) => ({ type: "image", mimeType: "image/png", data: buffer.toString("base64") })))}, details: {} }) }); }`);
+  await fixtureFile(
+    "image-fixture/package.json",
+    JSON.stringify({ name: "pi-process-monitor", version: "0.0.0", type: "module", pi: { extensions: ["./index.mjs"] } }),
+  );
+  await fixtureFile(
+    "image-fixture/index.mjs",
+    `export default function(pi) { pi.registerTool({ name: 'fleet_images', label: 'Fleet images', description: 'Return two local fixture images', parameters: { type: 'object', properties: {} }, execute: async () => ({ content: ${JSON.stringify([PNG, PNG_BLUE].map((buffer) => ({ type: "image", mimeType: "image/png", data: buffer.toString("base64") })))}, details: {} }) }); }`,
+  );
   const settingsPath = join(root(), "durable-agent/settings.json");
   const original = await readFile(settingsPath, "utf8");
   const settings = JSON.parse(original) as { packages?: string[] };
-  await writeFile(settingsPath, JSON.stringify({ ...settings, packages: [...settings.packages ?? [], fixture] }));
+  await writeFile(settingsPath, JSON.stringify({ ...settings, packages: [...(settings.packages ?? []), fixture] }));
   let session: string;
-  try { session = await create(page); } finally { await writeFile(settingsPath, original); }
+  try {
+    session = await create(page);
+  } finally {
+    await writeFile(settingsPath, original);
+  }
   await mock.script({ match: "media-check", turns: [[{ toolCall: { name: "fleet_images", args: {} } }], "Image saved."] });
   await page.locator("input.attachment-input").setInputFiles([
-    { name: "first.png", mimeType: "image/png", buffer: PNG }, { name: "second.png", mimeType: "image/png", buffer: PNG_BLUE },
+    { name: "first.png", mimeType: "image/png", buffer: PNG },
+    { name: "second.png", mimeType: "image/png", buffer: PNG_BLUE },
   ]);
   await send(page, "media-check [PIC_1] [PIC_2]");
   await answer(page, "Image saved.");
@@ -281,7 +352,13 @@ test("AC-P048: per-Chat drafts persist across switch, browser reload and host ki
 });
 
 test("AC-P047: copy uses plain text and selection quote populates composer only", async ({ page }) => {
-  await page.addInitScript(() => { Object.defineProperty(navigator.clipboard, "writeText", { value: async (text: string) => { (window as unknown as { copied: string }).copied = text; } }); });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      value: async (text: string) => {
+        (window as unknown as { copied: string }).copied = text;
+      },
+    });
+  });
   await create(page);
   await mock.script({ match: "quote-check", turns: ["A **bold** passage to quote."] });
   await send(page, "quote-check");
@@ -303,7 +380,7 @@ test("AC-P047: copy uses plain text and selection quote populates composer only"
 
 test("AC-P055 P057: command catalog and autocomplete expose installed templates; both expand arguments", async ({ page }) => {
   await create(page);
-  const commands = await (await get(page, id(page), "commands")).json() as { name: string; source: string }[];
+  const commands = (await (await get(page, id(page), "commands")).json()) as { name: string; source: string }[];
   expect(commands.map((c) => c.name)).toEqual([...commands.map((c) => c.name)].sort((a, b) => a.localeCompare(b)));
   expect(commands).toContainEqual(expect.objectContaining({ name: "skill:fleet-check", source: "skill" }));
   expect(commands.map((c) => c.name)).not.toContain("fork");

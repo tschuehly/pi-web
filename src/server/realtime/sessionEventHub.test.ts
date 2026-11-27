@@ -22,7 +22,16 @@ describe("SessionEventHub", () => {
     const session = new FakeSocket();
     hub.addGlobal(global);
     hub.add("s1", session);
-    const status = { sessionId: "s1", isStreaming: true, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
+    const status = {
+      sessionId: "s1",
+      isStreaming: true,
+      isCompacting: false,
+      isBashRunning: false,
+      pendingMessageCount: 0,
+      queuedMessages: [],
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      cost: 0,
+    };
     hub.publishGlobal({ type: "status.update", status });
     for (let cost = 1; cost <= 12; cost++) {
       hub.publishGlobal({ type: "status.update", status: { ...status, cost } });
@@ -46,7 +55,9 @@ describe("SessionEventHub", () => {
     hub.publishGlobal({ type: "activity.update", activity: { sessionId: "s1", phase: "active", label: "running", at: "1" } });
     hub.publishGlobal({ type: "activity.update", activity: { sessionId: "s1", phase: "active", label: "running", at: "2" } });
     hub.publishGlobal({ type: "activity.update", activity: { sessionId: "s1", phase: "idle", label: "idle", at: "3" } });
-    expect(global.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "activity.update", activity: { sessionId: "s1", phase: "idle", label: "idle", at: "3" } }));
+    expect(global.send).toHaveBeenLastCalledWith(
+      JSON.stringify({ type: "activity.update", activity: { sessionId: "s1", phase: "idle", label: "idle", at: "3" } }),
+    );
   });
   it("publishes session events only to sockets for that session", () => {
     const hub = new SessionEventHub();
@@ -67,7 +78,14 @@ describe("SessionEventHub", () => {
     const otherSocket = new FakeSocket();
     hub.add("s1", sessionSocket);
     hub.add("s2", otherSocket);
-    const notification = { id: "daemon-test:1", message: "notice", truncated: false, severity: "warning" as const, receivedAt: "2026-01-01T00:00:00.000Z", order: 1 };
+    const notification = {
+      id: "daemon-test:1",
+      message: "notice",
+      truncated: false,
+      severity: "warning" as const,
+      receivedAt: "2026-01-01T00:00:00.000Z",
+      order: 1,
+    };
     const summary = { sessionId: "s1", cwd: "/workspace", inboxRevision: 1, retainedCount: 1, discardedCount: 0, highestSeverity: "warning" as const };
 
     hub.publish("s1", {
@@ -79,15 +97,18 @@ describe("SessionEventHub", () => {
       delta: { kind: "added", notification },
     });
 
-    expect(sessionSocket.send).toHaveBeenCalledWith(JSON.stringify({
-      type: "notifications.inbox",
-      daemonInstanceId: "daemon-test",
-      catalogRevision: 1,
-      summary,
-      dismissThrough: { order: 1, overflowWatermark: 0 },
-      delta: { kind: "added", notification },
-      seq: 1, generation: hub.generation("s1"),
-    }));
+    expect(sessionSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: "notifications.inbox",
+        daemonInstanceId: "daemon-test",
+        catalogRevision: 1,
+        summary,
+        dismissThrough: { order: 1, overflowWatermark: 0 },
+        delta: { kind: "added", notification },
+        seq: 1,
+        generation: hub.generation("s1"),
+      }),
+    );
     expect(otherSocket.send).not.toHaveBeenCalled();
   });
 
@@ -100,11 +121,20 @@ describe("SessionEventHub", () => {
 
     hub.publish("s1", { type: "message.end", message });
 
-    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({
-      type: "message.end",
-      message: { role: "assistant", content: [{ type: "thinking", thinking: "private chain", redacted: true }, { type: "text", text: "visible answer" }] },
-      seq: 1, generation: hub.generation("s1"),
-    }));
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "private chain", redacted: true },
+            { type: "text", text: "visible answer" },
+          ],
+        },
+        seq: 1,
+        generation: hub.generation("s1"),
+      }),
+    );
     expect(thinkingBlock.thinkingSignature).toBe("opaque-provider-payload");
   });
 
@@ -119,8 +149,18 @@ describe("SessionEventHub", () => {
     const source = { role: "assistant", content: [thinking, image] };
     const imageReference = hub.mediaIndex.reference(mediaScope, image);
     hub.publish("s1", { type: "message.end", message: source }, mediaScope);
-    expect(JSON.parse(String(inline.send.mock.calls[0]?.[0]))).toEqual({ type: "message.end", message: { ...source, content: [{ type: "thinking", thinking: "working" }, image] }, seq: 1, generation: hub.generation("s1") });
-    expect(JSON.parse(String(reference.send.mock.calls[0]?.[0]))).toEqual({ type: "message.end", message: { ...source, content: [{ type: "thinking", thinking: "working" }, imageReference] }, seq: 1, generation: hub.generation("s1") });
+    expect(JSON.parse(String(inline.send.mock.calls[0]?.[0]))).toEqual({
+      type: "message.end",
+      message: { ...source, content: [{ type: "thinking", thinking: "working" }, image] },
+      seq: 1,
+      generation: hub.generation("s1"),
+    });
+    expect(JSON.parse(String(reference.send.mock.calls[0]?.[0]))).toEqual({
+      type: "message.end",
+      message: { ...source, content: [{ type: "thinking", thinking: "working" }, imageReference] },
+      seq: 1,
+      generation: hub.generation("s1"),
+    });
     const tool = { type: "tool.update" as const, toolName: "read", toolCallId: "call", text: "[image]", content: [image] };
     hub.publish("s1", tool, mediaScope);
     expect(inline.send).toHaveBeenLastCalledWith(JSON.stringify({ ...tool, seq: 2, generation: hub.generation("s1") }));
@@ -169,7 +209,9 @@ describe("SessionEventHub", () => {
     const hub = new SessionEventHub();
     const failed = new FakeSocket();
     const healthy = new FakeSocket();
-    failed.send.mockImplementation(() => { throw new Error("socket closed"); });
+    failed.send.mockImplementation(() => {
+      throw new Error("socket closed");
+    });
     hub.add("s1", failed);
     hub.add("s1", healthy);
 
@@ -261,12 +303,14 @@ describe("SessionEventHub", () => {
       summary,
     });
 
-    expect(globalSocket.send).toHaveBeenCalledWith(JSON.stringify({
-      type: "notifications.summary",
-      daemonInstanceId: "daemon-test",
-      catalogRevision: 1,
-      summary,
-    }));
+    expect(globalSocket.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: "notifications.summary",
+        daemonInstanceId: "daemon-test",
+        catalogRevision: 1,
+        summary,
+      }),
+    );
     expect(sessionSocket.send).not.toHaveBeenCalled();
   });
 
@@ -274,8 +318,12 @@ describe("SessionEventHub", () => {
     const hub = new SessionEventHub();
     const failed = new FakeSocket();
     const healthy = new FakeSocket();
-    failed.send.mockImplementation(() => { throw new Error("socket closed"); });
-    failed.terminate.mockImplementation(() => { throw new Error("termination failed"); });
+    failed.send.mockImplementation(() => {
+      throw new Error("socket closed");
+    });
+    failed.terminate.mockImplementation(() => {
+      throw new Error("termination failed");
+    });
     hub.addGlobal(failed);
     hub.addGlobal(healthy);
 
@@ -361,7 +409,9 @@ describe("SessionEventHub", () => {
   it("drops a global socket that fails on its join frame", () => {
     const hub = new SessionEventHub();
     const failed = new FakeSocket();
-    failed.send.mockImplementation(() => { throw new Error("socket closed"); });
+    failed.send.mockImplementation(() => {
+      throw new Error("socket closed");
+    });
     hub.setGlobalJoinFrame(() => ({ type: "session.name", sessionId: "s1", name: "Joined" }));
 
     hub.addGlobal(failed);

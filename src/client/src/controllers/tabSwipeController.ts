@@ -1,5 +1,8 @@
 /** A trackpad's horizontal wheel samples: time (ms) and deltaX (px). */
-export interface SwipeSample { t: number; dx: number }
+export interface SwipeSample {
+  t: number;
+  dx: number;
+}
 
 /** A gesture ends after this long without wheel events; until then its momentum tail is swallowed. */
 const QUIET_MS = 150;
@@ -31,8 +34,12 @@ function scrollsHorizontally(event: WheelEvent): boolean {
   for (const node of event.composedPath()) {
     if (!(node instanceof HTMLElement)) continue;
     const overflow = getComputedStyle(node).overflowX;
-    if ((overflow === "auto" || overflow === "scroll") && node.scrollWidth > node.clientWidth + 1
-      && (event.deltaX > 0 ? node.scrollLeft + node.clientWidth < node.scrollWidth - 1 : node.scrollLeft > 0)) return true;
+    if (
+      (overflow === "auto" || overflow === "scroll")
+      && node.scrollWidth > node.clientWidth + 1
+      && (event.deltaX > 0 ? node.scrollLeft + node.clientWidth < node.scrollWidth - 1 : node.scrollLeft > 0)
+    )
+      return true;
   }
   return false;
 }
@@ -86,7 +93,10 @@ export class TabSwipeController {
   /** The swipe whose move is still landing: its transforms stay until then, and gestures meanwhile are swallowed. */
   private settling: Swipe | undefined;
 
-  constructor(private readonly host: TabSwipeHost, private readonly now: () => number = () => performance.now()) {}
+  constructor(
+    private readonly host: TabSwipeHost,
+    private readonly now: () => number = () => performance.now(),
+  ) {}
 
   readonly onWheel = (event: WheelEvent): void => {
     if (event.ctrlKey) return;
@@ -95,11 +105,25 @@ export class TabSwipeController {
       if (track === undefined) return;
       // A new gesture starts from a Chat at rest, unless a move is still landing.
       if (this.settling === undefined) this.rest();
-      this.swipe = { order: track.order, index: track.order.indexOf(track.current), distance: 0, samples: [], axis: "pending", travel: { x: 0, y: 0 }, ignore: false, peeked: 0, preview: undefined, decided: this.settling !== undefined, timer: undefined };
+      this.swipe = {
+        order: track.order,
+        index: track.order.indexOf(track.current),
+        distance: 0,
+        samples: [],
+        axis: "pending",
+        travel: { x: 0, y: 0 },
+        ignore: false,
+        peeked: 0,
+        preview: undefined,
+        decided: this.settling !== undefined,
+        timer: undefined,
+      };
     }
     const swipe = this.swipe;
     clearTimeout(swipe.timer);
-    swipe.timer = setTimeout(() => { this.end(swipe); }, QUIET_MS);
+    swipe.timer = setTimeout(() => {
+      this.end(swipe);
+    }, QUIET_MS);
     if (swipe.axis === "pending") {
       swipe.travel.x += event.deltaX;
       swipe.travel.y += event.deltaY;
@@ -191,7 +215,9 @@ export class TabSwipeController {
       surfaces.peek.style.transition = ease;
       surfaces.peek.style.transform = target === undefined ? `translateX(${String(direction * width)}px)` : "translateX(0)";
     }
-    return new Promise((resolve) => { setTimeout(resolve, SETTLE_MS); });
+    return new Promise((resolve) => {
+      setTimeout(resolve, SETTLE_MS);
+    });
   }
 
   /** Idempotent: the Chat at rest, no preview; a gesture still running shows its preview again on its next event. */

@@ -6,7 +6,9 @@ import { isLogEntry, type LogEntry } from "./browser/protocol.js";
 
 /** Only host-resolved ids enter the scope hash; peer input is never a filesystem path. */
 export function logScope(projectId: string, workspaceId: string): string {
-  return createHash("sha256").update(JSON.stringify([projectId, workspaceId])).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify([projectId, workspaceId]))
+    .digest("hex");
 }
 
 export class LogStore {
@@ -26,9 +28,16 @@ export class LogStore {
     const temporary = join(directory, `.${randomUUID()}.tmp`);
     try {
       const file = await open(temporary, "wx", 0o600);
-      try { await file.writeFile(JSON.stringify(captain)); await file.sync(); } finally { await file.close(); }
+      try {
+        await file.writeFile(JSON.stringify(captain));
+        await file.sync();
+      } finally {
+        await file.close();
+      }
       await rename(temporary, join(directory, `${captain.id}.json`));
-    } finally { await rm(temporary, { force: true }); }
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   async read(scope: string, id: unknown): Promise<LogEntry> {
@@ -43,7 +52,9 @@ export class LogStore {
       const value: unknown = JSON.parse(await file.readFile("utf8"));
       if (!isLogEntry(value) || value.id !== id) throw new Error("Invalid saved captain");
       return value;
-    } finally { await file.close(); }
+    } finally {
+      await file.close();
+    }
   }
 
   async list(scope: string): Promise<LogEntry[]> {

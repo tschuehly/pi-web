@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { ASK_USER_CONTEXT_MAX_LENGTH, ASK_USER_DETAIL_MAX_LENGTH, ASK_USER_OPTION_LIMIT, ASK_USER_OTHER_TEXT_MAX_LENGTH, ASK_USER_TEXT_MAX_LENGTH, ASK_USER_QUESTION_LIMIT, ASK_USER_RECORD_QUESTION_LIMIT, type AskUserOutcome, type AskUserQuestion, type AskUserSubmission } from "../../shared/apiTypes.js";
+import {
+  ASK_USER_CONTEXT_MAX_LENGTH,
+  ASK_USER_DETAIL_MAX_LENGTH,
+  ASK_USER_OPTION_LIMIT,
+  ASK_USER_OTHER_TEXT_MAX_LENGTH,
+  ASK_USER_TEXT_MAX_LENGTH,
+  ASK_USER_QUESTION_LIMIT,
+  ASK_USER_RECORD_QUESTION_LIMIT,
+  type AskUserOutcome,
+  type AskUserQuestion,
+  type AskUserSubmission,
+} from "../../shared/apiTypes.js";
 import { parseAskUserOutcome } from "../../client/src/api/parsers.js";
 import {
   PendingAskStore,
@@ -86,18 +97,28 @@ describe("PendingAskStore validation", () => {
     expect(() => store.open({ sessionId, context })).toThrow(/questions are required/);
 
     expect(reject([])).toThrow(PendingAskValidationError);
-    expect(reject(Array.from({ length: ASK_USER_QUESTION_LIMIT + 1 }, (_, index) => question(`q${index.toString()}`))))
-      .toThrow(/more than 20 questions/);
+    expect(reject(Array.from({ length: ASK_USER_QUESTION_LIMIT + 1 }, (_, index) => question(`q${index.toString()}`)))).toThrow(/more than 20 questions/);
     expect(reject([question("q1"), question("q1")])).toThrow(/Duplicate question id q1/);
     expect(reject([question(" ")])).toThrow(/question id must not be empty/);
     expect(reject([question("q1", { question: "  " })])).toThrow(/text of question q1 must not be empty/);
-    expect(reject([question("q1", { options: [{ value: "a", label: "A" }, { value: "a", label: "Again" }] })]))
-      .toThrow(/Duplicate option value a in question q1/);
-    expect(reject([question("q1", { options: [{ value: "a", label: " " }] })]))
-      .toThrow(/label of option a in question q1 must not be empty/);
-    expect(reject([question("q1", {
-      options: Array.from({ length: ASK_USER_OPTION_LIMIT + 1 }, (_, index) => ({ value: `v${index.toString()}`, label: "L" })),
-    })])).toThrow(/more than 12 options/);
+    expect(
+      reject([
+        question("q1", {
+          options: [
+            { value: "a", label: "A" },
+            { value: "a", label: "Again" },
+          ],
+        }),
+      ]),
+    ).toThrow(/Duplicate option value a in question q1/);
+    expect(reject([question("q1", { options: [{ value: "a", label: " " }] })])).toThrow(/label of option a in question q1 must not be empty/);
+    expect(
+      reject([
+        question("q1", {
+          options: Array.from({ length: ASK_USER_OPTION_LIMIT + 1 }, (_, index) => ({ value: `v${index.toString()}`, label: "L" })),
+        }),
+      ]),
+    ).toThrow(/more than 12 options/);
     expect(store.pendingAsks(sessionId)).toEqual([]);
   });
 
@@ -121,25 +142,40 @@ describe("PendingAskStore validation", () => {
     const store = testStore();
 
     expect(() => store.open({ sessionId, context: "  ", questions: [question("q1")] })).toThrow(/context is required/);
-    expect(() => store.open({ sessionId, context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1), questions: [question("q1")] }))
-      .toThrow(/context exceeds its length limit/);
+    expect(() => store.open({ sessionId, context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1), questions: [question("q1")] })).toThrow(
+      /context exceeds its length limit/,
+    );
   });
 
   it("strips the model's own numbering from question text, never leaving it empty", () => {
     const store = testStore();
     const texts = ["1. Which store?", "2) Which store?", "3–4. Which store?", "3-4. Which store?", "12. ", "1.5 GB enough?", "Which store?"];
     const ask = store.open({ sessionId, context, questions: texts.map((text, index) => question(`q${index.toString()}`, { question: text })) });
-    expect(ask.questions.map((entry) => entry.question)).toEqual(["Which store?", "Which store?", "Which store?", "Which store?", "12. ", "1.5 GB enough?", "Which store?"]);
+    expect(ask.questions.map((entry) => entry.question)).toEqual([
+      "Which store?",
+      "Which store?",
+      "Which store?",
+      "Which store?",
+      "12. ",
+      "1.5 GB enough?",
+      "Which store?",
+    ]);
   });
 
   it("bounds a question's detail longer than other prose, and an option's detail as before", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH) })] });
     expect(ask.questions[0]?.detail).toHaveLength(ASK_USER_DETAIL_MAX_LENGTH);
-    expect(() => store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH + 1) })] }))
-      .toThrow(/detail of question q1 exceeds its length limit/);
-    expect(() => store.open({ sessionId, context, questions: [question("q1", { options: [{ value: "a", label: "A", detail: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1) }] })] }))
-      .toThrow(/detail of option a in question q1 exceeds its length limit/);
+    expect(() => store.open({ sessionId, context, questions: [question("q1", { detail: "x".repeat(ASK_USER_DETAIL_MAX_LENGTH + 1) })] })).toThrow(
+      /detail of question q1 exceeds its length limit/,
+    );
+    expect(() =>
+      store.open({
+        sessionId,
+        context,
+        questions: [question("q1", { options: [{ value: "a", label: "A", detail: "x".repeat(ASK_USER_TEXT_MAX_LENGTH + 1) }] })],
+      }),
+    ).toThrow(/detail of option a in question q1 exceeds its length limit/);
   });
 
   it("keeps a recommended option flag", () => {
@@ -187,7 +223,10 @@ describe("PendingAskStore submit", () => {
 
     const result = store.submit(sessionId, ask.askId, {
       revision: ask.revision,
-      answers: [{ id: "q1", values: ["yes"] }, { id: "q2", values: ["no"] }],
+      answers: [
+        { id: "q1", values: ["yes"] },
+        { id: "q2", values: ["no"] },
+      ],
     });
 
     expect(result).toMatchObject({
@@ -202,7 +241,10 @@ describe("PendingAskStore submit", () => {
 
     const result = store.submit(sessionId, ask.askId, {
       revision: ask.revision,
-      answers: [{ id: "q1", values: [] }, { id: "q2", values: [], otherText: "   " }],
+      answers: [
+        { id: "q1", values: [] },
+        { id: "q2", values: [], otherText: "   " },
+      ],
     });
 
     expect(result).toMatchObject({ status: "closed", outcome: { answeredCount: 0, unansweredIds: ["q1", "q2"] } });
@@ -212,8 +254,9 @@ describe("PendingAskStore submit", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
 
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes", "no"] }] }))
-      .toThrow(/Question q1 accepts a single answer/);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes", "no"] }] })).toThrow(
+      /Question q1 accepts a single answer/,
+    );
     expect(store.pendingAsks(sessionId)[0]?.askId).toBe(ask.askId);
   });
 
@@ -265,7 +308,12 @@ describe("PendingAskStore submit", () => {
     const reject = (answers: Parameters<typeof store.submit>[2]["answers"]) => () => store.submit(sessionId, ask.askId, { revision: ask.revision, answers });
 
     expect(reject([{ id: "q9", values: ["yes"] }])).toThrow(/Unknown question id q9/);
-    expect(reject([{ id: "q1", values: ["yes"] }, { id: "q1", values: ["no"] }])).toThrow(/Duplicate answer for question q1/);
+    expect(
+      reject([
+        { id: "q1", values: ["yes"] },
+        { id: "q1", values: ["no"] },
+      ]),
+    ).toThrow(/Duplicate answer for question q1/);
     expect(reject([{ id: "q1", values: ["nope"] }])).toThrow(/Question q1 has no option nope/);
     expect(reject([{ id: "q1", values: ["yes", "yes"] }])).toThrow(/Duplicate value yes for question q1/);
     expect(store.pendingAsks(sessionId)[0]?.askId).toBe(ask.askId);
@@ -307,9 +355,15 @@ describe("PendingAskStore submit", () => {
     const ask = openTwoQuestions(store);
     const recorded: string[] = [];
 
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [] }, () => { throw new Error("disk full"); })).toThrow("disk full");
+    expect(() =>
+      store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [] }, () => {
+        throw new Error("disk full");
+      }),
+    ).toThrow("disk full");
     expect(store.pendingAsks(sessionId)).toHaveLength(1);
-    store.cancel(sessionId, ask.askId, (outcome) => { recorded.push(outcome.askId); });
+    store.cancel(sessionId, ask.askId, (outcome) => {
+      recorded.push(outcome.askId);
+    });
     expect(recorded).toEqual([ask.askId]);
   });
 
@@ -329,8 +383,21 @@ describe("PendingAskStore submit", () => {
 describe("PendingAskStore Custom labels", () => {
   it("refuses an option labelled Custom, bare or as a (custom) suffix, in any case; other labels with the word stay", () => {
     const store = testStore();
-    const open = (label: string) => () => store.open({ sessionId, context, questions: [question("q", { options: [{ value: "x", label }, { value: "y", label: "Yes" }] })] });
-    for (const label of ["Custom", " custom ", "CUSTOM", "Something else (custom)"]) expect(open(label), label).toThrow("Option x is labelled Custom; a Custom choice is always added, so drop this option");
+    const open = (label: string) => () =>
+      store.open({
+        sessionId,
+        context,
+        questions: [
+          question("q", {
+            options: [
+              { value: "x", label },
+              { value: "y", label: "Yes" },
+            ],
+          }),
+        ],
+      });
+    for (const label of ["Custom", " custom ", "CUSTOM", "Something else (custom)"])
+      expect(open(label), label).toThrow("Option x is labelled Custom; a Custom choice is always added, so drop this option");
     for (const label of ["Customer", "Custom build", "My custom answer"]) expect(open(label)().questions[0]?.options[0]?.label).toBe(label);
   });
 });
@@ -348,8 +415,15 @@ describe("PendingAskStore approval", () => {
   it("closes the whole set approved, unanswered questions too, and tells the model first; with the user's edited context", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2")], approval: true });
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, approved: true })).toThrow("A partial submit cannot approve");
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], context: "My plan.", approved: true });
+    expect(() =>
+      store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, approved: true }),
+    ).toThrow("A partial submit cannot approve");
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [{ id: "q1", values: ["yes"] }],
+      context: "My plan.",
+      approved: true,
+    });
     if (result.status !== "closed") throw new Error("expected the ask to close");
     expect(result.ask).toBeUndefined();
     expect(result.outcome).toMatchObject({ approved: true, editedContext: "My plan.", unansweredIds: ["q2"] });
@@ -379,7 +453,9 @@ describe("PendingAskStore approval", () => {
   it("refuses an approval of a set that asks for none", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1")] });
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], approved: true })).toThrow(`Question set ${ask.askId} asks for no approval`);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], approved: true })).toThrow(
+      `Question set ${ask.askId} asks for no approval`,
+    );
     expect(store.pendingAsks(sessionId)).toHaveLength(1);
   });
 });
@@ -390,21 +466,35 @@ describe("PendingAskStore partial submit", () => {
     const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2"), question("q3")] });
     const recorded: unknown[] = [];
 
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }], partial: true }, (outcome) => recorded.push(outcome));
+    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: ["no"] }], partial: true }, (outcome) =>
+      recorded.push(outcome),
+    );
 
     expect(result).toEqual({
       status: "closed",
       outcome: {
-        askId: "ask-1", reason: "submitted", askedAt: "2026-01-01T00:00:00.000Z", closedAt: "2026-01-01T00:00:01.000Z", context,
+        askId: "ask-1",
+        reason: "submitted",
+        askedAt: "2026-01-01T00:00:00.000Z",
+        closedAt: "2026-01-01T00:00:01.000Z",
+        context,
         questions: [{ question: ask.questions[1], answered: true, values: ["no"] }],
-        answeredCount: 1, unansweredIds: [], summary: "Answered 1; still open: ask.q1, ask.q3", partial: true, revision: "r2",
+        answeredCount: 1,
+        unansweredIds: [],
+        summary: "Answered 1; still open: ask.q1, ask.q3",
+        partial: true,
+        revision: "r2",
       },
       ask: { ...ask, revision: "r2", questions: [ask.questions[0], ask.questions[2]] },
     });
     expect(recorded).toEqual([result.status === "closed" ? result.outcome : undefined]);
     expect(store.pendingAsks(sessionId)).toEqual([{ ...ask, revision: "r2", questions: [ask.questions[0], ask.questions[2]] }]);
-    expect(store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true })).toEqual({ status: "stale" });
-    expect(() => store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], partial: true })).toThrow(/Unknown question id q2/);
+    expect(store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true })).toEqual({
+      status: "stale",
+    });
+    expect(() => store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], partial: true })).toThrow(
+      /Unknown question id q2/,
+    );
   });
 
   it("closes the ask as a full submit once a partial send answers every remaining question", () => {
@@ -414,7 +504,9 @@ describe("PendingAskStore partial submit", () => {
 
     const result = store.submit(sessionId, ask.askId, { revision: "r2", answers: [{ id: "q2", values: ["no"] }], partial: true });
 
-    expect(result.status === "closed" && result.outcome.partial === undefined && result.ask === undefined ? result.outcome.summary : undefined).toBe("Answered 1 of 1; none left unanswered");
+    expect(result.status === "closed" && result.outcome.partial === undefined && result.ask === undefined ? result.outcome.summary : undefined).toBe(
+      "Answered 1 of 1; none left unanswered",
+    );
     expect(store.pendingAsks(sessionId)).toEqual([]);
   });
 
@@ -433,8 +525,12 @@ describe("PendingAskStore partial submit", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
 
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: [] }], partial: true })).toThrow(/needs at least one answer/);
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], note: "Hi", partial: true })).toThrow(/takes no note/);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: [] }], partial: true })).toThrow(
+      /needs at least one answer/,
+    );
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], note: "Hi", partial: true })).toThrow(
+      /takes no note/,
+    );
     expect(store.pendingAsks(sessionId)).toEqual([ask]);
   });
 
@@ -442,7 +538,11 @@ describe("PendingAskStore partial submit", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
 
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true }, () => { throw new Error("disk full"); })).toThrow("disk full");
+    expect(() =>
+      store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true }, () => {
+        throw new Error("disk full");
+      }),
+    ).toThrow("disk full");
     expect(store.pendingAsks(sessionId)).toEqual([ask]);
   });
 
@@ -452,14 +552,16 @@ describe("PendingAskStore partial submit", () => {
     const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q2", values: [], otherText: "Maybe" }], partial: true });
     if (result.status !== "closed") throw new Error("expected the answer to be sent");
 
-    expect(renderAskUserAnswersText(result.outcome)).toBe([
-      "The user answered one question of question set ask-1; its other questions stay open.",
-      "",
-      "- ask.q2: Question q2?",
-      `  Answered: custom: "Maybe"`,
-      "",
-      "Answered 1; still open: ask.q1",
-    ].join("\n"));
+    expect(renderAskUserAnswersText(result.outcome)).toBe(
+      [
+        "The user answered one question of question set ask-1; its other questions stay open.",
+        "",
+        "- ask.q2: Question q2?",
+        `  Answered: custom: "Maybe"`,
+        "",
+        "Answered 1; still open: ask.q1",
+      ].join("\n"),
+    );
   });
 });
 
@@ -471,7 +573,9 @@ describe("PendingAskStore edited context", () => {
     const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], context: edited });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome).toMatchObject({ context, editedContext: edited });
-    expect(renderAskUserAnswersText(result.outcome)).toContain(["set ask-1.", "", "The user edited the context:", "````markdown", edited, "````", "", "- ask.q1"].join("\n"));
+    expect(renderAskUserAnswersText(result.outcome)).toContain(
+      ["set ask-1.", "", "The user edited the context:", "````markdown", edited, "````", "", "- ask.q1"].join("\n"),
+    );
   });
 
   it("adds nothing when the context comes back unchanged", () => {
@@ -502,7 +606,9 @@ describe("PendingAskStore edited context", () => {
   it("rejects an edited context over the context limit, keeping the ask open", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow(/context exceeds/);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], context: "x".repeat(ASK_USER_CONTEXT_MAX_LENGTH + 1) })).toThrow(
+      /context exceeds/,
+    );
     expect(store.pendingAsks(sessionId)).toHaveLength(1);
   });
 
@@ -585,8 +691,19 @@ describe("PendingAskStore whole-set record", () => {
   });
 
   it("bounds the record, dropping the oldest earlier answers first", () => {
-    const records = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => ({ question: question(`${prefix}${index.toString()}`), answered: true, values: ["yes"] }));
-    const send = (questions: AskUserOutcome["questions"], partial: boolean): AskUserOutcome => ({ askId: "ask-1", reason: "submitted", askedAt: "t", closedAt: "t", questions, answeredCount: questions.length, unansweredIds: [], summary: "s", ...(partial ? { partial: true as const, revision: "r" } : {}) });
+    const records = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, index) => ({ question: question(`${prefix}${index.toString()}`), answered: true, values: ["yes"] }));
+    const send = (questions: AskUserOutcome["questions"], partial: boolean): AskUserOutcome => ({
+      askId: "ask-1",
+      reason: "submitted",
+      askedAt: "t",
+      closedAt: "t",
+      questions,
+      answeredCount: questions.length,
+      unansweredIds: [],
+      summary: "s",
+      ...(partial ? { partial: true as const, revision: "r" } : {}),
+    });
     const earlier = Array.from({ length: 6 }, (_, sendIndex) => send(records(`s${sendIndex.toString()}-`, ASK_USER_QUESTION_LIMIT), true));
     const whole = withEarlierAnswers(send(records("last-", 5), false), earlier);
     expect(whole.questions).toHaveLength(ASK_USER_RECORD_QUESTION_LIMIT);
@@ -595,7 +712,9 @@ describe("PendingAskStore whole-set record", () => {
     expect(whole).toMatchObject({ answeredCount: ASK_USER_RECORD_QUESTION_LIMIT });
     // The summary still states the whole set and says how many answers the record leaves out.
     const total = 6 * ASK_USER_QUESTION_LIMIT + 5;
-    expect(whole.summary).toBe(`Answered ${total.toString()} of ${total.toString()}; none left unanswered; ${(total - ASK_USER_RECORD_QUESTION_LIMIT).toString()} earlier answers not shown`);
+    expect(whole.summary).toBe(
+      `Answered ${total.toString()} of ${total.toString()}; none left unanswered; ${(total - ASK_USER_RECORD_QUESTION_LIMIT).toString()} earlier answers not shown`,
+    );
     expect(() => parseAskUserOutcome(whole)).not.toThrow();
   });
 });
@@ -628,7 +747,13 @@ describe("PendingAskStore open asks", () => {
 
     const reworded = store.update({ sessionId, askId: ask.askId, questions: [question("q1", { question: "Still q1?" })] });
 
-    expect(reworded).toEqual({ ...ask, updatedAt: "2026-01-01T00:00:01.000Z", revision: "r2", turnsSinceUpdate: 0, questions: [question("q1", { question: "Still q1?" })] });
+    expect(reworded).toEqual({
+      ...ask,
+      updatedAt: "2026-01-01T00:00:01.000Z",
+      revision: "r2",
+      turnsSinceUpdate: 0,
+      questions: [question("q1", { question: "Still q1?" })],
+    });
     const confirmed = store.update({ sessionId, askId: ask.askId });
     expect(confirmed).toMatchObject({ askId: ask.askId, context, updatedAt: "2026-01-01T00:00:02.000Z", revision: "r3", questions: reworded?.questions });
     expect(store.update({ sessionId, askId: "ask-other" })).toBeUndefined();
@@ -662,14 +787,19 @@ describe("PendingAskStore open asks", () => {
       status: "closed",
       outcome: { reason: "cancelled", answeredCount: 0, unansweredIds: ["q1", "q2"] },
     });
-    expect(store.cancelAll(sessionId).map((outcome) => [outcome.askId, outcome.reason])).toEqual([["bsk-2", "cancelled"], ["csk-3", "cancelled"]]);
+    expect(store.cancelAll(sessionId).map((outcome) => [outcome.askId, outcome.reason])).toEqual([
+      ["bsk-2", "cancelled"],
+      ["csk-3", "cancelled"],
+    ]);
     expect(store.pendingAsks(sessionId)).toEqual([]);
   });
 
   it("regenerates an ask id whose 3-character ref prefix an open ask already uses", () => {
     const ids = ["abc-1", "abd-2", "abd-3", "abe-4"];
     const store = new PendingAskStore({ createAskId: () => ids.shift() ?? "never" });
-    store.restore(sessionId, [{ askId: "abc-rebuilt", askedAt: "t0", updatedAt: "t0", revision: "r1", turnsSinceUpdate: 0, context, questions: [question("q1")] }]);
+    store.restore(sessionId, [
+      { askId: "abc-rebuilt", askedAt: "t0", updatedAt: "t0", revision: "r1", turnsSinceUpdate: 0, context, questions: [question("q1")] },
+    ]);
 
     const first = store.open({ sessionId, context, questions: [question("q1")] });
     const second = store.open({ sessionId, context, questions: [question("q1")] });
@@ -705,29 +835,47 @@ describe("ask outcome rendering", () => {
     const ask = store.open({ sessionId, context, questions: [question("q1"), question("q2"), question("q3")] });
     const result = store.submit(sessionId, ask.askId, {
       revision: ask.revision,
-      answers: [{ id: "q1", values: ["yes"] }, { id: "q2", values: [], otherText: "something else" }],
+      answers: [
+        { id: "q1", values: ["yes"] },
+        { id: "q2", values: [], otherText: "something else" },
+      ],
     });
     if (result.status !== "closed") throw new Error("expected the ask to close");
 
-    expect(renderAskUserAnswersText(result.outcome)).toBe([
-      "The user submitted answers to question set ask-1.",
-      "",
-      "- ask.q1: Question q1?",
-      "  Answered: selected yes",
-      "- ask.q2: Question q2?",
-      `  Answered: custom: "something else"`,
-      "- ask.q3: Question q3?",
-      "  Unanswered.",
-      "",
-      "Answered 2 of 3; unanswered: q3",
-    ].join("\n"));
+    expect(renderAskUserAnswersText(result.outcome)).toBe(
+      [
+        "The user submitted answers to question set ask-1.",
+        "",
+        "- ask.q1: Question q1?",
+        "  Answered: selected yes",
+        "- ask.q2: Question q2?",
+        `  Answered: custom: "something else"`,
+        "- ask.q3: Question q3?",
+        "  Unanswered.",
+        "",
+        "Answered 2 of 3; unanswered: q3",
+      ].join("\n"),
+    );
   });
 
   it("tells the model when the user left the recommended options as they were", () => {
     const store = testStore();
-    const recommended = { options: [{ value: "a", label: "A", recommended: true }, { value: "b", label: "B", recommended: true }, { value: "c", label: "C" }], multiple: true };
+    const recommended = {
+      options: [
+        { value: "a", label: "A", recommended: true },
+        { value: "b", label: "B", recommended: true },
+        { value: "c", label: "C" },
+      ],
+      multiple: true,
+    };
     const ask = store.open({ sessionId, context, questions: [question("q1", recommended), question("q2", recommended)] });
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["a", "b"] }, { id: "q2", values: ["a"] }] });
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "q1", values: ["a", "b"] },
+        { id: "q2", values: ["a"] },
+      ],
+    });
     if (result.status !== "closed") throw new Error("expected the ask to close");
 
     const text = renderAskUserAnswersText(result.outcome);
@@ -737,16 +885,22 @@ describe("ask outcome rendering", () => {
 
   it("records typed answers as values, marks a default left unchanged, and rejects values that do not fit", () => {
     const store = testStore();
-    const typed = (id: string, kind: NonNullable<AskUserQuestion["kind"]>, extra: Partial<AskUserQuestion> = {}) => question(id, { options: [], kind, ...extra });
-    const ask = store.open({ sessionId, context, questions: [
-      typed("on", "boolean"),
-      typed("off", "boolean", { default: true }),
-      typed("n", "number", { default: 7, minimum: 1, maximum: 10, integer: true }),
-      typed("t", "text", { maxLength: 5 }),
-      typed("d", "date", { default: "2026-12-01" }),
-      question("c"),
-    ] });
-    const send = (answers: { id: string; values: string[]; value?: boolean | number | string }[]) => () => store.submit(sessionId, ask.askId, { revision: ask.revision, answers });
+    const typed = (id: string, kind: NonNullable<AskUserQuestion["kind"]>, extra: Partial<AskUserQuestion> = {}) =>
+      question(id, { options: [], kind, ...extra });
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [
+        typed("on", "boolean"),
+        typed("off", "boolean", { default: true }),
+        typed("n", "number", { default: 7, minimum: 1, maximum: 10, integer: true }),
+        typed("t", "text", { maxLength: 5 }),
+        typed("d", "date", { default: "2026-12-01" }),
+        question("c"),
+      ],
+    });
+    const send = (answers: { id: string; values: string[]; value?: boolean | number | string }[]) => () =>
+      store.submit(sessionId, ask.askId, { revision: ask.revision, answers });
     expect(send([{ id: "n", values: [], value: 11 }])).toThrow("Answer to question n must be at most 10");
     expect(send([{ id: "n", values: [], value: 2.5 }])).toThrow("Answer to question n must be a whole number");
     expect(send([{ id: "n", values: [], value: "7" }])).toThrow("Answer to question n must be a number");
@@ -763,64 +917,122 @@ describe("ask outcome rendering", () => {
       { id: "d", values: [], value: "2026-12-01" },
     ])();
     if (result.status !== "closed") throw new Error("expected the ask to close");
-    expect(result.outcome.questions.map((record) => [record.answered, record.value])).toStrictEqual([[true, false], [true, false], [true, 7], [true, "  hi "], [true, "2026-12-01"], [false, undefined]]);
+    expect(result.outcome.questions.map((record) => [record.answered, record.value])).toStrictEqual([
+      [true, false],
+      [true, false],
+      [true, 7],
+      [true, "  hi "],
+      [true, "2026-12-01"],
+      [false, undefined],
+    ]);
     const text = renderAskUserAnswersText(result.outcome);
     expect(text).toContain("- ask.on: Question on?\n  Answered: no (default, unchanged)\n");
     expect(text).toContain("- ask.off: Question off?\n  Answered: no\n");
     expect(text).toContain("  Answered: 7 (default, unchanged)\n");
-    expect(text).toContain("  Answered: \"  hi \"\n");
+    expect(text).toContain('  Answered: "  hi "\n');
     expect(text).toContain("  Answered: 2026-12-01 (default, unchanged)\n");
   });
 
   it("answers a boolean question with the agent's labels, quoted, or plain yes and no", () => {
     const store = testStore();
-    const ask = store.open({ sessionId, context, questions: [
-      question("ship", { options: [], kind: "boolean", default: true, labels: ["Ship it", "Hold"] }),
-      question("hold", { options: [], kind: "boolean", labels: ["Ship it", "Hold"] }),
-      question("plain", { options: [], kind: "boolean", default: true }),
-    ] });
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [
+        question("ship", { options: [], kind: "boolean", default: true, labels: ["Ship it", "Hold"] }),
+        question("hold", { options: [], kind: "boolean", labels: ["Ship it", "Hold"] }),
+        question("plain", { options: [], kind: "boolean", default: true }),
+      ],
+    });
     expect(ask.questions[0]?.labels).toStrictEqual(["Ship it", "Hold"]);
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], value: true }, { id: "hold", values: [], value: false }, { id: "plain", values: [], value: true }] });
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "ship", values: [], value: true },
+        { id: "hold", values: [], value: false },
+        { id: "plain", values: [], value: true },
+      ],
+    });
     if (result.status !== "closed") throw new Error("expected the ask to close");
     const text = renderAskUserAnswersText(result.outcome);
-    expect(text).toContain("- ask.ship: Question ship?\n  Answered: \"Ship it\" (default, unchanged)\n");
-    expect(text).toContain("- ask.hold: Question hold?\n  Answered: \"Hold\" (default, unchanged)\n");
+    expect(text).toContain('- ask.ship: Question ship?\n  Answered: "Ship it" (default, unchanged)\n');
+    expect(text).toContain('- ask.hold: Question hold?\n  Answered: "Hold" (default, unchanged)\n');
     expect(text).toContain("- ask.plain: Question plain?\n  Answered: yes (default, unchanged)\n");
   });
 
   it("takes a yes/no answered in words as its Custom answer, checked like a choice's, and the switch when the words are blank", () => {
     const store = testStore();
-    const ask = store.open({ sessionId, context, questions: [question("ship", { options: [], kind: "boolean", default: true }), question("blank", { options: [], kind: "boolean" })] });
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], otherText: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) }] })).toThrow("Other text of question ship exceeds its length limit");
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], value: true, otherText: "Only after review" }] })).toThrow("Question ship accepts a single answer");
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], otherText: "  Only after review " }, { id: "blank", values: [], value: true, otherText: "  " }] });
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [question("ship", { options: [], kind: "boolean", default: true }), question("blank", { options: [], kind: "boolean" })],
+    });
+    expect(() =>
+      store.submit(sessionId, ask.askId, {
+        revision: ask.revision,
+        answers: [{ id: "ship", values: [], otherText: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) }],
+      }),
+    ).toThrow("Other text of question ship exceeds its length limit");
+    expect(() =>
+      store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "ship", values: [], value: true, otherText: "Only after review" }] }),
+    ).toThrow("Question ship accepts a single answer");
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "ship", values: [], otherText: "  Only after review " },
+        { id: "blank", values: [], value: true, otherText: "  " },
+      ],
+    });
     if (result.status !== "closed") throw new Error("expected the ask to close");
     expect(result.outcome.questions[0]).toMatchObject({ answered: true, otherText: "Only after review" });
     expect(result.outcome.questions[0]?.value).toBeUndefined();
     const text = renderAskUserAnswersText(result.outcome);
-    expect(text).toContain("- ask.ship: Question ship?\n  Answered: custom: \"Only after review\"\n");
+    expect(text).toContain('- ask.ship: Question ship?\n  Answered: custom: "Only after review"\n');
     expect(text).toContain("- ask.blank: Question blank?\n  Answered: yes\n");
   });
 
   it("keeps typed text verbatim, so a padded Markdown default opens, passes its minimum and reads as unchanged; blank is no answer and no default", () => {
     const store = testStore();
-    const ask = store.open({ sessionId, context, questions: [question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" }), question("other", { options: [], kind: "text" })] });
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [
+        question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" }),
+        question("other", { options: [], kind: "text" }),
+      ],
+    });
     expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "other", values: [], value: "   " }] })).not.toThrow();
-    const again = store.open({ sessionId, context, questions: [question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" })] });
+    const again = store.open({
+      sessionId,
+      context,
+      questions: [question("code", { options: [], kind: "text", multiline: true, minLength: 6, default: "  code" })],
+    });
     const result = store.submit(sessionId, again.askId, { revision: again.revision, answers: [{ id: "code", values: [], value: "  code" }] });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome.questions[0]?.value).toBe("  code");
-    expect(renderAskUserAnswersText(result.outcome)).toContain("  Answered: \"  code\" (default, unchanged)\n");
-    expect(() => store.open({ sessionId, context, questions: [question("t", { options: [], kind: "text", default: "  " })] })).toThrow("default of question t must not be blank");
+    expect(renderAskUserAnswersText(result.outcome)).toContain('  Answered: "  code" (default, unchanged)\n');
+    expect(() => store.open({ sessionId, context, questions: [question("t", { options: [], kind: "text", default: "  " })] })).toThrow(
+      "default of question t must not be blank",
+    );
   });
 
   it("shows a question under a boolean only while that switch has the listed state", () => {
     const store = testStore();
-    const ask = store.open({ sessionId, context, questions: [
-      question("backup", { options: [], kind: "boolean" }),
-      question("folder", { options: [], kind: "text", showIf: { question: "backup", values: ["true"] } }),
-    ] });
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "backup", values: [], value: false }, { id: "folder", values: [], value: "~/b" }] });
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [
+        question("backup", { options: [], kind: "boolean" }),
+        question("folder", { options: [], kind: "text", showIf: { question: "backup", values: ["true"] } }),
+      ],
+    });
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "backup", values: [], value: false },
+        { id: "folder", values: [], value: "~/b" },
+      ],
+    });
     if (result.status !== "closed") throw new Error("expected the ask to close");
     expect(result.outcome.questions[1]).toMatchObject({ answered: false, skipped: true });
   });
@@ -828,8 +1040,9 @@ describe("ask outcome rendering", () => {
   it("carries the user's trimmed note on the outcome and into the model-facing text", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("q1")] });
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], note: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) }))
-      .toThrow(/note exceeds its length limit/);
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [], note: "x".repeat(ASK_USER_OTHER_TEXT_MAX_LENGTH + 1) })).toThrow(
+      /note exceeds its length limit/,
+    );
     const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], note: "  Ship it\nthis week.  " });
     if (result.status !== "closed") throw new Error("expected the ask to close");
 
@@ -861,7 +1074,12 @@ describe("ask outcome rendering", () => {
 });
 
 describe("PendingAskStore dependent questions (showIf)", () => {
-  const location = question("location", { options: [{ value: "home", label: "Home" }, { value: "vps", label: "VPS" }] });
+  const location = question("location", {
+    options: [
+      { value: "home", label: "Home" },
+      { value: "vps", label: "VPS" },
+    ],
+  });
   const machine = question("machine", { question: "Which machine?", showIf: { question: "location", values: ["home"] } });
   const disk = question("disk", { showIf: { question: "machine", values: ["yes"] } });
   const openDependent = (store: PendingAskStore) => store.open({ sessionId, context, questions: [location, machine, disk, question("other")] });
@@ -869,7 +1087,9 @@ describe("PendingAskStore dependent questions (showIf)", () => {
   it("rejects a condition on an unknown or later question, on an option the question lacks, or without values", () => {
     const store = testStore();
     const reject = (questions: AskUserQuestion[]) => () => store.open({ sessionId, context, questions });
-    expect(reject([location, question("m", { showIf: { question: "nope", values: ["home"] } })])).toThrow(/showIf of question m must name an earlier question of this set, not nope/);
+    expect(reject([location, question("m", { showIf: { question: "nope", values: ["home"] } })])).toThrow(
+      /showIf of question m must name an earlier question of this set, not nope/,
+    );
     expect(reject([question("m", { showIf: { question: "location", values: ["home"] } }), location])).toThrow(/must name an earlier question/);
     expect(reject([question("m", { showIf: { question: "m", values: ["yes"] } })])).toThrow(/must name an earlier question/);
     expect(reject([location, question("m", { showIf: { question: "location", values: ["moon"] } })])).toThrow(/question location has no option moon/);
@@ -883,11 +1103,18 @@ describe("PendingAskStore dependent questions (showIf)", () => {
     const ask = openDependent(store);
     const result = store.submit(sessionId, ask.askId, {
       revision: ask.revision,
-      answers: [{ id: "location", values: ["vps"] }, { id: "machine", values: ["yes"] }, { id: "disk", values: ["no"] }],
+      answers: [
+        { id: "location", values: ["vps"] },
+        { id: "machine", values: ["yes"] },
+        { id: "disk", values: ["no"] },
+      ],
     });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome.questions.map((record) => [record.question.id, record.answered, record.skipped])).toEqual([
-      ["location", true, undefined], ["machine", false, true], ["disk", false, true], ["other", false, undefined],
+      ["location", true, undefined],
+      ["machine", false, true],
+      ["disk", false, true],
+      ["other", false, undefined],
     ]);
     expect(result.outcome.unansweredIds).toEqual(["other"]);
     expect(result.outcome.summary).toBe("Answered 1 of 2; unanswered: other; skipped (condition not met): machine, disk");
@@ -899,11 +1126,19 @@ describe("PendingAskStore dependent questions (showIf)", () => {
   it("counts a met dependent like any question, and a Custom answer never meets a condition", () => {
     const store = testStore();
     const ask = openDependent(store);
-    const met = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["yes"] }] });
+    const met = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "location", values: ["home"] },
+        { id: "machine", values: ["yes"] },
+      ],
+    });
     expect(met.status === "closed" ? met.outcome.summary : undefined).toBe("Answered 2 of 4; unanswered: disk, other");
     const second = openDependent(store);
     const custom = store.submit(sessionId, second.askId, { revision: second.revision, answers: [{ id: "location", values: [], otherText: "home" }] });
-    expect(custom.status === "closed" ? custom.outcome.summary : undefined).toBe("Answered 1 of 2; unanswered: other; skipped (condition not met): machine, disk");
+    expect(custom.status === "closed" ? custom.outcome.summary : undefined).toBe(
+      "Answered 1 of 2; unanswered: other; skipped (condition not met): machine, disk",
+    );
   });
 
   it("a partial send skips the dependents it settles, keeps those it shows, and leaves those of an unsent parent open", () => {
@@ -919,13 +1154,22 @@ describe("PendingAskStore dependent questions (showIf)", () => {
     const home = store.submit(sessionId, second.askId, { revision: second.revision, answers: [{ id: "location", values: ["home"] }], partial: true });
     expect(home.status === "closed" ? home.ask?.questions.map((q) => q.id) : undefined).toEqual(["machine", "disk", "other"]);
     // machine's parent left the set, so machine now shows unconditionally; disk still waits on machine.
-    const rest = store.submit(sessionId, second.askId, { revision: home.status === "closed" ? home.ask?.revision ?? "" : "", answers: [{ id: "machine", values: ["no"] }] });
+    const rest = store.submit(sessionId, second.askId, {
+      revision: home.status === "closed" ? (home.ask?.revision ?? "") : "",
+      answers: [{ id: "machine", values: ["no"] }],
+    });
     expect(rest.status === "closed" ? rest.outcome.summary : undefined).toBe("Answered 1 of 2; unanswered: other; skipped (condition not met): disk");
 
     const third = openDependent(store);
     const other = store.submit(sessionId, third.askId, { revision: third.revision, answers: [{ id: "other", values: ["yes"] }], partial: true });
     expect(other.status === "closed" ? other.ask?.questions.map((q) => q.id) : undefined).toEqual(["location", "machine", "disk"]);
-    expect(() => store.submit(sessionId, third.askId, { revision: other.status === "closed" ? other.ask?.revision ?? "" : "", answers: [{ id: "machine", values: ["yes"] }], partial: true })).toThrow(/needs at least one answer/);
+    expect(() =>
+      store.submit(sessionId, third.askId, {
+        revision: other.status === "closed" ? (other.ask?.revision ?? "") : "",
+        answers: [{ id: "machine", values: ["yes"] }],
+        partial: true,
+      }),
+    ).toThrow(/needs at least one answer/);
   });
 
   it("revises only the context of a set whose open follow-up's parent was already sent, and still refuses an empty set without approval", () => {
@@ -944,19 +1188,44 @@ describe("PendingAskStore dependent questions (showIf)", () => {
   it("keeps a follow-up's answer sent alone with the choice or boolean parent answer that shows it", () => {
     const store = testStore();
     const ask = openDependent(store);
-    const choice = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "location", values: ["home"] }, { id: "machine", values: ["no"] }], partial: true });
+    const choice = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [
+        { id: "location", values: ["home"] },
+        { id: "machine", values: ["no"] },
+      ],
+      partial: true,
+    });
     if (choice.status !== "closed") throw new Error("expected closed");
-    expect(choice.outcome.questions.map((record) => [record.question.id, record.answered, record.skipped])).toEqual([["location", true, undefined], ["machine", true, undefined], ["disk", false, true]]);
+    expect(choice.outcome.questions.map((record) => [record.question.id, record.answered, record.skipped])).toEqual([
+      ["location", true, undefined],
+      ["machine", true, undefined],
+      ["disk", false, true],
+    ]);
     expect(choice.ask?.questions.map((q) => q.id)).toEqual(["other"]);
 
-    const typed = store.open({ sessionId, context, questions: [
-      question("backup", { options: [], kind: "boolean" }),
-      question("folder", { options: [], kind: "text", showIf: { question: "backup", values: ["true"] } }),
-      question("other"),
-    ] });
-    const toggled = store.submit(sessionId, typed.askId, { revision: typed.revision, answers: [{ id: "backup", values: [], value: true }, { id: "folder", values: [], value: "~/b" }], partial: true });
+    const typed = store.open({
+      sessionId,
+      context,
+      questions: [
+        question("backup", { options: [], kind: "boolean" }),
+        question("folder", { options: [], kind: "text", showIf: { question: "backup", values: ["true"] } }),
+        question("other"),
+      ],
+    });
+    const toggled = store.submit(sessionId, typed.askId, {
+      revision: typed.revision,
+      answers: [
+        { id: "backup", values: [], value: true },
+        { id: "folder", values: [], value: "~/b" },
+      ],
+      partial: true,
+    });
     if (toggled.status !== "closed") throw new Error("expected closed");
-    expect(toggled.outcome.questions.map((record) => [record.question.id, record.answered, record.value])).toEqual([["backup", true, true], ["folder", true, "~/b"]]);
+    expect(toggled.outcome.questions.map((record) => [record.question.id, record.answered, record.value])).toEqual([
+      ["backup", true, true],
+      ["folder", true, "~/b"],
+    ]);
   });
 });
 
@@ -964,16 +1233,28 @@ describe("PendingAskStore images", () => {
   const png = { mimeType: "image/png", data: "iVBORw0KGgo=" };
   const note = { kind: "note" as const };
   const q = (id: string) => ({ kind: "question" as const, id });
-  const textAsk = (store: PendingAskStore) => store.open({ sessionId, context, questions: [question("why", { kind: "text", options: [], minLength: 3 }), question("how", { kind: "text", options: [] })] });
+  const textAsk = (store: PendingAskStore) =>
+    store.open({
+      sessionId,
+      context,
+      questions: [question("why", { kind: "text", options: [], minLength: 3 }), question("how", { kind: "text", options: [] })],
+    });
 
   it("names each answer's and the note's images on an Images line, never inside the answer, and ends with the legend", () => {
     const store = testStore();
     const ask = textAsk(store);
     const result = store.submit(sessionId, ask.askId, {
       revision: ask.revision,
-      answers: [{ id: "why", values: [], value: "Fast" }, { id: "how", values: [], value: "Like this" }],
+      answers: [
+        { id: "why", values: [], value: "Fast" },
+        { id: "how", values: [], value: "Like this" },
+      ],
       note: "See both.",
-      images: [{ target: q("why"), ...png, name: "a.png" }, { target: q("why"), ...png }, { target: note, ...png }],
+      images: [
+        { target: q("why"), ...png, name: "a.png" },
+        { target: q("why"), ...png },
+        { target: note, ...png },
+      ],
     });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome.images).toEqual([
@@ -986,17 +1267,32 @@ describe("PendingAskStore images", () => {
     const text = renderAskUserFollowUp(result.outcome, []);
     expect(text).toContain(['  Answered: "Fast"', "  Images: [PIC_1], [PIC_2]", "- ask.how"].join("\n"));
     expect(text).toContain(['Note from the user: "See both."', "  Images: [PIC_3]"].join("\n"));
-    expect(text.endsWith(["Image blocks immediately following this text map in order as follows:", "1. [PIC_1]", "2. [PIC_2]", "3. [PIC_3]"].join("\n"))).toBe(true);
+    expect(text.endsWith(["Image blocks immediately following this text map in order as follows:", "1. [PIC_1]", "2. [PIC_2]", "3. [PIC_3]"].join("\n"))).toBe(
+      true,
+    );
     expect(renderAskUserAnswersText(result.outcome)).not.toContain("Image blocks");
   });
 
   it("refuses an image on a question this send does not answer, on a choice question, or on the note of a partial send", () => {
     const store = testStore();
-    const ask = store.open({ sessionId, context, questions: [question("why", { kind: "text", options: [] }), question("pick"), question("how", { kind: "text", options: [] })] });
-    const answers = [{ id: "why", values: [], value: "Fast" }, { id: "pick", values: ["yes"] }];
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: q("how"), ...png }] })).toThrow(PendingAskValidationError);
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: q("pick"), ...png }] })).toThrow(PendingAskValidationError);
-    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: note, ...png }] })).toThrow(PendingAskValidationError);
+    const ask = store.open({
+      sessionId,
+      context,
+      questions: [question("why", { kind: "text", options: [] }), question("pick"), question("how", { kind: "text", options: [] })],
+    });
+    const answers = [
+      { id: "why", values: [], value: "Fast" },
+      { id: "pick", values: ["yes"] },
+    ];
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: q("how"), ...png }] })).toThrow(
+      PendingAskValidationError,
+    );
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, images: [{ target: q("pick"), ...png }] })).toThrow(
+      PendingAskValidationError,
+    );
+    expect(() => store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: note, ...png }] })).toThrow(
+      PendingAskValidationError,
+    );
     const partial = store.submit(sessionId, ask.askId, { revision: ask.revision, answers, partial: true, images: [{ target: q("why"), ...png }] });
     if (partial.status !== "closed") throw new Error("expected closed");
     expect(partial.outcome.images).toEqual([{ target: q("why"), reference: "[PIC_1]", mimeType: "image/png" }]);
@@ -1005,9 +1301,18 @@ describe("PendingAskStore images", () => {
   it("keeps earlier sends' image metadata in the whole set's record", () => {
     const store = testStore();
     const ask = textAsk(store);
-    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }], partial: true, images: [{ target: q("why"), ...png }] });
+    const first = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [{ id: "why", values: [], value: "Fast" }],
+      partial: true,
+      images: [{ target: q("why"), ...png }],
+    });
     if (first.status !== "closed" || first.ask === undefined) throw new Error("expected partial");
-    const last = store.submit(sessionId, ask.askId, { revision: first.ask.revision, answers: [{ id: "how", values: [], value: "So" }], images: [{ target: q("how"), ...png }] });
+    const last = store.submit(sessionId, ask.askId, {
+      revision: first.ask.revision,
+      answers: [{ id: "how", values: [], value: "So" }],
+      images: [{ target: q("how"), ...png }],
+    });
     if (last.status !== "closed") throw new Error("expected closed");
     // The earlier send's image names its send's revision, whose answers entry holds the bytes; the final send's carries none.
     expect(withEarlierAnswers(last.outcome, [first.outcome]).images).toEqual([
@@ -1019,22 +1324,44 @@ describe("PendingAskStore images", () => {
   it("tags each earlier send's rows with the revision its images carry, so a reused question id keeps each send's own image", () => {
     const store = testStore();
     const ask = textAsk(store);
-    const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "why", values: [], value: "Fast" }], partial: true, images: [{ target: q("why"), ...png, name: "A.png" }] });
+    const first = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [{ id: "why", values: [], value: "Fast" }],
+      partial: true,
+      images: [{ target: q("why"), ...png, name: "A.png" }],
+    });
     if (first.status !== "closed" || first.ask === undefined) throw new Error("expected partial");
     const revised = store.update({ sessionId, askId: ask.askId, questions: [question("why", { question: "Why, really?", kind: "text", options: [] })] });
     if (revised === undefined) throw new Error("expected revised");
-    const last = store.submit(sessionId, ask.askId, { revision: revised.revision, answers: [{ id: "why", values: [], value: "Cheap" }], images: [{ target: q("why"), ...png, name: "B.png" }] });
+    const last = store.submit(sessionId, ask.askId, {
+      revision: revised.revision,
+      answers: [{ id: "why", values: [], value: "Cheap" }],
+      images: [{ target: q("why"), ...png, name: "B.png" }],
+    });
     if (last.status !== "closed") throw new Error("expected closed");
     const whole = withEarlierAnswers(last.outcome, [first.outcome], ["why"]);
-    expect(whole.questions.map((record) => [record.question.question, record.revision])).toEqual([["Question why?", first.ask.revision], ["Why, really?", undefined]]);
-    expect(whole.images?.map((image) => [image.name, image.revision])).toEqual([["A.png", first.ask.revision], ["B.png", undefined]]);
+    expect(whole.questions.map((record) => [record.question.question, record.revision])).toEqual([
+      ["Question why?", first.ask.revision],
+      ["Why, really?", undefined],
+    ]);
+    expect(whole.images?.map((image) => [image.name, image.revision])).toEqual([
+      ["A.png", first.ask.revision],
+      ["B.png", undefined],
+    ]);
     expect(parseAskUserOutcome(whole).questions[0]?.revision).toBe(first.ask.revision);
   });
 
   it("keeps a question with id note apart from the note", () => {
     const store = testStore();
     const ask = store.open({ sessionId, context, questions: [question("note", { kind: "text", options: [] })] });
-    const result = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "note", values: [], value: "Mine" }], images: [{ target: q("note"), ...png }, { target: note, ...png }] });
+    const result = store.submit(sessionId, ask.askId, {
+      revision: ask.revision,
+      answers: [{ id: "note", values: [], value: "Mine" }],
+      images: [
+        { target: q("note"), ...png },
+        { target: note, ...png },
+      ],
+    });
     if (result.status !== "closed") throw new Error("expected closed");
     const text = renderAskUserFollowUp(result.outcome, []);
     expect(text).toContain(['  Answered: "Mine"', "  Images: [PIC_1]"].join("\n"));

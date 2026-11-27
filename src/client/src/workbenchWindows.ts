@@ -108,7 +108,9 @@ export function orderedChats(window: WorkbenchWindow): WindowChat[] {
 /** Names a window by what it holds: its focused Chat, then tab order, two titles at most and a count for the rest. */
 export function windowChatSummary(window: WorkbenchWindow): string {
   const chats = orderedChats(window);
-  const titles = [...chats.filter((chat) => chat.sessionId === window.focused), ...chats.filter((chat) => chat.sessionId !== window.focused)].map((chat) => chat.title);
+  const titles = [...chats.filter((chat) => chat.sessionId === window.focused), ...chats.filter((chat) => chat.sessionId !== window.focused)].map(
+    (chat) => chat.title,
+  );
   if (titles.length === 0) return window.name;
   const rest = titles.length - 2;
   return `${titles.slice(0, 2).join(" · ")}${rest > 0 ? ` +${String(rest)}` : ""}`;
@@ -140,13 +142,25 @@ export function focusChat(store: WindowStore, windowId: string, sessionId: strin
 }
 
 /** Title or Workstream of an open Chat; the same store when nothing changes. */
-export function updateChat(store: WindowStore, windowId: string, sessionId: string, patch: Partial<Pick<WindowChat, "title" | "shortName" | "workstream">>): WindowStore {
+export function updateChat(
+  store: WindowStore,
+  windowId: string,
+  sessionId: string,
+  patch: Partial<Pick<WindowChat, "title" | "shortName" | "workstream">>,
+): WindowStore {
   const window = store[windowId];
   const index = window?.chats.findIndex((chat) => chat.sessionId === sessionId) ?? -1;
   const current = window?.chats[index];
   if (window === undefined || current === undefined) return store;
   const updated: WindowChat = { ...current, ...patch };
-  if (updated.title === current.title && updated.shortName === current.shortName && updated.workstream?.id === current.workstream?.id && updated.workstream?.title === current.workstream?.title && updated.workstream?.shortTitle === current.workstream?.shortTitle) return store;
+  if (
+    updated.title === current.title
+    && updated.shortName === current.shortName
+    && updated.workstream?.id === current.workstream?.id
+    && updated.workstream?.title === current.workstream?.title
+    && updated.workstream?.shortTitle === current.workstream?.shortTitle
+  )
+    return store;
   const next = cloneWindow(window);
   next.chats[index] = updated;
   return { ...store, [windowId]: window.focused === sessionId ? focus(next, sessionId) : next };
@@ -158,10 +172,21 @@ export function closeChats(store: WindowStore, windowId: string, sessionIds: rea
   if (window === undefined) return store;
   const closing = new Set(sessionIds);
   const order = orderedChats(window).map((chat) => chat.sessionId);
-  const next = fitLayout(fitGridSplit(cloneWindow(window), window.chats.filter((chat) => !closing.has(chat.sessionId))), window.chats.length);
+  const next = fitLayout(
+    fitGridSplit(
+      cloneWindow(window),
+      window.chats.filter((chat) => !closing.has(chat.sessionId)),
+    ),
+    window.chats.length,
+  );
   if (window.focused === undefined || !closing.has(window.focused)) return { ...store, [windowId]: next };
   const index = order.indexOf(window.focused);
-  const successor = order.slice(index + 1).find((id) => !closing.has(id)) ?? order.slice(0, index).reverse().find((id) => !closing.has(id));
+  const successor =
+    order.slice(index + 1).find((id) => !closing.has(id))
+    ?? order
+      .slice(0, index)
+      .reverse()
+      .find((id) => !closing.has(id));
   next.focused = undefined;
   if (next.chats.length === 0) next.maximized = false;
   return { ...store, [windowId]: successor === undefined ? next : focus(next, successor) };
@@ -189,7 +214,9 @@ function fitLayout(window: WorkbenchWindow, before: number): WorkbenchWindow {
 
 export function toggleLayout(store: WindowStore, windowId: string): WindowStore {
   const window = store[windowId];
-  return window === undefined || window.chats.length < 2 ? store : { ...store, [windowId]: { ...cloneWindow(window), layout: window.layout === "grid" ? "tabs" : "grid", maximized: false } };
+  return window === undefined || window.chats.length < 2
+    ? store
+    : { ...store, [windowId]: { ...cloneWindow(window), layout: window.layout === "grid" ? "tabs" : "grid", maximized: false } };
 }
 
 export function toggleMaximized(store: WindowStore, windowId: string): WindowStore {
@@ -218,10 +245,14 @@ export function gridTiles(window: WorkbenchWindow): GridTile[] {
   return chats.map((chat, index) => {
     const row = index < 2 ? 1 : 2;
     const column = (index % 2) + 1;
-    const area = chats.length === 1 ? "1 / 1 / 3 / 3"
-      : chats.length === 2 ? `1 / ${String(column)} / 3 / ${String(column + 1)}`
-      : chats.length === 3 && index === 2 ? "2 / 1 / 3 / 3"
-      : `${String(row)} / ${String(column)} / ${String(row + 1)} / ${String(column + 1)}`;
+    const area =
+      chats.length === 1
+        ? "1 / 1 / 3 / 3"
+        : chats.length === 2
+          ? `1 / ${String(column)} / 3 / ${String(column + 1)}`
+          : chats.length === 3 && index === 2
+            ? "2 / 1 / 3 / 3"
+            : `${String(row)} / ${String(column)} / ${String(row + 1)} / ${String(column + 1)}`;
     return { chat, area };
   });
 }
@@ -270,7 +301,11 @@ export function gridRatioFromKeyboard(ratio: number, axis: GridAxis, key: string
 /** The stored windows, dropping anything that does not have the window shape. */
 export function parseWindowStore(raw: string | null): WindowStore {
   let parsed: unknown;
-  try { parsed = raw === null ? {} : JSON.parse(raw); } catch { return {}; }
+  try {
+    parsed = raw === null ? {} : JSON.parse(raw);
+  } catch {
+    return {};
+  }
   if (!isRecord(parsed)) return {};
   const store: WindowStore = {};
   for (const [id, value] of Object.entries(parsed)) {
@@ -282,20 +317,27 @@ export function parseWindowStore(raw: string | null): WindowStore {
 
 function parseWindow(value: unknown): WorkbenchWindow | undefined {
   if (!isRecord(value) || typeof value["name"] !== "string" || !Array.isArray(value["chats"])) return undefined;
-  const chats = value["chats"].flatMap((chat) => { const parsed = parseChat(chat); return parsed === undefined ? [] : [parsed]; });
+  const chats = value["chats"].flatMap((chat) => {
+    const parsed = parseChat(chat);
+    return parsed === undefined ? [] : [parsed];
+  });
   const lastActive: Record<string, string> = {};
   const recent = value["lastActive"];
   if (isRecord(recent)) for (const [key, id] of Object.entries(recent)) if (typeof id === "string") lastActive[key] = id;
   const focused = value["focused"];
   const split = value["gridSplit"];
-  return fitGridSplit({
-    name: value["name"],
+  return fitGridSplit(
+    {
+      name: value["name"],
+      chats,
+      focused: typeof focused === "string" && chats.some((chat) => chat.sessionId === focused) ? focused : undefined,
+      layout: value["layout"] === "grid" ? "grid" : "tabs",
+      maximized: value["maximized"] === true,
+      lastActive,
+    },
     chats,
-    focused: typeof focused === "string" && chats.some((chat) => chat.sessionId === focused) ? focused : undefined,
-    layout: value["layout"] === "grid" ? "grid" : "tabs",
-    maximized: value["maximized"] === true,
-    lastActive,
-  }, chats, isRecord(split) ? { columns: shareOf(split["columns"]), rows: shareOf(split["rows"]) } : {});
+    isRecord(split) ? { columns: shareOf(split["columns"]), rows: shareOf(split["rows"]) } : {},
+  );
 }
 
 function shareOf(value: unknown): number | undefined {
@@ -316,7 +358,8 @@ function fitGridSplit(window: WorkbenchWindow, chats: WindowChat[], split: GridS
 }
 
 function parseChat(value: unknown): WindowChat | undefined {
-  if (!isRecord(value) || typeof value["sessionId"] !== "string" || typeof value["title"] !== "string" || typeof value["machineId"] !== "string") return undefined;
+  if (!isRecord(value) || typeof value["sessionId"] !== "string" || typeof value["title"] !== "string" || typeof value["machineId"] !== "string")
+    return undefined;
   const workstream = value["workstream"];
   return {
     sessionId: value["sessionId"],
@@ -326,7 +369,10 @@ function parseChat(value: unknown): WindowChat | undefined {
     machineId: value["machineId"],
     projectId: optionalString(value["projectId"]),
     workspaceId: optionalString(value["workspaceId"]),
-    workstream: isRecord(workstream) && typeof workstream["id"] === "string" && typeof workstream["title"] === "string" ? { id: workstream["id"], title: workstream["title"], shortTitle: optionalString(workstream["shortTitle"]) } : undefined,
+    workstream:
+      isRecord(workstream) && typeof workstream["id"] === "string" && typeof workstream["title"] === "string"
+        ? { id: workstream["id"], title: workstream["title"], shortTitle: optionalString(workstream["shortTitle"]) }
+        : undefined,
   };
 }
 

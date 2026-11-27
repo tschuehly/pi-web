@@ -9,9 +9,15 @@ it("preserves portable and machine-specific precedence for application tabs and 
   const registry = new PluginRegistry();
   const panel: ApplicationPanelContribution = { id: "workspace.info", title: "Info", render: () => html`Info` };
   Reflect.set(panel, "sourceContributionId", "forged:workspace.info");
-  const plugin: PiWebPlugin = { apiVersion: 4, name: "Info", activate: () => ({ contributions: {
-    applicationPanels: [panel],
-  } }) };
+  const plugin: PiWebPlugin = {
+    apiVersion: 4,
+    name: "Info",
+    activate: () => ({
+      contributions: {
+        applicationPanels: [panel],
+      },
+    }),
+  };
   await registry.register({ id: "info", plugin });
   expect(visibleIds(registry, "remote")).toEqual(["info:workspace.info"]);
   await registry.register({ id: "remote-info", sourcePluginId: "info", machineId: "remote", machineSpecific: true, plugin });
@@ -29,11 +35,10 @@ it("preserves portable and machine-specific precedence for application tabs and 
       expect(registry.resolveWorkspacePanelRouteId(historicalId, machineId)).toBeUndefined();
     }
   }
-  expect(registry.getApplicationPanels().map(({ id, sourceContributionId }) => ({ id, sourceContributionId })))
-    .toEqual([
-      { id: "info:workspace.info", sourceContributionId: "info:workspace.info" },
-      { id: "remote-info:workspace.info", sourceContributionId: "info:workspace.info" },
-    ]);
+  expect(registry.getApplicationPanels().map(({ id, sourceContributionId }) => ({ id, sourceContributionId }))).toEqual([
+    { id: "info:workspace.info", sourceContributionId: "info:workspace.info" },
+    { id: "remote-info:workspace.info", sourceContributionId: "info:workspace.info" },
+  ]);
   for (const qualifiedPanel of registry.getApplicationPanels()) {
     expect(qualifiedPanel).not.toHaveProperty("routeAliases");
     expect(qualifiedPanel).not.toHaveProperty("navigationAliases");
@@ -49,9 +54,18 @@ it("gates application callbacks and scopes host helpers to the registration", as
   const render = vi.fn(() => html`Info`);
   const visible = vi.fn(() => true);
   const badge = vi.fn(() => "1");
-  await registry.register({ id: "info", plugin: { apiVersion: 4, name: "Info", activate: () => ({ contributions: {
-    applicationPanels: [{ id: "workspace.info", title: "Info", visible, badge, render }],
-  } }) } });
+  await registry.register({
+    id: "info",
+    plugin: {
+      apiVersion: 4,
+      name: "Info",
+      activate: () => ({
+        contributions: {
+          applicationPanels: [{ id: "workspace.info", title: "Info", visible, badge, render }],
+        },
+      }),
+    },
+  });
   const panel = registry.getApplicationPanels()[0];
   const scoped = context("remote");
   const scope = vi.fn(() => scoped);
@@ -62,7 +76,9 @@ it("gates application callbacks and scopes host helpers to the registration", as
   expect(scope).toHaveBeenCalledWith("info");
   expect(render).toHaveBeenCalledWith(scoped);
   expect(registry.resolveWorkspacePanelRouteId("info:workspace.info", "remote")).toBe("info:workspace.info");
-  render.mockClear(); visible.mockClear(); badge.mockClear();
+  render.mockClear();
+  visible.mockClear();
+  badge.mockClear();
   enabled = false;
   expect(panel?.visible?.(base)).toBe(false);
   expect(panel?.badge?.(base)).toBeUndefined();
@@ -92,14 +108,18 @@ it.each([
   Reflect.set(panel, field, value);
   const start = vi.fn();
   const dispose = vi.fn();
-  const plugin: PiWebPlugin = { apiVersion: 4, name: "Info", activate: () => ({
-    contributions: {
-      applicationPanels: [{ id: "application.ready", title: "Ready", render: () => html`Ready` }, panel],
-      workspacePanels: [{ id: "workspace.ready", title: "Ready", render: () => html`Ready` }],
-    },
-    start,
-    dispose,
-  }) };
+  const plugin: PiWebPlugin = {
+    apiVersion: 4,
+    name: "Info",
+    activate: () => ({
+      contributions: {
+        applicationPanels: [{ id: "application.ready", title: "Ready", render: () => html`Ready` }, panel],
+        workspacePanels: [{ id: "workspace.ready", title: "Ready", render: () => html`Ready` }],
+      },
+      start,
+      dispose,
+    }),
+  };
   const registration = { id: runtimePluginId, sourcePluginId: "info", machineId: "remote", machineSpecific: true, plugin };
 
   const message = `Panel aliases were removed for ${runtimePluginId}:workspace.info; remove routeAliases and navigationAliases and use the current contribution ID`;
@@ -154,17 +174,24 @@ it("warns about unknown contribution names at registration without disabling rec
     expect(registry.resolveWorkspacePanelRouteId("diagnostic:info", "local")).toBe("diagnostic:info");
     expect(registry.hasPlugin("diagnostic")).toBe(true);
     await registry.dispose();
-  } finally { warn.mockRestore(); }
+  } finally {
+    warn.mockRestore();
+  }
 });
 
 function visibleIds(registry: PluginRegistry, machineId: string): string[] {
-  return registry.getApplicationPanels().filter((panel) => panel.visible?.(context(machineId)) ?? true).map(({ id }) => id);
+  return registry
+    .getApplicationPanels()
+    .filter((panel) => panel.visible?.(context(machineId)) ?? true)
+    .map(({ id }) => id);
 }
 
 function context(machineId: string): ApplicationPanelContext {
   return {
     machine: { id: machineId, name: machineId, kind: machineId === "local" ? "local" : "remote" },
-    state: initialAppState(), navigate: () => Promise.resolve(),
-    prompt: { insertText: vi.fn(), getText: () => "", getSelection: () => null }, host: { requestRender: vi.fn() },
+    state: initialAppState(),
+    navigate: () => Promise.resolve(),
+    prompt: { insertText: vi.fn(), getText: () => "", getSelection: () => null },
+    host: { requestRender: vi.fn() },
   };
 }

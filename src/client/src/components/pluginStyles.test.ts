@@ -17,9 +17,13 @@ afterEach(() => {
 });
 
 it("shares contributed sheets across host and nested modal roots and releases them on disconnect", async () => {
-  const fetchFile = vi.fn(() => Promise.resolve(new Response("button { border-radius: 7px; }", {
-    headers: { "Content-Type": "text/css" },
-  })));
+  const fetchFile = vi.fn(() =>
+    Promise.resolve(
+      new Response("button { border-radius: 7px; }", {
+        headers: { "Content-Type": "text/css" },
+      }),
+    ),
+  );
   vi.stubGlobal("fetch", fetchFile);
   const palette = new ActionPalette();
   document.body.append(palette);

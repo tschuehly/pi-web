@@ -13,11 +13,17 @@ if (existsSync(fault)) {
 // Negative control: emulate a broken host that ignores the client's expected history revision.
 if (process.env.DURABLE_FLEET_NEGATIVE_CONTROL === "1") {
   const on = process.on.bind(process);
-  process.on = (event, listener) => on(event, event !== "message" ? listener : (request) => {
-    const current = join(store, "fleet-current-leaf");
-    if (request?.method === "navigate" && existsSync(current)) request.params.expectedLeafId = JSON.parse(readFileSync(current, "utf8"));
-    listener(request);
-  });
+  process.on = (event, listener) =>
+    on(
+      event,
+      event !== "message"
+        ? listener
+        : (request) => {
+            const current = join(store, "fleet-current-leaf");
+            if (request?.method === "navigate" && existsSync(current)) request.params.expectedLeafId = JSON.parse(readFileSync(current, "utf8"));
+            listener(request);
+          },
+    );
 }
 if (!process.env.DURABLE_FLEET_HOST) throw new Error("DURABLE_FLEET_HOST must name the real pinned host");
 await import(pathToFileURL(process.env.DURABLE_FLEET_HOST).href);

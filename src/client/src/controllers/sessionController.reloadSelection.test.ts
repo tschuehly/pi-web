@@ -5,7 +5,19 @@ import { browserErrorScopeKey, sessionBrowserErrorScope } from "../browserErrors
 import type { NavigationFreshness } from "./types";
 import { SessionController } from "./sessionController";
 import { InMemorySessionSelectionMemory } from "./sessionSelection";
-import { defaultApi, deferred, emptyPage, FakeSocket, oldSession, sessionKey, sessionLookupId, status, workspace, type AppState, type MessagePage } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  deferred,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  sessionKey,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+  type MessagePage,
+} from "./sessionController.testSupport";
 
 describe("SessionController reload and selection", () => {
   it("reconciles a restored selected session after a view-only navigation change", async () => {
@@ -35,7 +47,9 @@ describe("SessionController reload and selection", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       {
@@ -87,7 +101,9 @@ describe("SessionController reload and selection", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       {
@@ -126,7 +142,9 @@ describe("SessionController reload and selection", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       {
@@ -179,7 +197,9 @@ describe("SessionController reload and selection", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       {
@@ -187,8 +207,12 @@ describe("SessionController reload and selection", () => {
         socket: new FakeSocket(),
         transcripts: new ChatTranscriptStore({
           read: (sessionId) => cachedPages.get(sessionId),
-          write: (sessionId, page) => { cachedPages.set(sessionId, page); },
-          remove: (sessionId) => { cachedPages.delete(sessionId); },
+          write: (sessionId, page) => {
+            cachedPages.set(sessionId, page);
+          },
+          remove: (sessionId) => {
+            cachedPages.delete(sessionId);
+          },
         }),
       },
     );
@@ -220,7 +244,9 @@ describe("SessionController reload and selection", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -239,7 +265,9 @@ describe("SessionController reload and selection", () => {
     const selectedAtNavigation: string[] = [];
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       {
@@ -269,8 +297,12 @@ describe("SessionController reload and selection", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
-      (options) => { urlUpdates.push(options); },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      (options) => {
+        urlUpdates.push(options);
+      },
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
     );

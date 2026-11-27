@@ -63,7 +63,9 @@ async function startStallServer(gapMs: number): Promise<string> {
   servers.push(server);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => { resolve(); });
+    server.listen(0, "127.0.0.1", () => {
+      resolve();
+    });
   });
   const address = server.address();
   if (address === null || typeof address === "string") {
@@ -75,10 +77,17 @@ async function startStallServer(gapMs: number): Promise<string> {
 async function stopStallServers(): Promise<void> {
   const stopping = servers;
   servers = [];
-  await Promise.all(stopping.map((server) => new Promise<void>((resolve) => {
-    server.close(() => { resolve(); });
-    server.closeAllConnections();
-  })));
+  await Promise.all(
+    stopping.map(
+      (server) =>
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+          server.closeAllConnections();
+        }),
+    ),
+  );
 }
 
 describe("resolveAgentHttpIdleTimeoutMs", () => {
@@ -117,8 +126,7 @@ describe("resolveAgentHttpIdleTimeoutMs", () => {
 
   it("throws when the setting value is invalid", async () => {
     await writeAgentSettings({ httpIdleTimeoutMs: "soon" });
-    expect(() => resolveAgentHttpIdleTimeoutMs({ agentDir, cwd: agentDir }))
-      .toThrow(/Invalid httpIdleTimeoutMs setting/);
+    expect(() => resolveAgentHttpIdleTimeoutMs({ agentDir, cwd: agentDir })).toThrow(/Invalid httpIdleTimeoutMs setting/);
   });
 });
 
@@ -149,8 +157,12 @@ describe("applyAgentHttpIdleTimeout", () => {
 describe("configureAgentHttpDispatcher", () => {
   it("rejects invalid timeout values without touching the global dispatcher", () => {
     const before = getGlobalDispatcher();
-    expect(() => { configureAgentHttpDispatcher(-1); }).toThrow(/Invalid HTTP idle timeout/);
-    expect(() => { configureAgentHttpDispatcher(Number.NaN); }).toThrow(/Invalid HTTP idle timeout/);
+    expect(() => {
+      configureAgentHttpDispatcher(-1);
+    }).toThrow(/Invalid HTTP idle timeout/);
+    expect(() => {
+      configureAgentHttpDispatcher(Number.NaN);
+    }).toThrow(/Invalid HTTP idle timeout/);
     expect(getGlobalDispatcher()).toBe(before);
   });
 

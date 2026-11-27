@@ -37,10 +37,7 @@ describe("production client build contents", () => {
     expect(manifest).toMatchObject({
       start_url: "./",
       scope: "./",
-      icons: [
-        { src: "./pwa-icon-192.png" },
-        { src: "./pwa-icon-512.png" },
-      ],
+      icons: [{ src: "./pwa-icon-192.png" }, { src: "./pwa-icon-512.png" }],
     });
   });
 });

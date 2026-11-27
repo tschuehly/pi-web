@@ -69,7 +69,12 @@ export async function saveAttachmentsToWorkspace(
     const bytes = Buffer.from(attachment.data, "base64");
     const filename = await writeUniqueAttachmentFile(folderTarget, attachmentFilename(attachment, stamp, index), bytes);
     const relativePath = normalizedFolder === "" ? filename : `${normalizedFolder}/${filename}`;
-    saved.push({ path: relativePath, mimeType: attachment.mimeType, size: bytes.byteLength, ...(attachment.kind === "image" ? { reference: attachment.reference } : {}) });
+    saved.push({
+      path: relativePath,
+      mimeType: attachment.mimeType,
+      size: bytes.byteLength,
+      ...(attachment.kind === "image" ? { reference: attachment.reference } : {}),
+    });
   }
   return saved;
 }
@@ -121,10 +126,12 @@ function sanitizeOriginalFilename(name: string | undefined): string | undefined 
 }
 
 function stripControlCharacters(value: string): string {
-  return Array.from(value).filter((character) => {
-    const codePoint = character.codePointAt(0);
-    return codePoint !== undefined && codePoint > 0x1f && codePoint !== 0x7f;
-  }).join("");
+  return Array.from(value)
+    .filter((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && codePoint > 0x1f && codePoint !== 0x7f;
+    })
+    .join("");
 }
 
 function truncateFilename(filename: string, maxLength: number): string {

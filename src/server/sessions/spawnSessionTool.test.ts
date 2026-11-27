@@ -21,9 +21,22 @@ describe("createSpawnSessionToolDefinition", () => {
     const spawn = vi.fn(() => Promise.resolve({ sessionId: "new-1", cwd: "/repos/a-feature" }));
     const tool = createSpawnSessionToolDefinition("/repos/a", { spawn });
 
-    const result = await tool.execute("call-1", { prompt: "do the thing", cwd: "/repos/a-feature" }, undefined, undefined, ctxFor("spawner-1", dispatchModel, "high"));
+    const result = await tool.execute(
+      "call-1",
+      { prompt: "do the thing", cwd: "/repos/a-feature" },
+      undefined,
+      undefined,
+      ctxFor("spawner-1", dispatchModel, "high"),
+    );
 
-    expect(spawn).toHaveBeenCalledWith({ spawningCwd: "/repos/a", spawningSessionId: "spawner-1", prompt: "do the thing", cwd: "/repos/a-feature", model: dispatchModel, thinkingLevel: "high" });
+    expect(spawn).toHaveBeenCalledWith({
+      spawningCwd: "/repos/a",
+      spawningSessionId: "spawner-1",
+      prompt: "do the thing",
+      cwd: "/repos/a-feature",
+      model: dispatchModel,
+      thinkingLevel: "high",
+    });
     expect(result.details).toEqual({ sessionId: "new-1", cwd: "/repos/a-feature" });
     expect(result.content[0]).toMatchObject({ type: "text", text: "Started independent session new-1 in /repos/a-feature." });
   });
@@ -31,7 +44,9 @@ describe("createSpawnSessionToolDefinition", () => {
   it("describes a fully independent session and restricts it to explicit requests", () => {
     const tool = createSpawnSessionToolDefinition("/repos/a", { spawn: vi.fn() });
 
-    expect(tool.description).toBe("Start a fully independent session; its transcript and results are unavailable here. Use only when the user or active workflow explicitly requests a separate session.");
+    expect(tool.description).toBe(
+      "Start a fully independent session; its transcript and results are unavailable here. Use only when the user or active workflow explicitly requests a separate session.",
+    );
     expect(tool.promptSnippet).toBe("spawn_session: independent session; results unavailable here; explicit requests only");
     expect(tool.description).not.toMatch(/subsession|child|parent/i);
   });
@@ -70,7 +85,9 @@ describe("createSpawnSessionToolDefinition", () => {
       properties: {
         model: {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- stringMatching yields `any` against the loosely typed tool schema.
-          description: expect.stringMatching(/provider\/model-id.*only when instructed.*specific model.*choose an appropriate one.*omit it to inherit.*unknown value is rejected/si),
+          description: expect.stringMatching(
+            /provider\/model-id.*only when instructed.*specific model.*choose an appropriate one.*omit it to inherit.*unknown value is rejected/is,
+          ),
         },
       },
     });
@@ -81,10 +98,14 @@ describe("createSpawnSessionToolDefinition", () => {
     const tool = createSpawnSessionToolDefinition("/repos/a", { spawn: vi.fn() });
     const schema: unknown = JSON.parse(JSON.stringify(tool.parameters));
 
-    expect(schema).toMatchObject({ properties: { thinkingLevel: {
-      type: "string",
-      enum: [...KNOWN_THINKING_LEVELS],
-    } } });
+    expect(schema).toMatchObject({
+      properties: {
+        thinkingLevel: {
+          type: "string",
+          enum: [...KNOWN_THINKING_LEVELS],
+        },
+      },
+    });
     expect(schema).toHaveProperty("required", ["prompt"]);
   });
 
@@ -103,10 +124,14 @@ describe("createSpawnSessionToolDefinition", () => {
 
   it("makes thinking overrides instruction-only and rejects invalid levels in the tool schema", () => {
     const tool = createSpawnSessionToolDefinition("/repos/a", { spawn: vi.fn() });
-    expect(tool.parameters).toMatchObject({ properties: { thinkingLevel: {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher against the tool schema.
-      description: expect.stringMatching(/only when instructed.*specific thinking level.*choose an appropriate one.*omit it to inherit.*clamped/),
-    } } });
+    expect(tool.parameters).toMatchObject({
+      properties: {
+        thinkingLevel: {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- asymmetric matcher against the tool schema.
+          description: expect.stringMatching(/only when instructed.*specific thinking level.*choose an appropriate one.*omit it to inherit.*clamped/),
+        },
+      },
+    });
     expect(Check(tool.parameters, { prompt: "work" })).toBe(true);
     for (const thinkingLevel of ["unknown", "", null, 1]) {
       expect(Check(tool.parameters, { prompt: "work", thinkingLevel })).toBe(false);
@@ -117,7 +142,8 @@ describe("createSpawnSessionToolDefinition", () => {
     const spawn = vi.fn(() => Promise.reject(new Error("cwd must be a workspace of this project. Allowed: /repos/a")));
     const tool = createSpawnSessionToolDefinition("/repos/a", { spawn });
 
-    await expect(tool.execute("call-4", { prompt: "x", cwd: "/elsewhere" }, undefined, undefined, ctxFor("spawner-1")))
-      .rejects.toThrow("cwd must be a workspace of this project. Allowed: /repos/a");
+    await expect(tool.execute("call-4", { prompt: "x", cwd: "/elsewhere" }, undefined, undefined, ctxFor("spawner-1"))).rejects.toThrow(
+      "cwd must be a workspace of this project. Allowed: /repos/a",
+    );
   });
 });

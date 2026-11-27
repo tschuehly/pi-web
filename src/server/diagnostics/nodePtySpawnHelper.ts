@@ -127,10 +127,7 @@ function nodePtyNativeDirs(nodePtyRoot: string, platform: NodeJS.Platform, arch:
 
 function failureDetails(check: Exclude<NodePtyDarwinSpawnHelperCheck, { status: "ok" | "skipped" | "spawn-helper-not-executable" }>): string[] {
   if (check.status === "node-pty-not-found") {
-    return [
-      `  Could not resolve node-pty from PI WEB: ${check.message}`,
-      "  Reinstall or update PI WEB, then run `pi-web doctor` again.",
-    ];
+    return [`  Could not resolve node-pty from PI WEB: ${check.message}`, "  Reinstall or update PI WEB, then run `pi-web doctor` again."];
   }
   if (check.status === "native-module-not-found") {
     return [
@@ -140,21 +137,12 @@ function failureDetails(check: Exclude<NodePtyDarwinSpawnHelperCheck, { status: 
     ];
   }
   if (check.status === "spawn-helper-missing") {
-    return [
-      `  Expected helper is missing: ${check.helperPath}`,
-      "  Reinstall or update PI WEB, then run `pi-web doctor` again.",
-    ];
+    return [`  Expected helper is missing: ${check.helperPath}`, "  Reinstall or update PI WEB, then run `pi-web doctor` again."];
   }
   if (check.status === "spawn-helper-not-file") {
-    return [
-      `  Expected helper is not a regular file: ${check.helperPath}`,
-      "  Reinstall or update PI WEB, then run `pi-web doctor` again.",
-    ];
+    return [`  Expected helper is not a regular file: ${check.helperPath}`, "  Reinstall or update PI WEB, then run `pi-web doctor` again."];
   }
-  return [
-    `  Could not inspect ${check.helperPath}: ${check.message}`,
-    "  Check the file permissions, then run `pi-web doctor` again.",
-  ];
+  return [`  Could not inspect ${check.helperPath}: ${check.message}`, "  Check the file permissions, then run `pi-web doctor` again."];
 }
 
 function chmodFixCommand(path: string): string {

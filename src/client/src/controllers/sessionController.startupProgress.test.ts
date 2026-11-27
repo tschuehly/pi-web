@@ -2,7 +2,20 @@ import { describe, expect, it } from "vitest";
 import { isSessionActive } from "../../../shared/activity";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { defaultApi, deferred, emptyPage, FakeSocket, oldSession, runPendingAnimationFrames, sessionLookupId, status, workspace, type AppState, type SessionActivity, type SessionInfo } from "./sessionController.testSupport";
+import {
+  defaultApi,
+  deferred,
+  emptyPage,
+  FakeSocket,
+  oldSession,
+  runPendingAnimationFrames,
+  sessionLookupId,
+  status,
+  workspace,
+  type AppState,
+  type SessionActivity,
+  type SessionInfo,
+} from "./sessionController.testSupport";
 
 function startupActivity(patch: Partial<SessionActivity> = {}): SessionActivity {
   return {
@@ -32,7 +45,9 @@ function pendingStartController(state: { current: AppState }, api: Partial<typeo
   const startCalls: StartCall[] = [];
   const controller = new SessionController(
     () => state.current,
-    (patch) => { state.current = { ...state.current, ...patch }; },
+    (patch) => {
+      state.current = { ...state.current, ...patch };
+    },
     () => undefined,
     undefined,
     {
@@ -145,7 +160,9 @@ describe("SessionController session startup progress", () => {
     let state: AppState = { ...initialAppState(), selectedSession: oldSession, sessions: [oldSession] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -165,7 +182,9 @@ describe("SessionController session startup progress", () => {
     let state: AppState = { ...initialAppState(), selectedSession: archived, sessions: [archived] };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { socket: new FakeSocket() },
@@ -222,7 +241,10 @@ describe("SessionController session startup progress", () => {
     // A session this browser has not been told about — an agent's spawned
     // subsession, say, whose `session.created` a pending create suppresses — is
     // opened rather than created, so it carries no token at all.
-    controller.applyGlobalEvent({ type: "session.startup", activity: startupActivity({ sessionId: "foreign-session", label: "Opening session", detail: "Loading session extensions" }) });
+    controller.applyGlobalEvent({
+      type: "session.startup",
+      activity: startupActivity({ sessionId: "foreign-session", label: "Opening session", detail: "Loading session extensions" }),
+    });
     runPendingAnimationFrames();
 
     expect(state.current.activity?.detail).toBe("Waiting for the backend session to be ready");

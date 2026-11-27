@@ -23,8 +23,9 @@ describe("application URLs", () => {
   });
 
   it("preserves encoded path segments and query parameters", () => {
-    expect(resolveAppUrl("api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one&before=10", nestedHttpsContext))
-      .toBe("https://pi.example.test/test/ai/api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one&before=10");
+    expect(resolveAppUrl("api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one&before=10", nestedHttpsContext)).toBe(
+      "https://pi.example.test/test/ai/api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one&before=10",
+    );
   });
 });
 
@@ -34,7 +35,8 @@ describe("application WebSocket URLs", () => {
   });
 
   it("maps nested HTTPS URLs to absolute wss URLs without losing path or query data", () => {
-    expect(resolveAppWebSocketUrl("api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one", nestedHttpsContext))
-      .toBe("wss://pi.example.test/test/ai/api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one");
+    expect(resolveAppWebSocketUrl("api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one", nestedHttpsContext)).toBe(
+      "wss://pi.example.test/test/ai/api/machines/remote%20a/sessions/s%2F1/events?cwd=%2Frepo+one",
+    );
   });
 });

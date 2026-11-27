@@ -53,9 +53,7 @@ export class DesktopNotificationController {
     if (!this.canRequestPermission()) return;
     try {
       await this.browser.requestPermission();
-      this.diagnostic = this.browser.permission() === "denied"
-        ? BROWSER_PERMISSION_DENIED
-        : this.browser.diagnostic;
+      this.diagnostic = this.browser.permission() === "denied" ? BROWSER_PERMISSION_DENIED : this.browser.diagnostic;
     } catch (error) {
       this.diagnostic = notificationDiagnostic(error, "permission");
     }
@@ -81,7 +79,8 @@ export class DesktopNotificationController {
     if (!this.armed || nextKey === undefined) return;
 
     const request = next.status?.attentionRequest;
-    if (request !== undefined && this.mark(nextKey, "attention", request.id)) this.notifySelected(next, "attention", `${KIND_LABELS.attention} · ${firstLine(request.reason)}`);
+    if (request !== undefined && this.mark(nextKey, "attention", request.id))
+      this.notifySelected(next, "attention", `${KIND_LABELS.attention} · ${firstLine(request.reason)}`);
     for (const ask of next.pendingAsks) {
       if (!this.mark(nextKey, "ask", ask.askId)) continue;
       this.notifySelected(next, "ask", `Question · ${ask.questions[0]?.question ?? "Needs an answer"}`, `ask:${ask.askId}`);
@@ -119,7 +118,15 @@ export class DesktopNotificationController {
   attention(state: AppState, event: SessionAttentionEvent, machineId: string): void {
     const key = machineSessionKey(machineId, event.sessionId);
     if (key === selectedSessionKey(state) || !this.mark(key, event.kind, event.id)) return;
-    this.notify(machineId, event.sessionId, event.cwd, event.sessionName, event.kind, `${KIND_LABELS[event.kind]} · ${event.detail}`, event.kind === "ask" || event.kind === "dialog" ? `${event.kind}:${event.id}` : undefined);
+    this.notify(
+      machineId,
+      event.sessionId,
+      event.cwd,
+      event.sessionName,
+      event.kind,
+      `${KIND_LABELS[event.kind]} · ${event.detail}`,
+      event.kind === "ask" || event.kind === "dialog" ? `${event.kind}:${event.id}` : undefined,
+    );
   }
 
   private mark(key: string, kind: SessionAttentionEvent["kind"], id: string): boolean {
@@ -140,11 +147,27 @@ export class DesktopNotificationController {
   private notifySelected(state: AppState, tag: DesktopNotificationKind, body: string, anchor?: string): void {
     const session = state.selectedSession;
     if (session === undefined) return;
-    this.notify(selectedMachineId(state), session.id, session.cwd, session.name === undefined || session.name.trim() === "" ? this.workstreamTitle() : session.name, tag, body, anchor);
+    this.notify(
+      selectedMachineId(state),
+      session.id,
+      session.cwd,
+      session.name === undefined || session.name.trim() === "" ? this.workstreamTitle() : session.name,
+      tag,
+      body,
+      anchor,
+    );
   }
 
   /** `anchor` names the message to reveal on click: `ask:<askId>` or `dialog:<dialogId>`. */
-  private notify(machineId: string, sessionId: string, cwd: string, name: string | undefined, tag: DesktopNotificationKind, body: string, anchor?: string): void {
+  private notify(
+    machineId: string,
+    sessionId: string,
+    cwd: string,
+    name: string | undefined,
+    tag: DesktopNotificationKind,
+    body: string,
+    anchor?: string,
+  ): void {
     const message = anchor !== undefined && NOTIFICATION_ANCHOR.test(anchor) ? anchor : undefined;
     if (this.browser.permission() !== "granted" || !this.browser.isBackground()) return;
     const key = machineSessionKey(machineId, sessionId);
@@ -155,12 +178,17 @@ export class DesktopNotificationController {
       const oldest = this.recentErrors.keys().next().value;
       if (this.recentErrors.size > 2048 && oldest !== undefined) this.recentErrors.delete(oldest);
     }
-    const title = [name, cwd.split("/").filter(Boolean).at(-1), cwd]
-      .find((value) => value !== undefined && value.trim().length > 0)?.trim() ?? "Chat";
+    const title = [name, cwd.split("/").filter(Boolean).at(-1), cwd].find((value) => value !== undefined && value.trim().length > 0)?.trim() ?? "Chat";
     try {
       const shown = this.browser.show(title, { body, tag: `${key}:${tag}`, data: { machineId, sessionId, ...(message === undefined ? {} : { message }) } });
       if (shown instanceof Promise) {
-        void shown.then((notification) => { this.bindClick(notification, machineId, sessionId, message); }).catch((error: unknown) => { this.deliveryFailed(error); });
+        void shown
+          .then((notification) => {
+            this.bindClick(notification, machineId, sessionId, message);
+          })
+          .catch((error: unknown) => {
+            this.deliveryFailed(error);
+          });
         return;
       }
       this.bindClick(shown, machineId, sessionId, message);
@@ -203,7 +231,8 @@ export const NATIVE_NOTIFICATION_OPEN_EVENT = "pi-web:notification-open";
 export const NATIVE_NOTIFICATION_HOLDS_EVENT = "pi-web:notification-holds";
 export const NOTIFICATION_ANCHOR = /^(?:entry|ask|dialog):[A-Za-z0-9._-]{1,120}$/u;
 const NATIVE_NOTIFICATION_PERMISSION_KEY = "pi-web:native-notifications:permission";
-const BROWSER_PERMISSION_DENIED = "Desktop notification permission was denied. Enable notifications for PI WEB in your browser's site settings (and System Settings if needed), then reload.";
+const BROWSER_PERMISSION_DENIED =
+  "Desktop notification permission was denied. Enable notifications for PI WEB in your browser's site settings (and System Settings if needed), then reload.";
 
 export function desktopNotifications(
   nativeHost: PiWebNativeHost | undefined = typeof window === "undefined" ? undefined : window.piWebNative,
@@ -212,7 +241,8 @@ export function desktopNotifications(
   if (supportsNativeNotifications(nativeHost)) return nativeDesktopNotifications(nativeHost, storage);
   const browser = browserDesktopNotifications();
   if (nativeHost !== undefined) {
-    const bridgeDiagnostic = "The installed app's native notification bridge is missing. Update the app to enable native notifications; browser notifications remain available.";
+    const bridgeDiagnostic =
+      "The installed app's native notification bridge is missing. Update the app to enable native notifications; browser notifications remain available.";
     browser.diagnostic = browser.diagnostic === undefined ? bridgeDiagnostic : `${bridgeDiagnostic} ${browser.diagnostic}`;
   }
   return browser;
@@ -221,11 +251,13 @@ export function desktopNotifications(
 export function browserDesktopNotifications(): DesktopNotificationBrowser {
   return {
     ...(typeof Notification !== "undefined" && Notification.permission === "denied" ? { diagnostic: BROWSER_PERMISSION_DENIED } : {}),
-    permission: () => typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+    permission: () => (typeof Notification === "undefined" ? "unsupported" : Notification.permission),
     requestPermission: () => Notification.requestPermission(),
     isBackground: () => document.hidden || !document.hasFocus(),
     show: (title, options) => new Notification(title, options),
-    focus: () => { window.focus(); },
+    focus: () => {
+      window.focus();
+    },
   };
 }
 
@@ -239,7 +271,11 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
   let permission: NotificationPermission = readNativePermission(storage);
   const downgrade = (): void => {
     permission = "default";
-    try { storage?.removeItem(NATIVE_NOTIFICATION_PERMISSION_KEY); } catch { /* Storage may be unavailable. */ }
+    try {
+      storage?.removeItem(NATIVE_NOTIFICATION_PERMISSION_KEY);
+    } catch {
+      /* Storage may be unavailable. */
+    }
   };
   return {
     permission: () => permission,
@@ -247,7 +283,11 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
       try {
         await nativeHost.requestNotificationPermission();
         permission = "granted";
-        try { storage?.setItem(NATIVE_NOTIFICATION_PERMISSION_KEY, "granted"); } catch { /* Keep this page enabled. */ }
+        try {
+          storage?.setItem(NATIVE_NOTIFICATION_PERMISSION_KEY, "granted");
+        } catch {
+          /* Keep this page enabled. */
+        }
       } catch (error) {
         downgrade();
         throw error;
@@ -258,8 +298,15 @@ function nativeDesktopNotifications(nativeHost: NativeNotificationHost, storage:
     show: async (title, options) => {
       try {
         const target: unknown = options.data;
-        if (typeof target !== "object" || target === null || !("machineId" in target) || typeof target.machineId !== "string"
-          || !("sessionId" in target) || typeof target.sessionId !== "string") throw new Error("Notification requires a Chat target");
+        if (
+          typeof target !== "object"
+          || target === null
+          || !("machineId" in target)
+          || typeof target.machineId !== "string"
+          || !("sessionId" in target)
+          || typeof target.sessionId !== "string"
+        )
+          throw new Error("Notification requires a Chat target");
         const message = "message" in target && typeof target.message === "string" ? { message: target.message } : {};
         await nativeHost.notify(title, options.body ?? "", { machineId: target.machineId, sessionId: target.sessionId, ...message });
         return { onclick: null, close: () => undefined };
@@ -282,11 +329,19 @@ function notificationDiagnostic(error: unknown, operation: "permission" | "deliv
 }
 
 function readNativePermission(storage: DesktopNotificationStorage | undefined): NotificationPermission {
-  try { return storage?.getItem(NATIVE_NOTIFICATION_PERMISSION_KEY) === "granted" ? "granted" : "default"; } catch { return "default"; }
+  try {
+    return storage?.getItem(NATIVE_NOTIFICATION_PERMISSION_KEY) === "granted" ? "granted" : "default";
+  } catch {
+    return "default";
+  }
 }
 
 function browserLocalStorage(): DesktopNotificationStorage | undefined {
-  try { return typeof localStorage === "undefined" ? undefined : localStorage; } catch { return undefined; }
+  try {
+    return typeof localStorage === "undefined" ? undefined : localStorage;
+  } catch {
+    return undefined;
+  }
 }
 
 function selectedSessionKey(state: AppState): string | undefined {

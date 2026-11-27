@@ -5,16 +5,22 @@ import { PiSessionEventConnections } from "./piSessionEventConnections.js";
 describe("session-local package event connections", () => {
   it("delivers synchronous replies and isolates sessions and connection subscriptions", () => {
     const registry = new PiSessionEventConnections();
-    const first = {}, second = {};
-    const bus = createEventBus(), otherBus = createEventBus();
+    const first = {},
+      second = {};
+    const bus = createEventBus(),
+      otherBus = createEventBus();
     registry.register(first, bus);
     registry.register(second, otherBus);
     const lifetime = new AbortController();
     const connection = registry.connect(first, lifetime.signal);
     const sibling = registry.connect(first, lifetime.signal);
     const other = registry.connect(second, lifetime.signal);
-    bus.on("request", (data) => { bus.emit("reply", data); });
-    const receive = vi.fn(), siblingReceive = vi.fn(), otherReceive = vi.fn();
+    bus.on("request", (data) => {
+      bus.emit("reply", data);
+    });
+    const receive = vi.fn(),
+      siblingReceive = vi.fn(),
+      otherReceive = vi.fn();
     const unsubscribe = connection.on("reply", receive);
     sibling.on("reply", siblingReceive);
     other.on("reply", otherReceive);
@@ -28,7 +34,9 @@ describe("session-local package event connections", () => {
     sibling.emit("request", 2);
     expect(receive).toHaveBeenCalledTimes(1);
     expect(siblingReceive).toHaveBeenCalledTimes(2);
-    expect(() => { connection.emit("request", 3); }).toThrow("connection closed");
+    expect(() => {
+      connection.emit("request", 3);
+    }).toThrow("connection closed");
     expect(() => connection.on("reply", receive)).toThrow("connection closed");
     lifetime.abort();
     expect(sibling.signal.aborted).toBe(true);
@@ -44,7 +52,9 @@ describe("session-local package event connections", () => {
     const lifetime = new AbortController();
     const connection = registry.connect(session, lifetime.signal);
     let reject!: (error: Error) => void;
-    const pending = new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; });
+    const pending = new Promise<void>((_resolve, rejectPromise) => {
+      reject = rejectPromise;
+    });
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       connection.on("request", () => pending);
@@ -64,10 +74,14 @@ describe("session-local package event connections", () => {
     const detach = vi.fn();
     const registry = new PiSessionEventConnections((bus) => {
       const unsubscribe = bus.on("backend", received);
-      return () => { unsubscribe(); detach(); };
+      return () => {
+        unsubscribe();
+        detach();
+      };
     });
     const session = {};
-    const first = createEventBus(), second = createEventBus();
+    const first = createEventBus(),
+      second = createEventBus();
     registry.register(session, first);
     first.emit("backend", "first");
     expect(received).toHaveBeenLastCalledWith("first");

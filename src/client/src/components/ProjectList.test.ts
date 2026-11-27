@@ -105,8 +105,9 @@ function openMenu(list: ProjectList, name: string): void {
 }
 
 function moveButton(list: ProjectList, label: string): HTMLButtonElement {
-  const button = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".action-menu-panel button") ?? [])]
-    .find((candidate) => candidate.textContent === label);
+  const button = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".action-menu-panel button") ?? [])].find(
+    (candidate) => candidate.textContent === label,
+  );
   if (button === undefined) throw new Error(`Expected ${label}`);
   return button;
 }

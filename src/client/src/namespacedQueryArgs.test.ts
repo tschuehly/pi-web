@@ -18,7 +18,9 @@ afterEach(() => {
 
 describe("contribution-scoped query helpers", () => {
   it("reads canonical values before aliases and keeps history snapshots independent", () => {
-    const browser = installWindow("https://example.test/app?machine=remote&project=p1&workspace=w1&panel.workspace.panel--file=canonical.ts&legacy.workspace.panel--file=legacy.ts&legacy.workspace.panel--mode=preview&panel.workspace.panel--tag=one&panel.workspace.panel--tag=two");
+    const browser = installWindow(
+      "https://example.test/app?machine=remote&project=p1&workspace=w1&panel.workspace.panel--file=canonical.ts&legacy.workspace.panel--file=legacy.ts&legacy.workspace.panel--mode=preview&panel.workspace.panel--tag=one&panel.workspace.panel--tag=two",
+    );
 
     const first = readContributionQuery("panel:workspace.panel", ["legacy:workspace.panel"]);
     expect(first).toEqual({ file: "canonical.ts", mode: "preview", tag: ["one", "two"] });
@@ -33,39 +35,57 @@ describe("contribution-scoped query helpers", () => {
   });
 
   it("projects remembered full records through canonical and alias contribution identities", () => {
-    const projected = contributionQueryFromRecord({
-      "panel.workspace.panel--file": "canonical.ts",
-      "legacy.workspace.panel--file": "legacy.ts",
-      "legacy.workspace.panel--mode": "preview",
-      "other.workspace.panel--file": "other.ts",
-      malformed: "ignored",
-    }, "panel:workspace.panel", ["legacy:workspace.panel"]);
+    const projected = contributionQueryFromRecord(
+      {
+        "panel.workspace.panel--file": "canonical.ts",
+        "legacy.workspace.panel--file": "legacy.ts",
+        "legacy.workspace.panel--mode": "preview",
+        "other.workspace.panel--file": "other.ts",
+        malformed: "ignored",
+      },
+      "panel:workspace.panel",
+      ["legacy:workspace.panel"],
+    );
 
     expect(projected).toEqual({ file: "canonical.ts", mode: "preview" });
     expect(Object.isFrozen(projected)).toBe(true);
   });
 
   it("patches canonical contribution keys while removing aliases and preserving unrelated state", () => {
-    expect(patchContributionQueryRecord({
-      "pi-web.terminal.workspace.terminal--terminal": "old",
-      "core.workspace.terminal--terminal": "legacy",
-      "core.workspace.terminal--start": "old-start",
-      "files.workspace.files--file": "README.md",
-    }, "pi-web.terminal:workspace.terminal", ["core:workspace.terminal"], {
-      terminal: "next",
-      start: 7,
-    })).toEqual({
+    expect(
+      patchContributionQueryRecord(
+        {
+          "pi-web.terminal.workspace.terminal--terminal": "old",
+          "core.workspace.terminal--terminal": "legacy",
+          "core.workspace.terminal--start": "old-start",
+          "files.workspace.files--file": "README.md",
+        },
+        "pi-web.terminal:workspace.terminal",
+        ["core:workspace.terminal"],
+        {
+          terminal: "next",
+          start: 7,
+        },
+      ),
+    ).toEqual({
       "pi-web.terminal.workspace.terminal--terminal": "next",
       "pi-web.terminal.workspace.terminal--start": "7",
       "files.workspace.files--file": "README.md",
     });
 
-    expect(patchContributionQueryRecord({
-      "pi-web.terminal.workspace.terminal--terminal": "keep",
-      "core.workspace.terminal--start": "old-start",
-    }, "pi-web.terminal:workspace.terminal", ["core:workspace.terminal"], {
-      start: undefined,
-    })).toEqual({ "pi-web.terminal.workspace.terminal--terminal": "keep" });
+    expect(
+      patchContributionQueryRecord(
+        {
+          "pi-web.terminal.workspace.terminal--terminal": "keep",
+          "core.workspace.terminal--start": "old-start",
+        },
+        "pi-web.terminal:workspace.terminal",
+        ["core:workspace.terminal"],
+        {
+          start: undefined,
+        },
+      ),
+    ).toEqual({ "pi-web.terminal.workspace.terminal--terminal": "keep" });
   });
 
   it("reads inherited-key names as own strings and bounds values, keys, counts, and aggregate length", () => {
@@ -99,7 +119,9 @@ describe("contribution-scoped query helpers", () => {
   });
 
   it("canonicalizes alias writes with push/replace history and validates local keys", () => {
-    const browser = installWindow("https://example.test/base/app?project=p1&workspace=w1&panel.workspace.panel--file=old.ts&legacy.workspace.panel--file=legacy.ts&other.workspace.panel--keep=yes&plain=kept#viewer");
+    const browser = installWindow(
+      "https://example.test/base/app?project=p1&workspace=w1&panel.workspace.panel--file=old.ts&legacy.workspace.panel--file=legacy.ts&other.workspace.panel--keep=yes&plain=kept#viewer",
+    );
 
     expect(setContributionQueryKey("panel:workspace.panel", ["legacy:workspace.panel"], "file", ["src/a.ts", 2, true])).toBe(true);
     expect(browser.pushed).toHaveLength(1);
@@ -153,8 +175,7 @@ describe("contribution-scoped query helpers", () => {
 
     expect(setContributionQueryKey("panel:workspace.panel", [], "file", "README.md")).toBe(true);
     expect(browser.url.searchParams.get("panel.workspace.panel--file")).toBe("README.md");
-    expect(browser.url.searchParams.getAll("other.workspace.panel--tag"))
-      .toEqual(Array.from({ length: 16 }, (_value, index) => `tag-${String(index)}`));
+    expect(browser.url.searchParams.getAll("other.workspace.panel--tag")).toEqual(Array.from({ length: 16 }, (_value, index) => `tag-${String(index)}`));
     expect(browser.url.searchParams.get("plain")).toBe("kept");
     expect(browser.url.hash).toBe("#viewer");
   });
@@ -187,12 +208,16 @@ describe("contribution-scoped query helpers", () => {
   it("rejects caller-owned over-bound writes atomically without committing history", () => {
     const browser = installWindow("https://example.test/app?project=p1#viewer");
     const clean = browser.url.href;
-    expect(() => setContributionQueryKey("panel:workspace.panel", [], "x".repeat(240), "value"))
-      .toThrow("Contribution navigation parameter is too long");
-    expect(() => setContributionQueryKey("panel:workspace.panel", [], "mode", "v".repeat(4_097)))
-      .toThrow("Contribution navigation value is too long");
-    expect(() => setContributionQueryKey("panel:workspace.panel", [], "mode", Array.from({ length: 17 }, () => "v")))
-      .toThrow("Contribution navigation value has too many items");
+    expect(() => setContributionQueryKey("panel:workspace.panel", [], "x".repeat(240), "value")).toThrow("Contribution navigation parameter is too long");
+    expect(() => setContributionQueryKey("panel:workspace.panel", [], "mode", "v".repeat(4_097))).toThrow("Contribution navigation value is too long");
+    expect(() =>
+      setContributionQueryKey(
+        "panel:workspace.panel",
+        [],
+        "mode",
+        Array.from({ length: 17 }, () => "v"),
+      ),
+    ).toThrow("Contribution navigation value has too many items");
     expect(browser.url.href).toBe(clean);
     expect(browser.pushed).toHaveLength(0);
     expect(browser.replaced).toHaveLength(0);
@@ -212,25 +237,31 @@ describe("contribution-scoped query helpers", () => {
 
     const overflowValues = [...exactValues];
     overflowValues[overflowValues.length - 1] = `${overflowValues.at(-1) ?? ""}x`;
-    expect(() => setContributionQueryKey("panel:workspace.panel", [], "last", overflowValues))
-      .toThrow("Contribution navigation record is too long");
+    expect(() => setContributionQueryKey("panel:workspace.panel", [], "last", overflowValues)).toThrow("Contribution navigation record is too long");
     expect(browser.url.href).toBe(exactUrl);
     expect(browser.pushed).toHaveLength(1);
     expect(browser.replaced).toHaveLength(0);
   });
 
   it("captures and restores only bounded contribution-owned parameters", () => {
-    const browser = installWindow("https://example.test/app?project=p1&workspace=w1&panel.workspace.panel--file=one&panel.workspace.panel--file=two&plain=kept&bad--query=ignored#hash");
+    const browser = installWindow(
+      "https://example.test/app?project=p1&workspace=w1&panel.workspace.panel--file=one&panel.workspace.panel--file=two&plain=kept&bad--query=ignored#hash",
+    );
 
     expect(readContributionQueryRecord()).toEqual({
       "panel.workspace.panel--file": ["one", "two"],
     });
 
-    expect(writeContributionQueryRecord({
-      "next.workspace.panel--mode": "preview",
-      "next.workspace.panel--selection": ["a", "b"],
-      invalid: "ignored",
-    }, { replace: true })).toBe(true);
+    expect(
+      writeContributionQueryRecord(
+        {
+          "next.workspace.panel--mode": "preview",
+          "next.workspace.panel--selection": ["a", "b"],
+          invalid: "ignored",
+        },
+        { replace: true },
+      ),
+    ).toBe(true);
 
     expect(browser.url.searchParams.get("project")).toBe("p1");
     expect(browser.url.searchParams.get("workspace")).toBe("w1");
@@ -241,7 +272,6 @@ describe("contribution-scoped query helpers", () => {
     expect(browser.url.searchParams.getAll("next.workspace.panel--selection")).toEqual(["a", "b"]);
     expect(browser.url.hash).toBe("#hash");
   });
-
 });
 
 function contributionEntries(source: URL | URLSearchParams): [string, string][] {
@@ -271,10 +301,18 @@ function installWindow(href: string): {
   const pushed: string[] = [];
   const replaced: string[] = [];
   const location = {
-    get href() { return current.href; },
-    get pathname() { return current.pathname; },
-    get search() { return current.search; },
-    get hash() { return current.hash; },
+    get href() {
+      return current.href;
+    },
+    get pathname() {
+      return current.pathname;
+    },
+    get search() {
+      return current.search;
+    },
+    get hash() {
+      return current.hash;
+    },
   };
   const commit = (target: URL | string, entries: string[]) => {
     current = new URL(String(target), current);
@@ -283,15 +321,23 @@ function installWindow(href: string): {
   const fakeWindow = {
     location,
     history: {
-      pushState: vi.fn((_state: object, _title: string, next: URL | string) => { commit(next, pushed); }),
-      replaceState: vi.fn((_state: object, _title: string, next: URL | string) => { commit(next, replaced); }),
+      pushState: vi.fn((_state: object, _title: string, next: URL | string) => {
+        commit(next, pushed);
+      }),
+      replaceState: vi.fn((_state: object, _title: string, next: URL | string) => {
+        commit(next, replaced);
+      }),
     },
   };
   Object.defineProperty(globalThis, "window", { value: fakeWindow, configurable: true });
   return {
-    get url() { return current; },
+    get url() {
+      return current;
+    },
     pushed,
     replaced,
-    navigate: (next) => { current = new URL(next, current); },
+    navigate: (next) => {
+      current = new URL(next, current);
+    },
   };
 }

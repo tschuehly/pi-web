@@ -30,7 +30,11 @@ export interface GoalLifecycleDetails {
 }
 
 /** One Working Mode dial; guidance is present only when the dial differs from its starting value. */
-export interface WorkingModeDial { label: string; value: string; guidance?: string }
+export interface WorkingModeDial {
+  label: string;
+  value: string;
+  guidance?: string;
+}
 
 /** A reference never carries base64; inline images remain compatible with older machines. */
 export type ChatImagePart =
@@ -47,7 +51,19 @@ export type ChatPart =
   | { type: "askUserRecord"; outcome: AskUserOutcome; images?: (ChatImagePart | undefined)[] }
   | { type: "goalLifecycle"; details: GoalLifecycleDetails }
   | { type: "subagentCompletion"; text: string }
-  | { type: "backgroundBash"; details: { id: string; command: string; description?: string; state: "complete" | "failed" | "cancelled"; elapsedSeconds: number; logPath: string; exitCode?: number }; output: string }
+  | {
+      type: "backgroundBash";
+      details: {
+        id: string;
+        command: string;
+        description?: string;
+        state: "complete" | "failed" | "cancelled";
+        elapsedSeconds: number;
+        logPath: string;
+        exitCode?: number;
+      };
+      output: string;
+    }
   | { type: "workingMode"; dials: WorkingModeDial[] }
   /** Retain a coalesced result's conversation position without repeating its UI. */
   | { type: "toolResultBoundary"; toolCallId?: string }

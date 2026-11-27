@@ -44,11 +44,17 @@ export class PiSessionEventConnections {
         const detach = hosted.bus.on(channel, (data) => {
           if (!controller.signal.aborted) return handler(data);
         });
-        const unsubscribe = (): void => { detach(); subscriptions.delete(unsubscribe); };
+        const unsubscribe = (): void => {
+          detach();
+          subscriptions.delete(unsubscribe);
+        };
         subscriptions.add(unsubscribe);
         return unsubscribe;
       },
-      emit: (channel: string, data: unknown): void => { assertChannel(channel); hosted.bus.emit(channel, data); },
+      emit: (channel: string, data: unknown): void => {
+        assertChannel(channel);
+        hosted.bus.emit(channel, data);
+      },
       close,
     });
     hosted.connections.add(connection);

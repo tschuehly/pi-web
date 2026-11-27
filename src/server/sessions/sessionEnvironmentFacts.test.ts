@@ -45,7 +45,9 @@ describe("sessionEnvironmentFacts", () => {
 
     expect(facts).toContain("a distinct `PI_WEB_DATA_DIR`, `PI_WEB_SESSIOND_SOCKET` (or `PI_WEB_SESSIOND_PORT` / `PI_WEB_SESSIOND_HOST`), and `PI_WEB_PORT`");
     expect(facts).toContain("fails loudly at startup because the live instance owns the state");
-    expect(facts).toContain("Do not restart or stop the session daemon hosting this session unless the user explicitly requests or authorizes that daemon restart or stop");
+    expect(facts).toContain(
+      "Do not restart or stop the session daemon hosting this session unless the user explicitly requests or authorizes that daemon restart or stop",
+    );
     expect(facts).toContain("restart the web/API process before the session daemon");
   });
 

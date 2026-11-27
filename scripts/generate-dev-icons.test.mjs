@@ -28,8 +28,19 @@ describe("dev identity icons", () => {
       const isBar = source.pixels[offset] === teal[0] && source.pixels[offset + 1] === teal[1] && source.pixels[offset + 2] === teal[2];
       if (isBar) {
         barPixels += 1;
-        if (dev.pixels[offset] !== purple[0] || dev.pixels[offset + 1] !== purple[1] || dev.pixels[offset + 2] !== purple[2] || dev.pixels[offset + 3] !== source.pixels[offset + 3]) mismatches += 1;
-      } else if (dev.pixels[offset] !== source.pixels[offset] || dev.pixels[offset + 1] !== source.pixels[offset + 1] || dev.pixels[offset + 2] !== source.pixels[offset + 2] || dev.pixels[offset + 3] !== source.pixels[offset + 3]) {
+        if (
+          dev.pixels[offset] !== purple[0]
+          || dev.pixels[offset + 1] !== purple[1]
+          || dev.pixels[offset + 2] !== purple[2]
+          || dev.pixels[offset + 3] !== source.pixels[offset + 3]
+        )
+          mismatches += 1;
+      } else if (
+        dev.pixels[offset] !== source.pixels[offset]
+        || dev.pixels[offset + 1] !== source.pixels[offset + 1]
+        || dev.pixels[offset + 2] !== source.pixels[offset + 2]
+        || dev.pixels[offset + 3] !== source.pixels[offset + 3]
+      ) {
         mismatches += 1;
       }
     }

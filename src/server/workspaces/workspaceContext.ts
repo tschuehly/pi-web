@@ -52,9 +52,12 @@ async function resolveAdHocFolder(workspaceId: string): Promise<WorkspaceListing
   const id = adHocFolderPath(workspaceId);
   // `~` is this server's home: Chat links like `~/notes/x.md` name files on the machine that serves them.
   const requested = id === "~" ? homedir() : id?.startsWith("~/") === true ? join(homedir(), id.slice(2)) : id;
-  if (requested === undefined || !isAbsolute(requested)) throw new WorkspaceAccessError("Folder workspace id must be folder:<absolute path> or folder:~/<path>", 404);
+  if (requested === undefined || !isAbsolute(requested))
+    throw new WorkspaceAccessError("Folder workspace id must be folder:<absolute path> or folder:~/<path>", 404);
   const missing = new WorkspaceAccessError(`Folder ${requested} is not an existing directory`, 404);
-  const root = await realpath(requested).catch(() => { throw missing; });
+  const root = await realpath(requested).catch(() => {
+    throw missing;
+  });
   if (!(await stat(root)).isDirectory()) throw missing;
   return { id: workspaceId, projectId: "", path: root, label: basename(root), isMain: false };
 }

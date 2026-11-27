@@ -23,11 +23,15 @@ export function defaultContentRendererChoice(choices: readonly ContentRendererCh
   return choices[0];
 }
 
-export function contentRendererMatches(renderer: Pick<ContentRendererContribution, "languages" | "fileExtensions" | "supports">, request: ContentRenderRequest): boolean {
+export function contentRendererMatches(
+  renderer: Pick<ContentRendererContribution, "languages" | "fileExtensions" | "supports">,
+  request: ContentRenderRequest,
+): boolean {
   const language = request.language?.trim().split(/\s/u)[0]?.toLowerCase();
   const fileName = request.filePath?.split(/[\\/]/u).at(-1)?.toLowerCase();
   const hasSelectors = (renderer.languages?.length ?? 0) + (renderer.fileExtensions?.length ?? 0) > 0;
-  const matches = (language !== undefined && renderer.languages?.includes(language) === true)
+  const matches =
+    (language !== undefined && renderer.languages?.includes(language) === true)
     || (fileName !== undefined && renderer.fileExtensions?.some((extension) => fileName.endsWith(`.${extension}`)) === true);
   if (hasSelectors && !matches) return false;
   try {
@@ -36,7 +40,9 @@ export function contentRendererMatches(renderer: Pick<ContentRendererContributio
     // A plugin may violate the synchronous contract. Consume a rejected promise
     // as well as excluding the renderer, so eligibility never leaks a rejection.
     if (supported !== null && typeof supported === "object" && "then" in supported && typeof supported.then === "function") {
-      void Promise.resolve(supported).catch((error: unknown) => { console.warn("Content renderer eligibility failed", renderer, error); });
+      void Promise.resolve(supported).catch((error: unknown) => {
+        console.warn("Content renderer eligibility failed", renderer, error);
+      });
     }
     if (typeof supported !== "boolean") throw new Error("Content renderer supports must return a boolean synchronously");
     return supported;
@@ -49,16 +55,25 @@ export function contentRendererMatches(renderer: Pick<ContentRendererContributio
 export function snapshotContentRenderer(contribution: ContentRendererContribution): ContentRendererContribution {
   if (typeof contribution.render !== "function") throw new Error("Content renderer must have a synchronous render callback");
   const renderMode: unknown = contribution.renderMode;
-  if (renderMode !== undefined && renderMode !== "manual" && renderMode !== "automatic") throw new Error("Content renderer renderMode must be manual or automatic");
+  if (renderMode !== undefined && renderMode !== "manual" && renderMode !== "automatic")
+    throw new Error("Content renderer renderMode must be manual or automatic");
   if (contribution.supports !== undefined && typeof contribution.supports !== "function") throw new Error("Content renderer supports must be a callback");
-  if (contribution.title !== undefined && (typeof contribution.title !== "string" || contribution.title.trim() === "")) throw new Error("Content renderer title must be a non-empty string");
-  return Object.freeze({ id: contribution.id, ...snapshotContentSelectors(contribution, contribution.supports !== undefined),
+  if (contribution.title !== undefined && (typeof contribution.title !== "string" || contribution.title.trim() === ""))
+    throw new Error("Content renderer title must be a non-empty string");
+  return Object.freeze({
+    id: contribution.id,
+    ...snapshotContentSelectors(contribution, contribution.supports !== undefined),
     ...(contribution.title === undefined ? {} : { title: contribution.title }),
     ...(contribution.supports === undefined ? {} : { supports: contribution.supports.bind(contribution) }),
-    renderMode: contribution.renderMode ?? "manual", render: contribution.render.bind(contribution) });
+    renderMode: contribution.renderMode ?? "manual",
+    render: contribution.render.bind(contribution),
+  });
 }
 
-export function snapshotContentSelectors(contribution: Pick<ContentRendererContribution, "languages" | "fileExtensions">, allowEmpty = false): Pick<ContentRendererContribution, "languages" | "fileExtensions"> {
+export function snapshotContentSelectors(
+  contribution: Pick<ContentRendererContribution, "languages" | "fileExtensions">,
+  allowEmpty = false,
+): Pick<ContentRendererContribution, "languages" | "fileExtensions"> {
   const selectors = (values: readonly string[] | undefined): readonly string[] => {
     if (values === undefined) return Object.freeze([]);
     if (!Array.isArray(values) || values.some((value: unknown) => typeof value !== "string" || !/^[a-z0-9][a-z0-9_+.-]*$/iu.test(value))) {

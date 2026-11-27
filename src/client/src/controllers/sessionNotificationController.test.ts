@@ -1,13 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { initialAppState, type AppState } from "../appState";
 import { selectedNotificationView } from "../sessionNotifications";
-import type {
-  Machine,
-  SessionInfo,
-  SessionNotification,
-  SessionNotificationInboxEvent,
-  SessionNotificationInboxSnapshot,
-} from "../../../shared/apiTypes";
+import type { Machine, SessionInfo, SessionNotification, SessionNotificationInboxEvent, SessionNotificationInboxSnapshot } from "../../../shared/apiTypes";
 import { SessionNotificationController, type SessionNotificationApi } from "./sessionNotificationController";
 
 const localMachine: Machine = {
@@ -45,7 +39,11 @@ function inboxSnapshot(
 ): SessionNotificationInboxSnapshot {
   const highestSeverity = notifications.some((notification) => notification.severity === "error")
     ? "error"
-    : notifications.some((notification) => notification.severity === "warning") ? "warning" : notifications.length > 0 ? "info" : undefined;
+    : notifications.some((notification) => notification.severity === "warning")
+      ? "warning"
+      : notifications.length > 0
+        ? "info"
+        : undefined;
   return {
     daemonInstanceId: options.daemonInstanceId ?? "daemon-a",
     catalogRevision: options.catalogRevision ?? options.inboxRevision ?? 1,
@@ -100,14 +98,20 @@ function createHarness(initialState = baseState(), overrides: Partial<SessionNot
   };
   const controller = new SessionNotificationController(
     () => state,
-    (patch) => { state = { ...state, ...patch }; },
+    (patch) => {
+      state = { ...state, ...patch };
+    },
     { api, onBackgroundError: vi.fn() },
   );
   return {
     controller,
     api,
-    get state() { return state; },
-    replaceState(next: AppState) { state = next; },
+    get state() {
+      return state;
+    },
+    replaceState(next: AppState) {
+      state = next;
+    },
   };
 }
 
@@ -126,9 +130,7 @@ describe("SessionNotificationController selected inbox ownership", () => {
       "daemon-a:2",
       "daemon-a:1",
     ]);
-    expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.announcements).toMatchObject([
-      { severity: "warning", message: "notice 2" },
-    ]);
+    expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.announcements).toMatchObject([{ severity: "warning", message: "notice 2" }]);
   });
 
   it("ignores notification events for an unselected chat", async () => {
@@ -150,16 +152,16 @@ describe("SessionNotificationController selected inbox ownership", () => {
   it("recovers a selected inbox revision gap from its bounded snapshot", async () => {
     const first = inboxSnapshot([entry(1)], { inboxRevision: 1, catalogRevision: 1 });
     const recovered = inboxSnapshot([entry(3), entry(1)], { inboxRevision: 3, catalogRevision: 3 });
-    const notificationInbox = vi.fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(recovered);
+    const notificationInbox = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(recovered);
     const harness = createHarness(baseState(), { notificationInbox });
     harness.controller.prepareSelectedSession(session, "local");
     await harness.controller.refreshSelectedSession(session, "local");
 
     harness.controller.applyInboxEvent("local", addedEvent(entry(3), 3, 2));
 
-    await vi.waitFor(() => { expect(notificationInbox).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(notificationInbox).toHaveBeenCalledTimes(2);
+    });
     expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.notifications.map((notification) => notification.id)).toEqual([
       "daemon-a:3",
       "daemon-a:1",
@@ -188,7 +190,8 @@ describe("SessionNotificationController selected inbox ownership", () => {
       selectedMachine: remoteMachine,
     };
     const pendingInbox = deferred<SessionNotificationInboxSnapshot>();
-    const notificationInbox = vi.fn()
+    const notificationInbox = vi
+      .fn()
       .mockResolvedValueOnce(inboxSnapshot())
       .mockImplementationOnce(() => pendingInbox.promise);
     const harness = createHarness(initial, { notificationInbox });
@@ -227,7 +230,8 @@ describe("SessionNotificationController optimistic mutations", () => {
   it("does not let a delayed refresh snapshot roll back a newer dismissal response", async () => {
     const initial = inboxSnapshot([entry(1)], { inboxRevision: 1, catalogRevision: 1 });
     const delayedRefresh = deferred<SessionNotificationInboxSnapshot>();
-    const notificationInbox = vi.fn()
+    const notificationInbox = vi
+      .fn()
       .mockResolvedValueOnce(initial)
       .mockImplementationOnce(() => delayedRefresh.promise);
     const dismissed = inboxSnapshot([], { inboxRevision: 2, catalogRevision: 2 });
@@ -253,10 +257,12 @@ describe("SessionNotificationController optimistic mutations", () => {
     const dismiss = deferred<SessionNotificationInboxSnapshot>();
     const refreshAfterFailure = deferred<SessionNotificationInboxSnapshot>();
     const initialInbox = inboxSnapshot([entry(2, "warning"), entry(1)]);
-    const notificationInbox = vi.fn()
+    const notificationInbox = vi
+      .fn()
       .mockResolvedValueOnce(initialInbox)
       .mockImplementationOnce(() => refreshAfterFailure.promise);
-    const dismissNotification = vi.fn()
+    const dismissNotification = vi
+      .fn()
       .mockImplementationOnce(() => dismiss.promise)
       .mockRejectedValueOnce(new Error("offline"));
     const harness = createHarness(baseState(), { notificationInbox, dismissNotification });
@@ -272,7 +278,9 @@ describe("SessionNotificationController optimistic mutations", () => {
     expect(selectedNotificationView(harness.state.selectedNotificationInbox)?.notifications.map((notification) => notification.id)).toEqual(["daemon-a:1"]);
 
     const failedDismissal = harness.controller.dismissNotification("daemon-a:1");
-    await vi.waitFor(() => { expect(harness.state.error).toContain("offline"); });
+    await vi.waitFor(() => {
+      expect(harness.state.error).toContain("offline");
+    });
     refreshAfterFailure.resolve(inboxSnapshot([entry(1)], { inboxRevision: 2, catalogRevision: 2 }));
     await failedDismissal;
 
@@ -310,7 +318,9 @@ interface Deferred<T> {
 
 function deferred<T>(): Deferred<T> {
   let resolveDeferred: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolveDeferred = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
   if (resolveDeferred === undefined) throw new Error("Deferred promise was not initialized");
   return { promise, resolve: resolveDeferred };
 }

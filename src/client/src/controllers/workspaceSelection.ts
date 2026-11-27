@@ -50,7 +50,10 @@ export class SessionStorageWorkspaceSelectionMemory implements WorkspaceSelectio
   }
 }
 
-export function selectPreferredWorkspace(workspaces: Workspace[], options?: { targetWorkspaceId?: string | undefined; latestWorkspaceId?: string | undefined }): Workspace | undefined {
+export function selectPreferredWorkspace(
+  workspaces: Workspace[],
+  options?: { targetWorkspaceId?: string | undefined; latestWorkspaceId?: string | undefined },
+): Workspace | undefined {
   const targetWorkspaceId = options?.targetWorkspaceId;
   if (targetWorkspaceId !== undefined && targetWorkspaceId !== "") return workspaces.find((workspace) => workspace.id === targetWorkspaceId);
 

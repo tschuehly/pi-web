@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { IDLE_SESSION_UNLOAD_MS, PiSessionService } from "./piSessionService.js";
 import type { RealtimeSocket } from "../realtime/sessionEventHub.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const SESSION_ID = "session-1";
 
@@ -21,13 +30,33 @@ async function loadedSession(patch: Parameters<typeof fakeRuntime>[1] = {}) {
   });
   await service.status(sessionRef(SESSION_ID));
   expect(service.activeCount()).toBe(1);
-  return { service, fake, hub, advance: (ms: number) => { clock += ms; } };
+  return {
+    service,
+    fake,
+    hub,
+    advance: (ms: number) => {
+      clock += ms;
+    },
+  };
 }
 
 function browserSocket() {
   const closeListeners: (() => void)[] = [];
-  const socket: RealtimeSocket = { OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined, on: (_event, listener) => { closeListeners.push(listener); } };
-  return { socket, close: () => { for (const listener of closeListeners) listener(); } };
+  const socket: RealtimeSocket = {
+    OPEN: 1,
+    readyState: 1,
+    send: () => undefined,
+    terminate: () => undefined,
+    on: (_event, listener) => {
+      closeListeners.push(listener);
+    },
+  };
+  return {
+    socket,
+    close: () => {
+      for (const listener of closeListeners) listener();
+    },
+  };
 }
 
 describe("PiSessionService idle unload", () => {
@@ -58,7 +87,11 @@ describe("PiSessionService idle unload", () => {
 
   it("keeps a session with an open ask", async () => {
     const { service, advance } = await loadedSession();
-    await service.openAsk({ sessionId: SESSION_ID, context: "Pick one.", questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] }] });
+    await service.openAsk({
+      sessionId: SESSION_ID,
+      context: "Pick one.",
+      questions: [{ id: "db", question: "Which database?", options: [{ value: "pg", label: "Postgres" }] }],
+    });
     advance(IDLE_SESSION_UNLOAD_MS);
     await service.unloadIdleSessions();
     expect(service.activeCount()).toBe(1);

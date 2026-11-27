@@ -118,18 +118,23 @@ describe("native transcript images", () => {
 
   it("can disable native sources from startup and re-enable them in the same DOM", async () => {
     const image = new TranscriptImage();
-    image.loadingDisabled = true; image.imagePart = reference; image.session = session;
+    image.loadingDisabled = true;
+    image.imagePart = reference;
+    image.session = session;
     document.body.append(image);
     const presentation = await settleImage(image);
     const native = nativeImage(presentation);
     expect(native.hasAttribute("src")).toBe(false);
     expect(imageButton(presentation, ".placeholder").disabled).toBe(true);
-    imageButton(presentation, ".placeholder").click(); await settleImage(image);
+    imageButton(presentation, ".placeholder").click();
+    await settleImage(image);
     expect(native.hasAttribute("src")).toBe(false);
-    image.loadingDisabled = false; await settleImage(image);
+    image.loadingDisabled = false;
+    await settleImage(image);
     expect(nativeImage(presentation)).toBe(native);
     expect(native.src).toContain(`/media/${mediaId}?`);
-    image.loadingDisabled = true; await settleImage(image);
+    image.loadingDisabled = true;
+    await settleImage(image);
     expect(native.hasAttribute("src")).toBe(false);
   });
 
@@ -156,7 +161,8 @@ describe("transcript image source safety", () => {
   it("requires a session for references and preserves inline sources for helper consumers", () => {
     expect(transcriptImageSource(reference)).toBeUndefined();
     expect(transcriptImageSource({ type: "image", mimeType: "image/png", data: "QUJD" })).toEqual({
-      src: "data:image/png;base64,QUJD", alt: "attached image",
+      src: "data:image/png;base64,QUJD",
+      alt: "attached image",
     });
   });
 });

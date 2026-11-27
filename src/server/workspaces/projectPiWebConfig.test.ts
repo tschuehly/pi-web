@@ -5,7 +5,14 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_ATTACHMENT_FOLDER } from "../../config.js";
-import { loadEffectiveProjectAttachmentsConfig, loadEffectiveProjectPathAccess, loadEffectiveProjectUploadsConfig, loadProjectPiWebConfig, mergePathAccessConfigs, PROJECT_PI_WEB_CONFIG_PATH } from "./projectPiWebConfig.js";
+import {
+  loadEffectiveProjectAttachmentsConfig,
+  loadEffectiveProjectPathAccess,
+  loadEffectiveProjectUploadsConfig,
+  loadProjectPiWebConfig,
+  mergePathAccessConfigs,
+  PROJECT_PI_WEB_CONFIG_PATH,
+} from "./projectPiWebConfig.js";
 
 // Node's ESM exports are not configurable; replace only the open boundary.
 vi.mock("node:fs/promises", async (importOriginal) => {

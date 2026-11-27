@@ -19,11 +19,22 @@ function run(name) {
       stream.on("data", (chunk) => {
         const parts = (rest + chunk).split("\n");
         rest = parts.pop();
-        for (const line of parts) { lines.push(line); process.stdout.write(prefix + line + "\n"); }
+        for (const line of parts) {
+          lines.push(line);
+          process.stdout.write(prefix + line + "\n");
+        }
       });
-      stream.on("end", () => { if (rest) { lines.push(rest); process.stdout.write(prefix + rest + "\n"); } });
+      stream.on("end", () => {
+        if (rest) {
+          lines.push(rest);
+          process.stdout.write(prefix + rest + "\n");
+        }
+      });
     }
-    child.on("error", (error) => { lines.push(String(error)); resolve({ name, code: 1, lines, seconds: 0 }); });
+    child.on("error", (error) => {
+      lines.push(String(error));
+      resolve({ name, code: 1, lines, seconds: 0 });
+    });
     child.on("close", (code, signal) => resolve({ name, code: code ?? (signal ? 1 : 0), lines, seconds: (Date.now() - t0) / 1000 }));
   });
 }

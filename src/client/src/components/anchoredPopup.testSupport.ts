@@ -4,7 +4,9 @@ import { afterEach, beforeEach } from "vitest";
  * Real top-layer geometry and browser focus remain browser-test concerns. */
 export function installPopoverFake(): void {
   let cleanup: (() => void) | undefined;
-  afterEach(() => { cleanup?.(); });
+  afterEach(() => {
+    cleanup?.();
+  });
   beforeEach(() => {
     const showDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
     const hideDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
@@ -22,12 +24,22 @@ export function installPopoverFake(): void {
       panel.dispatchEvent(Object.assign(new Event("beforetoggle"), { newState: "closed" }));
       panel.dispatchEvent(Object.assign(new Event("toggle"), { newState: "closed" }));
     };
-    Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, writable: true, value: function (this: HTMLElement, options?: { source?: HTMLElement }) {
-      for (const panel of [...open].reverse()) if (!contains(panel, options?.source ?? this)) hide(panel);
-      open.add(this);
-      this.dispatchEvent(Object.assign(new Event("toggle"), { newState: "open" }));
-    } });
-    Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true, writable: true, value: function (this: HTMLElement) { hide(this); } });
+    Object.defineProperty(HTMLElement.prototype, "showPopover", {
+      configurable: true,
+      writable: true,
+      value: function (this: HTMLElement, options?: { source?: HTMLElement }) {
+        for (const panel of [...open].reverse()) if (!contains(panel, options?.source ?? this)) hide(panel);
+        open.add(this);
+        this.dispatchEvent(Object.assign(new Event("toggle"), { newState: "open" }));
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "hidePopover", {
+      configurable: true,
+      writable: true,
+      value: function (this: HTMLElement) {
+        hide(this);
+      },
+    });
     // Happy-dom exposes the API but does not provide native dismissal.
     const click = (event: MouseEvent): void => {
       for (const panel of [...open].reverse()) {

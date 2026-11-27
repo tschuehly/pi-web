@@ -1,7 +1,4 @@
-export type InputMode =
-  | { kind: "normal" }
-  | { kind: "command" }
-  | { kind: "shell"; excludeFromContext: boolean };
+export type InputMode = { kind: "normal" } | { kind: "command" } | { kind: "shell"; excludeFromContext: boolean };
 
 export function inputModeForDraft(draft: string): InputMode {
   const trimmed = draft.trimStart();
@@ -24,4 +21,3 @@ function currentToken(draft: string): string {
   const tokenStart = Math.max(draft.lastIndexOf(" "), draft.lastIndexOf("\n")) + 1;
   return draft.slice(tokenStart);
 }
-

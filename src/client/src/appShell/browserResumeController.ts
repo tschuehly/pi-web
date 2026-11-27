@@ -32,7 +32,10 @@ export class BrowserResumeController {
   private scheduledRefresh: ScheduledFrame | undefined;
   private connected = false;
 
-  constructor(private readonly callbacks: BrowserResumeCallbacks, options: BrowserResumeControllerOptions = {}) {
+  constructor(
+    private readonly callbacks: BrowserResumeCallbacks,
+    options: BrowserResumeControllerOptions = {},
+  ) {
     this.windowTarget = options.windowTarget ?? browserWindowTarget();
     this.documentTarget = options.documentTarget ?? browserDocumentTarget();
     this.isDocumentVisible = options.isDocumentVisible ?? documentIsVisible;
@@ -70,9 +73,13 @@ export class BrowserResumeController {
     this.scheduledRefresh = this.scheduleFrame(() => {
       this.scheduledRefresh = undefined;
       if (!this.connected) return;
-      void this.refreshes.request("browser-resume", async () => {
-        if (this.connected) await this.callbacks.refreshAfterResume();
-      }).catch((error: unknown) => { this.callbacks.onRefreshError(error); });
+      void this.refreshes
+        .request("browser-resume", async () => {
+          if (this.connected) await this.callbacks.refreshAfterResume();
+        })
+        .catch((error: unknown) => {
+          this.callbacks.onRefreshError(error);
+        });
     });
   }
 }
@@ -91,9 +98,19 @@ function documentIsVisible(): boolean {
 
 function scheduleBrowserFrame(callback: () => void): ScheduledFrame {
   if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-    const frame = window.requestAnimationFrame(() => { callback(); });
-    return { cancel: () => { window.cancelAnimationFrame(frame); } };
+    const frame = window.requestAnimationFrame(() => {
+      callback();
+    });
+    return {
+      cancel: () => {
+        window.cancelAnimationFrame(frame);
+      },
+    };
   }
   const timer = globalThis.setTimeout(callback, 0);
-  return { cancel: () => { globalThis.clearTimeout(timer); } };
+  return {
+    cancel: () => {
+      globalThis.clearTimeout(timer);
+    },
+  };
 }

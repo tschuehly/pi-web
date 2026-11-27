@@ -9,7 +9,10 @@ const message = {
   meta: { timestamp: "2026-10-15T20:10:00Z", model: { provider: "example", id: "model" }, thinkingLevel: "high" },
 };
 
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+});
 
 // ISSUE-106 follow-up: the Info button only repeated the time tooltip, so it is gone.
 it("shows message metadata as the time tooltip, without an Info button", async () => {

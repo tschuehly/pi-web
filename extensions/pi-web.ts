@@ -10,29 +10,19 @@ const cliPath = join(packageRoot, "dist", "cli.js");
 const serviceNames = ["pi-web-sessiond.service", "pi-web.service", "pi-web-ui-dev.service"];
 const macLogPaths = ["sessiond.log", "web.log", "ui-dev.log"].map((name) => join(homedir(), ".pi-web", "logs", name));
 
-const subcommands = [
-  "install",
-  "status",
-  "logs",
-  "restart",
-  "start",
-  "stop",
-  "doctor",
-  "version",
-  "uninstall",
-  "open",
-  "help",
-] as const;
+const subcommands = ["install", "status", "logs", "restart", "start", "stop", "doctor", "version", "uninstall", "open", "help"] as const;
 
 type Subcommand = (typeof subcommands)[number];
 
 function parseArgs(args: string): string[] {
-  return args.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => {
-    if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
-      return part.slice(1, -1);
-    }
-    return part;
-  }) ?? [];
+  return (
+    args.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((part) => {
+      if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+        return part.slice(1, -1);
+      }
+      return part;
+    }) ?? []
+  );
 }
 
 function truncateOutput(output: string): string {
@@ -51,8 +41,12 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv = {}): Prom
     let output = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => { output += chunk; });
-    child.stderr.on("data", (chunk: string) => { output += chunk; });
+    child.stdout.on("data", (chunk: string) => {
+      output += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      output += chunk;
+    });
     child.on("error", (error) => {
       resolve({ code: 1, output: error.message });
     });
@@ -71,7 +65,11 @@ async function runPiWeb(args: string[], env: NodeJS.ProcessEnv = {}): Promise<{ 
   return run("pi-web", args, env);
 }
 
-function showResult(ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error" | "success"): void } }, title: string, result: { code: number; output: string }): void {
+function showResult(
+  ctx: { ui: { notify(message: string, type?: "info" | "warning" | "error" | "success"): void } },
+  title: string,
+  result: { code: number; output: string },
+): void {
   const body = truncateOutput(result.output) || (result.code === 0 ? "Done." : `Command failed with exit code ${String(result.code)}.`);
   ctx.ui.notify(`${title}\n\n${body}`, result.code === 0 ? "info" : "error");
 }
@@ -94,9 +92,7 @@ export default function piWebExtension(pi: ExtensionAPI): void {
     description: "Manage PI WEB services: install, status, logs, restart, start, stop, doctor, version, open",
     getArgumentCompletions(prefix: string): { value: string; label: string }[] | null {
       const [first = ""] = parseArgs(prefix);
-      const items = subcommands
-        .filter((command) => command.startsWith(first))
-        .map((command) => ({ value: command, label: command }));
+      const items = subcommands.filter((command) => command.startsWith(first)).map((command) => ({ value: command, label: command }));
       return items.length > 0 ? items : null;
     },
     async handler(args, ctx) {
@@ -105,7 +101,10 @@ export default function piWebExtension(pi: ExtensionAPI): void {
       const rest = parsedArgs.slice(1);
 
       if (subcommand === "help") {
-        ctx.ui.notify(`PI WEB commands:\n\n${subcommands.map((command) => `/pi-web ${command}`).join("\n")}\n\nLogs are bounded to the last 100 service log lines in the Pi command. Use \`pi-web logs\` in a shell to follow logs.`, "info");
+        ctx.ui.notify(
+          `PI WEB commands:\n\n${subcommands.map((command) => `/pi-web ${command}`).join("\n")}\n\nLogs are bounded to the last 100 service log lines in the Pi command. Use \`pi-web logs\` in a shell to follow logs.`,
+          "info",
+        );
         return;
       }
 

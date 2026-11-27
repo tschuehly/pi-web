@@ -32,7 +32,7 @@ it("scans static imports, re-exports and dynamic imports without mistaking comme
     const text = 'import("./string.js")';
     require("commonjs-shim");
     define(["amd-shim"], () => {});
-  `)
+  `),
   ).toEqual(["./static.js", "./export.js", "./dynamic.js"]);
 });
 
@@ -73,14 +73,25 @@ describe("plugin delivery artifacts", () => {
     const isTestArtifact = (path) => /\.(?:test|spec|testSupport|artifact)\./u.test(path);
     expect(distFiles.filter(isTestArtifact)).toEqual([]);
     expect(packagedFiles.filter(isTestArtifact)).toEqual([]);
-    expect(packagedFiles).toEqual(expect.arrayContaining([
-      "dist/cli.js", "dist/server/app.js", "dist/server/index.js", "dist/server/sessiond.js",
-      "dist/plugin-api.d.ts", "dist/server-plugin-api.d.ts", "dist/server-plugin-api.js",
-      "dist/shared/pluginApiTypes.d.ts", "dist/shared/pluginCatalogTypes.d.ts", "dist/shared/pluginCatalogTypes.js",
-      "plugin-api.d.ts", "server-plugin-api.d.ts", "dist/client/index.html",
-      "examples/session-bridge-plugin/package.json",
-      "dist/pi-web-plugins/git/workspace-discovery-notify.cjs",
-    ]));
+    expect(packagedFiles).toEqual(
+      expect.arrayContaining([
+        "dist/cli.js",
+        "dist/server/app.js",
+        "dist/server/index.js",
+        "dist/server/sessiond.js",
+        "dist/plugin-api.d.ts",
+        "dist/server-plugin-api.d.ts",
+        "dist/server-plugin-api.js",
+        "dist/shared/pluginApiTypes.d.ts",
+        "dist/shared/pluginCatalogTypes.d.ts",
+        "dist/shared/pluginCatalogTypes.js",
+        "plugin-api.d.ts",
+        "server-plugin-api.d.ts",
+        "dist/client/index.html",
+        "examples/session-bridge-plugin/package.json",
+        "dist/pi-web-plugins/git/workspace-discovery-notify.cjs",
+      ]),
+    );
     expect(packagedFiles.some((path) => path.includes("/node_modules/") || /^examples\/[^/]+\/dist\//u.test(path))).toBe(false);
     expect(packagedFiles).not.toContain("dist/plugin-api/unstable.d.ts");
     expect(packagedFiles).not.toContain("plugin-api/unstable.d.ts");
@@ -89,9 +100,7 @@ describe("plugin delivery artifacts", () => {
     expect(builtPluginFiles.some((path) => /\.(?:test|spec)\./u.test(path))).toBe(false);
     expect(builtPluginFiles.some((path) => path.includes("/relays/"))).toBe(false);
     const filesPluginFiles = builtPluginFiles.filter((path) => path.startsWith("dist/pi-web-plugins/files/"));
-    expect(filesPluginFiles).toEqual(
-      expect.arrayContaining(["dist/pi-web-plugins/files/package.json", "dist/pi-web-plugins/files/browser/pi-web-plugin.js"])
-    );
+    expect(filesPluginFiles).toEqual(expect.arrayContaining(["dist/pi-web-plugins/files/package.json", "dist/pi-web-plugins/files/browser/pi-web-plugin.js"]));
     expect(filesPluginFiles.some((path) => /\/browser\/assets\/viewerDependencies-[^/]+\.js$/u.test(path))).toBe(false);
     expect(filesPluginFiles.some((path) => /\/browser\/assets\/files-icon-[^/]+\.svg$/u.test(path))).toBe(true);
     expect(filesPluginFiles.every((path) => path.endsWith("/package.json") || path.includes("/browser/"))).toBe(true);
@@ -108,13 +117,15 @@ describe("plugin delivery artifacts", () => {
     expect(builtPackageFiles).toContain("dist/pi-packages/relays/prompts/relay-worktree.md");
     expect(builtPackageFiles).toContain("dist/pi-packages/relays/skills/relay/SKILL.md");
     expect(builtPackageFiles).toContain("dist/pi-packages/relays/skills/relay-runner/SKILL.md");
-    expect(builtPackageFiles).toEqual(expect.arrayContaining([
-      "dist/pi-packages/workflows/package.json",
-      "dist/pi-packages/workflows/browser/pi-web-plugin.js",
-      "dist/pi-packages/workflows/browser/worktreeDialog.js",
-      "dist/pi-packages/workflows/server-plugin.js",
-      "dist/pi-packages/workflows/prompts/worktree.md",
-    ]));
+    expect(builtPackageFiles).toEqual(
+      expect.arrayContaining([
+        "dist/pi-packages/workflows/package.json",
+        "dist/pi-packages/workflows/browser/pi-web-plugin.js",
+        "dist/pi-packages/workflows/browser/worktreeDialog.js",
+        "dist/pi-packages/workflows/server-plugin.js",
+        "dist/pi-packages/workflows/prompts/worktree.md",
+      ]),
+    );
     // Check the materialized build output, not words in agent instructions.
     for (const name of ["relay", "relay-runner"]) {
       const canonical = await readFile(join(repoRoot, "skills", name, "SKILL.md"), "utf8");
@@ -138,7 +149,9 @@ describe("plugin delivery artifacts", () => {
     const checkoutArgs = ["0".repeat(40), "2".repeat(40), "1"];
     await expect(execUtf8(process.execPath, [helper, JSON.stringify(failingCommand), ...checkoutArgs], tempDir, 5_000)).resolves.toBe("");
     expect(await readFile(marker, "utf8")).toBe("attempted");
-    await expect(execUtf8(process.execPath, [helper, JSON.stringify([join(tempDir, "missing-notification-command")]), ...checkoutArgs], tempDir, 5_000)).resolves.toBe("");
+    await expect(
+      execUtf8(process.execPath, [helper, JSON.stringify([join(tempDir, "missing-notification-command")]), ...checkoutArgs], tempDir, 5_000),
+    ).resolves.toBe("");
   });
 
   it("ships default-enabled Workflows web integration and loadable prompt resources", async () => {
@@ -148,15 +161,22 @@ describe("plugin delivery artifacts", () => {
     const promptPath = join(source, "prompts", "worktree.md");
     expect(await readFile(promptPath, "utf8")).toBe(await readFile(join(repoRoot, "pi-packages", "workflows", "prompts", "worktree.md"), "utf8"));
     const loader = new DefaultResourceLoader({
-      cwd: tempDir, agentDir: tempDir,
+      cwd: tempDir,
+      agentDir: tempDir,
       settingsManager: SettingsManager.inMemory({ packages: [source] }),
-      noExtensions: true, noSkills: true, noThemes: true,
+      noExtensions: true,
+      noSkills: true,
+      noThemes: true,
     });
     await loader.reload();
     expect(loader.getPrompts().diagnostics).toEqual([]);
-    expect(loader.getPrompts().prompts).toEqual([expect.objectContaining({
-      name: "worktree", argumentHint: "Purpose and/or base branch", filePath: promptPath,
-    })]);
+    expect(loader.getPrompts().prompts).toEqual([
+      expect.objectContaining({
+        name: "worktree",
+        argumentHint: "Purpose and/or base branch",
+        filePath: promptPath,
+      }),
+    ]);
 
     let enabled;
     const catalog = new PiWebPluginCatalog({
@@ -165,14 +185,19 @@ describe("plugin delivery artifacts", () => {
         listPackages: () => [{ source, installedPath: source, scope: "user" }],
         getInstalledPath: () => source,
       },
-      configProvider: () => enabled === undefined ? {} : { plugins: { workflows: { enabled } } },
+      configProvider: () => (enabled === undefined ? {} : { plugins: { workflows: { enabled } } }),
     });
     const snapshot = await catalog.snapshot();
     expect(snapshot.diagnostics).toEqual([]);
-    expect(snapshot.plugins).toEqual([expect.objectContaining({
-      id: "workflows", enabled: true, defaultEnabled: true, machineSpecific: true,
-      browserRoot: expect.objectContaining({ path: "browser" }),
-    })]);
+    expect(snapshot.plugins).toEqual([
+      expect.objectContaining({
+        id: "workflows",
+        enabled: true,
+        defaultEnabled: true,
+        machineSpecific: true,
+        browserRoot: expect.objectContaining({ path: "browser" }),
+      }),
+    ]);
     const browserModule = snapshot.plugins[0].browserModule.filePath;
     expect(moduleSpecifiers(await readFile(browserModule, "utf8"))).toEqual(["./worktreeDialog.js"]);
     expect((await import(pathToFileURL(browserModule).href)).default).toMatchObject({ name: "Workflows", apiVersion: 5 });
@@ -198,9 +223,13 @@ describe("plugin delivery artifacts", () => {
     });
     const snapshot = await catalog.snapshot();
     expect(snapshot.diagnostics).toEqual([]);
-    expect(snapshot.plugins).toContainEqual(expect.objectContaining({
-      id: "code-highlight", enabled: true, machineSpecific: false,
-    }));
+    expect(snapshot.plugins).toContainEqual(
+      expect.objectContaining({
+        id: "code-highlight",
+        enabled: true,
+        machineSpecific: false,
+      }),
+    );
   });
 
   describe("Mermaid browser package build", () => {
@@ -240,12 +269,14 @@ describe("plugin delivery artifacts", () => {
         private: true,
         type: "module",
         piWeb: {
-          plugins: [{
-            id: "files",
-            browserRoot: "browser",
-            module: "browser/pi-web-plugin.js",
-            machineSpecific: false,
-          }],
+          plugins: [
+            {
+              id: "files",
+              browserRoot: "browser",
+              module: "browser/pi-web-plugin.js",
+              machineSpecific: false,
+            },
+          ],
         },
       });
 
@@ -327,7 +358,10 @@ describe("plugin delivery artifacts", () => {
             secondRuntime: secondRendered?.values.find((value) => value instanceof secondImported.FilesRuntime),
           },
           viewerProbe: {
-            firstAssetsUnavailable: await stat(join(firstBrowserRoot, "assets")).then(() => false, () => true),
+            firstAssetsUnavailable: await stat(join(firstBrowserRoot, "assets")).then(
+              () => false,
+              () => true,
+            ),
             secondLoaderSucceeded: typeof secondDependencies.EditorView === "function",
             rendered: codeViewer.shadowRoot?.querySelector(".cm-editor") != null,
             text: codeViewer.shadowRoot?.textContent ?? "",
@@ -360,7 +394,6 @@ describe("plugin delivery artifacts", () => {
       for (const file of packageFiles) bytes += (await stat(join(target, file))).size;
       expect(bytes).toBeLessThan(PI_WEB_PLUGIN_ARTIFACT_MAX_BYTES);
       expect(await recursiveEntryCount(target)).toBeLessThan(PI_WEB_PLUGIN_ARTIFACT_MAX_ENTRIES);
-
     });
   });
 });
@@ -388,9 +421,7 @@ async function bundledServerPlugins(pluginsRoot) {
   }
   return plugins.sort(
     (left, right) =>
-      left.packageDirectory.localeCompare(right.packageDirectory) ||
-      left.id.localeCompare(right.id) ||
-      left.serverModule.localeCompare(right.serverModule)
+      left.packageDirectory.localeCompare(right.packageDirectory) || left.id.localeCompare(right.id) || left.serverModule.localeCompare(right.serverModule),
   );
 }
 function runNpm(args, cwd, timeoutMs = 30_000) {
@@ -442,7 +473,7 @@ async function recursiveFiles(root, base = root) {
   const files = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await recursiveFiles(path, base));
+    if (entry.isDirectory()) files.push(...(await recursiveFiles(path, base)));
     else if (entry.isFile()) files.push(relative(base, path).split(sep).join("/"));
   }
   return files.sort((left, right) => left.localeCompare(right));
@@ -472,7 +503,9 @@ function builtWorkspacePanelContext(machineId) {
       moveFile: () => Promise.reject(new Error("not used")),
       previewUrl: () => "about:blank",
       downloadUrl: () => "about:blank",
-      uploadFile: () => { throw new Error("not used"); },
+      uploadFile: () => {
+        throw new Error("not used");
+      },
     },
     host: { requestRender: () => undefined },
     prompt: { insertText: () => undefined, getText: () => "", getSelection: () => null },
@@ -485,7 +518,9 @@ async function waitFor(predicate, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
-    await new Promise((resolvePromise) => { setTimeout(resolvePromise, 10); });
+    await new Promise((resolvePromise) => {
+      setTimeout(resolvePromise, 10);
+    });
   }
   throw new Error(`Timed out after ${String(timeoutMs)}ms waiting for built browser behavior`);
 }

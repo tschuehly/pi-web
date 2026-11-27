@@ -36,18 +36,33 @@ export const E2E_ASK_CHAT = {
   question: "Make question contexts shorter",
   ask: {
     askId: "q7k-1",
-    context: "The short-context rule for `ask_user` is ready in two parts. Context is now at most five short lines of finding; each option states its own consequence and the recommended one is marked.\n- Workbench 14477be: the Switching guidance. Tests 17/17.\n- PI WEB 14a067f7: the tool's instructions. The new test failed on the old code and now passes 10/10.",
+    context:
+      "The short-context rule for `ask_user` is ready in two parts. Context is now at most five short lines of finding; each option states its own consequence and the recommended one is marked.\n- Workbench 14477be: the Switching guidance. Tests 17/17.\n- PI WEB 14a067f7: the tool's instructions. The new test failed on the old code and now passes 10/10.",
     questions: [
-      { id: "golive", question: "How should the short-context rule go live?", options: [
-        { value: "wb-now", label: "Workbench now, PI WEB with the next daemon restart", recommended: true, detail: "No interruption now; the tool's own instructions update at the next planned restart." },
-        { value: "both-now", label: "Both now, with a full switch", detail: "Restarts the session daemon: every running session is interrupted." },
-        { value: "later", label: "Not yet", detail: "Both branches stay pushed and unmerged." },
-      ] },
-      { id: "checks", question: "Which checks should run before it goes live?", multiple: true, options: [
-        { value: "unit", label: "Unit tests", recommended: true },
-        { value: "e2e", label: "End-to-end tests" },
-        { value: "dogfood", label: "A day of dogfooding", detail: "Delays go-live by a day." },
-      ] },
+      {
+        id: "golive",
+        question: "How should the short-context rule go live?",
+        options: [
+          {
+            value: "wb-now",
+            label: "Workbench now, PI WEB with the next daemon restart",
+            recommended: true,
+            detail: "No interruption now; the tool's own instructions update at the next planned restart.",
+          },
+          { value: "both-now", label: "Both now, with a full switch", detail: "Restarts the session daemon: every running session is interrupted." },
+          { value: "later", label: "Not yet", detail: "Both branches stay pushed and unmerged." },
+        ],
+      },
+      {
+        id: "checks",
+        question: "Which checks should run before it goes live?",
+        multiple: true,
+        options: [
+          { value: "unit", label: "Unit tests", recommended: true },
+          { value: "e2e", label: "End-to-end tests" },
+          { value: "dogfood", label: "A day of dogfooding", detail: "Delays go-live by a day." },
+        ],
+      },
     ],
   },
 } as const;
@@ -58,14 +73,25 @@ export const E2E_CROWDED_ASK_CHAT = {
   ask: {
     askId: "m12-1",
     context: "Twelve choices decide the migration.",
-    questions: Array.from({ length: 12 }, (_, index) => ({ id: `step${String(index + 1)}`, question: `Migration step ${String(index + 1)}: run it now or later?`, options: [{ value: "now", label: "Now", recommended: true }, { value: "later", label: "Later" }] })),
+    questions: Array.from({ length: 12 }, (_, index) => ({
+      id: `step${String(index + 1)}`,
+      question: `Migration step ${String(index + 1)}: run it now or later?`,
+      options: [
+        { value: "now", label: "Now", recommended: true },
+        { value: "later", label: "Later" },
+      ],
+    })),
   },
 };
 type SeededAsk = { askId: string; context: string; questions: readonly unknown[] };
 /** A Chat shaped like daily use: more raw messages than one page, with thinking, tool output, code blocks and late-loading images. */
 export const E2E_LONG_CHAT = { id: "019ef4c0-0000-7000-8000-00000000e2e7", question: "Migrate the build", turns: 60 } as const;
 /** Three more Chats like `E2E_LONG_CHAT`, so a Grid can hold four long transcripts. */
-export const E2E_MORE_LONG_CHAT_IDS = ["019ef4c0-0000-7000-8000-00000000e2e8", "019ef4c0-0000-7000-8000-00000000e2e9", "019ef4c0-0000-7000-8000-00000000e2ea"] as const;
+export const E2E_MORE_LONG_CHAT_IDS = [
+  "019ef4c0-0000-7000-8000-00000000e2e8",
+  "019ef4c0-0000-7000-8000-00000000e2e9",
+  "019ef4c0-0000-7000-8000-00000000e2ea",
+] as const;
 /** Three Chats whose transcripts interleave assistant replies and tool steps with extension notices (Disk low, Atelier events) and a failed model response. */
 export const E2E_NOTICE_CHATS = [
   { id: "019ef4c0-0000-7000-8000-00000000e2eb", question: "Free disk space and apply the release decision" },
@@ -77,12 +103,26 @@ export const E2E_ALL_KINDS_CHAT = { id: "019ef4c0-0000-7000-8000-00000000e2ee", 
 export const E2E_REPORT_BODY = "Seeded report body in an unregistered Chat folder.";
 export const E2E_SIBLING_BODY = "export const seededSiblingBody = true;";
 export const E2E_PLAN = [
-  "# Release plan", "", "The launch is on Friday.", "",
-  "- [ ] Write the release notes", "- [x] Tag the build", "  - nested item with `inline code`", "",
+  "# Release plan",
+  "",
+  "The launch is on Friday.",
+  "",
+  "- [ ] Write the release notes",
+  "- [x] Tag the build",
+  "  - nested item with `inline code`",
+  "",
   "| Area | Owner | Notes | Status | A long header for a wide column | Another wide column |",
   "| --- | --- | --- | --- | --- | --- |",
   "| Docs | Ana | Update the install guide and the changelog | open | more text that makes the table wide | even more text |",
-  "", "```ts", "const ready = true;", "```", "", "## Risks", "", "Network flakiness could delay the rollout by a day or two.", "",
+  "",
+  "```ts",
+  "const ready = true;",
+  "```",
+  "",
+  "## Risks",
+  "",
+  "Network flakiness could delay the rollout by a day or two.",
+  "",
 ].join("\n");
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
@@ -109,7 +149,12 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const socket = join(root, "s");
     const port = await freePort();
     if (LIVE_PORTS.includes(port)) throw new Error("Refusing to use a live PI WEB port");
-    await Promise.all([mkdir(sessionDir, { recursive: true }), mkdir(join(project, "docs"), { recursive: true }), mkdir(join(project, "entries"), { recursive: true }), mkdir(adHocFolder, { recursive: true })]);
+    await Promise.all([
+      mkdir(sessionDir, { recursive: true }),
+      mkdir(join(project, "docs"), { recursive: true }),
+      mkdir(join(project, "entries"), { recursive: true }),
+      mkdir(adHocFolder, { recursive: true }),
+    ]);
     await seedProject(project);
     await writeJson(join(dataDir, "projects.json"), { projects: [{ id: E2E_PROJECT_ID, name: "e2e", path: project, createdAt: new Date().toISOString() }] });
     await writeJson(join(root, "config.json"), { host: "127.0.0.1" });
@@ -117,10 +162,23 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     const siblingFile = join(root, "sibling", "src", "generator.ts");
     await mkdir(dirname(siblingFile), { recursive: true });
     await writeFile(siblingFile, `${E2E_SIBLING_BODY}\n`);
-    await seedChat(sessionDir, project, E2E_SESSION_ID, "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts). See [the lines](docs/long.md#L40-L42).");
+    await seedChat(
+      sessionDir,
+      project,
+      E2E_SESSION_ID,
+      "They are in [the notes](docs/notes.md). The generator is [the sibling file](../sibling/src/generator.ts). See [the lines](docs/long.md#L40-L42).",
+    );
     for (const chat of E2E_MORE_CHATS) await seedChat(sessionDir, project, chat.id, "Done.", chat.question, 24);
     await seedChat(sessionDir, project, E2E_ASK_CHAT.id, "One question on how they go live.", E2E_ASK_CHAT.question, 3, E2E_ASK_CHAT.ask);
-    await seedChat(sessionDir, project, E2E_CROWDED_ASK_CHAT.id, "Twelve questions before it starts.", E2E_CROWDED_ASK_CHAT.question, 3, E2E_CROWDED_ASK_CHAT.ask);
+    await seedChat(
+      sessionDir,
+      project,
+      E2E_CROWDED_ASK_CHAT.id,
+      "Twelve questions before it starts.",
+      E2E_CROWDED_ASK_CHAT.question,
+      3,
+      E2E_CROWDED_ASK_CHAT.ask,
+    );
     for (const id of [E2E_LONG_CHAT.id, ...E2E_MORE_LONG_CHAT_IDS]) await seedLongChat(sessionDir, project, id);
     for (const chat of E2E_NOTICE_CHATS) await seedNoticeChat(sessionDir, project, chat.id, chat.question);
     await seedAllKindsChat(sessionDir, project);
@@ -131,7 +189,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     // this runner process, so it outlives daemon kills and specs reach it through PI_WEB_E2E_MOCK_URL.
     if (process.env["PI_WEB_E2E_MOCK_MODELS"] !== "0") {
       mock = await startMockModelServer();
-      const claudeCodeUse = process.env["PI_WEB_E2E_CLAUDE_CODE_USE"] ?? join(homedir(), ".pi", "agent", "npm", "node_modules", "@benvargas", "pi-claude-code-use", "extensions", "index.ts");
+      const claudeCodeUse =
+        process.env["PI_WEB_E2E_CLAUDE_CODE_USE"]
+        ?? join(homedir(), ".pi", "agent", "npm", "node_modules", "@benvargas", "pi-claude-code-use", "extensions", "index.ts");
       await writeMockAgentConfig(join(root, "agent"), mock.url, existsSync(claudeCodeUse) ? { claudeCodeUse } : {});
       process.env["PI_WEB_E2E_MOCK_URL"] = mock.url;
     }
@@ -152,15 +212,21 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       await writeFile(join(durableAgent, "bin", "pmset"), "#!/bin/sh\necho \"Now drawing from 'AC Power'\"\n", { mode: 0o755 });
       if (mock !== undefined) await writeMockProviders(durableAgent, mock.url);
       Object.assign(env, {
-        PI_WEB_DURABLE_HOST: durableHost, PI_WEB_DURABLE_MODEL: "faux", PI_WEB_DURABLE_AGENT_DIR: durableAgent, PI_TELEMETRY_DIR: join(root, "telemetry"),
-        PI_TMP_ROOT: join(root, "pi-tmp"), PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"), PI_STORAGE_GUARD_FREE_GB: "1000",
+        PI_WEB_DURABLE_HOST: durableHost,
+        PI_WEB_DURABLE_MODEL: "faux",
+        PI_WEB_DURABLE_AGENT_DIR: durableAgent,
+        PI_TELEMETRY_DIR: join(root, "telemetry"),
+        PI_TMP_ROOT: join(root, "pi-tmp"),
+        PI_WORKBENCH_WORKSTREAM_DIR: join(root, "workstreams"),
+        PI_STORAGE_GUARD_FREE_GB: "1000",
         // Durable hosts' backup copies (pi-workbench durable-pilot src/backup.ts) stay out of the owner's backup folder.
         PI_WORKBENCH_BACKUP_DIR: join(root, "backup-staging"),
         // Subagents: routing reads a fixture quota snapshot (specs refresh it), never quota-axi; routed children answer
         // through the mock like any Chat.
         PI_WORKBENCH_QUOTA_CACHE: join(root, "quota-cache.json"),
         // Workbench bash jobs stay in the fixture; the Atelier Page check (its own browser) has its own suite.
-        PI_BACKGROUND_BASH_ROOT: join(root, "background-bash"), ATELIER_PAGE_CHECK: "off",
+        PI_BACKGROUND_BASH_ROOT: join(root, "background-bash"),
+        ATELIER_PAGE_CHECK: "off",
       });
       // New Chat creates Durable Chats (e2e/durableDefault.spec.ts).
       if (process.env["PI_WEB_E2E_DURABLE_DEFAULT"] === "1") env["PI_WEB_DURABLE_DEFAULT"] = "1";
@@ -217,7 +283,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 
     const listing: unknown = await (await fetch(`${baseUrl}api/projects/${E2E_PROJECT_ID}/workspaces`)).json();
     const workspaceId = mainWorkspaceId(listing);
-    process.env["PI_WEB_E2E_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId, session: E2E_SESSION_ID, view: "chat" }).toString()}`;
+    process.env["PI_WEB_E2E_CHAT_URL"] =
+      `${baseUrl}?${new URLSearchParams({ project: E2E_PROJECT_ID, workspace: workspaceId, session: E2E_SESSION_ID, view: "chat" }).toString()}`;
     process.env["PI_WEB_E2E_SIBLING_FILE"] = siblingFile;
     process.env["PI_WEB_E2E_PROJECT_DIR"] = project;
     process.env["PI_WEB_E2E_WORKSPACE_ID"] = workspaceId;
@@ -225,7 +292,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     process.env["PI_WEB_E2E_ADHOC_CHAT_URL"] = `${baseUrl}?${new URLSearchParams({ session: E2E_ADHOC_SESSION_ID, view: "chat" }).toString()}`;
     return teardown;
   } catch (error) {
-    const logs = await Promise.all(["sessiond", "web"].map(async (name) => `--- ${name} ---\n${await readFile(join(root, `${name}.log`), "utf8").catch(() => "")}`));
+    const logs = await Promise.all(
+      ["sessiond", "web"].map(async (name) => `--- ${name} ---\n${await readFile(join(root, `${name}.log`), "utf8").catch(() => "")}`),
+    );
     await teardown();
     throw new Error(`Isolated PI WEB did not start: ${String(error)}\n${logs.join("\n")}`, { cause: error });
   }
@@ -235,10 +304,13 @@ async function seedProject(project: string): Promise<void> {
   await writeFile(join(project, "docs", "notes.md"), `# Seeded notes\n\n${E2E_NOTES_BODY}\n`);
   for (const name of ["plan.md", "conflict.md"]) await writeFile(join(project, "docs", name), E2E_PLAN);
   await writeFile(join(project, "docs", "long.md"), Array.from({ length: 80 }, (_, index) => `Line ${String(index + 1)} of the long file.`).join("\n"));
-  await Promise.all(Array.from({ length: E2E_SEARCH_MATCHES }, (_, index) => writeFile(join(project, "entries", `entry-${String(index).padStart(3, "0")}.txt`), "")));
+  await Promise.all(
+    Array.from({ length: E2E_SEARCH_MATCHES }, (_, index) => writeFile(join(project, "entries", `entry-${String(index).padStart(3, "0")}.txt`), "")),
+  );
   const git = (...args: string[]) => {
     const result = spawnSync("git", ["-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "-C", project, ...args], {
-      encoding: "utf8", env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
+      encoding: "utf8",
+      env: Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_"))),
     });
     if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
   };
@@ -248,7 +320,15 @@ async function seedProject(project: string): Promise<void> {
 }
 
 /** A finished Chat of `turns` exchanges: `question` first, `answer` last, filler paragraphs between; `ask` stays open before the answer. */
-async function seedChat(sessionDir: string, cwd: string, sessionId: string, answer: string, question = "Where are the notes?", turns = 1, ask?: SeededAsk): Promise<void> {
+async function seedChat(
+  sessionDir: string,
+  cwd: string,
+  sessionId: string,
+  answer: string,
+  question = "Where are the notes?",
+  turns = 1,
+  ask?: SeededAsk,
+): Promise<void> {
   const ms = Date.now();
   const at = (offset: number) => new Date(ms + offset).toISOString();
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
@@ -258,10 +338,32 @@ async function seedChat(sessionDir: string, cwd: string, sessionId: string, answ
   for (let turn = 0; turn < turns; turn += 1) {
     const [asked, answered] = [2 * turn, 2 * turn + 1];
     entries.push(
-      { type: "message", id: id(asked), parentId: turn === 0 ? null : id(asked - 1), timestamp: at(1000 * (asked + 1)), message: { role: "user", content: [{ type: "text", text: turn === 0 ? question : `Continue with step ${String(turn + 1)}.` }], timestamp: ms + 1000 * (asked + 1) } },
       {
-        type: "message", id: id(answered), parentId: id(asked), timestamp: at(1000 * (answered + 1)),
-        message: { role: "assistant", content: [{ type: "text", text: turn === turns - 1 ? answer : filler(turn) }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "stop", timestamp: ms + 1000 * (answered + 1) },
+        type: "message",
+        id: id(asked),
+        parentId: turn === 0 ? null : id(asked - 1),
+        timestamp: at(1000 * (asked + 1)),
+        message: {
+          role: "user",
+          content: [{ type: "text", text: turn === 0 ? question : `Continue with step ${String(turn + 1)}.` }],
+          timestamp: ms + 1000 * (asked + 1),
+        },
+      },
+      {
+        type: "message",
+        id: id(answered),
+        parentId: id(asked),
+        timestamp: at(1000 * (answered + 1)),
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: turn === turns - 1 ? answer : filler(turn) }],
+          api: "openai-responses",
+          provider: "openai",
+          model: "fixture",
+          usage,
+          stopReason: "stop",
+          timestamp: ms + 1000 * (answered + 1),
+        },
       },
     );
   }
@@ -271,8 +373,37 @@ async function seedChat(sessionDir: string, cwd: string, sessionId: string, answ
     const asked = 1000 * (2 * turns - 1);
     const posted = { ...ask, askedAt: at(asked + 300), updatedAt: at(asked + 300), revision: "r1", turnsSinceUpdate: 0 };
     entries.push(
-      { type: "message", id: "e2eask01", parentId: final.parentId, timestamp: at(asked + 300), message: { role: "assistant", content: [{ type: "toolCall", id: "call-ask", name: "ask_user", arguments: { context: ask.context, questions: ask.questions } }], api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason: "toolUse", timestamp: ms + asked + 300 } },
-      { type: "message", id: "e2eask02", parentId: "e2eask01", timestamp: at(asked + 600), message: { role: "toolResult", toolCallId: "call-ask", toolName: "ask_user", content: [{ type: "text", text: `Posted ask ${ask.askId}.` }], details: { ask: posted, sessionId }, isError: false, timestamp: ms + asked + 600 } },
+      {
+        type: "message",
+        id: "e2eask01",
+        parentId: final.parentId,
+        timestamp: at(asked + 300),
+        message: {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call-ask", name: "ask_user", arguments: { context: ask.context, questions: ask.questions } }],
+          api: "openai-responses",
+          provider: "openai",
+          model: "fixture",
+          usage,
+          stopReason: "toolUse",
+          timestamp: ms + asked + 300,
+        },
+      },
+      {
+        type: "message",
+        id: "e2eask02",
+        parentId: "e2eask01",
+        timestamp: at(asked + 600),
+        message: {
+          role: "toolResult",
+          toolCallId: "call-ask",
+          toolName: "ask_user",
+          content: [{ type: "text", text: `Posted ask ${ask.askId}.` }],
+          details: { ask: posted, sessionId },
+          isError: false,
+          timestamp: ms + asked + 600,
+        },
+      },
       { ...final, parentId: "e2eask02" },
     );
   }
@@ -293,19 +424,63 @@ async function seedLongChat(sessionDir: string, cwd: string, sessionId: string):
     entries.push({ type: "message", id, parentId, timestamp: new Date(at).toISOString(), message: { ...message, timestamp: at } });
     parentId = id;
   };
-  const assistant = (content: object[], stopReason: string) => ({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason });
+  const assistant = (content: object[], stopReason: string) => ({
+    role: "assistant",
+    content,
+    api: "openai-responses",
+    provider: "openai",
+    model: "fixture",
+    usage,
+    stopReason,
+  });
   for (let turn = 0; turn < turns; turn += 1) {
     const step = String(turn + 1);
     push({ role: "user", content: [{ type: "text", text: turn === 0 ? question : `Continue with step ${step}.` }] });
-    push(assistant([{ type: "thinking", thinking: `Step ${step} needs the build checked first.` }, { type: "toolCall", id: `call-${step}`, name: "bash", arguments: { command: `npm run check -- --step ${step}` } }], "toolUse"));
-    push({ role: "toolResult", toolCallId: `call-${step}`, toolName: "bash", content: [{ type: "text", text: Array.from({ length: 12 }, (_, line) => `step ${step} line ${String(line + 1)}: ok`).join("\n") }], isError: false });
+    push(
+      assistant(
+        [
+          { type: "thinking", thinking: `Step ${step} needs the build checked first.` },
+          { type: "toolCall", id: `call-${step}`, name: "bash", arguments: { command: `npm run check -- --step ${step}` } },
+        ],
+        "toolUse",
+      ),
+    );
+    push({
+      role: "toolResult",
+      toolCallId: `call-${step}`,
+      toolName: "bash",
+      content: [{ type: "text", text: Array.from({ length: 12 }, (_, line) => `step ${step} line ${String(line + 1)}: ok`).join("\n") }],
+      isError: false,
+    });
     if (turn % 6 === 3) {
       push(assistant([{ type: "toolCall", id: `read-${step}`, name: "read", arguments: { path: "docs/assets/pi-web-mobile.png" } }], "toolUse"));
-      push({ role: "toolResult", toolCallId: `read-${step}`, toolName: "read", content: [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data: image, mimeType: "image/png" }], isError: false });
+      push({
+        role: "toolResult",
+        toolCallId: `read-${step}`,
+        toolName: "read",
+        content: [
+          { type: "text", text: "Read image file [image/png]" },
+          { type: "image", data: image, mimeType: "image/png" },
+        ],
+        isError: false,
+      });
     }
-    push(assistant([{ type: "text", text: `## Step ${step}\n\nThe check passed. Changes:\n\n- updated the config\n- **renamed** the \`build\` script\n\n\`\`\`ts\n${Array.from({ length: 8 }, (_, line) => `export const step${step}Line${String(line + 1)} = ${String(line)};`).join("\n")}\n\`\`\`` }], "stop"));
+    push(
+      assistant(
+        [
+          {
+            type: "text",
+            text: `## Step ${step}\n\nThe check passed. Changes:\n\n- updated the config\n- **renamed** the \`build\` script\n\n\`\`\`ts\n${Array.from({ length: 8 }, (_, line) => `export const step${step}Line${String(line + 1)} = ${String(line)};`).join("\n")}\n\`\`\``,
+          },
+        ],
+        "stop",
+      ),
+    );
   }
-  await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+  await writeFile(
+    join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`),
+    `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+  );
 }
 
 /** Makes a notice's first line far wider than a Grid tile; its end must stay readable once expanded. */
@@ -324,9 +499,15 @@ async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string
     entries.push({ id, parentId, timestamp: new Date(at).toISOString(), ...entry });
     parentId = id;
   };
-  const message = (body: object) => { push({ type: "message", message: { ...body, timestamp: ms + 1000 * entries.length } }); };
-  const assistant = (content: object[], stopReason = "stop", extra: object = {}) => { message({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason, ...extra }); };
-  const notice = (customType: string, content: string, details: object = {}) => { push({ type: "custom_message", customType, content, display: true, details }); };
+  const message = (body: object) => {
+    push({ type: "message", message: { ...body, timestamp: ms + 1000 * entries.length } });
+  };
+  const assistant = (content: object[], stopReason = "stop", extra: object = {}) => {
+    message({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason, ...extra });
+  };
+  const notice = (customType: string, content: string, details: object = {}) => {
+    push({ type: "custom_message", customType, content, display: true, details });
+  };
   const bash = (id: string, command: string, output: string) => {
     assistant([{ type: "toolCall", id, name: "bash", arguments: { command } }], "toolUse");
     message({ role: "toolResult", toolCallId: id, toolName: "bash", content: [{ type: "text", text: output }], isError: false });
@@ -334,18 +515,43 @@ async function seedNoticeChat(sessionDir: string, cwd: string, sessionId: string
   message({ role: "user", content: [{ type: "text", text: question }] });
   bash("call-df", "df -h /", "/dev/disk3s5  460Gi  451Gi  9Gi  98% /");
   assistant([{ type: "text", text: "Only 9 GB free. I'll clear the build caches first." }]);
-  push({ type: "custom_message", customType: "background-bash", display: true, content: "Background bash job-du complete (exit 0).\nFull output: /tmp/job-du.log\n12G node_modules", details: { id: "job-du", command: "du -sh node_modules", description: "Size node_modules", state: "complete", elapsedSeconds: 3, logPath: "/tmp/job-du.log", exitCode: 0 } });
+  push({
+    type: "custom_message",
+    customType: "background-bash",
+    display: true,
+    content: "Background bash job-du complete (exit 0).\nFull output: /tmp/job-du.log\n12G node_modules",
+    details: {
+      id: "job-du",
+      command: "du -sh node_modules",
+      description: "Size node_modules",
+      state: "complete",
+      elapsedSeconds: 3,
+      logPath: "/tmp/job-du.log",
+      exitCode: 0,
+    },
+  });
   notice("storage-guard", "Disk low: 9 GB free. Clear caches before large builds.");
   notice("storage-guard", "Disk low: 8 GB free. Clear caches before large builds.");
-  notice("atelier:immediate", `#73 Decision “Release layout”: Two columns ${LONG_FIRST_LINE_TAIL}\nThe owner picked the two-column layout for the release page.`, { page: "release.html", seqs: [73], replay: false });
+  notice(
+    "atelier:immediate",
+    `#73 Decision “Release layout”: Two columns ${LONG_FIRST_LINE_TAIL}\nThe owner picked the two-column layout for the release page.`,
+    { page: "release.html", seqs: [73], replay: false },
+  );
   bash("call-clean", "rm -rf node_modules/.cache dist", "");
   assistant([{ type: "text", text: "Cleared 14 GB. The release page now uses the two-column layout." }]);
   notice("atelier:immediate", "#74 Comment on the hero: make the headline shorter.", { page: "release.html", seqs: [74], replay: false });
   assistant([], "error", { errorMessage: "rate limited, retry later" });
   message({ role: "user", content: [{ type: "text", text: "Shorten the headline too." }] });
   assistant([{ type: "text", text: "Done: the headline is now “Release 2.0”." }]);
-  notice("atelier:immediate", `#75 Decision “Launch”: Ship Friday ${LONG_FIRST_LINE_TAIL}\nThe owner chose Friday.`, { page: "release.html", seqs: [75], replay: false });
-  await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+  notice("atelier:immediate", `#75 Decision “Launch”: Ship Friday ${LONG_FIRST_LINE_TAIL}\nThe owner chose Friday.`, {
+    page: "release.html",
+    seqs: [75],
+    replay: false,
+  });
+  await writeFile(
+    join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`),
+    `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+  );
 }
 
 /** Every element kind in one Chat: an earlier exchange (history fold), then compaction, thinking, tools, cards, notices and an image. */
@@ -364,9 +570,11 @@ async function seedAllKindsChat(sessionDir: string, cwd: string): Promise<void> 
     return id;
   };
   const message = (body: object) => push({ type: "message", message: { ...body, timestamp: ms + 1000 * entries.length } });
-  const assistant = (content: object[], stopReason = "stop") => message({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason });
+  const assistant = (content: object[], stopReason = "stop") =>
+    message({ role: "assistant", content, api: "openai-responses", provider: "openai", model: "fixture", usage, stopReason });
   const custom = (customType: string, content: string, details: object) => push({ type: "custom_message", customType, content, display: true, details });
-  const result = (toolCallId: string, toolName: string, content: object[], isError = false) => message({ role: "toolResult", toolCallId, toolName, content, isError });
+  const result = (toolCallId: string, toolName: string, content: object[], isError = false) =>
+    message({ role: "toolResult", toolCallId, toolName, content, isError });
   const text = (value: string) => [{ type: "text", text: value }];
 
   message({ role: "user", content: text("Earlier question in the history fold.") });
@@ -374,39 +582,91 @@ async function seedAllKindsChat(sessionDir: string, cwd: string): Promise<void> 
   message({ role: "user", content: text(question) });
   const kept = parentId;
   push({ type: "compaction", summary: "The earlier work set up the fixture.", firstKeptEntryId: kept, tokensBefore: 1000 });
-  custom("working-mode", "Alignment — fast: Act without checking in.", { selection: { alignment: "fast", attention: "default", checking: "default", orchestration: "default" } });
-  assistant([{ type: "thinking", thinking: "The transcript needs one of each kind before measuring." }, { type: "toolCall", id: "call-t1", name: "bash", arguments: { command: "ls src" } }, { type: "toolCall", id: "call-t2", name: "bash", arguments: { command: "ls e2e" } }], "toolUse");
+  custom("working-mode", "Alignment — fast: Act without checking in.", {
+    selection: { alignment: "fast", attention: "default", checking: "default", orchestration: "default" },
+  });
+  assistant(
+    [
+      { type: "thinking", thinking: "The transcript needs one of each kind before measuring." },
+      { type: "toolCall", id: "call-t1", name: "bash", arguments: { command: "ls src" } },
+      { type: "toolCall", id: "call-t2", name: "bash", arguments: { command: "ls e2e" } },
+    ],
+    "toolUse",
+  );
   result("call-t1", "bash", text("client\nserver"));
   result("call-t2", "bash", text("isolatedPiWeb.ts"));
   assistant(text("Assistant message: the fixture lists the sources."));
   assistant([{ type: "toolCall", id: "call-one", name: "bash", arguments: { command: "git status --short" } }], "toolUse");
   result("call-one", "bash", text("M e2e/isolatedPiWeb.ts"));
   assistant(text("One routine bash row above; an Activity group follows."));
-  assistant([{ type: "toolCall", id: "call-a1", name: "bash", arguments: { command: "npm run lint" } }, { type: "toolCall", id: "call-a2", name: "read", arguments: { path: "docs/notes.md" } }], "toolUse");
+  assistant(
+    [
+      { type: "toolCall", id: "call-a1", name: "bash", arguments: { command: "npm run lint" } },
+      { type: "toolCall", id: "call-a2", name: "read", arguments: { path: "docs/notes.md" } },
+    ],
+    "toolUse",
+  );
   result("call-a1", "bash", text("lint ok"));
   result("call-a2", "read", text("# Seeded notes"));
   assistant([{ type: "toolCall", id: "call-fail", name: "bash", arguments: { command: "npm test" } }], "toolUse");
   result("call-fail", "bash", text("1 test failed\nexit 1"), true);
-  custom("background-bash", "Background bash job-du complete (exit 0).\nFull output: /tmp/job-du.log\n12G node_modules", { id: "job-du", command: "du -sh node_modules", description: "Size node_modules", state: "complete", elapsedSeconds: 3, logPath: "/tmp/job-du.log", exitCode: 0 });
+  custom("background-bash", "Background bash job-du complete (exit 0).\nFull output: /tmp/job-du.log\n12G node_modules", {
+    id: "job-du",
+    command: "du -sh node_modules",
+    description: "Size node_modules",
+    state: "complete",
+    elapsedSeconds: 3,
+    logPath: "/tmp/job-du.log",
+    exitCode: 0,
+  });
   custom("pi-goal.lifecycle", "Goal resumed", { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" });
   custom("pi-workbench:child-completion", "Subagent audit finished: 3 findings.", { attention: "terminal-results" });
   const askedAt = new Date(ms).toISOString();
-  custom("pi-web.ask.answers", "Answers: Tabs", { askId: "a1", reason: "submitted", askedAt, closedAt: askedAt, questions: [{ question: { id: "layout", question: "Which layout?", options: [{ value: "tabs", label: "Tabs" }, { value: "grid", label: "Grid" }] }, answered: true, values: ["tabs"] }], answeredCount: 1, unansweredIds: [], summary: "Which layout? Tabs" });
+  custom("pi-web.ask.answers", "Answers: Tabs", {
+    askId: "a1",
+    reason: "submitted",
+    askedAt,
+    closedAt: askedAt,
+    questions: [
+      {
+        question: {
+          id: "layout",
+          question: "Which layout?",
+          options: [
+            { value: "tabs", label: "Tabs" },
+            { value: "grid", label: "Grid" },
+          ],
+        },
+        answered: true,
+        values: ["tabs"],
+      },
+    ],
+    answeredCount: 1,
+    unansweredIds: [],
+    summary: "Which layout? Tabs",
+  });
   custom("storage-guard", "Disk low: 9 GB free. Clear caches before large builds.", {});
   assistant(text("A lone notice above; a notice fold below."));
   custom("storage-guard", "Disk low: 8 GB free.", {});
   custom("storage-guard", "Disk low: 7 GB free.", {});
   assistant([{ type: "toolCall", id: "call-img", name: "read", arguments: { path: "docs/assets/pi-web-mobile.png" } }], "toolUse");
-  result("call-img", "read", [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data: image, mimeType: "image/png" }]);
+  result("call-img", "read", [
+    { type: "text", text: "Read image file [image/png]" },
+    { type: "image", data: image, mimeType: "image/png" },
+  ]);
   assistant(text("Final answer after the image."));
-  await writeFile(join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`), `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+  await writeFile(
+    join(sessionDir, `${new Date(ms).toISOString().replaceAll(":", "-")}_${sessionId}.jsonl`),
+    `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+  );
 }
 
 function mainWorkspaceId(listing: unknown): string {
   const workspaces = typeof listing === "object" && listing !== null && "workspaces" in listing ? listing.workspaces : listing;
   if (!Array.isArray(workspaces)) throw new Error(`Unexpected workspace listing: ${JSON.stringify(listing)}`);
   const [first]: unknown[] = workspaces;
-  if (typeof first !== "object" || first === null || !("id" in first) || typeof first.id !== "string") throw new Error(`No fixture workspace: ${JSON.stringify(listing)}`);
+  if (typeof first !== "object" || first === null || !("id" in first) || typeof first.id !== "string")
+    throw new Error(`No fixture workspace: ${JSON.stringify(listing)}`);
   return first.id;
 }
 
@@ -423,7 +683,9 @@ function start(name: string, args: string[], env: NodeJS.ProcessEnv, root: strin
   // Own process group, so teardown also reaches the node child tsx spawns.
   const child = spawn(bin("tsx"), args, { cwd: REPO_ROOT, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
   const log = join(root, `${name}.log`);
-  const append = (chunk: Buffer) => { void writeFile(log, chunk, { flag: "a" }).catch(() => undefined); };
+  const append = (chunk: Buffer) => {
+    void writeFile(log, chunk, { flag: "a" }).catch(() => undefined);
+  };
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
   return child;
@@ -432,19 +694,44 @@ function start(name: string, args: string[], env: NodeJS.ProcessEnv, root: strin
 async function stop(child: ChildProcess): Promise<void> {
   if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise((done) => child.once("exit", done));
-  const signal = (name: NodeJS.Signals) => { try { process.kill(-(child.pid ?? 0), name); } catch { /* already gone */ } };
+  const signal = (name: NodeJS.Signals) => {
+    try {
+      process.kill(-(child.pid ?? 0), name);
+    } catch {
+      /* already gone */
+    }
+  };
   signal("SIGTERM");
-  const timer = setTimeout(() => { signal("SIGKILL"); }, 3000);
+  const timer = setTimeout(() => {
+    signal("SIGKILL");
+  }, 3000);
   await exited;
   clearTimeout(timer);
 }
 
 /** SIGTERM a process group, SIGKILL after `graceMs`; nothing when it is already gone. */
 async function stopGroup(pid: number, graceMs = 3000): Promise<void> {
-  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const alive = () => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   if (pid <= 1 || !alive()) return;
-  try { process.kill(-pid, "SIGTERM"); } catch { /* already gone */ }
-  await waitFor(() => !alive(), "the service to stop", graceMs).catch(() => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } });
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    /* already gone */
+  }
+  await waitFor(() => !alive(), "the service to stop", graceMs).catch(() => {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  });
 }
 
 /** Unload exactly the launchd jobs whose plists this fixture's daemons wrote (labels under the trial prefix). */
@@ -466,11 +753,18 @@ export async function restartSessiond(overrides: NodeJS.ProcessEnv = {}): Promis
   if (project === undefined || saved === undefined) throw new Error("Isolated PI WEB was not started with PI_WEB_E2E_DURABLE_LAUNCHD=1");
   const root = dirname(project);
   // `overrides`: the new daemon's changes, such as newer host code in PI_WEB_DURABLE_HOST (Phase C3).
-  const env = { ...JSON.parse(saved) as NodeJS.ProcessEnv, ...overrides };
+  const env = { ...(JSON.parse(saved) as NodeJS.ProcessEnv), ...overrides };
   const pidFile = join(root, "sessiond.pid");
   const pid = Number(await readFile(pidFile, "utf8"));
   process.kill(-pid, "SIGKILL");
-  await waitFor(() => { try { process.kill(pid, 0); return false; } catch { return true; } }, "the killed session daemon to exit");
+  await waitFor(() => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  }, "the killed session daemon to exit");
   await respawn(root, "sessiond", env);
   await sessiondListening(env);
 }
@@ -486,14 +780,17 @@ export async function restartServices(overrides: NodeJS.ProcessEnv = {}, { web =
   const saved = process.env["PI_WEB_E2E_SESSIOND_ENV"];
   if (project === undefined || saved === undefined) throw new Error("Isolated PI WEB was not started with PI_WEB_E2E_DURABLE_LAUNCHD=1");
   const root = dirname(project);
-  const env = { ...JSON.parse(saved) as NodeJS.ProcessEnv, ...overrides };
+  const env = { ...(JSON.parse(saved) as NodeJS.ProcessEnv), ...overrides };
   // launchd's ExitTimeOut is 20 s before SIGKILL; a daemon that detaches its hosts takes far less.
   for (const name of ["web", "sessiond"]) await stopGroup(Number(await readFile(join(root, `${name}.pid`), "utf8").catch(() => "0")), 20_000);
   await respawn(root, "sessiond", env);
   await sessiondListening(env);
   if (web) {
     await respawn(root, "web", env);
-    await waitFor(async () => (await fetch(`http://127.0.0.1:${env["PI_WEB_PORT"] ?? ""}/api/projects`).catch(() => undefined))?.ok === true, "the restarted web/API server");
+    await waitFor(
+      async () => (await fetch(`http://127.0.0.1:${env["PI_WEB_PORT"] ?? ""}/api/projects`).catch(() => undefined))?.ok === true,
+      "the restarted web/API server",
+    );
   }
   return env;
 }
@@ -501,7 +798,12 @@ export async function restartServices(overrides: NodeJS.ProcessEnv = {}, { web =
 /** Detached with its log as stdio, so it outlives this worker; teardown stops it through <name>.pid. */
 async function respawn(root: string, name: "sessiond" | "web", env: NodeJS.ProcessEnv): Promise<void> {
   const log = openSync(join(root, `${name}.log`), "a");
-  const child = spawn(bin("tsx"), [`src/server/${name === "web" ? "index" : "sessiond"}.ts`], { cwd: REPO_ROOT, env, detached: true, stdio: ["ignore", log, log] });
+  const child = spawn(bin("tsx"), [`src/server/${name === "web" ? "index" : "sessiond"}.ts`], {
+    cwd: REPO_ROOT,
+    env,
+    detached: true,
+    stdio: ["ignore", log, log],
+  });
   closeSync(log);
   child.unref();
   await writeFile(join(root, `${name}.pid`), String(child.pid));
@@ -509,10 +811,21 @@ async function respawn(root: string, name: "sessiond" | "web", env: NodeJS.Proce
 
 async function sessiondListening(env: NodeJS.ProcessEnv): Promise<void> {
   const socket = env["PI_WEB_SESSIOND_SOCKET"] ?? "";
-  await waitFor(() => new Promise<boolean>((done) => {
-    const probe = connect({ path: socket });
-    probe.once("connect", () => { probe.destroy(); done(true); }).once("error", () => { done(false); });
-  }), "the restarted session daemon");
+  await waitFor(
+    () =>
+      new Promise<boolean>((done) => {
+        const probe = connect({ path: socket });
+        probe
+          .once("connect", () => {
+            probe.destroy();
+            done(true);
+          })
+          .once("error", () => {
+            done(false);
+          });
+      }),
+    "the restarted session daemon",
+  );
 }
 
 async function waitFor(check: () => boolean | Promise<boolean>, what: string, timeoutMs = 30_000): Promise<void> {
@@ -529,7 +842,10 @@ function freePort(): Promise<number> {
     const server = createServer();
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      server.close(() => { if (typeof address === "object" && address !== null) done(address.port); else fail(new Error("No free port")); });
+      server.close(() => {
+        if (typeof address === "object" && address !== null) done(address.port);
+        else fail(new Error("No free port"));
+      });
     });
     server.on("error", fail);
   });
@@ -541,7 +857,11 @@ function freePort(): Promise<number> {
  */
 async function seedLogins(path: string): Promise<void> {
   const expires = Date.now() + 24 * 3_600_000;
-  const codexAccess = ["e30", Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e" } })).toString("base64url"), "sig"].join(".");
+  const codexAccess = [
+    "e30",
+    Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-e2e" } })).toString("base64url"),
+    "sig",
+  ].join(".");
   await writeJson(path, {
     anthropic: { type: "oauth", access: "fake-e2e-claude", refresh: "fake-e2e-claude-refresh", expires },
     "openai-codex": { type: "oauth", access: codexAccess, refresh: "fake-e2e-codex-refresh", expires, accountId: "acct-e2e" },

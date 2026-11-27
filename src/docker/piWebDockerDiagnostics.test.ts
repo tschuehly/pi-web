@@ -18,19 +18,24 @@ async function fixture(run: (root: string, env: NodeJS.ProcessEnv, calls: string
     await mkdir(bin);
     await mkdir(data);
     await writeFile(join(data, "container.env"), "SECRET_TOKEN=never-print-this\n");
-    await writeFile(join(root, ".env"), [
-      `PI_WEB_DOCKER_DATA_DIR=${data}`,
-      "COMPOSE_PROJECT_NAME=diagnostics-test",
-      "PI_WEB_UBUNTU_IMAGE=ubuntu:26.04",
-      "PI_WEB_EXTRA_APT_PACKAGES='fd-find bat'",
-      "UNRELATED_SECRET=also-private",
-      "",
-    ].join("\n"));
+    await writeFile(
+      join(root, ".env"),
+      [
+        `PI_WEB_DOCKER_DATA_DIR=${data}`,
+        "COMPOSE_PROJECT_NAME=diagnostics-test",
+        "PI_WEB_UBUNTU_IMAGE=ubuntu:26.04",
+        "PI_WEB_EXTRA_APT_PACKAGES='fd-find bat'",
+        "UNRELATED_SECRET=also-private",
+        "",
+      ].join("\n"),
+    );
     for (const name of ["compose.yml", "compose.override.yml", "compose.local.yml"]) {
       await writeFile(join(root, name), "services: {}\n");
     }
     const docker = join(bin, "docker");
-    await writeFile(docker, `#!/bin/sh
+    await writeFile(
+      docker,
+      `#!/bin/sh
 printf '%s\\n' "$*" >> '${calls}'
 case "$*" in
   'compose version') echo 'Docker Compose version test' ;;
@@ -42,15 +47,20 @@ case "$*" in
   'version '*) echo 'daemon test' ;;
   '--version') echo 'Docker version test' ;;
 esac
-`);
+`,
+    );
     await chmod(docker, 0o755);
-    await run(root, {
-      ...process.env,
-      PI_WEB_DOCKER_RUNTIME: "0",
-      PI_WEB_DOCKER_INSTALL_DIR: root,
-      PATH: `${bin}:${process.env["PATH"] ?? ""}`,
-      PI_WEB_UBUNTU_IMAGE: "ubuntu:26.04@sha256:test",
-    }, calls);
+    await run(
+      root,
+      {
+        ...process.env,
+        PI_WEB_DOCKER_RUNTIME: "0",
+        PI_WEB_DOCKER_INSTALL_DIR: root,
+        PATH: `${bin}:${process.env["PATH"] ?? ""}`,
+        PI_WEB_UBUNTU_IMAGE: "ubuntu:26.04@sha256:test",
+      },
+      calls,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -97,13 +107,16 @@ describe("Docker controller build and diagnostics", () => {
       const { stdout } = await execFile(controller, ["doctor", "--json"], { env });
       const report: unknown = JSON.parse(stdout);
       expect(report).toHaveProperty("schemaVersion", 1);
-      expect(report).toHaveProperty("diagnostics", expect.arrayContaining([
+      expect(report).toHaveProperty(
+        "diagnostics",
+        expect.arrayContaining([
           { key: "PI_WEB_UBUNTU_IMAGE", value: env["PI_WEB_UBUNTU_IMAGE"], source: "shell environment" },
           { key: "PI_WEB_EXTRA_APT_PACKAGES", value: "fd-find bat", source: join(root, ".env") },
           { key: "PI_WEB_NODE_IMAGE", value: "node:22.22.2-bookworm-slim", source: "default" },
           { key: "container_environment", value: join(root, "data/container.env"), source: "path only; contents private" },
           { key: "image_diagnostics", value: "Image manifest\nGit test; mise test; PATH test", source: "pi-web-image-doctor" },
-      ]));
+        ]),
+      );
       expect(stdout).not.toMatch(/never-print-this|also-private|SECRET_TOKEN|UNRELATED_SECRET/);
       const commands = await readFile(calls, "utf8");
       expect(commands).not.toMatch(/(?:compose .*config| run | up | restart )/);
@@ -119,9 +132,7 @@ describe("Docker controller build and diagnostics", () => {
       const value = 'quoted" path\\with\ttab\nnext line\b\f\u0001';
       const { stdout } = await execFile(controller, ["doctor", "--json"], { env: { ...env, PI_WEB_EXTRA_APT_PACKAGES: value } });
       const report: unknown = JSON.parse(stdout);
-      expect(report).toHaveProperty("diagnostics", expect.arrayContaining([
-        { key: "PI_WEB_EXTRA_APT_PACKAGES", value, source: "shell environment" },
-      ]));
+      expect(report).toHaveProperty("diagnostics", expect.arrayContaining([{ key: "PI_WEB_EXTRA_APT_PACKAGES", value, source: "shell environment" }]));
     });
   });
 });

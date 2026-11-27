@@ -11,8 +11,13 @@ it("rejects symlinked records and replaces the link without modifying its target
     const store = new LogStore(root);
     const scope = logScope("project", "workspace");
     const record: LogEntry = {
-      id: "11111111-1111-4111-8111-111111111111", createdAt: "2026-09-01", sessionId: "session",
-      question: "Retell", status: "completed", stages: [], text: "Original",
+      id: "11111111-1111-4111-8111-111111111111",
+      createdAt: "2026-09-01",
+      sessionId: "session",
+      question: "Retell",
+      status: "completed",
+      stages: [],
+      text: "Original",
     };
     await store.save(scope, record);
     expect(await store.read(scope, record.id)).toEqual(record);

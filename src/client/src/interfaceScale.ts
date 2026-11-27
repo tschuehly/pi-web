@@ -55,7 +55,10 @@ export function stepInterfaceScale(current: number, direction: 1 | -1): number {
   const steps = INTERFACE_SCALE_STEPS;
   let index = steps.findIndex((step) => step === current);
   if (index === -1) {
-    index = steps.reduce((closest, step, candidate) => (Math.abs(step - current) < Math.abs((steps[closest] ?? DEFAULT_INTERFACE_SCALE) - current) ? candidate : closest), 0);
+    index = steps.reduce(
+      (closest, step, candidate) => (Math.abs(step - current) < Math.abs((steps[closest] ?? DEFAULT_INTERFACE_SCALE) - current) ? candidate : closest),
+      0,
+    );
   }
   return steps[Math.min(steps.length - 1, Math.max(0, index + direction))] ?? DEFAULT_INTERFACE_SCALE;
 }

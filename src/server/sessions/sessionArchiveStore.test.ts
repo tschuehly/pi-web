@@ -10,7 +10,9 @@ const tempRoots: string[] = [];
 
 describe("defaultSessionArchiveFilePath", () => {
   it("uses PI_WEB_DATA_DIR when configured", () => {
-    expect(defaultSessionArchiveFilePath({ PI_WEB_DATA_DIR: "managed-state" }, "/tmp/pi-web")).toBe(resolve("/tmp/pi-web", "managed-state", "archived-sessions.json"));
+    expect(defaultSessionArchiveFilePath({ PI_WEB_DATA_DIR: "managed-state" }, "/tmp/pi-web")).toBe(
+      resolve("/tmp/pi-web", "managed-state", "archived-sessions.json"),
+    );
   });
 
   it("preserves the ~/.pi-web default when PI_WEB_DATA_DIR is unset", () => {
@@ -58,9 +60,13 @@ describe("SessionArchiveStore", () => {
     const indexPath = defaultSessionArchiveFilePath(env);
     const oldStore = new SessionArchiveStore(indexPath, sessionArchiveDirectory(env));
     const archiveInput = (sessionId: string) => ({
-      sessionId, cwd: root, path: join(root, `${sessionId}.jsonl`),
-      created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:01:00.000Z",
-      messageCount: 1, firstMessage: "hello",
+      sessionId,
+      cwd: root,
+      path: join(root, `${sessionId}.jsonl`),
+      created: "2026-01-01T00:00:00.000Z",
+      modified: "2026-01-01T00:01:00.000Z",
+      messageCount: 1,
+      firstMessage: "hello",
     });
     const oldInput = archiveInput("old");
     await writeFile(oldInput.path, "old transcript\n");
@@ -195,30 +201,34 @@ describe("SessionArchiveStore", () => {
     tempRoots.push(root);
     const archiveFile = join(root, "archived-sessions.json");
     const rawCwd = join(root, "workspace", "..", "workspace");
-    await writeFile(archiveFile, JSON.stringify({
-      sessions: [
-        {
-          sessionId: "abc123",
-          cwd: rawCwd,
-          archivedAt: "2026-01-01T00:00:00.000Z",
-          originalPath: "/sessions/abc123.jsonl",
-          archivePath: "/archive/abc123.jsonl",
-          messageCount: 3,
-          firstMessage: "prefix",
-          name: "Prefix match",
-          parentSessionPath: "/sessions/root.jsonl",
-        },
-        {
-          sessionId: "abc",
-          cwd: rawCwd,
-          archivedAt: "2026-01-01T00:00:00.000Z",
-          originalPath: "/sessions/abc.jsonl",
-          archivePath: "/archive/abc.jsonl",
-          messageCount: 1,
-          firstMessage: "exact",
-        },
-      ],
-    }), "utf8");
+    await writeFile(
+      archiveFile,
+      JSON.stringify({
+        sessions: [
+          {
+            sessionId: "abc123",
+            cwd: rawCwd,
+            archivedAt: "2026-01-01T00:00:00.000Z",
+            originalPath: "/sessions/abc123.jsonl",
+            archivePath: "/archive/abc123.jsonl",
+            messageCount: 3,
+            firstMessage: "prefix",
+            name: "Prefix match",
+            parentSessionPath: "/sessions/root.jsonl",
+          },
+          {
+            sessionId: "abc",
+            cwd: rawCwd,
+            archivedAt: "2026-01-01T00:00:00.000Z",
+            originalPath: "/sessions/abc.jsonl",
+            archivePath: "/archive/abc.jsonl",
+            messageCount: 1,
+            firstMessage: "exact",
+          },
+        ],
+      }),
+      "utf8",
+    );
 
     const store = new SessionArchiveStore(archiveFile, join(root, "archived-files"));
 

@@ -28,12 +28,7 @@ export class PluginBackendChannelTransportFrameError extends Error {
 }
 
 /** Decode one opaque text frame while enforcing only physical-hop bounds. */
-export function decodeBoundedPluginBackendChannelTextFrame(
-  data: RawData | string,
-  isBinary: boolean,
-  maxBytes: number,
-  label: string,
-): string {
+export function decodeBoundedPluginBackendChannelTextFrame(data: RawData | string, isBinary: boolean, maxBytes: number, label: string): string {
   if (isBinary) {
     throw new PluginBackendChannelTransportFrameError(1003, "Plugin backend channels accept text frames only");
   }
@@ -44,11 +39,7 @@ export function decodeBoundedPluginBackendChannelTextFrame(
     return data;
   }
 
-  const bytes = data instanceof ArrayBuffer
-    ? new Uint8Array(data)
-    : Array.isArray(data)
-      ? Buffer.concat(data)
-      : data;
+  const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : Array.isArray(data) ? Buffer.concat(data) : data;
   if (bytes.byteLength > maxBytes) {
     throw new PluginBackendChannelTransportFrameError(1009, `${label} exceeds the ${String(maxBytes)} byte transport limit`);
   }
@@ -73,21 +64,31 @@ export function installPluginBackendChannelWebSocketPayloadLimit(server: WebSock
     // The ws `headers` event runs synchronously immediately before setSocket()
     // reads this option. Reset every unrelated upgrade so session protocols keep
     // the server's configured allowance.
-    server.options.maxPayload = pendingPluginBackendChannelUpgrades.delete(request)
-      ? PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES
-      : defaultMaxPayload;
+    server.options.maxPayload = pendingPluginBackendChannelUpgrades.delete(request) ? PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES : defaultMaxPayload;
   });
 }
 
 export function bridgeSockets(client: WebSocket, upstream: WebSocket): void {
   const sendToClient = createBufferedSender(client);
   const sendToUpstream = createBufferedSender(upstream);
-  client.on("message", (data, isBinary) => { sendToUpstream(data, isBinary); });
-  upstream.on("message", (data, isBinary) => { sendToClient(data, isBinary); });
-  client.on("close", () => { upstream.close(); });
-  upstream.on("close", () => { client.close(); });
-  upstream.on("error", () => { client.close(); });
-  client.on("error", () => { upstream.close(); });
+  client.on("message", (data, isBinary) => {
+    sendToUpstream(data, isBinary);
+  });
+  upstream.on("message", (data, isBinary) => {
+    sendToClient(data, isBinary);
+  });
+  client.on("close", () => {
+    upstream.close();
+  });
+  upstream.on("close", () => {
+    client.close();
+  });
+  upstream.on("error", () => {
+    client.close();
+  });
+  client.on("error", () => {
+    upstream.close();
+  });
 }
 
 export function createBufferedSender(socket: WebSocket): (data: Data, isBinary: boolean) => void {
@@ -128,10 +129,7 @@ interface SenderDrainWaiter {
 }
 
 /** One-at-a-time sender whose connecting and socket-write queue is explicitly bounded. */
-export function createBoundedTextWebSocketSender(
-  socket: WebSocket,
-  options: BoundedTextWebSocketSenderOptions = {},
-): BoundedTextWebSocketSender {
+export function createBoundedTextWebSocketSender(socket: WebSocket, options: BoundedTextWebSocketSenderOptions = {}): BoundedTextWebSocketSender {
   const maxFrames = options.maxFrames ?? PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES;
   const maxBytes = options.maxBytes ?? PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_BYTES;
   const queue: { text: string; bytes: number }[] = [];
@@ -230,17 +228,15 @@ export interface PluginBackendChannelBridgeOptions {
  * envelope semantics. The returned lifetime resolves only after both physical
  * sockets have closed and accepted clean-close frames have drained.
  */
-export function bridgePluginBackendChannelSockets(
-  client: WebSocket,
-  upstream: WebSocket,
-  options: PluginBackendChannelBridgeOptions = {},
-): Promise<void> {
+export function bridgePluginBackendChannelSockets(client: WebSocket, upstream: WebSocket, options: PluginBackendChannelBridgeOptions = {}): Promise<void> {
   setPluginBackendChannelSocketPayloadLimit(client, PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES);
   let closing = false;
   let closeNotified = false;
   let receivedClientFrame = false;
   let resolveCompletion: () => void = () => undefined;
-  const completion = new Promise<void>((resolve) => { resolveCompletion = resolve; });
+  const completion = new Promise<void>((resolve) => {
+    resolveCompletion = resolve;
+  });
   const isClosing = (): boolean => closing;
   const detachBridgeListeners = (): void => {
     client.off("message", onClientMessage);
@@ -259,17 +255,20 @@ export function bridgePluginBackendChannelSockets(
   const fail = (code: number, reason: string): void => {
     if (closing) return;
     closing = true;
-    void Promise.allSettled([
-      closePluginBackendChannelWebSocket(client, code, reason),
-      closePluginBackendChannelWebSocket(upstream, code, reason),
-    ]).finally(notifyClosed);
+    void Promise.allSettled([closePluginBackendChannelWebSocket(client, code, reason), closePluginBackendChannelWebSocket(upstream, code, reason)]).finally(
+      notifyClosed,
+    );
   };
   const sendToClient = createBoundedTextWebSocketSender(client, {
     maxBytes: PLUGIN_BACKEND_CHANNEL_SERVER_TO_BROWSER_QUEUE_MAX_BYTES,
-    onOverflow: (error) => { fail(1013, error.message); },
+    onOverflow: (error) => {
+      fail(1013, error.message);
+    },
   });
   const sendToUpstream = createBoundedTextWebSocketSender(upstream, {
-    onOverflow: (error) => { fail(1013, error.message); },
+    onOverflow: (error) => {
+      fail(1013, error.message);
+    },
   });
 
   const forwardClientFrame = (data: RawData | string, isBinary: boolean): void => {
@@ -340,12 +339,7 @@ export function bridgePluginBackendChannelSockets(
   return completion;
 }
 
-async function propagatePluginChannelClose(
-  target: WebSocket,
-  sender: BoundedTextWebSocketSender,
-  code: number,
-  reason: string,
-): Promise<void> {
+async function propagatePluginChannelClose(target: WebSocket, sender: BoundedTextWebSocketSender, code: number, reason: string): Promise<void> {
   const closeCode = transferableCloseCode(code);
   if (closeCode === 1000) {
     try {
@@ -388,9 +382,7 @@ function decodeCloseReason(reason: Buffer): string {
 }
 
 function transferableCloseCode(code: number): number {
-  return code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006)
-    ? code
-    : 1011;
+  return code === 1000 || (code >= 1001 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) ? code : 1011;
 }
 
 export interface PluginBackendChannelWebSocketCloseOptions {

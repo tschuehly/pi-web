@@ -14,11 +14,10 @@ function dialog(patch: Partial<PendingExtensionDialog> = {}): PendingExtensionDi
 }
 
 /** Observe a parked wait without hanging the test when it never settles. */
-async function settledValue(promise: Promise<boolean | string | undefined>): Promise<{ settled: true; value: boolean | string | undefined } | { settled: false }> {
-  return await Promise.race([
-    promise.then((value) => ({ settled: true as const, value })),
-    Promise.resolve({ settled: false as const }),
-  ]);
+async function settledValue(
+  promise: Promise<boolean | string | undefined>,
+): Promise<{ settled: true; value: boolean | string | undefined } | { settled: false }> {
+  return await Promise.race([promise.then((value) => ({ settled: true as const, value })), Promise.resolve({ settled: false as const })]);
 }
 
 describe("extensionDialogCancelValue", () => {
@@ -80,7 +79,12 @@ describe("ExtensionDialogWaiters", () => {
     const waiters = new ExtensionDialogWaiters();
     const controller = new AbortController();
     const triggers: string[] = [];
-    void waiters.park(dialog(), { signal: controller.signal, onTrigger: (reason) => { triggers.push(reason); } });
+    void waiters.park(dialog(), {
+      signal: controller.signal,
+      onTrigger: (reason) => {
+        triggers.push(reason);
+      },
+    });
 
     controller.abort();
 
@@ -91,7 +95,12 @@ describe("ExtensionDialogWaiters", () => {
     const waiters = new ExtensionDialogWaiters();
     const controller = new AbortController();
     const triggers: string[] = [];
-    void waiters.park(dialog(), { signal: controller.signal, onTrigger: (reason) => { triggers.push(reason); } });
+    void waiters.park(dialog(), {
+      signal: controller.signal,
+      onTrigger: (reason) => {
+        triggers.push(reason);
+      },
+    });
 
     waiters.settleWithCancelValue("dialog-1");
     controller.abort();
@@ -119,7 +128,12 @@ describe("ExtensionDialogWaiters timeout", () => {
     vi.useFakeTimers();
     const waiters = new ExtensionDialogWaiters();
     const triggers: string[] = [];
-    const parked = waiters.park(dialog(), { timeoutMs: 5_000, onTrigger: (reason) => { triggers.push(reason); } });
+    const parked = waiters.park(dialog(), {
+      timeoutMs: 5_000,
+      onTrigger: (reason) => {
+        triggers.push(reason);
+      },
+    });
 
     vi.advanceTimersByTime(5_000);
 
@@ -140,7 +154,12 @@ describe("ExtensionDialogWaiters timeout", () => {
     vi.useFakeTimers();
     const waiters = new ExtensionDialogWaiters();
     const triggers: string[] = [];
-    const parked = waiters.park(dialog(), { timeoutMs: 5_000, onTrigger: (reason) => { triggers.push(reason); } });
+    const parked = waiters.park(dialog(), {
+      timeoutMs: 5_000,
+      onTrigger: (reason) => {
+        triggers.push(reason);
+      },
+    });
 
     waiters.settleWithAnswer("dialog-1", true);
     vi.advanceTimersByTime(10_000);

@@ -27,16 +27,18 @@ describe("bundled Git package metadata", () => {
     const { catalog } = await gitCatalogFixture(true);
 
     await expect(catalog.snapshot()).resolves.toMatchObject({
-      plugins: [{
-        id: "git",
-        source: "bundled",
-        scope: "bundled",
-        machineSpecific: true,
-        enabled: true,
-        browserRoot: { path: "browser" },
-        browserModule: { path: "browser/pi-web-plugin.js" },
-        serverModule: { path: "server-plugin.js" },
-      }],
+      plugins: [
+        {
+          id: "git",
+          source: "bundled",
+          scope: "bundled",
+          machineSpecific: true,
+          enabled: true,
+          browserRoot: { path: "browser" },
+          browserModule: { path: "browser/pi-web-plugin.js" },
+          serverModule: { path: "server-plugin.js" },
+        },
+      ],
       diagnostics: [],
     });
   });
@@ -69,7 +71,8 @@ describe("bundled Git package metadata", () => {
         violations.push(`${file}: retains a host Git UI implementation`);
       }
       if (source.includes("core:workspace.git")) violations.push(`${file}: retains the core Git panel id`);
-      if (source.includes("renderBuiltinTabIcon(\"git\")") || source.includes("renderBuiltinTabIcon('git')")) violations.push(`${file}: retains the host Git panel icon`);
+      if (source.includes('renderBuiltinTabIcon("git")') || source.includes("renderBuiltinTabIcon('git')"))
+        violations.push(`${file}: retains the host Git panel icon`);
       if (/\.pluginId\s*===\s*["']git["']/u.test(source)) violations.push(`${file}: branches on the Git provider id`);
     }
 
@@ -91,11 +94,13 @@ describe("bundled Git package metadata", () => {
     });
 
     expect(importer).not.toHaveBeenCalled();
-    expect(runtime.healthRecords()).toEqual([expect.objectContaining({
-      pluginId: "git",
-      state: "disabled",
-      message: "disabled in PI WEB config",
-    })]);
+    expect(runtime.healthRecords()).toEqual([
+      expect.objectContaining({
+        pluginId: "git",
+        state: "disabled",
+        message: "disabled in PI WEB config",
+      }),
+    ]);
     expect(resolution).toMatchObject({
       status: "folder",
       workspaces: [{ path: root, isMain: true }],
@@ -111,7 +116,7 @@ async function productionTypeScriptFiles(root: string): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await productionTypeScriptFiles(path));
+    if (entry.isDirectory()) files.push(...(await productionTypeScriptFiles(path)));
     else if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") && !entry.name.includes(".testSupport.")) files.push(path);
   }
   return files;

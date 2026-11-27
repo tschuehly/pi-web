@@ -10,7 +10,9 @@ import { emptyArchiveStore, fakeRuntime, runtimeCreator, sessionGateway, session
 import { openControlledPendingAskFixture } from "./controlledPendingAskFixture.js";
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 
 it("opens a daemon-memory ask on an owned session through the normal status and ask routes", async () => {
   // Canonical, as the fixture resolves its anchor; exact-id resolution compares stored cwd paths.
@@ -22,13 +24,23 @@ it("opens a daemon-memory ask on an owned session through the normal status and 
   const manifest = join(root, "manifest.json");
   await Promise.all([mkdir(cwd, { recursive: true }), mkdir(sessionDir, { recursive: true }), mkdir(dataDir, { recursive: true })]);
   await writeFile(manifest, JSON.stringify({ anchors: [{ sessionId: "019c8f10-1000-7000-8000-000000000001", cwd }] }));
-  const env = { PI_WEB_FIXTURE_OWNED_ROOT: root, PI_WEB_FIXTURE_PENDING_ASK_MANIFEST: manifest, PI_CODING_AGENT_SESSION_DIR: sessionDir, PI_CODING_AGENT_DIR: join(root, "agent"), PI_WEB_DATA_DIR: dataDir, PI_WEB_SESSIOND_SOCKET: join(root, "data", "sessiond.sock") };
+  const env = {
+    PI_WEB_FIXTURE_OWNED_ROOT: root,
+    PI_WEB_FIXTURE_PENDING_ASK_MANIFEST: manifest,
+    PI_CODING_AGENT_SESSION_DIR: sessionDir,
+    PI_CODING_AGENT_DIR: join(root, "agent"),
+    PI_WEB_DATA_DIR: dataDir,
+    PI_WEB_SESSIOND_SOCKET: join(root, "data", "sessiond.sock"),
+  };
   const fake = fakeRuntime("019c8f10-1000-7000-8000-000000000001");
   const events = new SessionEventHub();
   const sessions = new PiSessionService(events, {
-    agentDir: join(root, "agent"), modelRuntime: testModelRuntime,
+    agentDir: join(root, "agent"),
+    modelRuntime: testModelRuntime,
     sessionManager: sessionGateway([sessionRecord("019c8f10-1000-7000-8000-000000000001", cwd)]),
-    archiveStore: emptyArchiveStore(), createAgentRuntime: runtimeCreator(fake.runtime), heartbeatIntervalMs: 60_000,
+    archiveStore: emptyArchiveStore(),
+    createAgentRuntime: runtimeCreator(fake.runtime),
+    heartbeatIntervalMs: 60_000,
   });
   const app = Fastify();
   registerSessionRoutes(app, sessions, events);
@@ -43,11 +55,25 @@ it("opens a daemon-memory ask on an owned session through the normal status and 
     expect(body).toMatchObject({ pendingAsks: [{ questions: [{ id: "fixture-choice" }] }] });
     if (typeof body !== "object" || body === null || !("pendingAsks" in body) || !Array.isArray(body.pendingAsks)) throw new Error("Missing pending ask");
     const ask: unknown = body.pendingAsks[0];
-    if (typeof ask !== "object" || ask === null || !("askId" in ask) || typeof ask.askId !== "string" || !("revision" in ask) || typeof ask.revision !== "string") throw new Error("Missing ask id or revision");
-    const response = await app.inject({ method: "POST", url: "/sessions/019c8f10-1000-7000-8000-000000000001/ask/submit", payload: { cwd, askId: ask.askId, revision: ask.revision, answers: [{ id: "fixture-choice", values: ["one"] }] } });
+    if (
+      typeof ask !== "object"
+      || ask === null
+      || !("askId" in ask)
+      || typeof ask.askId !== "string"
+      || !("revision" in ask)
+      || typeof ask.revision !== "string"
+    )
+      throw new Error("Missing ask id or revision");
+    const response = await app.inject({
+      method: "POST",
+      url: "/sessions/019c8f10-1000-7000-8000-000000000001/ask/submit",
+      payload: { cwd, askId: ask.askId, revision: ask.revision, answers: [{ id: "fixture-choice", values: ["one"] }] },
+    });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ result: "closed" });
-    expect((await app.inject({ url: `/sessions/019c8f10-1000-7000-8000-000000000001/status?cwd=${encodeURIComponent(cwd)}` })).json()).not.toHaveProperty("pendingAsks");
+    expect((await app.inject({ url: `/sessions/019c8f10-1000-7000-8000-000000000001/status?cwd=${encodeURIComponent(cwd)}` })).json()).not.toHaveProperty(
+      "pendingAsks",
+    );
     expect(fake.calls.sendCustomMessage).toHaveLength(1);
   } finally {
     await app.close();

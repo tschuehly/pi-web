@@ -55,10 +55,13 @@ export class ProjectStore {
     if (existing) return existing;
 
     const trimmedName = input.name?.trim();
-    const leafName = path.split("/").filter((part) => part !== "").at(-1);
+    const leafName = path
+      .split("/")
+      .filter((part) => part !== "")
+      .at(-1);
     const project: Project = {
       id: randomUUID(),
-      name: trimmedName !== undefined && trimmedName !== "" ? trimmedName : leafName ?? path,
+      name: trimmedName !== undefined && trimmedName !== "" ? trimmedName : (leafName ?? path),
       path,
       createdAt: new Date().toISOString(),
     };

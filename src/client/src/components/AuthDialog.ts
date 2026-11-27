@@ -46,14 +46,20 @@ export class AuthDialog extends LitElement {
     if (state === undefined) return null;
     return html`
       <modal-surface
-        .onClose=${() => { this.cancel(); }}
+        .onClose=${() => {
+          this.cancel();
+        }}
         .initialFocus=${this.initialFocusTarget(state)}
         .label=${this.dialogTitle(state)}
-        @keydown=${(event: KeyboardEvent) => { this.handleKeyDown(event); }}
+        @keydown=${(event: KeyboardEvent) => {
+          this.handleKeyDown(event);
+        }}
       >
         <header class="ui-dialog-header">
           <strong class="ui-dialog-title">${this.dialogTitle(state)}</strong>
-          <button class="ui-button ui-button--icon" title="Close" aria-label="Close" @click=${() => { this.cancel(); }}>×</button>
+          <button class="ui-button ui-button--icon" title="Close" aria-label="Close" @click=${() => {
+            this.cancel();
+          }}>×</button>
         </header>
         ${this.renderBody(state)}
       </modal-surface>
@@ -65,8 +71,24 @@ export class AuthDialog extends LitElement {
     switch (state.step) {
       case "method":
         return [
-          { key: "oauth", title: "Use a subscription", detail: "ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot", searchText: "Use a subscription", run: () => { this.onChooseMethod?.("oauth"); } },
-          { key: "api_key", title: "Use provider credentials", detail: "Configure an API key or provider-specific credentials in the active Pi-compatible profile's auth.json", searchText: "Use provider credentials", run: () => { this.onChooseMethod?.("api_key"); } },
+          {
+            key: "oauth",
+            title: "Use a subscription",
+            detail: "ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot",
+            searchText: "Use a subscription",
+            run: () => {
+              this.onChooseMethod?.("oauth");
+            },
+          },
+          {
+            key: "api_key",
+            title: "Use provider credentials",
+            detail: "Configure an API key or provider-specific credentials in the active Pi-compatible profile's auth.json",
+            searchText: "Use provider credentials",
+            run: () => {
+              this.onChooseMethod?.("api_key");
+            },
+          },
         ];
       case "providers":
         return state.providers.map((provider) => ({
@@ -74,7 +96,9 @@ export class AuthDialog extends LitElement {
           title: html`${provider.name}${provider.status.source !== undefined ? html` <em>${statusLabel(provider)}</em>` : null}`,
           detail: `${provider.id} · ${authTypeLabel(provider.authType)}`,
           searchText: provider.name,
-          run: () => { this.onSelectProvider?.(provider.id, provider.authType); },
+          run: () => {
+            this.onSelectProvider?.(provider.id, provider.authType);
+          },
         }));
       case "logout":
         return state.providers.map((provider) => ({
@@ -82,7 +106,9 @@ export class AuthDialog extends LitElement {
           title: provider.name,
           detail: `${provider.id} · ${authTypeLabel(provider.authType)}`,
           searchText: provider.name,
-          run: () => { this.onLogoutProvider?.(provider.id); },
+          run: () => {
+            this.onLogoutProvider?.(provider.id);
+          },
         }));
       case "starting":
       case "oauth":
@@ -141,9 +167,8 @@ export class AuthDialog extends LitElement {
     if (previousStep === undefined) return;
     const currentStep = this.state?.step;
     const stepChanged = previousStep !== currentStep;
-    const oauthInteractionChanged = previousStep === "oauth"
-      && currentStep === "oauth"
-      && oauthInteractionKey(changed.get("state")) !== oauthInteractionKey(this.state);
+    const oauthInteractionChanged =
+      previousStep === "oauth" && currentStep === "oauth" && oauthInteractionKey(changed.get("state")) !== oauthInteractionKey(this.state);
     // Step changes and same-step OAuth interaction changes can replace the
     // focused control. Reapply the surface's input-or-dialog focus contract so
     // keyboard events never become stranded on the page.
@@ -152,46 +177,76 @@ export class AuthDialog extends LitElement {
 
   private dialogTitle(state: AuthDialogState): string {
     switch (state.step) {
-      case "method": return "Configure provider authentication";
-      case "starting": return state.title;
-      case "providers": return state.authType === undefined ? "Select provider authentication" : state.authType === "oauth" ? "Select subscription provider" : "Select credential provider";
-      case "oauth": return state.flow.target === "mcp"
-        ? state.flow.mcpMode === undefined ? "MCP authentication" : `MCP ${state.flow.mcpMode}${state.flow.select === undefined ? `: ${state.flow.providerName}` : ""}`
-        : `Login to ${state.flow.providerName}`;
-      case "logout": return "Remove stored provider authentication";
+      case "method":
+        return "Configure provider authentication";
+      case "starting":
+        return state.title;
+      case "providers":
+        return state.authType === undefined
+          ? "Select provider authentication"
+          : state.authType === "oauth"
+            ? "Select subscription provider"
+            : "Select credential provider";
+      case "oauth":
+        return state.flow.target === "mcp"
+          ? state.flow.mcpMode === undefined
+            ? "MCP authentication"
+            : `MCP ${state.flow.mcpMode}${state.flow.select === undefined ? `: ${state.flow.providerName}` : ""}`
+          : `Login to ${state.flow.providerName}`;
+      case "logout":
+        return "Remove stored provider authentication";
     }
   }
 
   private renderBody(state: AuthDialogState) {
     if (state.step === "oauth") return this.renderOAuth(state);
-    if (state.step === "starting") return html`
+    if (state.step === "starting")
+      return html`
       <div class="ui-dialog-body ui-form-body">
         ${state.error === undefined ? html`<p role="status">Starting MCP authentication…</p>` : html`<p class="ui-form-error" role="alert">${state.error}</p>`}
-        <div class="ui-form-actions"><button class="ui-button" @click=${() => { this.onCancel?.(); }}>${state.error === undefined ? "Cancel" : "Close"}</button></div>
+        <div class="ui-form-actions"><button class="ui-button" @click=${() => {
+          this.onCancel?.();
+        }}>${state.error === undefined ? "Cancel" : "Close"}</button></div>
       </div>`;
     const options = this.optionsFor(state) ?? [];
     const visible = this.filteredOptions(options);
     return html`
-      ${this.stepHasSearch(state) && options.length > 0 ? html`
+      ${
+        this.stepHasSearch(state) && options.length > 0
+          ? html`
         <div class="ui-dialog-search-row">
-          <input class="ui-dialog-search" aria-label="Search providers" placeholder="Search providers" .value=${this.query} @input=${(event: Event) => { this.handleSearchInput(event); }}>
+          <input class="ui-dialog-search" aria-label="Search providers" placeholder="Search providers" .value=${this.query} @input=${(event: Event) => {
+            this.handleSearchInput(event);
+          }}>
         </div>
-      ` : null}
+      `
+          : null
+      }
       <div class="options ui-selection-list">
-        ${options.length === 0 ? html`<div class="empty ui-dialog-empty">${state.step === "logout" ? "No stored credentials. Environment variables and models.json settings are unchanged." : "No providers available."}</div>`
-        : visible.length === 0 ? html`<div class="empty ui-dialog-empty">No matching providers</div>`
-        : visible.map((option, index) => html`
+        ${
+          options.length === 0
+            ? html`<div class="empty ui-dialog-empty">${state.step === "logout" ? "No stored credentials. Environment variables and models.json settings are unchanged." : "No providers available."}</div>`
+            : visible.length === 0
+              ? html`<div class="empty ui-dialog-empty">No matching providers</div>`
+              : visible.map(
+                  (option, index) => html`
           <button
             class=${`ui-button ui-selection-option ${index === this.selectedIndex ? "selected" : ""}`}
             aria-current=${index === this.selectedIndex ? "true" : nothing}
             ${scrollWhenSelected(index === this.selectedIndex, option.key)}
-            @focus=${() => { this.selectedIndex = index; }}
-            @click=${() => { option.run(); }}
+            @focus=${() => {
+              this.selectedIndex = index;
+            }}
+            @click=${() => {
+              option.run();
+            }}
           >
             <span>${option.title}</span>
             <small class="ui-selection-detail">${option.detail}</small>
           </button>
-        `)}
+        `,
+                )
+        }
       </div>
     `;
   }
@@ -206,48 +261,102 @@ export class AuthDialog extends LitElement {
     const promptInputType = prompt === undefined ? undefined : oauthPromptInputType(prompt.promptType);
     // Pi's MCP bridge uses a text input for its redirect fallback; provider
     // flows identify this interaction explicitly with manual_code.
-    const showPasteNote = (isMcp || isBrowserRemoteOAuthMachine(state.machineId, window.location.hostname))
+    const showPasteNote =
+      (isMcp || isBrowserRemoteOAuthMachine(state.machineId, window.location.hostname))
       && flow.status === "running"
       && (isMcp ? prompt !== undefined && flow.auth !== undefined : prompt?.promptType === "manual_code");
     return html`
       <div class="form ui-dialog-body ui-form-body">
-        ${showAuthorization && flow.auth !== undefined ? html`
+        ${
+          showAuthorization && flow.auth !== undefined
+            ? html`
           <p>${isMcp ? "Approve access in your browser, then return here." : "Open this authorization link:"}</p>
           <p><a class=${isMcp ? "ui-button ui-button--action" : nothing} href=${flow.auth.url} target="_blank" rel="noopener noreferrer">${isMcp ? "Open authorization page" : flow.auth.url}</a></p>
-          ${flow.auth.deviceCode !== undefined ? html`
+          ${
+            flow.auth.deviceCode !== undefined
+              ? html`
             <p class="warning">Enter code: <code>${flow.auth.deviceCode.userCode}</code></p>
-          ` : flow.auth.instructions !== undefined ? html`<p class="warning">${flow.auth.instructions}</p>` : null}
-        ` : isMcp ? select !== undefined ? null : html`<p role="status">${flow.cancelRequested === true && running ? "Cancellation requested. Waiting for Pi to finish…" : !running ? "Operation finished" : "Waiting for Pi…"}</p>` : html`<p>Starting login flow…</p>`}
+          `
+              : flow.auth.instructions !== undefined
+                ? html`<p class="warning">${flow.auth.instructions}</p>`
+                : null
+          }
+        `
+            : isMcp
+              ? select !== undefined
+                ? null
+                : html`<p role="status">${flow.cancelRequested === true && running ? "Cancellation requested. Waiting for Pi to finish…" : !running ? "Operation finished" : "Waiting for Pi…"}</p>`
+              : html`<p>Starting login flow…</p>`
+        }
         ${isMcp && flow.mcpMode === "logout" ? html`<p class="warning">Logout removes Pi’s saved credentials. It does not disable the server or revoke access at the provider. Other sessions using those credentials are also affected.</p>` : null}
         ${isMcp && flow.mcpMode === "login" && flow.status === "complete" && flow.auth === undefined && flow.cancelRequested !== true ? html`<p>No browser authorization was requested. Pi may have reused existing credentials; read its result below.</p>` : null}
         ${isMcp && flow.cancelRequested === true ? html`<p class="warning">Pi may already be completing authentication. Credentials may have been saved if approval happened before cancellation.</p>` : null}
         ${showPasteNote ? html`<p class="warning">${isMcp ? "If the redirect page cannot load after approval, copy the full URL from your browser’s address bar and paste it below." : "After you approve, the redirect page will probably fail to load — that is expected. Copy the full URL from your browser's address bar and paste it below."}</p>` : null}
         ${flow.progress.length > 0 ? html`<ul class="progress" aria-label="Authentication messages">${flow.progress.map((line) => html`<li>${line}</li>`)}</ul>` : null}
-        ${flow.info?.map((item) => item.links === undefined || item.links.length === 0 ? null : html`
+        ${
+          flow.info?.map((item) =>
+            item.links === undefined || item.links.length === 0
+              ? null
+              : html`
           <div class="info-links" aria-label="Related information">
             ${item.links.map((link) => html`<a href=${link.url} target="_blank" rel="noreferrer" title=${item.message}>${link.label ?? link.url}</a>`)}
           </div>
-        `) ?? null}
-        ${prompt !== undefined ? html`
+        `,
+          ) ?? null
+        }
+        ${
+          prompt !== undefined
+            ? html`
           <label class="ui-form-field" for="oauth-prompt">
             ${prompt.message}
-            <input class="ui-input" id="oauth-prompt" type=${promptInputType} autocomplete=${promptInputType === "password" ? "off" : "on"} .value=${state.inputValue ?? ""} placeholder=${prompt.placeholder ?? ""} @input=${(event: Event) => { if (event.target instanceof HTMLInputElement) this.onOAuthInput?.(event.target.value); }}>
+            <input class="ui-input" id="oauth-prompt" type=${promptInputType} autocomplete=${promptInputType === "password" ? "off" : "on"} .value=${state.inputValue ?? ""} placeholder=${prompt.placeholder ?? ""} @input=${(
+              event: Event,
+            ) => {
+              if (event.target instanceof HTMLInputElement) this.onOAuthInput?.(event.target.value);
+            }}>
           </label>
-          <div class="actions ui-form-actions"><button class="ui-button" @click=${() => { this.onOAuthCancel?.(); }}>Cancel</button><button class="ui-button ui-button--primary" ?disabled=${state.responding === true} @click=${() => { this.onOAuthRespond?.(); }}>Submit</button></div>
-        ` : null}
-        ${select !== undefined ? html`
+          <div class="actions ui-form-actions"><button class="ui-button" @click=${() => {
+            this.onOAuthCancel?.();
+          }}>Cancel</button><button class="ui-button ui-button--primary" ?disabled=${state.responding === true} @click=${() => {
+            this.onOAuthRespond?.();
+          }}>Submit</button></div>
+        `
+            : null
+        }
+        ${
+          select !== undefined
+            ? html`
           <p>${select.message}</p>
-          <div class="inline-options ui-selection-list">${select.options.map((option) => html`
-            <button class="ui-button ui-selection-option" ?disabled=${state.responding === true} @click=${() => { this.onOAuthRespond?.(option.value); }}>
+          <div class="inline-options ui-selection-list">${select.options.map(
+            (option) => html`
+            <button class="ui-button ui-selection-option" ?disabled=${state.responding === true} @click=${() => {
+              this.onOAuthRespond?.(option.value);
+            }}>
               <span>${option.label}</span>
               ${option.description === undefined ? null : html`<small class="ui-selection-detail">${option.description}</small>`}
             </button>
-          `)}</div>
-        ` : null}
+          `,
+          )}</div>
+        `
+            : null
+        }
         ${state.error !== undefined && state.error !== "" ? html`<div class="error-text ui-form-error">${state.error}</div>` : null}
         ${flow.status === "error" || flow.status === "cancelled" ? html`<div class="error-text ui-form-error" role="alert">${flow.error ?? flow.status}</div>` : null}
-        ${!running ? html`<div class="actions ui-form-actions"><button class="ui-button" @click=${() => { this.cancel(); }}>Close</button></div>` : null}
-        ${prompt === undefined && (select === undefined || isMcp) && running ? html`<div class="actions ui-form-actions"><button class="ui-button" @click=${() => { if (flow.cancelRequested === true) this.onCancel?.(); else this.onOAuthCancel?.(); }}>${flow.cancelRequested === true ? "Close" : "Cancel"}</button></div>` : null}
+        ${
+          !running
+            ? html`<div class="actions ui-form-actions"><button class="ui-button" @click=${() => {
+                this.cancel();
+              }}>Close</button></div>`
+            : null
+        }
+        ${
+          prompt === undefined && (select === undefined || isMcp) && running
+            ? html`<div class="actions ui-form-actions"><button class="ui-button" @click=${() => {
+                if (flow.cancelRequested === true) this.onCancel?.();
+                else this.onOAuthCancel?.();
+              }}>${flow.cancelRequested === true ? "Close" : "Cancel"}</button></div>`
+            : null
+        }
       </div>
     `;
   }
@@ -285,7 +394,11 @@ export class AuthDialog extends LitElement {
     else this.onCancel?.();
   }
 
-  static override styles = [uiDialogStyles, uiFormStyles, uiSelectionStyles, css`
+  static override styles = [
+    uiDialogStyles,
+    uiFormStyles,
+    uiSelectionStyles,
+    css`
     .form p { margin: 0; color: var(--pi-text-secondary); overflow-wrap: anywhere; }
     .form a { color: var(--pi-accent); overflow-wrap: anywhere; }
     .form code { border: 1px solid var(--pi-border); border-radius: 4px; background: var(--pi-surface); padding: 1px 4px; }
@@ -293,7 +406,8 @@ export class AuthDialog extends LitElement {
     .progress { margin: 0; padding-left: 18px; color: var(--pi-muted); }
     .info-links { display: flex; flex-wrap: wrap; gap: 8px 12px; }
     em { color: var(--pi-success); font-style: normal; font-size: 12px; }
-  `];
+  `,
+  ];
 }
 
 export function oauthPromptInputType(promptType: NonNullable<OAuthFlowState["prompt"]>["promptType"]): "text" | "password" {
@@ -305,7 +419,12 @@ const loopbackHostnames = new Set(["localhost", "127.0.0.1", "::1"]);
 /** True when `hostname` names the machine the browser itself runs on. */
 export function isLoopbackHostname(hostname: string): boolean {
   // Browsers report IPv6 hostnames bracketed, e.g. "[::1]".
-  return loopbackHostnames.has(hostname.trim().replace(/^\[|\]$/g, "").toLowerCase());
+  return loopbackHostnames.has(
+    hostname
+      .trim()
+      .replace(/^\[|\]$/g, "")
+      .toLowerCase(),
+  );
 }
 
 /**
@@ -366,13 +485,19 @@ function authDialogStateStep(value: unknown): AuthDialogState["step"] | undefine
 function statusLabel(provider: AuthProviderOption): string {
   if (provider.status.source === undefined) return "";
   switch (provider.status.source) {
-    case "stored": return "✓ configured";
-    case "environment": return `✓ env${provider.status.label === undefined ? "" : `: ${provider.status.label}`}`;
-    case "runtime": return "✓ runtime";
-    case "fallback": return "✓ custom key";
-    case "models_json_key": return "✓ models.json key";
-    case "models_json_command": return "✓ models.json command";
-    default: return "";
+    case "stored":
+      return "✓ configured";
+    case "environment":
+      return `✓ env${provider.status.label === undefined ? "" : `: ${provider.status.label}`}`;
+    case "runtime":
+      return "✓ runtime";
+    case "fallback":
+      return "✓ custom key";
+    case "models_json_key":
+      return "✓ models.json key";
+    case "models_json_command":
+      return "✓ models.json command";
+    default:
+      return "";
   }
 }
-

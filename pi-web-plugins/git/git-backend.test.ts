@@ -27,10 +27,18 @@ const backendContext: ServerPluginActivationContext = {
   packageRoot: "pi-web-plugins/git",
   dataDirectory: "/data/plugin-data/git",
   logger: {
-    debug() { /* no-op */ },
-    info() { /* no-op */ },
-    warn() { /* no-op */ },
-    error() { /* no-op */ },
+    debug() {
+      /* no-op */
+    },
+    info() {
+      /* no-op */
+    },
+    warn() {
+      /* no-op */
+    },
+    error() {
+      /* no-op */
+    },
   },
   settings: {},
   execFile: createServerPluginExecFile({ env: GIT_ENV }),
@@ -44,7 +52,9 @@ const backendContext: ServerPluginActivationContext = {
 const FIXTURE_TEST_TIMEOUT_MS = 30_000;
 
 const created: string[] = [];
-afterAll(() => { for (const dir of created) rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => {
+  for (const dir of created) rmSync(dir, { recursive: true, force: true });
+});
 
 function gitStatus(cwd: string) {
   return requestGitStatus(backendContext, cwd, new AbortController().signal);
@@ -114,10 +124,12 @@ describe("Git changes backend", { timeout: FIXTURE_TEST_TIMEOUT_MS }, () => {
     writeFileSync(join(dir, "untracked.txt"), "new\n");
 
     const status = await gitStatus(dir);
-    expect(status.files).toEqual(expect.arrayContaining([
-      expect.objectContaining({ path: "root.txt", index: "modified", workingTree: "modified" }),
-      expect.objectContaining({ path: "untracked.txt", index: "untracked", workingTree: "untracked" }),
-    ]));
+    expect(status.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "root.txt", index: "modified", workingTree: "modified" }),
+        expect.objectContaining({ path: "untracked.txt", index: "untracked", workingTree: "untracked" }),
+      ]),
+    );
 
     const [staged, unstaged, untracked] = await Promise.all([
       gitDiff(dir, { path: "root.txt", staged: true }),
@@ -145,9 +157,9 @@ describe("Git changes backend", { timeout: FIXTURE_TEST_TIMEOUT_MS }, () => {
     writeFileSync(join(dir, "HARL", "a.txt"), "submodule changed\n");
 
     expect(await gitStatus(cwd)).toEqual(await gitStatus(dir));
-    expect((await gitStatus(cwd)).files.map(({ path }) => path)).toEqual(expect.arrayContaining([
-      "folder with spaces/inside.txt", "root.txt", "new.txt", "HARL/a.txt",
-    ]));
+    expect((await gitStatus(cwd)).files.map(({ path }) => path)).toEqual(
+      expect.arrayContaining(["folder with spaces/inside.txt", "root.txt", "new.txt", "HARL/a.txt"]),
+    );
     for (const options of [{}, { path: "root.txt", staged: true }, { path: "root.txt" }, { path: "new.txt" }, { path: "HARL/a.txt" }]) {
       const diff = await gitDiff(cwd, options);
       expect(diff).toEqual(await gitDiff(dir, options));
@@ -160,10 +172,8 @@ describe("Git changes backend", { timeout: FIXTURE_TEST_TIMEOUT_MS }, () => {
     const context = { ...backendContext, execFile };
     const signal = new AbortController().signal;
 
-    await expect(requestGitDiff(context, tmpdir(), { path: join(tmpdir(), "outside") }, signal))
-      .rejects.toThrow("Absolute paths are not allowed");
-    await expect(requestGitDiff(context, tmpdir(), { path: "../outside" }, signal))
-      .rejects.toThrow("Path traversal is not allowed");
+    await expect(requestGitDiff(context, tmpdir(), { path: join(tmpdir(), "outside") }, signal)).rejects.toThrow("Absolute paths are not allowed");
+    await expect(requestGitDiff(context, tmpdir(), { path: "../outside" }, signal)).rejects.toThrow("Path traversal is not allowed");
     expect(execFile).not.toHaveBeenCalled();
   });
 });
@@ -175,8 +185,7 @@ describe("Git command failures", () => {
       execFile: () => Promise.resolve(commandResult({ exitCode: null, signal: "SIGKILL" })),
     };
 
-    await expect(requestGitStatus(context, "/repo", new AbortController().signal))
-      .rejects.toThrow("ended from signal SIGKILL");
+    await expect(requestGitStatus(context, "/repo", new AbortController().signal)).rejects.toThrow("ended from signal SIGKILL");
   });
 
   it("preserves a command timeout rejection as an error", async () => {
@@ -399,15 +408,18 @@ async function mappedSubmoduleStatus(fixture: { top: string; gitlink?: string; i
   const dir = mkdtempSync(join(tmpdir(), "pi-web-status-map-"));
   created.push(dir);
   const path = fixture.path ?? "HARL";
-  const responses = [{
-    cwd: dir,
-    args: ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"],
-    stdout: fixture.top,
-  }, {
-    cwd: dir,
-    args: ["rev-parse", "--show-toplevel"],
-    stdout: `${dir}\n`,
-  }];
+  const responses = [
+    {
+      cwd: dir,
+      args: ["status", "--porcelain=v2", "--branch", "--untracked-files=all", "-z"],
+      stdout: fixture.top,
+    },
+    {
+      cwd: dir,
+      args: ["rev-parse", "--show-toplevel"],
+      stdout: `${dir}\n`,
+    },
+  ];
   if (fixture.gitlink !== undefined) {
     mkdirSync(join(dir, path));
     responses.push({

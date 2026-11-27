@@ -78,7 +78,7 @@ export const PI_WEB_CAPABILITIES = {
   durableChats: "sessions.durable-chats",
 } as const;
 
-export type PiWebCapability = typeof PI_WEB_CAPABILITIES[keyof typeof PI_WEB_CAPABILITIES];
+export type PiWebCapability = (typeof PI_WEB_CAPABILITIES)[keyof typeof PI_WEB_CAPABILITIES];
 
 export interface Machine {
   id: string;
@@ -893,7 +893,10 @@ export const ASK_USER_QUESTION_KINDS: readonly AskUserQuestionKind[] = ["choice"
  * Why `value` does not fit a typed question ("must be at most 10"), or `undefined` when it does. Shared by the
  * daemon's checks of defaults and answers and the card's field errors; the Durable host keeps a copy for defaults.
  */
-export function askValueError(question: Pick<AskUserQuestion, "kind" | "multiline" | "minLength" | "maxLength" | "minimum" | "maximum" | "integer">, value: unknown): string | undefined {
+export function askValueError(
+  question: Pick<AskUserQuestion, "kind" | "multiline" | "minLength" | "maxLength" | "minimum" | "maximum" | "integer">,
+  value: unknown,
+): string | undefined {
   switch (question.kind) {
     case "boolean":
       return typeof value === "boolean" ? undefined : "must be true or false";
@@ -903,7 +906,8 @@ export function askValueError(question: Pick<AskUserQuestion, "kind" | "multilin
       if (value.trim() === "") return "must not be blank";
       // A one-line field cannot show or edit a line break, yet would send it.
       if (question.multiline !== true && /[\r\n]/u.test(value)) return "must be one line";
-      if (value.length > (question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)) return `must be at most ${String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)} characters`;
+      if (value.length > (question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH))
+        return `must be at most ${String(question.maxLength ?? ASK_USER_OTHER_TEXT_MAX_LENGTH)} characters`;
       return question.minLength !== undefined && value.length < question.minLength ? `must be at least ${String(question.minLength)} characters` : undefined;
     case "number":
       if (typeof value !== "number" || !Number.isFinite(value)) return "must be a number";
@@ -911,7 +915,12 @@ export function askValueError(question: Pick<AskUserQuestion, "kind" | "multilin
       if (question.minimum !== undefined && value < question.minimum) return `must be at least ${String(question.minimum)}`;
       return question.maximum !== undefined && value > question.maximum ? `must be at most ${String(question.maximum)}` : undefined;
     case "date":
-      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().startsWith(value) ? undefined : "must be a date as YYYY-MM-DD";
+      return typeof value === "string"
+        && /^\d{4}-\d{2}-\d{2}$/u.test(value)
+        && !Number.isNaN(Date.parse(value))
+        && new Date(value).toISOString().startsWith(value)
+        ? undefined
+        : "must be a date as YYYY-MM-DD";
     case "choice":
     case undefined:
       return undefined;
@@ -921,7 +930,7 @@ export function askValueError(question: Pick<AskUserQuestion, "kind" | "multilin
 
 /** What a `showIf` tests of an answer: its selected options, or "true"/"false" for a boolean answer. */
 export function askAnswerSelection(answer: { values: readonly string[]; value?: unknown } | undefined): readonly string[] {
-  return typeof answer?.value === "boolean" ? [String(answer.value)] : answer?.values ?? [];
+  return typeof answer?.value === "boolean" ? [String(answer.value)] : (answer?.values ?? []);
 }
 
 /** Condition of a dependent question: an earlier question's id and the option values that show it. */
@@ -1621,10 +1630,7 @@ export interface SessionTreeSnapshot {
 
 export const SESSION_TREE_CUSTOM_INSTRUCTIONS_MAX_LENGTH = 10_000;
 
-export type SessionTreeSummaryChoice =
-  | { mode: "none" }
-  | { mode: "default" }
-  | { mode: "custom"; instructions: string };
+export type SessionTreeSummaryChoice = { mode: "none" } | { mode: "default" } | { mode: "custom"; instructions: string };
 
 export interface SessionTreeNavigateRequest {
   targetId: string;
@@ -1635,9 +1641,7 @@ export interface SessionTreeNavigateRequest {
   retainCheckpoint?: boolean;
 }
 
-export type SessionTreeNavigateResult =
-  | { cancelled: false; editorText?: string }
-  | { cancelled: true; aborted?: boolean };
+export type SessionTreeNavigateResult = { cancelled: false; editorText?: string } | { cancelled: true; aborted?: boolean };
 
 export interface SessionTreeForkRequest {
   entryId: string;
@@ -1653,9 +1657,7 @@ export interface SessionTreeForkRequest {
  * entries fork from "before" so their text returns as a `promptDraft` for the
  * forked session; every other entry forks "at".
  */
-export type SessionTreeForkResult =
-  | { cancelled: false; session: SessionInfo; promptDraft?: string }
-  | { cancelled: true };
+export type SessionTreeForkResult = { cancelled: false; session: SessionInfo; promptDraft?: string } | { cancelled: true };
 
 /** Browser transcript payload; entryId identifies the durable session-tree entry, not the provider response. */
 export interface TranscriptMessage {

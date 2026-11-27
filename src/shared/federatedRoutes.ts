@@ -39,10 +39,13 @@ export interface FederatedHttpRouteSpec {
 }
 
 export const FEDERATED_HTTP_ROUTES = [
-  ...NAVIGATION_PREFERENCE_ROUTES.flatMap((path) => [
-    { method: "GET", path },
-    { method: "PUT", path },
-  ] satisfies FederatedHttpRouteSpec[]),
+  ...NAVIGATION_PREFERENCE_ROUTES.flatMap(
+    (path) =>
+      [
+        { method: "GET", path },
+        { method: "PUT", path },
+      ] satisfies FederatedHttpRouteSpec[],
+  ),
   { method: "GET", path: "/pi-web/status" },
   { method: "GET", path: "/config" },
   { method: "PUT", path: "/config" },

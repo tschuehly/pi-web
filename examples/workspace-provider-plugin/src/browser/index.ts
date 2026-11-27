@@ -32,7 +32,9 @@ const plugin = {
                 <p class="muted">Claim marker: <code>${marker}</code></p>
                 <button
                   ?disabled=${context.peer?.request === undefined}
-                  @click=${() => { void refreshSummary(context); }}
+                  @click=${() => {
+                    void refreshSummary(context);
+                  }}
                 >Request package summary</button>
                 <p aria-live="polite">${summary}</p>
               </section>

@@ -19,7 +19,8 @@ const selectedPiCliPath = await piRuntimeCliPath();
 const PACKAGE_NAME = "@jmfederico/pi-web";
 const UPDATE_HANDOFF_LABEL_PREFIX = "com.pi-web.update";
 const WARNING = "Updating PI WEB will restart services and interrupt active sessions and terminals, including this terminal.";
-const HELP = "Usage: pi-web update [--yes] [--force]\n--force reinstalls an npm-global installation even when already current. Without --yes, an interactive confirmation is required. Nested Linux updates use a detached systemd user service. Nested macOS updates use a detached launchd user agent.";
+const HELP =
+  "Usage: pi-web update [--yes] [--force]\n--force reinstalls an npm-global installation even when already current. Without --yes, an interactive confirmation is required. Nested Linux updates use a detached systemd user service. Nested macOS updates use a detached launchd user agent.";
 
 export interface PiWebUpdateCommand {
   executable: string;
@@ -128,11 +129,15 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
   const installation = await deps.detectInstallation(agentDir);
   const nested = truthy(deps.env["PI_WEB_SESSION"]);
   if (installation.kind === "unknown") {
-    deps.log("No automatic update for an unknown installation. Update using the installation's original tooling, then run pi-web restart from a host terminal. Nothing changed.");
+    deps.log(
+      "No automatic update for an unknown installation. Update using the installation's original tooling, then run pi-web restart from a host terminal. Nothing changed.",
+    );
     return;
   }
   if (installation.kind !== "docker" && nested && deps.platform !== "linux" && deps.platform !== "darwin") {
-    throw new Error("Native update refused inside a PI WEB session: restarting its daemon could kill the updater. Open a host terminal outside PI WEB and run pi-web update there. --yes does not bypass this safety check.");
+    throw new Error(
+      "Native update refused inside a PI WEB session: restarting its daemon could kill the updater. Open a host terminal outside PI WEB and run pi-web update there. --yes does not bypass this safety check.",
+    );
   }
   const command = (executable: string, commandArgs: string[], env = deps.env): PiWebUpdateCommand => ({ executable, args: commandArgs, env: { ...env } });
   let update: PiWebUpdateCommand;
@@ -158,13 +163,17 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
       // Unix npm prefixes use lib/node_modules; Windows prefixes use node_modules.
       const prefix = basename(dirname(root)) === "lib" ? dirname(dirname(root)) : dirname(root);
       const actualRoot = await deps.capture(command("npm", ["root", "--global", "--prefix", prefix]));
-      if (await deps.realpath(actualRoot) !== await deps.realpath(root)
-        || await deps.realpath(join(root, PACKAGE_NAME)) !== await deps.realpath(installation.path)) {
+      if (
+        (await deps.realpath(actualRoot)) !== (await deps.realpath(root))
+        || (await deps.realpath(join(root, PACKAGE_NAME))) !== (await deps.realpath(installation.path))
+      ) {
         throw new Error("Global npm target does not match this installation; nothing changed.");
       }
       let latestVersion: string;
       try {
-        const version: unknown = JSON.parse(await deps.capture(command("npm", ["view", "--global", "--prefix", resolve(prefix), `${PACKAGE_NAME}@latest`, "version", "--json"])));
+        const version: unknown = JSON.parse(
+          await deps.capture(command("npm", ["view", "--global", "--prefix", resolve(prefix), `${PACKAGE_NAME}@latest`, "version", "--json"])),
+        );
         if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)) {
           throw new Error("npm did not return a package version");
         }
@@ -183,13 +192,19 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
       // Install the release we checked, even if the registry tag moves during confirmation.
       update = command("npm", ["install", "--global", "--prefix", resolve(prefix), `${PACKAGE_NAME}@${latestVersion}`, "--allow-scripts=node-pty"]);
     } else {
-      if (installation.scope !== "user" || installation.source === undefined || installation.source === "" || !/^(npm:|git:|https?:\/\/|ssh:\/\/)/.test(installation.source)) {
+      if (
+        installation.scope !== "user"
+        || installation.source === undefined
+        || installation.source === ""
+        || !/^(npm:|git:|https?:\/\/|ssh:\/\/)/.test(installation.source)
+      ) {
         throw new Error("Only user-scope remote Pi packages can be updated automatically. Update this package with its original tooling; nothing changed.");
       }
       // --no-approve excludes project settings even in previously trusted projects.
       // An explicit extension target cannot invoke Pi's universal/self updater.
       update = command(deps.nodeExecutable, [deps.piCliPath, "update", "--no-approve", "--extension", installation.source], {
-        ...deps.env, [PI_CODING_AGENT_DIR_ENV]: agentDir,
+        ...deps.env,
+        [PI_CODING_AGENT_DIR_ENV]: agentDir,
       });
     }
   }
@@ -203,10 +218,9 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
       // Exercise the same external owner and environment without touching services.
       // --wait is only for this harmless probe, never for the actual restart.
       try {
-        await deps.capture(command("systemd-run", [
-          ...dispatchArgs, `--unit=${restartUnit}-preflight`, "--wait", "--",
-          deps.nodeExecutable, "--eval", "process.exit(0)",
-        ]));
+        await deps.capture(
+          command("systemd-run", [...dispatchArgs, `--unit=${restartUnit}-preflight`, "--wait", "--", deps.nodeExecutable, "--eval", "process.exit(0)"]),
+        );
       } catch (error) {
         throw new Error("Cannot safely dispatch a detached systemd restart. Use a host terminal outside PI WEB; nothing changed.", { cause: error });
       }
@@ -216,12 +230,19 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
     }
   }
   deps.log(`Update target: ${installation.kind}${installation.path === undefined ? "" : ` at ${JSON.stringify(installation.path)}`}`);
-  deps.log(`Install: ${[update, ...updateAfterPull].map((step) => [step.executable, ...step.args].map((value) => JSON.stringify(value)).join(" ")).join(" && ")}`);
+  deps.log(
+    `Install: ${[update, ...updateAfterPull].map((step) => [step.executable, ...step.args].map((value) => JSON.stringify(value)).join(" ")).join(" && ")}`,
+  );
   if (restart !== undefined) {
-    const handoffDescription = restartUnit === undefined
-      ? launchdHandoff === undefined ? "" : ` via detached launchd user agent ${launchdHandoff.target}`
-      : ` via detached systemd user unit ${restartUnit}`;
-    deps.log(`After install succeeds: ${JSON.stringify(deps.nodeExecutable)} ${JSON.stringify(join(installation.path ?? "", "dist", "cli.js"))} restart${handoffDescription}.`);
+    const handoffDescription =
+      restartUnit === undefined
+        ? launchdHandoff === undefined
+          ? ""
+          : ` via detached launchd user agent ${launchdHandoff.target}`
+        : ` via detached systemd user unit ${restartUnit}`;
+    deps.log(
+      `After install succeeds: ${JSON.stringify(deps.nodeExecutable)} ${JSON.stringify(join(installation.path ?? "", "dist", "cli.js"))} restart${handoffDescription}.`,
+    );
     if (launchdHandoff !== undefined) deps.log(`Detached update output: ${launchdHandoff.logPath}`);
   } else {
     deps.log("The Docker installer owns the update and service restart.");
@@ -229,7 +250,7 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
   deps.log(WARNING);
   if (!args.includes("--yes")) {
     if (!deps.interactive) throw new Error("Noninteractive update requires explicit --yes consent. Nothing changed.");
-    if (!await deps.confirm("Proceed with the update and restart?")) {
+    if (!(await deps.confirm("Proceed with the update and restart?"))) {
       deps.log("Update cancelled. Nothing changed.");
       return;
     }
@@ -243,7 +264,10 @@ export async function runPiWebUpdate(args: readonly string[], injected?: PiWebUp
     try {
       await deps.run(localCheckoutPull);
     } catch (error: unknown) {
-      throw new Error("Could not fast-forward the local checkout. Ensure it is clean, has a reachable upstream, and can be pulled without a merge; no install or restart was run.", { cause: error });
+      throw new Error(
+        "Could not fast-forward the local checkout. Ensure it is clean, has a reachable upstream, and can be pulled without a merge; no install or restart was run.",
+        { cause: error },
+      );
     }
     for (const step of updateAfterPull) await deps.run(step);
   } else {
@@ -271,17 +295,26 @@ async function planLocalCheckoutUpdate(deps: PiWebUpdateDependencies, path: stri
       throw new Error(`${failure} Nothing changed.`, { cause: error });
     }
   };
-  const gitRoot = await captureGit(["rev-parse", "--show-toplevel"], "Cannot safely update the local installation: it is not a Git checkout or its root could not be inspected.");
-  if (gitRoot === "" || await deps.realpath(gitRoot) !== await deps.realpath(path)) {
+  const gitRoot = await captureGit(
+    ["rev-parse", "--show-toplevel"],
+    "Cannot safely update the local installation: it is not a Git checkout or its root could not be inspected.",
+  );
+  if (gitRoot === "" || (await deps.realpath(gitRoot)) !== (await deps.realpath(path))) {
     throw new Error("Cannot safely update the local installation: the package root is not the Git checkout root. Nothing changed.");
   }
   const status = await captureGit(["status", "--porcelain=v1", "--untracked-files=all"], "Cannot inspect the local checkout status.");
   if (status !== "") {
     throw new Error("The local checkout has uncommitted or untracked changes. Commit, stash, or remove them before updating; nothing changed.");
   }
-  const branch = await captureGit(["symbolic-ref", "--quiet", "--short", "HEAD"], "The local checkout is detached or its current branch could not be determined.");
+  const branch = await captureGit(
+    ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    "The local checkout is detached or its current branch could not be determined.",
+  );
   if (branch === "") throw new Error("The local checkout is detached; check out a branch with an upstream before updating. Nothing changed.");
-  const upstream = await captureGit(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], `The local checkout branch ${JSON.stringify(branch)} has no upstream branch configured.`);
+  const upstream = await captureGit(
+    ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+    `The local checkout branch ${JSON.stringify(branch)} has no upstream branch configured.`,
+  );
   if (upstream === "") throw new Error(`The local checkout branch ${JSON.stringify(branch)} has no upstream branch configured. Nothing changed.`);
   return {
     pull: git(["pull", "--ff-only"]),
@@ -290,11 +323,7 @@ async function planLocalCheckoutUpdate(deps: PiWebUpdateDependencies, path: stri
   };
 }
 
-function createLaunchdUpdateHandoff(
-  deps: PiWebUpdateDependencies,
-  installation: PiWebInstallationInfo,
-  force: boolean,
-): LaunchdUpdateHandoff {
+function createLaunchdUpdateHandoff(deps: PiWebUpdateDependencies, installation: PiWebInstallationInfo, force: boolean): LaunchdUpdateHandoff {
   if (installation.path === undefined || !isAbsolute(installation.path)) {
     throw new Error("Cannot safely locate this PI WEB installation for a launchd handoff; nothing changed.");
   }
@@ -370,15 +399,7 @@ async function removeHandoffPlist(deps: PiWebUpdateDependencies, path: string): 
 
 function launchdHandoffEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = {};
-  const portableKeys = new Set([
-    "HOME",
-    "PATH",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "XDG_RUNTIME_DIR",
-    "DBUS_SESSION_BUS_ADDRESS",
-    "NODE_EXTRA_CA_CERTS",
-  ]);
+  const portableKeys = new Set(["HOME", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "NODE_EXTRA_CA_CERTS"]);
   for (const key of Object.keys(source).sort()) {
     if (key === "PI_WEB_SESSION" || (!key.startsWith("PI_WEB_") && !key.startsWith("PI_CODING_AGENT_") && !portableKeys.has(key))) continue;
     const value = source[key];
@@ -434,25 +455,30 @@ ${environmentEntries}  </dict>
 }
 
 function xmlEscape(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;");
 }
 
 async function preflightNativeServices(deps: PiWebUpdateDependencies): Promise<void> {
   if (deps.platform !== "linux" && deps.platform !== "darwin") throw new Error("Automatic native update requires Linux or macOS services; nothing changed.");
-  const installed = Object.entries(nativeServiceManagerRefs).filter(([, ref]) => deps.exists(deps.platform === "linux"
-    ? join(deps.home, ".config", "systemd", "user", ref.systemdName)
-    : join(deps.home, "Library", "LaunchAgents", ref.launchdPlistName)));
+  const installed = Object.entries(nativeServiceManagerRefs).filter(([, ref]) =>
+    deps.exists(
+      deps.platform === "linux"
+        ? join(deps.home, ".config", "systemd", "user", ref.systemdName)
+        : join(deps.home, "Library", "LaunchAgents", ref.launchdPlistName),
+    ),
+  );
   if (!installed.some(([id]) => id === "sessiond") || !installed.some(([id]) => id === "web" || id === "uiDev")) {
-    throw new Error("Native services are missing or incomplete. Run pi-web install from a host terminal, or update manually with the original tooling; nothing changed.");
+    throw new Error(
+      "Native services are missing or incomplete. Run pi-web install from a host terminal, or update manually with the original tooling; nothing changed.",
+    );
   }
   if (deps.platform === "linux") {
     for (const [, ref] of installed) {
-      const state = await deps.capture({ executable: "systemctl", args: ["--user", "show", ref.systemdName, "--property=LoadState", "--value"], env: { ...deps.env } });
+      const state = await deps.capture({
+        executable: "systemctl",
+        args: ["--user", "show", ref.systemdName, "--property=LoadState", "--value"],
+        env: { ...deps.env },
+      });
       if (state.trim() !== "loaded") throw new Error(`Native service ${ref.systemdName} is not loaded. Repair services before updating; nothing changed.`);
     }
   }
@@ -462,11 +488,18 @@ function systemdDispatchArgs(deps: PiWebUpdateDependencies): string[] {
   // User-manager services do not inherit the caller's environment. Propagate
   // configuration/runtime selection deliberately, not terminal/session secrets.
   // Preserve cwd too: config and data overrides may be relative paths.
-  const keys = Object.keys(deps.env).filter((key) =>
-    /^(PI_WEB_|PI_CODING_AGENT_)/.test(key)
-    || ["HOME", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "NODE_EXTRA_CA_CERTS"].includes(key));
-  return ["--user", "--collect", "--expand-environment=no", `--working-directory=${deps.cwd}`,
-    ...keys.filter((key) => deps.env[key] !== undefined).map((key) => `--setenv=${key}`)];
+  const keys = Object.keys(deps.env).filter(
+    (key) =>
+      /^(PI_WEB_|PI_CODING_AGENT_)/.test(key)
+      || ["HOME", "PATH", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "NODE_EXTRA_CA_CERTS"].includes(key),
+  );
+  return [
+    "--user",
+    "--collect",
+    "--expand-environment=no",
+    `--working-directory=${deps.cwd}`,
+    ...keys.filter((key) => deps.env[key] !== undefined).map((key) => `--setenv=${key}`),
+  ];
 }
 
 function truthy(value: string | undefined): boolean {

@@ -1,6 +1,11 @@
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import type { MessageActionAvailabilityContext } from "../../../plugin-api";
-import { runWorkbenchDisplayedMessageAction, runWorkbenchMessageAction, workbenchMessageActionContext, WORKBENCH_MESSAGE_ACTIONS } from "../workbenchMessageActions";
+import {
+  runWorkbenchDisplayedMessageAction,
+  runWorkbenchMessageAction,
+  workbenchMessageActionContext,
+  WORKBENCH_MESSAGE_ACTIONS,
+} from "../workbenchMessageActions";
 import { customElement, property, query, state } from "lit/decorators.js";
 import type { AskUserSubmission, ExtensionDialogAnswer, PromptAttachment, QueuedSessionMessage, SessionTreeSummaryChoice } from "../api";
 import type { PromptAttachmentDelivery, SessionEffectResolution } from "../../../shared/apiTypes";
@@ -61,13 +66,16 @@ export class WorkbenchChatPane extends LitElement {
   @query("prompt-editor") promptEditor?: PromptEditor;
 
   // The shell owns the layout styles and the native host's Chat selector. There is only one Chat layout to style.
-  protected override createRenderRoot(): HTMLElement { return this; }
+  protected override createRenderRoot(): HTMLElement {
+    return this;
+  }
 
   protected override updated(changed: PropertyValues<this>): void {
     // Shown or hidden: native dialogs of hidden Chats leave the top layer and the visible Chat's return to it.
-    if (changed.has("focused") && changed.get("focused") !== undefined) void this.updateComplete.then(() => {
-      if (this.isConnected) focusTopModal(this.ownerDocument);
-    });
+    if (changed.has("focused") && changed.get("focused") !== undefined)
+      void this.updateComplete.then(() => {
+        if (this.isConnected) focusTopModal(this.ownerDocument);
+      });
   }
 
   async replacePromptEditorText({ machineId, sessionId, text, mode }: PromptEditorTextReplacement): Promise<void> {
@@ -75,16 +83,21 @@ export class WorkbenchChatPane extends LitElement {
     const editor = this.promptEditor ?? undefined;
     if (editor === undefined) return;
     await editor.updateComplete;
-    if (this.app === undefined || selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId) return;
+    if (this.app === undefined || selectedMachineId(this.app) !== machineId || this.app.selectedSession?.id !== sessionId || editor.sessionId !== sessionId)
+      return;
     if (mode === "prepend") editor.prependText(text);
     else editor.replaceText(text);
     // The restored text has landed: typing is safe again while history refreshes.
     this.revertPending = false;
   }
 
-  private get composerLocked(): boolean { return this.revertPending || this.queuedActionTarget?.action === "edit"; }
+  private get composerLocked(): boolean {
+    return this.revertPending || this.queuedActionTarget?.action === "edit";
+  }
 
-  private get draft(): string { return this.promptEditor?.view?.state.doc.toString() ?? ""; }
+  private get draft(): string {
+    return this.promptEditor?.view?.state.doc.toString() ?? "";
+  }
 
   private isCurrent(runtime: WorkbenchChatSession, machineId: string, sessionId: string): boolean {
     return this.runtime === runtime && this.app !== undefined && selectedMachineId(this.app) === machineId && this.app.selectedSession?.id === sessionId;
@@ -101,7 +114,8 @@ export class WorkbenchChatPane extends LitElement {
   // Mirrors PiWebApp's guarded history action: going back to a user message restores its text into the composer.
   private readonly goBack = async (input: MessageActionAvailabilityContext): Promise<void> => {
     const runtime = this.runtime;
-    if (runtime === undefined || !this.isCurrent(runtime, input.machine.id, input.session.id)) throw new Error("This message's conversation is no longer available.");
+    if (runtime === undefined || !this.isCurrent(runtime, input.machine.id, input.session.id))
+      throw new Error("This message's conversation is no longer available.");
     if (this.revertPending || this.queuedActionTarget !== undefined) throw new Error("Another draft-replacing action is already in progress.");
     if (input.message.role === "user" && this.draft !== "" && !window.confirm("Going back will replace your unsent draft. Continue?")) return;
     this.revertPending = true;
@@ -117,7 +131,8 @@ export class WorkbenchChatPane extends LitElement {
   // Mirrors PiWebApp's queued-message handler: Recall confirms lost attachments/later entries and the unsent draft.
   private readonly actOnQueuedMessage = async (target: QueuedMessageActionTarget): Promise<void> => {
     const runtime = this.runtime;
-    if (runtime === undefined || this.revertPending || this.queuedActionTarget !== undefined || !this.isCurrent(runtime, target.machineId, target.sessionId)) return;
+    if (runtime === undefined || this.revertPending || this.queuedActionTarget !== undefined || !this.isCurrent(runtime, target.machineId, target.sessionId))
+      return;
     if (target.action === "edit") {
       const confirmation = queuedMessageRecallConfirmation(target.expectedQueue, target.index);
       if (confirmation !== undefined && !window.confirm(confirmation)) return;
@@ -133,7 +148,9 @@ export class WorkbenchChatPane extends LitElement {
     }
   };
 
-  private readonly toggleRoster = (): void => { this.rosterCollapsed = !this.rosterCollapsed; };
+  private readonly toggleRoster = (): void => {
+    this.rosterCollapsed = !this.rosterCollapsed;
+  };
 
   private readonly replyToSelection = (quote: ReplyQuote): void => {
     this.promptEditor?.insertReplyQuote(quote);
@@ -144,21 +161,38 @@ export class WorkbenchChatPane extends LitElement {
     const state = this.app;
     const runtime = this.runtime;
     const session = state?.selectedSession;
-    if (state === undefined || session === undefined || runtime === undefined) return html`<div class=${this.loadError === undefined ? "chat-loading" : "chat-error"} role=${this.loadError === undefined ? "status" : "alert"}>${this.loadError ?? "Loading Chat…"}</div>`;
+    if (state === undefined || session === undefined || runtime === undefined)
+      return html`<div class=${this.loadError === undefined ? "chat-loading" : "chat-error"} role=${this.loadError === undefined ? "status" : "alert"}>${this.loadError ?? "Loading Chat…"}</div>`;
     const { sessions, notifications, auth } = runtime;
     const machineId = selectedMachineId(state);
-    const send = (text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string): Promise<boolean> => {
-      if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && auth.handleSlashCommand(text)) return Promise.resolve(true);
-      const first = this.orientFirstRequest && state.messagePageStart === 0 && !state.messages.some((message) => message.role === "user") && !text.trimStart().startsWith("/");
+    const send = (
+      text: string,
+      streamingBehavior?: "steer" | "followUp",
+      attachments?: PromptAttachment[],
+      delivery?: PromptAttachmentDelivery,
+      folder?: string,
+    ): Promise<boolean> => {
+      if ((attachments === undefined || attachments.length === 0) && streamingBehavior === undefined && auth.handleSlashCommand(text))
+        return Promise.resolve(true);
+      const first =
+        this.orientFirstRequest
+        && state.messagePageStart === 0
+        && !state.messages.some((message) => message.role === "user")
+        && !text.trimStart().startsWith("/");
       return sessions.send(first ? `/skill:orient request\n\n${text}` : text, streamingBehavior, attachments, delivery, folder);
     };
     return html`
       <main class="chat-shell" data-view="chat" data-machine=${machineId} data-project=${state.selectedProject?.id ?? ""} data-workspace=${state.selectedWorkspace?.id ?? ""} data-session=${session.id}>
         ${state.error === "" ? nothing : html`<div class="chat-error" role="alert">${state.error}</div>`}
-        ${visibleBrowserErrors(state.browserErrors, browserErrorContext(state)).filter((error) => error.scope.kind === "session").map((error) => html`<div class="chat-error">${errorBanner(error.message, () => {
-          // This Chat's failed actions (Stop, send, queue edits) report here, not in the window's banner.
-          runtime.patch({ browserErrors: clearBrowserError(runtime.state.browserErrors, error.scope, error.message) });
-        })}</div>`)}
+        ${visibleBrowserErrors(state.browserErrors, browserErrorContext(state))
+          .filter((error) => error.scope.kind === "session")
+          .map(
+            (error) =>
+              html`<div class="chat-error">${errorBanner(error.message, () => {
+                // This Chat's failed actions (Stop, send, queue edits) report here, not in the window's banner.
+                runtime.patch({ browserErrors: clearBrowserError(runtime.state.browserErrors, error.scope, error.message) });
+              })}</div>`,
+          )}
         <conversation-layout class="chat-column" ?question-drawer-open=${this.questionsOpen} .status=${state.status} .activity=${state.activity} .sending=${state.sendingPrompts[session.id] === true} .visualEffects=${WORKBENCH_CHAT_BEHAVIORS.visualEffects}>
           <chat-view
             .dense=${this.dense}
@@ -188,19 +222,47 @@ export class WorkbenchChatPane extends LitElement {
             .onSubmitAsk=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}
             .onAnswerDialog=${(dialogId: string, value: ExtensionDialogAnswer) => sessions.answerDialog(dialogId, value)}
             .onCancelDialog=${(dialogId: string) => sessions.cancelDialog(dialogId)}
-            .onDismissClosedDialog=${(dialogId: string) => { sessions.dismissClosedDialog(dialogId); }}
+            .onDismissClosedDialog=${(dialogId: string) => {
+              sessions.dismissClosedDialog(dialogId);
+            }}
             .notificationInbox=${selectedNotificationView(state.selectedNotificationInbox)}
-            .onPromoteQueuedMessage=${(message: QueuedSessionMessage) => { void sessions.promoteQueuedMessage(message); }}
-            .onPromoteAllQueuedMessages=${() => { void sessions.promoteAllQueuedMessages(); }}
-            .onClearServerQueue=${() => { void sessions.clearServerQueue(); }}
+            .onPromoteQueuedMessage=${(message: QueuedSessionMessage) => {
+              void sessions.promoteQueuedMessage(message);
+            }}
+            .onPromoteAllQueuedMessages=${() => {
+              void sessions.promoteAllQueuedMessages();
+            }}
+            .onClearServerQueue=${() => {
+              void sessions.clearServerQueue();
+            }}
             .onQueuedMessageAction=${session.archived === true ? undefined : this.actOnQueuedMessage}
             .queuedMessageActionPending=${this.queuedActionTarget !== undefined || this.revertPending}
-            .onDismissWarning=${(dismissId: string) => { void sessions.dismissWarning(dismissId); }}
-            .onResolveEffect=${session.archived === true ? undefined : (id: string, resolution: SessionEffectResolution) => { void sessions.resolveEffect(id, resolution); }}
-            .onUpgradeDurableHost=${session.archived === true ? undefined : (mode: "quiet" | "now" | "cancel") => { void sessions.upgradeDurableHost(mode); }}
-            .onDismissNotification=${(notificationId: string) => { void notifications.dismissNotification(notificationId); }}
-            .onDismissAllNotifications=${() => { void notifications.dismissAll(); }}
-            .onLoadMore=${() => { void sessions.loadEarlierMessages(); }}
+            .onDismissWarning=${(dismissId: string) => {
+              void sessions.dismissWarning(dismissId);
+            }}
+            .onResolveEffect=${
+              session.archived === true
+                ? undefined
+                : (id: string, resolution: SessionEffectResolution) => {
+                    void sessions.resolveEffect(id, resolution);
+                  }
+            }
+            .onUpgradeDurableHost=${
+              session.archived === true
+                ? undefined
+                : (mode: "quiet" | "now" | "cancel") => {
+                    void sessions.upgradeDurableHost(mode);
+                  }
+            }
+            .onDismissNotification=${(notificationId: string) => {
+              void notifications.dismissNotification(notificationId);
+            }}
+            .onDismissAllNotifications=${() => {
+              void notifications.dismissAll();
+            }}
+            .onLoadMore=${() => {
+              void sessions.loadEarlierMessages();
+            }}
             .messageActions=${WORKBENCH_MESSAGE_ACTIONS}
             .messageActionContext=${workbenchMessageActionContext(state)}
             .onMessageAction=${(input: MessageActionAvailabilityContext, actionId: string) => runWorkbenchMessageAction(this.goBack, input, actionId)}
@@ -208,7 +270,9 @@ export class WorkbenchChatPane extends LitElement {
             .onReplyToSelection=${session.archived === true ? undefined : this.replyToSelection}
           ></chat-view>
           <div class="composer-area" slot="composer">
-          <workbench-question-chips @question-drawer-toggle=${(event: CustomEvent<boolean>) => { this.questionsOpen = event.detail; }} .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .contentRendering=${this.contentRendering} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
+          <workbench-question-chips @question-drawer-toggle=${(event: CustomEvent<boolean>) => {
+            this.questionsOpen = event.detail;
+          }} .status=${state.status} .rosterCompact=${this.dense} .rosterCollapsed=${this.rosterCollapsed} .onToggleRoster=${this.toggleRoster} .workspaceContext=${markdownWorkspaceContext(machineId, state.selectedWorkspace, session)} .asks=${state.pendingAsks} .contentRendering=${this.contentRendering} .draftSessionId=${machineSessionKey(machineId, session.id)} .onSubmit=${(askId: string, submission: AskUserSubmission) => sessions.submitAsk(askId, submission)}></workbench-question-chips>
           <goal-status-chip .status=${state.status}></goal-status-chip>
           <prompt-editor
             .draftStorage=${this.draftStorage}
@@ -229,7 +293,9 @@ export class WorkbenchChatPane extends LitElement {
             .warningCount=${state.status?.warnings?.length ?? 0}
             .sending=${state.sendingPrompts[session.id] === true}
             .onSend=${send}
-            .onStop=${() => { void sessions.stopActiveWork(); }}
+            .onStop=${() => {
+              void sessions.stopActiveWork();
+            }}
             .thinkingLevels=${state.availableThinkingLevels}
             .loadModels=${() => sessions.listModels()}
             .onSetModel=${(provider: string, modelId: string) => sessions.setModel(provider, modelId)}
@@ -239,26 +305,65 @@ export class WorkbenchChatPane extends LitElement {
           </div>
         </conversation-layout>
         <div ?hidden=${!this.focused} ?inert=${!this.focused}>
-        ${state.commandDialog === undefined ? nothing : html`<command-picker ?inert=${!this.focused} .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(value: string) => { void sessions.respondToCommand(state.commandDialog?.requestId ?? "", value); }} .onCancel=${() => { sessions.cancelCommand(); }}></command-picker>`}
-        ${state.treeDialog === undefined ? nothing : html`<session-tree-navigator ?inert=${!this.focused}
+        ${
+          state.commandDialog === undefined
+            ? nothing
+            : html`<command-picker ?inert=${!this.focused} .title=${state.commandDialog.title} .options=${state.commandDialog.options} .onPick=${(
+                value: string,
+              ) => {
+                void sessions.respondToCommand(state.commandDialog?.requestId ?? "", value);
+              }} .onCancel=${() => {
+                sessions.cancelCommand();
+              }}></command-picker>`
+        }
+        ${
+          state.treeDialog === undefined
+            ? nothing
+            : html`<session-tree-navigator ?inert=${!this.focused}
           .tree=${state.treeDialog}
-          .onNavigate=${async (target: string, summary: SessionTreeSummaryChoice) => { const result = await sessions.navigateTree(target, summary); if (!result.cancelled && this.focused) this.promptEditor?.focusInput(); return result; }}
+          .onNavigate=${async (target: string, summary: SessionTreeSummaryChoice) => {
+            const result = await sessions.navigateTree(target, summary);
+            if (!result.cancelled && this.focused) this.promptEditor?.focusInput();
+            return result;
+          }}
           .onFork=${(entry: string) => sessions.forkFromTree(entry)}
           .forking=${sessions.selectedSupports("fork")}
           .summaries=${sessions.selectedSupports("tree.summary")}
           .onAbort=${() => sessions.abortTreeNavigation()}
-          .onCancel=${() => { sessions.closeTreeDialog(); this.promptEditor?.focusInput(); }}
-        ></session-tree-navigator>`}
-        ${state.authDialog === undefined ? nothing : html`<auth-dialog ?inert=${!this.focused}
+          .onCancel=${() => {
+            sessions.closeTreeDialog();
+            this.promptEditor?.focusInput();
+          }}
+        ></session-tree-navigator>`
+        }
+        ${
+          state.authDialog === undefined
+            ? nothing
+            : html`<auth-dialog ?inert=${!this.focused}
           .state=${state.authDialog}
-          .onChooseMethod=${(type: "oauth" | "api_key") => { void auth.chooseLoginMethod(type); }}
-          .onSelectProvider=${(provider: string, type: "oauth" | "api_key") => { void auth.selectLoginProvider(provider, type); }}
-          .onLogoutProvider=${(provider: string) => { void auth.logoutProvider(provider); }}
-          .onOAuthInput=${(value: string) => { auth.updateOAuthInput(value); }}
-          .onOAuthRespond=${(value?: string) => { void auth.respondOAuth(value); }}
-          .onOAuthCancel=${() => { void auth.cancelOAuth(); }}
-          .onCancel=${() => { auth.closeDialog(); }}
-        ></auth-dialog>`}
+          .onChooseMethod=${(type: "oauth" | "api_key") => {
+            void auth.chooseLoginMethod(type);
+          }}
+          .onSelectProvider=${(provider: string, type: "oauth" | "api_key") => {
+            void auth.selectLoginProvider(provider, type);
+          }}
+          .onLogoutProvider=${(provider: string) => {
+            void auth.logoutProvider(provider);
+          }}
+          .onOAuthInput=${(value: string) => {
+            auth.updateOAuthInput(value);
+          }}
+          .onOAuthRespond=${(value?: string) => {
+            void auth.respondOAuth(value);
+          }}
+          .onOAuthCancel=${() => {
+            void auth.cancelOAuth();
+          }}
+          .onCancel=${() => {
+            auth.closeDialog();
+          }}
+        ></auth-dialog>`
+        }
         </div>
       </main>
     `;

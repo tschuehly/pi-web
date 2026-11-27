@@ -16,11 +16,17 @@ export class AutocompleteMenu extends LitElement {
   @property({ attribute: false }) onClose?: () => void;
   readonly popup: AnchoredPopupController = new AnchoredPopupController(this, () => {
     const panel = this.renderRoot.querySelector<HTMLElement>(".menu");
-    return panel ? {
-      anchor: this.anchor ?? this.parentElement ?? this, panel,
-      onClose: () => { this.items = []; this.onClose?.(); },
-      options: { placement: "above-start", gap: 6, width: "anchor", maxHeight: 260, preserveFocus: true },
-    } : undefined;
+    return panel
+      ? {
+          anchor: this.anchor ?? this.parentElement ?? this,
+          panel,
+          onClose: () => {
+            this.items = [];
+            this.onClose?.();
+          },
+          options: { placement: "above-start", gap: 6, width: "anchor", maxHeight: 260, preserveFocus: true },
+        }
+      : undefined;
   });
 
   @property({ attribute: false }) items: CompletionItem[] = [];
@@ -31,13 +37,20 @@ export class AutocompleteMenu extends LitElement {
     if (!this.items.length) return null;
     return html`
       <div class="menu" popover="auto">
-        ${this.items.map((item, index) => html`
-          <button class=${index === this.selectedIndex ? "selected" : ""} ${scrollWhenSelected(index === this.selectedIndex, item)} @mousedown=${(event: MouseEvent) => { event.preventDefault(); this.onPick?.(item); }}>
+        ${this.items.map(
+          (item, index) => html`
+          <button class=${index === this.selectedIndex ? "selected" : ""} ${scrollWhenSelected(index === this.selectedIndex, item)} @mousedown=${(
+            event: MouseEvent,
+          ) => {
+            event.preventDefault();
+            this.onPick?.(item);
+          }}>
             <span class="label"><strong>${item.label ?? item.insertText}</strong>${item.argumentHint === undefined || item.argumentHint === "" ? null : html` <span class="argument-hint">${item.argumentHint}</span>`}</span>
             <span class="detail">${item.detail}</span>
             ${item.description !== undefined && item.description !== "" ? html`<small>${item.description}</small>` : null}
           </button>
-        `)}
+        `,
+        )}
       </div>
     `;
   }

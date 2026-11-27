@@ -11,7 +11,13 @@ describe("navigation preferences", () => {
   });
 
   it("materializes implicit all pins on unpin and treats removing the last pin as all", () => {
-    expect(toggleNavigationPin("chat", [], tabs.map((tab) => tab.id))).toEqual(["navigation", "plugin:files"]);
+    expect(
+      toggleNavigationPin(
+        "chat",
+        [],
+        tabs.map((tab) => tab.id),
+      ),
+    ).toEqual(["navigation", "plugin:files"]);
     const pins = toggleNavigationPin("chat", ["chat"], []);
     expect(pins).toEqual([]);
     expect(isNavigationPinned("plugin:files", pins)).toBe(true);
@@ -27,7 +33,12 @@ describe("navigation preferences", () => {
 
   it("round-trips pins independently from mobile collapse", () => {
     const values = new Map<string, string>();
-    const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
     const preferences = { pinnedIds: ["missing:tool"], mobileCollapsed: true };
     saveNavigationPreferences(preferences, storage);
     expect(loadNavigationPreferences(storage)).toEqual(preferences);
@@ -38,9 +49,21 @@ describe("navigation preferences", () => {
   it("defaults safely for malformed or unavailable storage and validates stored values", () => {
     const storage = (raw: string) => ({ getItem: () => raw });
     expect(loadNavigationPreferences(storage("{"))).toEqual({ pinnedIds: [], mobileCollapsed: false });
-    expect(loadNavigationPreferences(storage('{"pinnedIds":["chat",5,"chat",""],"mobileCollapsed":"true"}'))).toEqual({ pinnedIds: ["chat"], mobileCollapsed: false });
-    const blocked = { getItem: () => { throw new Error("Blocked"); }, setItem: () => { throw new Error("Blocked"); } };
+    expect(loadNavigationPreferences(storage('{"pinnedIds":["chat",5,"chat",""],"mobileCollapsed":"true"}'))).toEqual({
+      pinnedIds: ["chat"],
+      mobileCollapsed: false,
+    });
+    const blocked = {
+      getItem: () => {
+        throw new Error("Blocked");
+      },
+      setItem: () => {
+        throw new Error("Blocked");
+      },
+    };
     expect(loadNavigationPreferences(blocked)).toEqual({ pinnedIds: [], mobileCollapsed: false });
-    expect(() => { saveNavigationPreferences({ pinnedIds: [], mobileCollapsed: true }, blocked); }).not.toThrow();
+    expect(() => {
+      saveNavigationPreferences({ pinnedIds: [], mobileCollapsed: true }, blocked);
+    }).not.toThrow();
   });
 });

@@ -28,10 +28,7 @@ export function requireWorkspaceNotificationPluginId(value: unknown): string {
 }
 
 /** Failures propagate to the CLI's nonzero exit boundary; integrations own best-effort policy. */
-export async function runWorkspaceNotificationCli(
-  args: readonly string[],
-  dependencies: WorkspaceNotificationCliDependencies = {},
-): Promise<void> {
+export async function runWorkspaceNotificationCli(args: readonly string[], dependencies: WorkspaceNotificationCliDependencies = {}): Promise<void> {
   const target = parseCommand(args);
   if (target === undefined) {
     (dependencies.writeLine ?? console.log)(usage);
@@ -52,9 +49,7 @@ export async function runWorkspaceNotificationCli(
 }
 
 function parseCommand(args: readonly string[]): { projectId: string; pluginId: string; daemonOptions: SessionDaemonClientOptions } | undefined {
-  if (args.length === 0
-    || (args.length === 1 && (args[0] === "help" || isHelp(args[0])))
-    || (args.length === 2 && args[0] === "notify" && isHelp(args[1]))) {
+  if (args.length === 0 || (args.length === 1 && (args[0] === "help" || isHelp(args[0]))) || (args.length === 2 && args[0] === "notify" && isHelp(args[1]))) {
     return undefined;
   }
   if (args[0] !== "notify") throw new Error(usage);

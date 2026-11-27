@@ -48,14 +48,16 @@ describe("browser-facing HTTP compression", () => {
       createdAt: "2026-07-11T00:00:00.000Z",
     }));
     const body = JSON.stringify(projects);
-    const request = vi.fn(() => Promise.resolve({
-      statusCode: 200,
-      headers: {
-        "content-type": "application/json",
-        "content-length": String(Buffer.byteLength(body)),
-      },
-      body: Readable.from([body]),
-    }));
+    const request = vi.fn(() =>
+      Promise.resolve({
+        statusCode: 200,
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(Buffer.byteLength(body)),
+        },
+        body: Readable.from([body]),
+      }),
+    );
     appTestContext.remoteClient = fakeRemoteClient({ request });
     const url = `/api/machines/${remote.id}/projects`;
 

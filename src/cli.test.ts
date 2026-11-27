@@ -41,16 +41,17 @@ afterEach(() => {
 
 describe("native service environment", () => {
   it("keeps the selected Pi installation for services without copying unrelated environment", () => {
-    expect(nativeServiceEnvironment("/config.json", {
-      PI_WEB_PI_PACKAGE_DIR: "/existing/pi installation",
-      PATH: "/caller/bin",
-    })).toEqual({ PI_WEB_CONFIG: "/config.json", PI_WEB_PI_PACKAGE_DIR: "/existing/pi installation" });
+    expect(
+      nativeServiceEnvironment("/config.json", {
+        PI_WEB_PI_PACKAGE_DIR: "/existing/pi installation",
+        PATH: "/caller/bin",
+      }),
+    ).toEqual({ PI_WEB_CONFIG: "/config.json", PI_WEB_PI_PACKAGE_DIR: "/existing/pi installation" });
   });
 
   it("does not invent a Pi installation or require an explicit config", () => {
     expect(nativeServiceEnvironment(undefined, {})).toEqual({});
-    expect(nativeServiceEnvironment(undefined, { PI_WEB_PI_PACKAGE_DIR: "/existing/pi" }))
-      .toEqual({ PI_WEB_PI_PACKAGE_DIR: "/existing/pi" });
+    expect(nativeServiceEnvironment(undefined, { PI_WEB_PI_PACKAGE_DIR: "/existing/pi" })).toEqual({ PI_WEB_PI_PACKAGE_DIR: "/existing/pi" });
   });
 });
 
@@ -85,7 +86,9 @@ describe("commandWithVersionCheck", () => {
 
   it("shell-quotes command words", () => {
     process.env["SHELL"] = "/bin/bash";
-    expect(commandWithVersionCheck("/tmp/agent's/acme-agent")).toBe("command -v '/tmp/agent'\\''s/acme-agent' && ('/tmp/agent'\\''s/acme-agent' --version 2>&1 || true)");
+    expect(commandWithVersionCheck("/tmp/agent's/acme-agent")).toBe(
+      "command -v '/tmp/agent'\\''s/acme-agent' && ('/tmp/agent'\\''s/acme-agent' --version 2>&1 || true)",
+    );
   });
 });
 
@@ -97,7 +100,7 @@ describe("nodeVersionCheck", () => {
 
     expect(command).toContain("22.19.0");
     expect(command).toContain("process.versions.node");
-    expect(command).toContain("\"$pi_web_probe_executable\"");
+    expect(command).toContain('"$pi_web_probe_executable"');
   });
 });
 
@@ -152,14 +155,12 @@ describe("native-service doctor CLI contracts", () => {
 
 describe("managedServiceProbeEnvironment", () => {
   const backend = { kind: "systemd", label: "systemd user services" } as const;
-  const installedDefinitions: InstalledNativeServiceDefinition[] = [{
-    id: "web",
-    contents: [
-      "[Service]",
-      'Environment="PI_WEB_CONFIG=/managed/config.json"',
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n"),
-  }];
+  const installedDefinitions: InstalledNativeServiceDefinition[] = [
+    {
+      id: "web",
+      contents: ["[Service]", 'Environment="PI_WEB_CONFIG=/managed/config.json"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n"),
+    },
+  ];
 
   it("copies a persisted config into the probe environment without mutating caller state", () => {
     const callerEnvironment: NodeJS.ProcessEnv = { PI_WEB_CONFIG: "", PI_WEB_PORT: "9000" };
@@ -176,11 +177,7 @@ describe("managedServiceProbeEnvironment", () => {
   it("keeps an explicit caller environment without parsing installed definitions", () => {
     const callerEnvironment: NodeJS.ProcessEnv = { PI_WEB_CONFIG: "/caller/config.json" };
 
-    const result = managedServiceProbeEnvironment(
-      backend,
-      [{ id: "web", contents: "malformed" }],
-      callerEnvironment,
-    );
+    const result = managedServiceProbeEnvironment(backend, [{ id: "web", contents: "malformed" }], callerEnvironment);
 
     expect(result).toEqual({ ok: true, value: callerEnvironment });
   });
@@ -202,13 +199,16 @@ describe("managedServiceProbeEnvironment", () => {
     const callerEnvironment: NodeJS.ProcessEnv = { XDG_CONFIG_HOME: "/managed-default" };
     Object.setPrototypeOf(callerEnvironment, { PI_WEB_CONFIG: "/inherited/config.json" });
 
-    const result = managedServiceProbeEnvironment(backend, [{
-      id: "web",
-      contents: [
-        "[Service]",
-        'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-      ].join("\n"),
-    }], callerEnvironment);
+    const result = managedServiceProbeEnvironment(
+      backend,
+      [
+        {
+          id: "web",
+          contents: ["[Service]", 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n"),
+        },
+      ],
+      callerEnvironment,
+    );
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.message);
@@ -234,21 +234,18 @@ describe("managedServiceProbeEnvironment", () => {
 
 describe("readiness CLI command orchestration", () => {
   const backend = { kind: "systemd", label: "systemd user services" } as const;
-  const definitions: InstalledNativeServiceDefinition[] = [{
-    id: "web",
-    contents: [
-      "[Service]",
-      'Environment="PI_WEB_CONFIG=/managed/config.json"',
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n"),
-  }];
-  const defaultConfigDefinitions: InstalledNativeServiceDefinition[] = [{
-    id: "web",
-    contents: [
-      "[Service]",
-      'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"',
-    ].join("\n"),
-  }];
+  const definitions: InstalledNativeServiceDefinition[] = [
+    {
+      id: "web",
+      contents: ["[Service]", 'Environment="PI_WEB_CONFIG=/managed/config.json"', 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n"),
+    },
+  ];
+  const defaultConfigDefinitions: InstalledNativeServiceDefinition[] = [
+    {
+      id: "web",
+      contents: ["[Service]", 'ExecStart=/usr/bin/env "/bin/zsh" -lc "exec true"'].join("\n"),
+    },
+  ];
 
   function dependencies(environment: NodeJS.ProcessEnv = {}): ReadinessCliCommandDependencies {
     return {
@@ -256,7 +253,7 @@ describe("readiness CLI command orchestration", () => {
       currentBackend: vi.fn(() => backend),
       requireBackend: vi.fn(() => backend),
       installedServiceIds: vi.fn(() => new Set<NativeServiceId>(["web"])),
-      inspectDefinitions: vi.fn(() => ({ ok: true, value: definitions } as const)),
+      inspectDefinitions: vi.fn(() => ({ ok: true, value: definitions }) as const),
       runLifecycle: vi.fn(() => Promise.resolve()),
       runDoctor: vi.fn(() => Promise.resolve()),
       printVersion: vi.fn(() => Promise.resolve()),
@@ -301,34 +298,31 @@ describe("readiness CLI command orchestration", () => {
     });
   });
 
-  it.each(["start", "restart"] as const)(
-    "resolves the managed default instead of an inherited config through %s readiness wiring",
-    async (command) => {
-      const environment: NodeJS.ProcessEnv = { XDG_CONFIG_HOME: "/managed-default" };
-      Object.setPrototypeOf(environment, { PI_WEB_CONFIG: "/inherited/config.json" });
-      const deps = dependencies(environment);
-      vi.mocked(deps.inspectDefinitions).mockReturnValue({ ok: true, value: defaultConfigDefinitions });
+  it.each(["start", "restart"] as const)("resolves the managed default instead of an inherited config through %s readiness wiring", async (command) => {
+    const environment: NodeJS.ProcessEnv = { XDG_CONFIG_HOME: "/managed-default" };
+    Object.setPrototypeOf(environment, { PI_WEB_CONFIG: "/inherited/config.json" });
+    const deps = dependencies(environment);
+    vi.mocked(deps.inspectDefinitions).mockReturnValue({ ok: true, value: defaultConfigDefinitions });
 
-      await runReadinessCliCommand(command, deps);
+    await runReadinessCliCommand(command, deps);
 
-      const probeEnvironment = vi.mocked(deps.runLifecycle).mock.calls[0]?.[2];
-      if (probeEnvironment === undefined) throw new Error("lifecycle probe environment was not provided");
-      expect(piWebConfigPath(probeEnvironment)).toBe(join("/managed-default", "pi-web", "config.json"));
-      expect(piWebConfigPath(environment)).toBe(resolve("/inherited/config.json"));
-      expect(Object.hasOwn(environment, "PI_WEB_CONFIG")).toBe(false);
-    },
-  );
+    const probeEnvironment = vi.mocked(deps.runLifecycle).mock.calls[0]?.[2];
+    if (probeEnvironment === undefined) throw new Error("lifecycle probe environment was not provided");
+    expect(piWebConfigPath(probeEnvironment)).toBe(join("/managed-default", "pi-web", "config.json"));
+    expect(piWebConfigPath(environment)).toBe(resolve("/inherited/config.json"));
+    expect(Object.hasOwn(environment, "PI_WEB_CONFIG")).toBe(false);
+  });
 
   it("makes launchd inspection action-aware so restart can repair stale loaded state", async () => {
     const launchdBackend = { kind: "launchd", label: "LaunchAgents" } as const;
-    const launchdDefinitions: InstalledNativeServiceDefinition[] = [{
-      id: "web",
-      contents: `<plist version="1.0">\n<dict>\n  <key>Label</key>\n  <string>com.pi-web.web</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>/usr/bin/env</string>\n    <string>/bin/zsh</string>\n    <string>-lc</string>\n    <string>exec true</string>\n  </array>\n  <key>EnvironmentVariables</key>\n  <dict>\n    <key>PI_WEB_CONFIG</key>\n    <string>/managed/config.json</string>\n  </dict>\n</dict>\n</plist>\n`,
-    }];
-    const inspect = vi.fn<ReadinessCliCommandDependencies["inspectDefinitions"]>(
-      (_backend, _ids, purpose) => purpose === "restart"
-        ? { ok: true as const, value: launchdDefinitions }
-        : { ok: false as const, message: "loaded LaunchAgent config is stale" },
+    const launchdDefinitions: InstalledNativeServiceDefinition[] = [
+      {
+        id: "web",
+        contents: `<plist version="1.0">\n<dict>\n  <key>Label</key>\n  <string>com.pi-web.web</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>/usr/bin/env</string>\n    <string>/bin/zsh</string>\n    <string>-lc</string>\n    <string>exec true</string>\n  </array>\n  <key>EnvironmentVariables</key>\n  <dict>\n    <key>PI_WEB_CONFIG</key>\n    <string>/managed/config.json</string>\n  </dict>\n</dict>\n</plist>\n`,
+      },
+    ];
+    const inspect = vi.fn<ReadinessCliCommandDependencies["inspectDefinitions"]>((_backend, _ids, purpose) =>
+      purpose === "restart" ? { ok: true as const, value: launchdDefinitions } : { ok: false as const, message: "loaded LaunchAgent config is stale" },
     );
 
     const start = dependencies({});
@@ -374,10 +368,12 @@ describe("readiness CLI command orchestration", () => {
     await runReadinessCliCommand("doctor", deps);
 
     expect(deps.inspectDefinitions).toHaveBeenCalledWith(backend, ["web"], "doctor");
-    expect(deps.runDoctor).toHaveBeenCalledWith(expect.objectContaining({
-      backend,
-      versionReportOptions: { configEnv: { PI_WEB_CONFIG: "/managed/config.json" } },
-    }));
+    expect(deps.runDoctor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backend,
+        versionReportOptions: { configEnv: { PI_WEB_CONFIG: "/managed/config.json" } },
+      }),
+    );
   });
 
   it("resolves the managed default instead of an inherited config through doctor wiring", async () => {
@@ -417,10 +413,12 @@ describe("readiness CLI command orchestration", () => {
 
     expect(manual.installedServiceIds).not.toHaveBeenCalled();
     expect(manual.inspectDefinitions).not.toHaveBeenCalled();
-    expect(manual.runDoctor).toHaveBeenCalledWith(expect.objectContaining({
-      backend: undefined,
-      versionReportOptions: { configEnv: manualEnvironment },
-    }));
+    expect(manual.runDoctor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backend: undefined,
+        versionReportOptions: { configEnv: manualEnvironment },
+      }),
+    );
 
     const dockerEnvironment: NodeJS.ProcessEnv = { PI_WEB_DOCKER_RUNTIME: "1", PI_WEB_CONFIG: "/docker/config.json" };
     const docker = dependencies(dockerEnvironment);
@@ -428,10 +426,12 @@ describe("readiness CLI command orchestration", () => {
     await runReadinessCliCommand("doctor", docker);
 
     expect(docker.inspectDefinitions).not.toHaveBeenCalled();
-    expect(docker.runDoctor).toHaveBeenCalledWith(expect.objectContaining({
-      backend,
-      versionReportOptions: { configEnv: dockerEnvironment },
-    }));
+    expect(docker.runDoctor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backend,
+        versionReportOptions: { configEnv: dockerEnvironment },
+      }),
+    );
   });
 
   it("does not let an inherited Docker marker bypass managed doctor inspection", async () => {
@@ -442,10 +442,12 @@ describe("readiness CLI command orchestration", () => {
     await runReadinessCliCommand("doctor", deps);
 
     expect(deps.inspectDefinitions).toHaveBeenCalledWith(backend, ["web"], "doctor");
-    expect(deps.runDoctor).toHaveBeenCalledWith(expect.objectContaining({
-      backend,
-      versionReportOptions: { configEnv: { PI_WEB_CONFIG: "/managed/config.json" } },
-    }));
+    expect(deps.runDoctor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backend,
+        versionReportOptions: { configEnv: { PI_WEB_CONFIG: "/managed/config.json" } },
+      }),
+    );
   });
 
   it("dispatches standalone version with no managed selection or config options", async () => {
@@ -484,7 +486,10 @@ describe("expectedRunningComponents", () => {
 
   it("expects both components for a Docker runtime regardless of native service files", () => {
     expect(expectedRunningComponents(new Set<NativeServiceId>(), { PI_WEB_DOCKER_RUNTIME: "1" })).toEqual(["web", "sessiond"]);
-    expect(expectedRunningComponents(new Set<NativeServiceId>(["sessiond"]), { PI_WEB_DOCKER_RUNTIME: "1", PI_WEB_DOCKER_MODE: "dev" })).toEqual(["web", "sessiond"]);
+    expect(expectedRunningComponents(new Set<NativeServiceId>(["sessiond"]), { PI_WEB_DOCKER_RUNTIME: "1", PI_WEB_DOCKER_MODE: "dev" })).toEqual([
+      "web",
+      "sessiond",
+    ]);
   });
 
   it("treats a falsy Docker runtime marker as no Docker runtime", () => {

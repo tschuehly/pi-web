@@ -16,13 +16,21 @@ export function promoteInstalledScript(env: NodeJS.ProcessEnv = process.env): st
 }
 
 class ScriptError extends Error {
-  constructor(message: string, readonly statusCode: number) { super(message); }
+  constructor(
+    message: string,
+    readonly statusCode: number,
+  ) {
+    super(message);
+  }
 }
 
 function run(script: string, args: string[], timeout: number): Promise<string> {
   return new Promise((resolvePromise, reject) => {
     execFile(script, args, { timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error === null) { resolvePromise(stdout); return; }
+      if (error === null) {
+        resolvePromise(stdout);
+        return;
+      }
       const message = stderr.trim() || error.message;
       // A script that ran and said no (stale pair, lock held) is a conflict; one that could not start is unavailable.
       reject(new ScriptError(message, typeof error.code === "number" ? 409 : 503));
@@ -67,9 +75,11 @@ export function registerInstallLatestRoutes(app: FastifyInstance, script: string
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
     const merges = request.body?.merges;
-    if (merges !== undefined && (typeof merges !== "number" || !Number.isSafeInteger(merges) || merges < 0)) return reply.code(400).send({ error: "Expected merges to be a count" });
+    if (merges !== undefined && (typeof merges !== "number" || !Number.isSafeInteger(merges) || merges < 0))
+      return reply.code(400).send({ error: "Expected merges to be a count" });
     // The count is display only and comes from the client; the pairs it names are what the script enforces.
-    if (!(await confirm(installConfirmText(from, to, typeof merges === "number" ? merges : undefined)).catch(() => false))) return reply.code(403).send({ error: "not confirmed: the macOS dialog was not answered with Allow" });
+    if (!(await confirm(installConfirmText(from, to, typeof merges === "number" ? merges : undefined)).catch(() => false)))
+      return reply.code(403).send({ error: "not confirmed: the macOS dialog was not answered with Allow" });
     try {
       // Exactly the pairs the owner saw: the script refuses when another install happened (exit 8) or latest moved (exit 9).
       await run(script, ["latest", "--from", from.workbench, from.piWeb, "--to", to.workbench, to.piWeb], 600_000);

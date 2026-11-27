@@ -36,18 +36,10 @@ import {
   SERVER_PLUGIN_NOTICE_SOURCE_PREFIX,
   serverNoticeStringExceedsUtf8ByteLimit,
 } from "../../shared/serverNoticeContract.js";
-import {
-  REQUIRED_TERMINAL_PLUGIN_ID,
-  REQUIRED_TERMINAL_RECOVERY_GUIDANCE,
-} from "../../shared/requiredTerminalPlugin.js";
+import { REQUIRED_TERMINAL_PLUGIN_ID, REQUIRED_TERMINAL_RECOVERY_GUIDANCE } from "../../shared/requiredTerminalPlugin.js";
 import type { ServerPluginSafeStart } from "../../serverPluginRecovery.js";
 import { REQUIRED_TERMINAL_SERVICE_CAPABILITY } from "../terminals/requiredTerminalService.js";
-import type {
-  PiWebPluginCatalog,
-  PiWebPluginCatalogDiagnostic,
-  PiWebPluginCatalogEntry,
-  PiWebPluginCatalogSnapshot,
-} from "../piWebPluginCatalog.js";
+import type { PiWebPluginCatalog, PiWebPluginCatalogDiagnostic, PiWebPluginCatalogEntry, PiWebPluginCatalogSnapshot } from "../piWebPluginCatalog.js";
 import { createServerPluginExecFile } from "./serverPluginExec.js";
 
 export type ServerPluginRuntimeState = "active" | "failed" | "incompatible" | "disabled";
@@ -216,9 +208,7 @@ const DEFAULT_LIFECYCLE_TIMEOUT_MS = 10_000;
  * entries. The resulting runtime is immutable except for explicit shutdown;
  * this lifecycle intentionally has no hot reload or unload path.
  */
-export async function createServerPluginRuntime(
-  options: CreateServerPluginRuntimeOptions,
-): Promise<ServerPluginRuntime> {
+export async function createServerPluginRuntime(options: CreateServerPluginRuntimeOptions): Promise<ServerPluginRuntime> {
   if (options.safeStart === "none") {
     return await ServerPluginRuntime.activate({ plugins: [], diagnostics: [] }, options);
   }
@@ -261,10 +251,7 @@ export class ServerPluginRuntime {
     for (const capability of lateHostCapabilities) this.registerHostCapability(capability);
   }
 
-  static async activate(
-    snapshot: PiWebPluginCatalogSnapshot,
-    options: Omit<CreateServerPluginRuntimeOptions, "catalog">,
-  ): Promise<ServerPluginRuntime> {
+  static async activate(snapshot: PiWebPluginCatalogSnapshot, options: Omit<CreateServerPluginRuntimeOptions, "catalog">): Promise<ServerPluginRuntime> {
     const runtime = new ServerPluginRuntime(
       resolve(options.dataDir),
       options.safeStart,
@@ -306,17 +293,17 @@ export class ServerPluginRuntime {
   }
 
   healthRecords(): readonly ServerPluginRuntimeRecord[] {
-    return Object.freeze([...this.recordsById.values()]
-      .sort((left, right) => left.pluginId.localeCompare(right.pluginId))
-      .map((record) => Object.freeze({ ...record })));
+    return Object.freeze(
+      [...this.recordsById.values()].sort((left, right) => left.pluginId.localeCompare(right.pluginId)).map((record) => Object.freeze({ ...record })),
+    );
   }
 
   providerContributions(): readonly ServerPluginProviderContribution[] {
-    return Object.freeze(this.activePlugins.flatMap((active) => active.providerContribution === undefined ? [] : [active.providerContribution]));
+    return Object.freeze(this.activePlugins.flatMap((active) => (active.providerContribution === undefined ? [] : [active.providerContribution])));
   }
 
   pairedBackendContributions(): readonly ServerPluginPairedBackendContribution[] {
-    return Object.freeze(this.activePlugins.flatMap((active) => active.pairedBackendContribution === undefined ? [] : [active.pairedBackendContribution]));
+    return Object.freeze(this.activePlugins.flatMap((active) => (active.pairedBackendContribution === undefined ? [] : [active.pairedBackendContribution])));
   }
 
   /** Resolves one exact active capability for a core host consumer. */
@@ -333,9 +320,7 @@ export class ServerPluginRuntime {
    * Registers every declared late host factory atomically, then resumes the
    * plugins staged on those capabilities. This boundary is intentionally one-shot.
    */
-  async resumeWithHostCapabilityFactories(
-    factories: readonly ServerPluginHostCapabilityFactory[],
-  ): Promise<void> {
+  async resumeWithHostCapabilityFactories(factories: readonly ServerPluginHostCapabilityFactory[]): Promise<void> {
     if (this.stopped || this.lifetimesAborted) {
       throw new Error("Server plugin runtime cannot resume after shutdown begins");
     }
@@ -344,8 +329,9 @@ export class ServerPluginRuntime {
     }
 
     const snapshottedFactories = snapshotHostCapabilityFactories(factories);
-    const lateDeclarations = [...this.declaredCapabilitiesByKey.values()]
-      .filter((declaration): declaration is InternalLateHostCapability => declaration.source === "late-host");
+    const lateDeclarations = [...this.declaredCapabilitiesByKey.values()].filter(
+      (declaration): declaration is InternalLateHostCapability => declaration.source === "late-host",
+    );
     const factoriesByKey = new Map(snapshottedFactories.map((factory) => [factory.key, factory]));
     for (const factory of snapshottedFactories) {
       if (!lateDeclarations.some(({ key }) => key === factory.key)) {
@@ -384,21 +370,18 @@ export class ServerPluginRuntime {
         continue;
       }
       try {
-        const result = await runBounded(
-          active.entry.id,
-          "health",
-          this.lifecycleTimeoutMs,
-          (signal) => callback(signal),
-        );
+        const result = await runBounded(active.entry.id, "health", this.lifecycleTimeoutMs, (signal) => callback(signal));
         inspections.push(Object.freeze({ pluginId: active.entry.id, health: parseHealth(result) }));
       } catch (error) {
         const message = errorMessage(error);
-        inspections.push(Object.freeze({
-          pluginId: active.entry.id,
-          health: Object.freeze({ status: "unhealthy", message }),
-          phase: "health",
-          error: message,
-        }));
+        inspections.push(
+          Object.freeze({
+            pluginId: active.entry.id,
+            health: Object.freeze({ status: "unhealthy", message }),
+            phase: "health",
+            error: message,
+          }),
+        );
         this.logger.warn({ err: error, pluginId: active.entry.id, phase: "health" }, "server plugin health check failed");
       }
     }
@@ -428,9 +411,7 @@ export class ServerPluginRuntime {
   }
 
   private async start(entries: readonly PiWebPluginCatalogEntry[]): Promise<void> {
-    const serverEntries = entries
-      .filter((entry) => entry.serverModule !== undefined)
-      .sort(requiredTerminalFirst);
+    const serverEntries = entries.filter((entry) => entry.serverModule !== undefined).sort(requiredTerminalFirst);
     for (const entry of serverEntries) await this.stageEntry(entry);
     await this.startStagedPlugins(true);
 
@@ -475,20 +456,24 @@ export class ServerPluginRuntime {
       noticeReporter = createScopedNoticeReporter(entry.id, this.noticeSink);
       const resolveProjectSettings = this.projectSettingsResolver?.bind(undefined, entry.id, settings);
       const workspaceNotifications = this.workspaceNotificationsFactory?.(entry.id);
-      const activationValue = await runBounded(entry.id, phase, this.lifecycleTimeoutMs, (signal) => loadedPlugin.activate(Object.freeze({
-        apiVersion: loadedPlugin.apiVersion,
-        pluginId: entry.id,
-        packageRoot: entry.packageRoot,
-        dataDirectory,
-        logger: scopedLogger,
-        settings,
-        ...(resolveProjectSettings === undefined ? {} : { resolveProjectSettings }),
-        ...(workspaceNotifications === undefined ? {} : { workspaceNotifications }),
-        ...(noticeReporter === undefined ? {} : { notices: noticeReporter.reporter }),
-        execFile: this.execFile,
-        signal,
-        lifetimeSignal: lifetimeController.signal,
-      })));
+      const activationValue = await runBounded(entry.id, phase, this.lifecycleTimeoutMs, (signal) =>
+        loadedPlugin.activate(
+          Object.freeze({
+            apiVersion: loadedPlugin.apiVersion,
+            pluginId: entry.id,
+            packageRoot: entry.packageRoot,
+            dataDirectory,
+            logger: scopedLogger,
+            settings,
+            ...(resolveProjectSettings === undefined ? {} : { resolveProjectSettings }),
+            ...(workspaceNotifications === undefined ? {} : { workspaceNotifications }),
+            ...(noticeReporter === undefined ? {} : { notices: noticeReporter.reporter }),
+            execFile: this.execFile,
+            signal,
+            lifetimeSignal: lifetimeController.signal,
+          }),
+        ),
+      );
       rollbackDispose = activationDisposeForRollback(activationValue);
       phase = "validate";
       const loadedActivation = parseActivation(activationValue, entry.id, loadedPlugin.apiVersion);
@@ -515,17 +500,18 @@ export class ServerPluginRuntime {
     } catch (error) {
       abortPluginLifetime(lifetimeController, entry.id, "activation failed");
       noticeReporter?.revoke();
-      const rollbackError = rollbackDispose === undefined
-        ? undefined
-        : await this.runDispose(entry.id, rollbackDispose);
+      const rollbackError = rollbackDispose === undefined ? undefined : await this.runDispose(entry.id, rollbackDispose);
       const message = withRollbackError(errorMessage(error), rollbackError);
       const state: ServerPluginRuntimeState = error instanceof IncompatibleServerPluginError ? "incompatible" : "failed";
-      this.recordsById.set(entry.id, recordFor(entry, {
-        state,
-        ...(plugin === undefined ? {} : { name: plugin.name }),
-        phase,
-        message,
-      }));
+      this.recordsById.set(
+        entry.id,
+        recordFor(entry, {
+          state,
+          ...(plugin === undefined ? {} : { name: plugin.name }),
+          phase,
+          message,
+        }),
+      );
       const details = { err: error, pluginId: entry.id, phase, ...(rollbackError === undefined ? {} : { rollbackError }) };
       if (state === "incompatible") this.logger.warn(details, "server plugin is incompatible");
       else this.logger.error(details, "server plugin activation failed");
@@ -570,9 +556,11 @@ export class ServerPluginRuntime {
           if (staged === undefined) continue;
           pending.delete(pluginId);
           const cyclicRequirement = (staged.plugin.requires ?? []).find((requirement) => cycleIds.includes(requirement.pluginId));
-          const error = new Error(cyclicRequirement === undefined
-            ? `Server plugin ${pluginId} has an unresolved capability dependency cycle`
-            : `Server plugin ${pluginId} requires ${formatCapability(cyclicRequirement)} in a capability dependency cycle`);
+          const error = new Error(
+            cyclicRequirement === undefined
+              ? `Server plugin ${pluginId} has an unresolved capability dependency cycle`
+              : `Server plugin ${pluginId} requires ${formatCapability(cyclicRequirement)} in a capability dependency cycle`,
+          );
           const message = await this.failBeforeStart(staged, error);
           if (this.enforceRequiredTerminal && pluginId === REQUIRED_TERMINAL_PLUGIN_ID) {
             throw requiredTerminalError(`Required Terminal server entry failed during start: ${message}`, error);
@@ -600,9 +588,7 @@ export class ServerPluginRuntime {
           }
           continue;
         }
-        if (candidates.every((staged) => (
-          findLateHostDependency(staged, pending, this.declaredCapabilitiesByKey) !== undefined
-        ))) return;
+        if (candidates.every((staged) => findLateHostDependency(staged, pending, this.declaredCapabilitiesByKey) !== undefined)) return;
       }
 
       const unresolved = candidates[0];
@@ -616,22 +602,19 @@ export class ServerPluginRuntime {
     }
   }
 
-  private dependencyFailure(
-    staged: StagedServerPlugin,
-    pending: ReadonlyMap<string, StagedServerPlugin>,
-  ): Error | undefined {
+  private dependencyFailure(staged: StagedServerPlugin, pending: ReadonlyMap<string, StagedServerPlugin>): Error | undefined {
     for (const requirement of staged.plugin.requires ?? []) {
       const key = capabilityKey(requirement);
       const provision = this.declaredCapabilitiesByKey.get(key);
       if (provision === undefined) {
         return new Error(`Server plugin ${staged.entry.id} requires unavailable capability ${formatCapability(requirement)}`);
       }
-      if (this.activeCapabilitiesByKey.has(key)
-        || provision.source === "host"
-        || provision.source === "host-factory"
-        || provision.source === "late-host") continue;
+      if (this.activeCapabilitiesByKey.has(key) || provision.source === "host" || provision.source === "host-factory" || provision.source === "late-host")
+        continue;
       if (!pending.has(requirement.pluginId)) {
-        return new Error(`Server plugin ${staged.entry.id} requires ${formatCapability(requirement)}, but provider plugin ${requirement.pluginId} did not start`);
+        return new Error(
+          `Server plugin ${staged.entry.id} requires ${formatCapability(requirement)}, but provider plugin ${requirement.pluginId} did not start`,
+        );
       }
     }
     return undefined;
@@ -640,8 +623,7 @@ export class ServerPluginRuntime {
   private waitingForDependencies(staged: StagedServerPlugin): boolean {
     return (staged.plugin.requires ?? []).some((requirement) => {
       const key = capabilityKey(requirement);
-      return this.declaredCapabilitiesByKey.get(key)?.source !== "host-factory"
-        && !this.activeCapabilitiesByKey.has(key);
+      return this.declaredCapabilitiesByKey.get(key)?.source !== "host-factory" && !this.activeCapabilitiesByKey.has(key);
     });
   }
 
@@ -650,10 +632,14 @@ export class ServerPluginRuntime {
       const capabilities = this.capabilityResolver(staged);
       const start = staged.activation.start?.bind(staged.activation);
       if (start !== undefined) {
-        await runBounded(staged.entry.id, "start", this.lifecycleTimeoutMs, (signal) => start(Object.freeze({
-          capabilities,
-          signal,
-        })));
+        await runBounded(staged.entry.id, "start", this.lifecycleTimeoutMs, (signal) =>
+          start(
+            Object.freeze({
+              capabilities,
+              signal,
+            }),
+          ),
+        );
       }
       if (this.enforceRequiredTerminal && staged.entry.id === REQUIRED_TERMINAL_PLUGIN_ID) {
         await this.requireHealthyTerminal(staged);
@@ -682,20 +668,13 @@ export class ServerPluginRuntime {
       }
       // Validate the declared requirement before start, but retain the provider value:
       // resolve() may supply a different parser for this same capability key.
-      parseCapabilityValue(
-        requirement,
-        provisionValue,
-        `Required capability ${formatCapability(requirement)} for server plugin ${staged.entry.id}`,
-      );
+      parseCapabilityValue(requirement, provisionValue, `Required capability ${formatCapability(requirement)} for server plugin ${staged.entry.id}`);
       resolved.set(key, { provisionValue });
     }
     return createCapabilityResolver(staged.entry.id, resolved);
   }
 
-  private createHostCapabilityValue(
-    staged: StagedServerPlugin,
-    factory: InternalHostCapabilityFactory,
-  ): unknown {
+  private createHostCapabilityValue(staged: StagedServerPlugin, factory: InternalHostCapabilityFactory): unknown {
     const context: ServerPluginHostCapabilityContext = Object.freeze({
       pluginId: staged.entry.id,
       packageRoot: staged.entry.packageRoot,
@@ -721,29 +700,31 @@ export class ServerPluginRuntime {
   }
 
   private publish(staged: StagedServerPlugin): void {
-    const providerContribution = staged.activation.workspaceProvider === undefined
-      ? undefined
-      : Object.freeze({
-          pluginId: staged.entry.id,
-          pluginName: staged.plugin.name,
-          packageRoot: staged.entry.packageRoot,
-          source: staged.entry.source,
-          scope: staged.entry.scope,
-          moduleRevision: requireServerModule(staged.entry).revision,
-          provider: staged.activation.workspaceProvider,
-        });
-    const pairedBackendContribution = staged.activation.peer === undefined
-      ? undefined
-      : Object.freeze({
-          pluginId: staged.entry.id,
-          pluginName: staged.plugin.name,
-          packageRoot: staged.entry.packageRoot,
-          source: staged.entry.source,
-          scope: staged.entry.scope,
-          moduleRevision: requireServerModule(staged.entry).revision,
-          apiVersion: staged.plugin.apiVersion,
-          backend: staged.activation.peer,
-        });
+    const providerContribution =
+      staged.activation.workspaceProvider === undefined
+        ? undefined
+        : Object.freeze({
+            pluginId: staged.entry.id,
+            pluginName: staged.plugin.name,
+            packageRoot: staged.entry.packageRoot,
+            source: staged.entry.source,
+            scope: staged.entry.scope,
+            moduleRevision: requireServerModule(staged.entry).revision,
+            provider: staged.activation.workspaceProvider,
+          });
+    const pairedBackendContribution =
+      staged.activation.peer === undefined
+        ? undefined
+        : Object.freeze({
+            pluginId: staged.entry.id,
+            pluginName: staged.plugin.name,
+            packageRoot: staged.entry.packageRoot,
+            source: staged.entry.source,
+            scope: staged.entry.scope,
+            moduleRevision: requireServerModule(staged.entry).revision,
+            apiVersion: staged.plugin.apiVersion,
+            backend: staged.activation.peer,
+          });
     const active = Object.freeze({
       ...staged,
       ...(providerContribution === undefined ? {} : { providerContribution }),
@@ -752,12 +733,15 @@ export class ServerPluginRuntime {
     this.removeStaged(staged.entry.id);
     this.activePlugins.push(active);
     for (const provision of staged.provisions) this.activeCapabilitiesByKey.set(provision.key, provision);
-    this.recordsById.set(staged.entry.id, recordFor(staged.entry, {
-      state: "active",
-      name: staged.plugin.name,
-      ...(pairedBackendContribution?.backend.request === undefined ? {} : { pairedRequestVersion: 1 }),
-      ...(pairedBackendContribution?.backend.openChannel === undefined ? {} : { pairedChannelVersion: 1 }),
-    }));
+    this.recordsById.set(
+      staged.entry.id,
+      recordFor(staged.entry, {
+        state: "active",
+        name: staged.plugin.name,
+        ...(pairedBackendContribution?.backend.request === undefined ? {} : { pairedRequestVersion: 1 }),
+        ...(pairedBackendContribution?.backend.openChannel === undefined ? {} : { pairedChannelVersion: 1 }),
+      }),
+    );
     this.logger.info({ pluginId: staged.entry.id, pluginName: staged.plugin.name }, "server plugin activated");
   }
 
@@ -769,12 +753,15 @@ export class ServerPluginRuntime {
     const rollbackError = dispose === undefined ? undefined : await this.runDispose(staged.entry.id, dispose);
     const hostCleanupError = await this.disposeHostCapabilityInstances(staged);
     const message = withHostCleanupError(withRollbackError(errorMessage(error), rollbackError), hostCleanupError);
-    this.recordsById.set(staged.entry.id, recordFor(staged.entry, {
-      state: "failed",
-      name: staged.plugin.name,
-      phase: "start",
-      message,
-    }));
+    this.recordsById.set(
+      staged.entry.id,
+      recordFor(staged.entry, {
+        state: "failed",
+        name: staged.plugin.name,
+        phase: "start",
+        message,
+      }),
+    );
     this.logger.error(
       {
         err: error,
@@ -799,14 +786,17 @@ export class ServerPluginRuntime {
     const hostCleanupError = await this.disposeHostCapabilityInstances(plugin);
     const error = combinedDisposalError(pluginDisposeError, hostCleanupError);
     if (error === undefined) return;
-    this.recordsById.set(plugin.entry.id, recordFor(plugin.entry, {
-      state: "failed",
-      name: plugin.plugin.name,
-      phase: "dispose",
-      message: errorMessage(error),
-      ...(plugin.activation.peer?.request === undefined ? {} : { pairedRequestVersion: 1 }),
-      ...(plugin.activation.peer?.openChannel === undefined ? {} : { pairedChannelVersion: 1 }),
-    }));
+    this.recordsById.set(
+      plugin.entry.id,
+      recordFor(plugin.entry, {
+        state: "failed",
+        name: plugin.plugin.name,
+        phase: "dispose",
+        message: errorMessage(error),
+        ...(plugin.activation.peer?.request === undefined ? {} : { pairedRequestVersion: 1 }),
+        ...(plugin.activation.peer?.openChannel === undefined ? {} : { pairedChannelVersion: 1 }),
+      }),
+    );
     this.logger.error(
       {
         err: error,
@@ -877,10 +867,7 @@ function requiredTerminalFirst(left: PiWebPluginCatalogEntry, right: PiWebPlugin
 }
 
 function requiredTerminalError(message: string, cause?: unknown): RequiredTerminalPluginError {
-  return new RequiredTerminalPluginError(
-    `${message}. ${REQUIRED_TERMINAL_RECOVERY_GUIDANCE}`,
-    cause === undefined ? {} : { cause },
-  );
+  return new RequiredTerminalPluginError(`${message}. ${REQUIRED_TERMINAL_RECOVERY_GUIDANCE}`, cause === undefined ? {} : { cause });
 }
 
 function disabledReason(entry: PiWebPluginCatalogEntry, safeStart: ServerPluginSafeStart | undefined): string | undefined {
@@ -892,7 +879,8 @@ function disabledReason(entry: PiWebPluginCatalogEntry, safeStart: ServerPluginS
 
 function recordFor(
   entry: PiWebPluginCatalogEntry,
-  status: Pick<ServerPluginRuntimeRecord, "state"> & Partial<Pick<ServerPluginRuntimeRecord, "name" | "phase" | "message" | "pairedRequestVersion" | "pairedChannelVersion">>,
+  status: Pick<ServerPluginRuntimeRecord, "state">
+    & Partial<Pick<ServerPluginRuntimeRecord, "name" | "phase" | "message" | "pairedRequestVersion" | "pairedChannelVersion">>,
 ): ServerPluginRuntimeRecord {
   return Object.freeze({
     pluginId: entry.id,
@@ -1016,12 +1004,14 @@ function isServerPluginActivation(value: unknown): value is ServerPluginActivati
   const start = value["start"];
   const dispose = value["dispose"];
   const health = value["health"];
-  return (workspaceProvider === undefined || isWorkspaceProvider(workspaceProvider))
+  return (
+    (workspaceProvider === undefined || isWorkspaceProvider(workspaceProvider))
     && (peer === undefined || isPluginPeer(peer))
     && (provides === undefined || Array.isArray(provides))
     && (start === undefined || typeof start === "function")
     && (dispose === undefined || typeof dispose === "function")
-    && (health === undefined || typeof health === "function");
+    && (health === undefined || typeof health === "function")
+  );
 }
 
 function snapshotCapabilityRequirements(value: unknown, label: string): readonly PluginCapability[] {
@@ -1040,11 +1030,7 @@ function snapshotCapabilityRequirements(value: unknown, label: string): readonly
   return Object.freeze(requirements);
 }
 
-function snapshotCapabilityProvisions(
-  value: unknown,
-  ownerPluginId: string | undefined,
-  label: string,
-): readonly PluginCapabilityProvision[] {
+function snapshotCapabilityProvisions(value: unknown, ownerPluginId: string | undefined, label: string): readonly PluginCapabilityProvision[] {
   if (value === undefined) return Object.freeze([]);
   if (!Array.isArray(value)) throw new IncompatibleServerPluginError(`${label} must be an array`);
   const seen = new Set<string>();
@@ -1071,9 +1057,7 @@ function snapshotHostCapabilities(value: readonly PluginCapabilityProvision[] | 
   return internalProvisions({ provides: provisions }, "host");
 }
 
-function snapshotLateHostCapabilities(
-  value: readonly PluginCapability[] | undefined,
-): readonly InternalLateHostCapability[] {
+function snapshotLateHostCapabilities(value: readonly PluginCapability[] | undefined): readonly InternalLateHostCapability[] {
   if (value === undefined) return Object.freeze([]);
   if (!Array.isArray(value)) throw new Error("Late host capabilities must be an array");
   const seen = new Set<string>();
@@ -1089,9 +1073,7 @@ function snapshotLateHostCapabilities(
   return Object.freeze(capabilities);
 }
 
-function snapshotHostCapabilityFactories(
-  value: readonly ServerPluginHostCapabilityFactory[] | undefined,
-): readonly InternalHostCapabilityFactory[] {
+function snapshotHostCapabilityFactories(value: readonly ServerPluginHostCapabilityFactory[] | undefined): readonly InternalHostCapabilityFactory[] {
   if (value === undefined) return Object.freeze([]);
   if (!Array.isArray(value)) throw new Error("Host capability factories must be an array");
   const seen = new Set<string>();
@@ -1100,24 +1082,23 @@ function snapshotHostCapabilityFactories(
     if (!Object.hasOwn(value, index)) throw new Error("Host capability factories must not be sparse");
     const candidate: unknown = value[index];
     if (!isRecord(candidate)) throw new Error(`Host capability factories[${String(index)}] must be an object`);
-    const capability = snapshotUnknownCapability(
-      candidate["capability"],
-      `Host capability factories[${String(index)}].capability`,
-    );
+    const capability = snapshotUnknownCapability(candidate["capability"], `Host capability factories[${String(index)}].capability`);
     const key = capabilityKey(capability);
     if (seen.has(key)) throw new Error(`Host capability factory for ${formatCapability(capability)} is configured more than once`);
     const create = candidate["create"];
     if (typeof create !== "function") throw new Error(`Host capability factory for ${formatCapability(capability)} must expose create`);
     seen.add(key);
-    factories.push(Object.freeze({
-      capability,
-      key,
-      source: "host-factory" as const,
-      create(context: ServerPluginHostCapabilityContext): ServerPluginHostCapabilityInstance {
-        const result: unknown = Reflect.apply(create, candidate, [context]);
-        return snapshotHostCapabilityInstance(result, `Host capability ${formatCapability(capability)}`);
-      },
-    }));
+    factories.push(
+      Object.freeze({
+        capability,
+        key,
+        source: "host-factory" as const,
+        create(context: ServerPluginHostCapabilityContext): ServerPluginHostCapabilityInstance {
+          const result: unknown = Reflect.apply(create, candidate, [context]);
+          return snapshotHostCapabilityInstance(result, `Host capability ${formatCapability(capability)}`);
+        },
+      }),
+    );
   }
   return Object.freeze(factories);
 }
@@ -1134,7 +1115,11 @@ function snapshotHostCapabilityInstance(value: unknown, label: string): ServerPl
     value: value["value"],
     ...(dispose === undefined
       ? {}
-      : { dispose: async (signal: AbortSignal): Promise<void> => { await Reflect.apply(dispose, value, [signal]); } }),
+      : {
+          dispose: async (signal: AbortSignal): Promise<void> => {
+            await Reflect.apply(dispose, value, [signal]);
+          },
+        }),
   });
 }
 
@@ -1142,12 +1127,16 @@ function internalProvisions(
   activation: Pick<ServerPluginActivation, "provides">,
   source: InternalCapabilityProvision["source"],
 ): readonly InternalCapabilityProvision[] {
-  return Object.freeze((activation.provides ?? []).map((provision) => Object.freeze({
-    capability: provision.capability,
-    key: capabilityKey(provision.capability),
-    value: provision.value,
-    source,
-  })));
+  return Object.freeze(
+    (activation.provides ?? []).map((provision) =>
+      Object.freeze({
+        capability: provision.capability,
+        key: capabilityKey(provision.capability),
+        value: provision.value,
+        source,
+      }),
+    ),
+  );
 }
 
 function snapshotUnknownCapability(value: unknown, label: string): PluginCapability {
@@ -1219,10 +1208,7 @@ function formatCapability(capability: Pick<PluginCapability, "pluginId" | "id" |
   return `${capability.pluginId}/${capability.id} v${String(capability.version)}`;
 }
 
-function createCapabilityResolver(
-  pluginId: string,
-  resolved: ReadonlyMap<string, ResolvedCapabilityRequirement>,
-): ServerPluginStartContext["capabilities"] {
+function createCapabilityResolver(pluginId: string, resolved: ReadonlyMap<string, ResolvedCapabilityRequirement>): ServerPluginStartContext["capabilities"] {
   return Object.freeze({
     resolve<Value>(value: PluginCapability<Value>): Value {
       const capability = snapshotTypedCapability(value, `Capability request from server plugin ${pluginId}`);
@@ -1230,11 +1216,7 @@ function createCapabilityResolver(
       if (requirement === undefined) {
         throw new Error(`Server plugin ${pluginId} did not declare required capability ${formatCapability(capability)}`);
       }
-      return parseCapabilityValue(
-        capability,
-        requirement.provisionValue,
-        `Required capability ${formatCapability(capability)} for server plugin ${pluginId}`,
-      );
+      return parseCapabilityValue(capability, requirement.provisionValue, `Required capability ${formatCapability(capability)} for server plugin ${pluginId}`);
     },
   });
 }
@@ -1260,10 +1242,7 @@ function findLateHostDependency(
   return undefined;
 }
 
-function findCapabilityCycle(
-  pending: ReadonlyMap<string, StagedServerPlugin>,
-  declared: ReadonlyMap<string, InternalCapabilityDeclaration>,
-): string[] {
+function findCapabilityCycle(pending: ReadonlyMap<string, StagedServerPlugin>, declared: ReadonlyMap<string, InternalCapabilityDeclaration>): string[] {
   const state = new Map<string, "visiting" | "visited">();
   const stack: string[] = [];
   const visit = (pluginId: string): string[] | undefined => {
@@ -1303,24 +1282,17 @@ function abortPluginLifetime(controller: AbortController, pluginId: string, outc
 }
 
 function withRollbackError(message: string, rollbackError: unknown): string {
-  return rollbackError === undefined
-    ? message
-    : `${message}; startup rollback failed: ${errorMessage(rollbackError)}`;
+  return rollbackError === undefined ? message : `${message}; startup rollback failed: ${errorMessage(rollbackError)}`;
 }
 
 function withHostCleanupError(message: string, cleanupError: unknown): string {
-  return cleanupError === undefined
-    ? message
-    : `${message}; host capability cleanup failed: ${errorMessage(cleanupError)}`;
+  return cleanupError === undefined ? message : `${message}; host capability cleanup failed: ${errorMessage(cleanupError)}`;
 }
 
 function combinedDisposalError(pluginError: unknown, hostCleanupError: unknown): unknown {
   if (pluginError === undefined) return hostCleanupError;
   if (hostCleanupError === undefined) return pluginError;
-  return new AggregateError(
-    [pluginError, hostCleanupError],
-    `${errorMessage(pluginError)}; host capability cleanup failed: ${errorMessage(hostCleanupError)}`,
-  );
+  return new AggregateError([pluginError, hostCleanupError], `${errorMessage(pluginError)}; host capability cleanup failed: ${errorMessage(hostCleanupError)}`);
 }
 
 function snapshotPluginPeer(value: unknown, apiVersion: 3 | 5): ServerPluginPeer {
@@ -1329,14 +1301,15 @@ function snapshotPluginPeer(value: unknown, apiVersion: 3 | 5): ServerPluginPeer
   }
   const request = value.request?.bind(value);
   const openChannel = value.openChannel?.bind(value);
-  const snapshotRequest = request === undefined
-    ? undefined
-    : (context: ServerPluginPeerRequestContext): JsonValue | Promise<JsonValue> => request(peerContextForVersion(context, apiVersion));
-  const snapshotOpenChannel = openChannel === undefined
-    ? undefined
-    : async (context: ServerPluginPeerChannelOpenContext): Promise<ServerPluginPeerChannel> => (
-        snapshotPluginPeerChannel(await openChannel(peerContextForVersion(context, apiVersion)))
-      );
+  const snapshotRequest =
+    request === undefined
+      ? undefined
+      : (context: ServerPluginPeerRequestContext): JsonValue | Promise<JsonValue> => request(peerContextForVersion(context, apiVersion));
+  const snapshotOpenChannel =
+    openChannel === undefined
+      ? undefined
+      : async (context: ServerPluginPeerChannelOpenContext): Promise<ServerPluginPeerChannel> =>
+          snapshotPluginPeerChannel(await openChannel(peerContextForVersion(context, apiVersion)));
   if (snapshotRequest !== undefined && snapshotOpenChannel !== undefined) {
     return Object.freeze({ request: snapshotRequest, openChannel: snapshotOpenChannel });
   }
@@ -1359,9 +1332,11 @@ function isPluginPeer(value: unknown): value is {
   if (!isRecord(value)) return false;
   const request = value["request"];
   const openChannel = value["openChannel"];
-  return (typeof request === "function" || typeof openChannel === "function")
+  return (
+    (typeof request === "function" || typeof openChannel === "function")
     && (request === undefined || typeof request === "function")
-    && (openChannel === undefined || typeof openChannel === "function");
+    && (openChannel === undefined || typeof openChannel === "function")
+  );
 }
 
 function snapshotPluginPeerChannel(value: unknown): ServerPluginPeerChannel {
@@ -1379,10 +1354,12 @@ function snapshotPluginPeerChannel(value: unknown): ServerPluginPeerChannel {
 }
 
 function isPluginPeerChannel(value: unknown): value is ServerPluginPeerChannel {
-  return isRecord(value)
+  return (
+    isRecord(value)
     && typeof value["receive"] === "function"
     && (value["closed"] === undefined || isPromiseLike(value["closed"]))
-    && (value["close"] === undefined || typeof value["close"] === "function");
+    && (value["close"] === undefined || typeof value["close"] === "function")
+  );
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<void> {
@@ -1418,11 +1395,13 @@ function isWorkspaceProvider(value: unknown): value is WorkspaceProvider {
   const probe = value["probe"];
   const list = value["list"];
   const prepareRemove = value["prepareRemove"];
-  return (fallback === undefined || typeof fallback === "boolean")
+  return (
+    (fallback === undefined || typeof fallback === "boolean")
     && typeof probe === "function"
     && typeof list === "function"
     && (prepareRemove === undefined || typeof prepareRemove === "function")
-    && (value["integration"] === undefined || isWorkspaceProviderIntegration(value["integration"]));
+    && (value["integration"] === undefined || isWorkspaceProviderIntegration(value["integration"]))
+  );
 }
 
 function isWorkspaceProviderIntegration(value: unknown): value is WorkspaceProviderIntegration {
@@ -1458,10 +1437,7 @@ function parseHealth(value: unknown): ServerPluginHealth {
   });
 }
 
-function createScopedNoticeReporter(
-  pluginId: string,
-  sink: CreateServerPluginRuntimeOptions["noticeSink"],
-): ScopedNoticeReporter | undefined {
+function createScopedNoticeReporter(pluginId: string, sink: CreateServerPluginRuntimeOptions["noticeSink"]): ScopedNoticeReporter | undefined {
   if (sink === undefined) return undefined;
   const source = `${SERVER_PLUGIN_NOTICE_SOURCE_PREFIX}${pluginId}`;
   let active = true;
@@ -1474,7 +1450,9 @@ function createScopedNoticeReporter(
   });
   return Object.freeze({
     reporter,
-    revoke(): void { active = false; },
+    revoke(): void {
+      active = false;
+    },
   });
 }
 
@@ -1502,15 +1480,14 @@ function parseServerPluginNoticeInput(value: unknown): ServerPluginNoticeInput {
   if (message.trim() === "") {
     throw new Error("Server plugin notice message must be a non-empty string");
   }
-  const scope = value["scope"] === undefined
-    ? undefined
-    : parseServerNoticeScope(value["scope"], "Server plugin notice scope");
-  const context = value["context"] === undefined
-    ? undefined
-    : cloneJsonObject(value["context"], "server plugin notice context", {
-        maxDepth: SERVER_PLUGIN_NOTICE_CONTEXT_MAX_DEPTH,
-        maxBytes: SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES,
-      });
+  const scope = value["scope"] === undefined ? undefined : parseServerNoticeScope(value["scope"], "Server plugin notice scope");
+  const context =
+    value["context"] === undefined
+      ? undefined
+      : cloneJsonObject(value["context"], "server plugin notice context", {
+          maxDepth: SERVER_PLUGIN_NOTICE_CONTEXT_MAX_DEPTH,
+          maxBytes: SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES,
+        });
   return Object.freeze({
     severity,
     message,
@@ -1544,10 +1521,18 @@ async function runBounded<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutError = new ServerPluginTimeoutError(`Server plugin ${pluginId} ${phase} timed out after ${String(timeoutMs)}ms`);
-  const timeout = setTimeout(() => { controller.abort(timeoutError); }, timeoutMs);
+  const timeout = setTimeout(() => {
+    controller.abort(timeoutError);
+  }, timeoutMs);
   timeout.unref();
   const deadline = new Promise<never>((_resolve, reject) => {
-    controller.signal.addEventListener("abort", () => { reject(abortError(controller.signal)); }, { once: true });
+    controller.signal.addEventListener(
+      "abort",
+      () => {
+        reject(abortError(controller.signal));
+      },
+      { once: true },
+    );
   });
   const result = Promise.resolve().then(() => operation(controller.signal));
   try {
@@ -1571,9 +1556,7 @@ interface JsonCloneByteBudget {
 
 function cloneJsonObject(value: unknown, label: string, limits: JsonCloneLimits = {}): JsonObject {
   if (!isPlainRecord(value)) throw new IncompatibleServerPluginError(`${label} must be a JSON object`);
-  const byteBudget = limits.maxBytes === undefined
-    ? undefined
-    : { label, maxBytes: limits.maxBytes, remaining: limits.maxBytes };
+  const byteBudget = limits.maxBytes === undefined ? undefined : { label, maxBytes: limits.maxBytes, remaining: limits.maxBytes };
   return cloneJsonRecord(value, new Set<object>(), label, 0, limits.maxDepth, byteBudget);
 }
 
@@ -1596,11 +1579,7 @@ function cloneJsonRecord(
     if (propertyCount > 0) consumeJsonBytes(byteBudget, 1); // Comma.
     consumeJsonStringBytes(byteBudget, key);
     consumeJsonBytes(byteBudget, 1); // Colon.
-    defineJsonProperty(
-      output,
-      key,
-      cloneJsonValue(value[key], ancestors, label, depth + 1, maxDepth, byteBudget),
-    );
+    defineJsonProperty(output, key, cloneJsonValue(value[key], ancestors, label, depth + 1, maxDepth, byteBudget));
     propertyCount += 1;
   }
   ancestors.delete(value);
@@ -1672,9 +1651,7 @@ function consumeJsonStringBytes(byteBudget: JsonCloneByteBudget | undefined, val
   consumeJsonBytes(byteBudget, 2); // Opening and closing quotes.
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
-    if (codeUnit === 0x22 || codeUnit === 0x5c
-      || codeUnit === 0x08 || codeUnit === 0x09 || codeUnit === 0x0a
-      || codeUnit === 0x0c || codeUnit === 0x0d) {
+    if (codeUnit === 0x22 || codeUnit === 0x5c || codeUnit === 0x08 || codeUnit === 0x09 || codeUnit === 0x0a || codeUnit === 0x0c || codeUnit === 0x0d) {
       consumeJsonBytes(byteBudget, 2);
     } else if (codeUnit <= 0x1f) {
       consumeJsonBytes(byteBudget, 6);
@@ -1682,10 +1659,13 @@ function consumeJsonStringBytes(byteBudget: JsonCloneByteBudget | undefined, val
       consumeJsonBytes(byteBudget, 1);
     } else if (codeUnit <= 0x7ff) {
       consumeJsonBytes(byteBudget, 2);
-    } else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff
+    } else if (
+      codeUnit >= 0xd800
+      && codeUnit <= 0xdbff
       && index + 1 < value.length
       && value.charCodeAt(index + 1) >= 0xdc00
-      && value.charCodeAt(index + 1) <= 0xdfff) {
+      && value.charCodeAt(index + 1) <= 0xdfff
+    ) {
       consumeJsonBytes(byteBudget, 4);
       index += 1;
     } else if (codeUnit >= 0xd800 && codeUnit <= 0xdfff) {

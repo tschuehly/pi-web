@@ -54,7 +54,12 @@ export function workspaceFilesPath(machineId: string, projectId: string, workspa
   return `api/machines/${encodeURIComponent(machineId)}/projects/${encodeURIComponent(projectId === "" ? AD_HOC_FOLDER_PROJECT_ID : projectId)}/workspaces/${encodeURIComponent(workspaceId)}`;
 }
 
-export function workspaceFileWriteUrl(projectId: string, workspaceId: string, path: string, options?: { createDirs?: boolean; overwrite?: boolean; machineId?: string }): string {
+export function workspaceFileWriteUrl(
+  projectId: string,
+  workspaceId: string,
+  path: string,
+  options?: { createDirs?: boolean; overwrite?: boolean; machineId?: string },
+): string {
   const params = new URLSearchParams({ path });
   if (options?.createDirs === false) params.set("createDirs", "false");
   if (options?.overwrite === false) params.set("overwrite", "false");

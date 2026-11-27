@@ -39,13 +39,29 @@ export class McpAuthFlowService {
     if (this.sessions.size > 0) throw new Error("Another MCP authentication operation is running on this machine. Finish it before starting another.");
     if (this.flows.size >= 100) throw new Error("Too many MCP authentication flows");
     const flow: Flow = {
-      state: { flowId: randomUUID(), target: "mcp", providerId: "mcp", providerName: "MCP server", status: "running", progress: [], ...(options.mode === undefined ? {} : { mcpMode: options.mode }) },
-      identity: options.identity, sessionId: options.sessionId, token: Symbol(), isCurrent: () => options.isCurrent(),
+      state: {
+        flowId: randomUUID(),
+        target: "mcp",
+        providerId: "mcp",
+        providerName: "MCP server",
+        status: "running",
+        progress: [],
+        ...(options.mode === undefined ? {} : { mcpMode: options.mode }),
+      },
+      identity: options.identity,
+      sessionId: options.sessionId,
+      token: Symbol(),
+      isCurrent: () => options.isCurrent(),
     };
     this.flows.set(flow.state.flowId, flow);
     this.active.set(flow.token, flow);
     this.sessions.set(flow.sessionId, flow);
-    flow.timer = setTimeout(() => { this.requestCancel(flow); }, this.options.runningTtlMs ?? 30 * 60_000);
+    flow.timer = setTimeout(
+      () => {
+        this.requestCancel(flow);
+      },
+      this.options.runningTtlMs ?? 30 * 60_000,
+    );
     flow.timer.unref();
     // Keep the real command promise in this scope, not its submission receipt.
     void execution.run({ service: this, token: flow.token }, async () => {
@@ -62,7 +78,12 @@ export class McpAuthFlowService {
         flow.pending?.settle(undefined);
         clearTimeout(flow.timer);
         if (!this.disposed) {
-          flow.timer = setTimeout(() => { this.flows.delete(flow.state.flowId); }, this.options.terminalTtlMs ?? 5 * 60_000);
+          flow.timer = setTimeout(
+            () => {
+              this.flows.delete(flow.state.flowId);
+            },
+            this.options.terminalTtlMs ?? 5 * 60_000,
+          );
           flow.timer.unref();
         }
       }
@@ -77,7 +98,10 @@ export class McpAuthFlowService {
     if (!own && (this.disposed || this.sessions.size > 0)) throw new Error("Another MCP authentication operation is running on this machine");
     const flow: Flow = own ?? {
       state: { flowId: randomUUID(), providerId: "mcp", providerName: "MCP server", status: "running", progress: [] },
-      identity: options.identity, sessionId: options.sessionId, token: Symbol(), isCurrent: () => options.isCurrent(),
+      identity: options.identity,
+      sessionId: options.sessionId,
+      token: Symbol(),
+      isCurrent: () => options.isCurrent(),
     };
     if (!own) {
       this.active.set(flow.token, flow);
@@ -103,13 +127,16 @@ export class McpAuthFlowService {
     if (active && (scope?.service !== this || scope.token !== active.token)) throw new Error("MCP authentication operation is running for this session");
   }
 
-  get(flowId: string): OAuthFlowState { return this.snapshot(this.requireFlow(flowId)); }
+  get(flowId: string): OAuthFlowState {
+    return this.snapshot(this.requireFlow(flowId));
+  }
 
   respond(flowId: string, requestId: string, value: string): OAuthFlowState {
     const flow = this.requireFlow(flowId);
     const pending = flow.pending;
     if (flow.state.status !== "running" || pending?.id !== requestId) throw new Error("MCP authentication request is no longer pending");
-    if (typeof value !== "string" || value.length > MAX_TEXT || (pending.values?.includes(value) === false)) throw new Error("Invalid MCP authentication response");
+    if (typeof value !== "string" || value.length > MAX_TEXT || pending.values?.includes(value) === false)
+      throw new Error("Invalid MCP authentication response");
     pending.settle(value);
     return this.snapshot(flow);
   }
@@ -150,7 +177,9 @@ export class McpAuthFlowService {
     return flow;
   }
 
-  private snapshot(flow: Flow): OAuthFlowState { return structuredClone(flow.state); }
+  private snapshot(flow: Flow): OAuthFlowState {
+    return structuredClone(flow.state);
+  }
 
   private requestCancel(flow: Flow): void {
     flow.state.cancelRequested = true;
@@ -160,7 +189,12 @@ export class McpAuthFlowService {
   wait(flow: Flow, title: string, options: ExtensionUIDialogOptions | undefined, values?: string[], placeholder?: string): Promise<string | undefined> {
     if (flow.state.cancelRequested === true || options?.signal?.aborted === true) return Promise.resolve(undefined);
     if (flow.pending) return Promise.reject(new Error("An MCP authentication request is already pending"));
-    if (title.length > MAX_TEXT || (placeholder?.length ?? 0) > MAX_TEXT || (values && (values.length > 200 || values.some((value) => value.length > MAX_TEXT)))) return Promise.reject(new Error("MCP authentication prompt is too large"));
+    if (
+      title.length > MAX_TEXT
+      || (placeholder?.length ?? 0) > MAX_TEXT
+      || (values && (values.length > 200 || values.some((value) => value.length > MAX_TEXT)))
+    )
+      return Promise.reject(new Error("MCP authentication prompt is too large"));
     const id = randomUUID();
     if (values) flow.state.select = { requestId: id, message: title, options: values.map((value) => ({ value, label: value })) };
     else flow.state.prompt = { requestId: id, message: title, promptType: "text", ...(placeholder === undefined ? {} : { placeholder }) };
@@ -177,7 +211,9 @@ export class McpAuthFlowService {
       };
       // Pi aborts the losing input when its browser callback wins. This only
       // dismisses the prompt; it is not cancellation of the auth operation.
-      const abort = () => { settle(undefined); };
+      const abort = () => {
+        settle(undefined);
+      };
       flow.pending = { id, settle, ...(values === undefined ? {} : { values }) };
       if (options?.timeout !== undefined && options.timeout > 0) {
         timer = setTimeout(abort, options.timeout);
@@ -191,14 +227,30 @@ export class McpAuthFlowService {
 
 /** Narrow adapter used by the stable session proxy and builtin openUrl hook. */
 class McpAuthDispatcher {
-  constructor(private readonly service: McpAuthFlowService, private readonly flow: Flow, private readonly discovery = false) {}
+  constructor(
+    private readonly service: McpAuthFlowService,
+    private readonly flow: Flow,
+    private readonly discovery = false,
+  ) {}
   selectServer(servers: McpAuthServerOption[]): Promise<string | undefined> {
-    const result = this.select("Choose an MCP server", servers.map((server) => server.name));
-    if (this.flow.state.select) this.flow.state.select.options = servers.map((server) => ({ value: server.name, label: server.name, ...(server.description === undefined ? {} : { description: server.description }) }));
+    const result = this.select(
+      "Choose an MCP server",
+      servers.map((server) => server.name),
+    );
+    if (this.flow.state.select)
+      this.flow.state.select.options = servers.map((server) => ({
+        value: server.name,
+        label: server.name,
+        ...(server.description === undefined ? {} : { description: server.description }),
+      }));
     return result;
   }
-  setServer(name: string): void { this.flow.state.providerName = name; }
-  isCancelled(): boolean { return this.flow.state.cancelRequested === true; }
+  setServer(name: string): void {
+    this.flow.state.providerName = name;
+  }
+  isCancelled(): boolean {
+    return this.flow.state.cancelRequested === true;
+  }
   notify(message: string): void {
     if (this.discovery) return;
     const url = this.flow.state.auth?.url;
@@ -214,16 +266,25 @@ class McpAuthDispatcher {
     this.flow.state.auth = { url };
     this.flow.state.progress = this.flow.state.progress.filter((message) => !message.includes(url));
   }
-  error(message: string): void { this.flow.commandError = message.slice(0, MAX_TEXT); this.notify(message); }
+  error(message: string): void {
+    this.flow.commandError = message.slice(0, MAX_TEXT);
+    this.notify(message);
+  }
   input(title: string, placeholder?: string, options?: ExtensionUIDialogOptions): Promise<string | undefined> {
-    if (this.discovery) { this.flow.commandError = "MCP discovery cannot request input"; return Promise.reject(new Error(this.flow.commandError)); }
+    if (this.discovery) {
+      this.flow.commandError = "MCP discovery cannot request input";
+      return Promise.reject(new Error(this.flow.commandError));
+    }
     return this.service.wait(this.flow, title, options, undefined, placeholder);
   }
   select(title: string, values: string[], options?: ExtensionUIDialogOptions): Promise<string | undefined> {
-    if (this.discovery) { this.flow.commandError = "MCP discovery cannot request input"; return Promise.reject(new Error(this.flow.commandError)); }
+    if (this.discovery) {
+      this.flow.commandError = "MCP discovery cannot request input";
+      return Promise.reject(new Error(this.flow.commandError));
+    }
     return this.service.wait(this.flow, title, options, values);
   }
   async confirm(title: string, message: string, options?: ExtensionUIDialogOptions): Promise<boolean> {
-    return await this.select(`${title}\n${message}`, ["Yes", "No"], options) === "Yes";
+    return (await this.select(`${title}\n${message}`, ["Yes", "No"], options)) === "Yes";
   }
 }

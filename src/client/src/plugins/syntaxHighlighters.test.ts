@@ -7,20 +7,35 @@ import { syntaxHighlightingCapabilityToken } from "../formatting/syntaxHighlight
 
 const request = { machineId: "remote", text: "abc", language: "TEST extra", signal: new AbortController().signal };
 const highlighter = (id = "syntax"): SyntaxHighlighterContribution => ({
-  id, languages: ["Test"], fileExtensions: ["TEST"], highlight: () => [{ from: 0, to: 1, kind: "keyword" }],
+  id,
+  languages: ["Test"],
+  fileExtensions: ["TEST"],
+  highlight: () => [{ from: 0, to: 1, kind: "keyword" }],
 });
-const plugin = (syntaxHighlighters = [highlighter()]) => adaptPublicPlugin({
-  apiVersion: 5, name: "Test", activate: () => ({ contributions: { syntaxHighlighters } }),
-});
+const plugin = (syntaxHighlighters = [highlighter()]) =>
+  adaptPublicPlugin({
+    apiVersion: 5,
+    name: "Test",
+    activate: () => ({ contributions: { syntaxHighlighters } }),
+  });
 
 describe("syntax highlighter registry", () => {
   it("exposes a versioned host capability and returns undefined only for no match", async () => {
     const registry = new PluginRegistry();
     const resolved = vi.fn();
-    await registry.register({ id: "consumer", plugin: {
-      ...plugin([]), requires: [syntaxHighlightingCapabilityToken],
-      activate: () => ({ contributions: {}, start: ({ capabilities }) => { resolved(capabilities.resolve(syntaxHighlightingCapabilityToken)); } }),
-    } });
+    await registry.register({
+      id: "consumer",
+      plugin: {
+        ...plugin([]),
+        requires: [syntaxHighlightingCapabilityToken],
+        activate: () => ({
+          contributions: {},
+          start: ({ capabilities }) => {
+            resolved(capabilities.resolve(syntaxHighlightingCapabilityToken));
+          },
+        }),
+      },
+    });
     expect(resolved).toHaveBeenCalledWith(registry.syntaxHighlighting);
     expect(await registry.syntaxHighlighting.highlight(request)).toBeUndefined();
     expect(registry.syntaxHighlighting.supports(request)).toBe(false);
@@ -70,10 +85,34 @@ describe("syntax highlighter registry", () => {
     const registry = new PluginRegistry();
     await expect(registry.register({ id: "invalid", plugin: plugin([{ ...highlighter(), languages: [""] }]) })).rejects.toThrow("selectors");
     await expect(registry.register({ id: "duplicate", plugin: plugin([highlighter(), highlighter()]) })).rejects.toThrow("Duplicate contribution id");
-    await expect(registry.register({ id: "collision", plugin: { ...plugin(), activate: () => ({ contributions: {
-      syntaxHighlighters: [highlighter()], contentRenderers: [{ id: "syntax", languages: ["test"], render: () => html`text` }],
-    } }) } })).rejects.toThrow("Duplicate contribution id");
-    await expect(registry.register({ id: "failed", plugin: { ...plugin(), activate: () => ({ contributions: { syntaxHighlighters: [highlighter()] }, start: () => { throw new Error("failed start"); } }) } })).rejects.toThrow("failed start");
+    await expect(
+      registry.register({
+        id: "collision",
+        plugin: {
+          ...plugin(),
+          activate: () => ({
+            contributions: {
+              syntaxHighlighters: [highlighter()],
+              contentRenderers: [{ id: "syntax", languages: ["test"], render: () => html`text` }],
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("Duplicate contribution id");
+    await expect(
+      registry.register({
+        id: "failed",
+        plugin: {
+          ...plugin(),
+          activate: () => ({
+            contributions: { syntaxHighlighters: [highlighter()] },
+            start: () => {
+              throw new Error("failed start");
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("failed start");
     expect(await registry.syntaxHighlighting.highlight(request)).toBeUndefined();
     expect(registry.matchContentRenderers(request)).toEqual([]);
     await registry.dispose();
@@ -94,7 +133,9 @@ describe("syntax highlighter registry", () => {
     let signal: AbortSignal | undefined;
     const highlight = vi.fn((input: { text: string; signal: AbortSignal }) => {
       signal = input.signal;
-      return new Promise<readonly never[]>(() => { /* Deliberately ignores cancellation. */ });
+      return new Promise<readonly never[]>(() => {
+        /* Deliberately ignores cancellation. */
+      });
     });
     const registry = new PluginRegistry();
     await registry.register({ id: "owner", plugin: plugin([{ ...highlighter(), highlight }]) });

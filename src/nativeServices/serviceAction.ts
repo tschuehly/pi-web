@@ -159,11 +159,7 @@ export async function settleLaunchdServiceUnload(
  * Start (or kick) one LaunchAgent: bootstrap and enable only when the label
  * is not loaded, then kickstart. Any manager failure throws ServiceCommandError.
  */
-export function startLaunchdService(
-  ref: LifecycleServiceRef,
-  context: LaunchdServiceContext,
-  deps: Pick<ServiceActionDeps, "run" | "runQuiet">,
-): void {
+export function startLaunchdService(ref: LifecycleServiceRef, context: LaunchdServiceContext, deps: Pick<ServiceActionDeps, "run" | "runQuiet">): void {
   const target = launchdServiceTarget(context.domain, ref);
   if (!launchdServiceLoaded(target, deps)) {
     runChecked(deps, "launchctl", launchdBootstrapArgs(context.domain, context.plistPath(ref)));
@@ -234,22 +230,23 @@ export interface ServiceActionResult {
  * sessiond. Separate systemd jobs are essential: argument order is not execution
  * order. launchd restarts also settle each asynchronous bootout before starting.
  */
-export async function performServiceAction(
-  input: ServiceActionInput,
-  deps: ServiceActionDeps,
-  timing: ServiceActionTiming = {},
-): Promise<ServiceActionResult> {
+export async function performServiceAction(input: ServiceActionInput, deps: ServiceActionDeps, timing: ServiceActionTiming = {}): Promise<ServiceActionResult> {
   const developmentStart = input.action === "start" && input.refs.some((ref) => ref.id === "uiDev");
   const refs = orderServices(input.refs, developmentStart ? serviceRestartOrder : orderForAction(input.action));
   const webFirst = input.action === "restart" || developmentStart;
-  const stages = webFirst
-    ? [refs.filter((ref) => ref.id !== "sessiond"), refs.filter((ref) => ref.id === "sessiond")]
-    : [refs];
+  const stages = webFirst ? [refs.filter((ref) => ref.id !== "sessiond"), refs.filter((ref) => ref.id === "sessiond")] : [refs];
 
   for (const stage of stages) {
     if (stage.length === 0) continue;
     if (input.backend.kind === "systemd") {
-      runChecked(deps, "systemctl", systemctlUserActionArgs(input.action, stage.map((ref) => ref.systemdName)));
+      runChecked(
+        deps,
+        "systemctl",
+        systemctlUserActionArgs(
+          input.action,
+          stage.map((ref) => ref.systemdName),
+        ),
+      );
     } else if (input.action === "stop") {
       for (const ref of stage) deps.runQuiet("launchctl", launchdBootoutArgs(launchdServiceTarget(input.launchdContext.domain, ref)));
     } else if (input.action === "restart") {

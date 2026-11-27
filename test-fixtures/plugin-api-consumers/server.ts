@@ -4,13 +4,7 @@ import {
   PI_WEB_HOST_CATALOG_CAPABILITY,
   PI_WEB_HOST_WORKSPACES_CAPABILITY,
 } from "@jmfederico/pi-web/server-plugin-api";
-import type {
-  PiWebHostPiSessionsV1,
-  PiWebHostWorkspacesV1,
-  PluginCapability,
-  ServerPluginPeer,
-  PiWebServerPlugin,
-} from "@jmfederico/pi-web/server-plugin-api";
+import type { PiWebHostPiSessionsV1, PiWebHostWorkspacesV1, PluginCapability, ServerPluginPeer, PiWebServerPlugin } from "@jmfederico/pi-web/server-plugin-api";
 
 interface FixtureDependencyV1 {
   readonly status: () => string;
@@ -37,12 +31,7 @@ const channelOnlyPeer: ServerPluginPeer = {
 const plugin: PiWebServerPlugin = {
   apiVersion: 3,
   name: "Server declaration fixture",
-  requires: [
-    fixtureDependency,
-    PI_WEB_HOST_CATALOG_CAPABILITY,
-    PI_WEB_HOST_WORKSPACES_CAPABILITY,
-    PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
-  ],
+  requires: [fixtureDependency, PI_WEB_HOST_CATALOG_CAPABILITY, PI_WEB_HOST_WORKSPACES_CAPABILITY, PI_WEB_HOST_PI_SESSIONS_CAPABILITY],
   activate: (context) => {
     context.notices?.record({
       severity: "info",
@@ -109,7 +98,10 @@ export const pluginV5: PiWebServerPlugin = {
       },
       peer: {
         request({ scope, operation, input }) {
-          return { operation, input, scope: scope.kind,
+          return {
+            operation,
+            input,
+            scope: scope.kind,
             ...(scope.kind === "machine" ? {} : { projectId: scope.project.id }),
             ...(scope.kind === "workspace" ? { workspaceId: scope.workspace.id } : {}),
           };

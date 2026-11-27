@@ -78,12 +78,23 @@ function unfilterRow(filter, rawRow, row, previousRow, bytesPerPixel) {
     const up = previousRow?.[x] ?? 0;
     const upLeft = previousRow !== undefined && x >= bytesPerPixel ? previousRow[x - bytesPerPixel] : 0;
     switch (filter) {
-      case 0: row[x] = raw; break;
-      case 1: row[x] = (raw + left) & 0xff; break;
-      case 2: row[x] = (raw + up) & 0xff; break;
-      case 3: row[x] = (raw + ((left + up) >> 1)) & 0xff; break;
-      case 4: row[x] = (raw + paeth(left, up, upLeft)) & 0xff; break;
-      default: throw new Error(`Unsupported PNG filter ${String(filter)}`);
+      case 0:
+        row[x] = raw;
+        break;
+      case 1:
+        row[x] = (raw + left) & 0xff;
+        break;
+      case 2:
+        row[x] = (raw + up) & 0xff;
+        break;
+      case 3:
+        row[x] = (raw + ((left + up) >> 1)) & 0xff;
+        break;
+      case 4:
+        row[x] = (raw + paeth(left, up, upLeft)) & 0xff;
+        break;
+      default:
+        throw new Error(`Unsupported PNG filter ${String(filter)}`);
     }
   }
 }
@@ -112,12 +123,7 @@ export function encodePng({ width, height, pixels }) {
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
-  return Buffer.concat([
-    PNG_SIGNATURE,
-    pngChunk("IHDR", ihdr),
-    pngChunk("IDAT", deflateSync(filtered, { level: 9 })),
-    pngChunk("IEND", Buffer.alloc(0)),
-  ]);
+  return Buffer.concat([PNG_SIGNATURE, pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(filtered, { level: 9 })), pngChunk("IEND", Buffer.alloc(0))]);
 }
 
 const CRC_TABLE = new Int32Array(256).map((_, index) => {

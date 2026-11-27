@@ -13,11 +13,14 @@ describe("navigation preference state", () => {
     path = join(directory, "state.json");
     store = new NavigationPreferenceStore(path);
   });
-  afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
 
   it("uses managed data rather than user configuration", () => {
-    expect(navigationPreferenceStorePath({ PI_WEB_DATA_DIR: "state", PI_WEB_CONFIG: "config.json" }, "/tmp/app"))
-      .toBe(resolve("/tmp/app/state/navigation-preferences.json"));
+    expect(navigationPreferenceStorePath({ PI_WEB_DATA_DIR: "state", PI_WEB_CONFIG: "config.json" }, "/tmp/app")).toBe(
+      resolve("/tmp/app/state/navigation-preferences.json"),
+    );
   });
 
   it("persists full replacement order and clearing across new store instances", async () => {
@@ -45,10 +48,7 @@ describe("navigation preference state", () => {
 
   it("rejects concurrent stale writes and preserves revisions after clearing", async () => {
     const scope = { kind: "projects" } as const;
-    const results = await Promise.allSettled([
-      store.put(scope, { ids: ["a"], revision: 0 }),
-      store.put(scope, { ids: ["b"], revision: 0 }),
-    ]);
+    const results = await Promise.allSettled([store.put(scope, { ids: ["a"], revision: 0 }), store.put(scope, { ids: ["b"], revision: 0 })]);
     expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
     await store.put(scope, { ids: [], revision: 1 });
     await expect(new NavigationPreferenceStore(path).put(scope, { ids: ["stale"], revision: 1 })).rejects.toThrow("revision conflict");

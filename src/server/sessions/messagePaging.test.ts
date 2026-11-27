@@ -83,7 +83,8 @@ describe("message paging", () => {
 
   it("pages a single 1,700-message turn within the limit and chains back to the start", () => {
     const messages: unknown[] = [user("prompt")];
-    while (messages.length < 1_700) messages.push(...(messages.length % 3 === 1 ? [toolCall("read")] : messages.length % 3 === 2 ? [toolResult("ok")] : [thinking("next")]));
+    while (messages.length < 1_700)
+      messages.push(...(messages.length % 3 === 1 ? [toolCall("read")] : messages.length % 3 === 2 ? [toolResult("ok")] : [thinking("next")]));
     const seen: unknown[] = [];
     let before: number | undefined;
     for (let guard = 0; guard < 1_700; guard += 1) {

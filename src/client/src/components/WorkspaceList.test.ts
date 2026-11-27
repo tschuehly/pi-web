@@ -112,8 +112,9 @@ describe("workspace move actions", () => {
 });
 
 function moveButton(list: WorkspaceList, label: string): HTMLButtonElement {
-  const button = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".workspace-menu-actions button") ?? [])]
-    .find((candidate) => candidate.textContent === label);
+  const button = [...(list.shadowRoot?.querySelectorAll<HTMLButtonElement>(".workspace-menu-actions button") ?? [])].find(
+    (candidate) => candidate.textContent === label,
+  );
   if (button === undefined) throw new Error(`Expected ${label}`);
   return button;
 }
@@ -158,10 +159,7 @@ describe("workspace-list removal actions", () => {
 
 describe("workspace status indicator", () => {
   it("reads workspace status by workspace id", async () => {
-    const list = await mountWorkspaceList(
-      [workspace("ws-a"), workspace("ws-b")],
-      machineStatusSnapshot({ workspaces: { "ws-b": { "core:unread": true } } }),
-    );
+    const list = await mountWorkspaceList([workspace("ws-a"), workspace("ws-b")], machineStatusSnapshot({ workspaces: { "ws-b": { "core:unread": true } } }));
 
     expect(unreadDot(rowFor(list, "ws-a"))).toBeNull();
     const dot = unreadDot(rowFor(list, "ws-b"));
@@ -213,8 +211,12 @@ describe("workspace detail copy buttons", () => {
     await list.updateComplete;
 
     detailCopyButton(list, "Copy path").click();
-    await vi.waitFor(() => { expect(writeText).toHaveBeenCalledWith("/repo/ws-a"); });
-    await vi.waitFor(() => { expect(detailCopyButton(list, "Copied").textContent).toContain("✓"); });
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("/repo/ws-a");
+    });
+    await vi.waitFor(() => {
+      expect(detailCopyButton(list, "Copied").textContent).toContain("✓");
+    });
 
     expect(list.shadowRoot?.querySelector(".workspace-menu-panel")).not.toBeNull();
   });
@@ -234,7 +236,9 @@ describe("workspace detail copy buttons", () => {
     await list.updateComplete;
 
     detailCopyButton(list, "Copy workspace label").click();
-    await vi.waitFor(() => { expect(writeText).toHaveBeenCalledWith("review app"); });
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("review app");
+    });
     expect(list.shadowRoot?.querySelector(".workspace-detail-row dt")?.textContent).toBe("Workspace");
     expect(list.shadowRoot?.querySelector("[aria-label='Copy branch']")).toBeNull();
   });
@@ -246,8 +250,12 @@ describe("workspace detail copy buttons", () => {
     await list.updateComplete;
 
     detailCopyButton(list, "Copy path").click();
-    await vi.waitFor(() => { expect(writeText).toHaveBeenCalled(); });
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalled();
+    });
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
     await list.updateComplete;
 
     expect(detailCopyButton(list, "Copy path")).toBeDefined();
@@ -286,8 +294,12 @@ describe("workspace trust menu item", () => {
   });
 
   it("disables the checkbox while saving, restores failed changes, and keeps the menu open", async () => {
-    let rejectSave: (error: Error) => void = () => { throw new Error("Save not started"); };
-    const saving = new Promise<WorkspaceTrustResponse>((_resolve, reject) => { rejectSave = reject; });
+    let rejectSave: (error: Error) => void = () => {
+      throw new Error("Save not started");
+    };
+    const saving = new Promise<WorkspaceTrustResponse>((_resolve, reject) => {
+      rejectSave = reject;
+    });
     const save = vi.spyOn(trustApi, "setWorkspaceTrust").mockReturnValueOnce(saving);
     const list = await mountWorkspaceList([workspace("ws-a")]);
     list.onSelect = vi.fn();

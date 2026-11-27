@@ -12,7 +12,7 @@ export const pluginStyles = new PluginStyleRegistry(
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(sharedUiStyles.cssText);
     return sheet;
-  }
+  },
 );
 
 export const stylesheetIntegrationCapability: StylesheetIntegrationCapabilityV1 = Object.freeze({
@@ -24,7 +24,9 @@ export const stylesheetIntegrationCapability: StylesheetIntegrationCapabilityV1 
 });
 
 export const stylesheetIntegrationCapabilityToken: PluginCapability<StylesheetIntegrationCapabilityV1> = {
-  pluginId: "pi-web", id: "stylesheet-integration", version: 1,
+  pluginId: "pi-web",
+  id: "stylesheet-integration",
+  version: 1,
   parse: (value) => {
     if (!isStylesheetIntegration(value)) {
       throw new Error("Stylesheet integration capability v1 is unavailable");
@@ -34,10 +36,16 @@ export const stylesheetIntegrationCapabilityToken: PluginCapability<StylesheetIn
 };
 
 function isStylesheetIntegration(value: unknown): value is StylesheetIntegrationCapabilityV1 {
-  return typeof value === "object" && value !== null
-    && "registerRoot" in value && typeof value.registerRoot === "function"
-    && "createController" in value && typeof value.createController === "function"
-    && "subscribe" in value && typeof value.subscribe === "function";
+  return (
+    typeof value === "object"
+    && value !== null
+    && "registerRoot" in value
+    && typeof value.registerRoot === "function"
+    && "createController" in value
+    && typeof value.createController === "function"
+    && "subscribe" in value
+    && typeof value.subscribe === "function"
+  );
 }
 
 /** Application-owned publication and error boundary; roots/sheets remain registry-owned. */
@@ -46,7 +54,10 @@ export class PluginStyleRuntime {
   private revision = 0;
   private releaseDocument: (() => void) | undefined;
 
-  constructor(private readonly registry: PluginStyleRegistry, private readonly reportError: (error: unknown) => void) {}
+  constructor(
+    private readonly registry: PluginStyleRegistry,
+    private readonly reportError: (error: unknown) => void,
+  ) {}
 
   connect(document: Document): void {
     this.releaseDocument?.();

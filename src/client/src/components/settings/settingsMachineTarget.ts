@@ -25,7 +25,10 @@ export function settingsMachineTargetLabel(target: SettingsMachineTarget): strin
   return target.kind === "local" ? `${target.name} (local gateway)` : `${target.name} (remote machine)`;
 }
 
-export function pluginLifecycleSupport(target: SettingsMachineTarget, runtime: Pick<MachineRuntime, "ok" | "capabilities"> | undefined): PluginLifecycleSupport {
+export function pluginLifecycleSupport(
+  target: SettingsMachineTarget,
+  runtime: Pick<MachineRuntime, "ok" | "capabilities"> | undefined,
+): PluginLifecycleSupport {
   if (target.kind === "local") return { state: "supported" };
   if (runtime?.ok !== true) return { state: "unknown" };
   if (supportsPiWebCapability(runtime, PI_WEB_CAPABILITIES.pluginLifecycle)) return { state: "supported" };
@@ -36,7 +39,9 @@ export function selectedMachineSettingsSupportKey(support: SelectedMachineSettin
   return `${support.state}:${support.message ?? ""}`;
 }
 
-export function isSelectedMachineSettingsUnsupported(support: SelectedMachineSettingsSupport | undefined): support is SelectedMachineSettingsSupport & { state: "unsupported" } {
+export function isSelectedMachineSettingsUnsupported(
+  support: SelectedMachineSettingsSupport | undefined,
+): support is SelectedMachineSettingsSupport & { state: "unsupported" } {
   return support?.state === "unsupported";
 }
 

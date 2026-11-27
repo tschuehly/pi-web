@@ -20,10 +20,16 @@ async function workspace(): Promise<string> {
 
 async function packageFixture(directory: string, name = sdkName, version = "1.0.0"): Promise<string> {
   await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, "package.json"), JSON.stringify({
-    name, version, type: "module", bin: { pi: "bin/pi.js" },
-    exports: { ".": "./index.js", "./public": "./public.js" },
-  }));
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name,
+      version,
+      type: "module",
+      bin: { pi: "bin/pi.js" },
+      exports: { ".": "./index.js", "./public": "./public.js" },
+    }),
+  );
   await writeFile(join(directory, "index.js"), `export const identity = ${JSON.stringify(directory)};`);
   await writeFile(join(directory, "public.js"), 'export const value = "public";');
   return directory;
@@ -52,10 +58,14 @@ describe("Pi package selection", () => {
     const host = await packageFixture(join(directory, "host"));
     const alias = join(directory, "alias");
     await symlink(host, alias);
-    expect(await selectPiRuntimePackageDir({
-      env: { [PI_WEB_PI_PACKAGE_DIR_ENV]: alias, PATH: directory },
-      resolveLocalSdk: () => { throw new Error("Must not resolve locally"); },
-    })).toBe(alias);
+    expect(
+      await selectPiRuntimePackageDir({
+        env: { [PI_WEB_PI_PACKAGE_DIR_ENV]: alias, PATH: directory },
+        resolveLocalSdk: () => {
+          throw new Error("Must not resolve locally");
+        },
+      }),
+    ).toBe(alias);
   });
 
   it.each(["", "missing", "wrong-package", "malformed"])("rejects explicit %s without fallback", async (kind) => {
@@ -66,10 +76,14 @@ describe("Pi package selection", () => {
       await mkdir(invalid);
       await writeFile(join(invalid, "package.json"), "{");
     }
-    await expect(selectPiRuntimePackageDir({
-      env: { [PI_WEB_PI_PACKAGE_DIR_ENV]: invalid },
-      resolveLocalSdk: () => { throw new Error("Must not fall back"); },
-    })).rejects.toThrow(`Invalid ${PI_WEB_PI_PACKAGE_DIR_ENV}`);
+    await expect(
+      selectPiRuntimePackageDir({
+        env: { [PI_WEB_PI_PACKAGE_DIR_ENV]: invalid },
+        resolveLocalSdk: () => {
+          throw new Error("Must not fall back");
+        },
+      }),
+    ).rejects.toThrow(`Invalid ${PI_WEB_PI_PACKAGE_DIR_ENV}`);
   });
 
   it("uses ordinary npm resolution before an unrelated Pi on PATH", async () => {
@@ -78,9 +92,12 @@ describe("Pi package selection", () => {
     const pathHost = await packageFixture(join(directory, "path-host"));
     const bin = join(directory, "bin");
     await executableFixture(pathHost, bin);
-    expect(await selectPiRuntimePackageDir({
-      env: { PATH: bin }, resolveLocalSdk: () => pathToFileURL(join(local, "index.js")).href,
-    })).toBe(local);
+    expect(
+      await selectPiRuntimePackageDir({
+        env: { PATH: bin },
+        resolveLocalSdk: () => pathToFileURL(join(local, "index.js")).href,
+      }),
+    ).toBe(local);
   });
 
   it("follows the PATH executable to the SDK when npm has no local peer", async () => {
@@ -88,20 +105,27 @@ describe("Pi package selection", () => {
     const host = await packageFixture(join(directory, "host"));
     const bin = join(directory, "bin");
     await executableFixture(host, bin);
-    expect(await selectPiRuntimePackageDir({
-      env: { PATH: [join(directory, "absent"), bin].join(delimiter) }, resolveLocalSdk: missingLocalSdk,
-    })).toBe(await realpath(host));
+    expect(
+      await selectPiRuntimePackageDir({
+        env: { PATH: [join(directory, "absent"), bin].join(delimiter) },
+        resolveLocalSdk: missingLocalSdk,
+      }),
+    ).toBe(await realpath(host));
   });
 
   it("finds the SDK beside an npm Windows command shim", async () => {
     const directory = await workspace();
     const prefix = join(directory, "npm-prefix");
     const host = await packageFixture(join(prefix, "node_modules", sdkName));
-    await writeFile(join(prefix, "pi.cmd"), '@ECHO OFF\r\n');
+    await writeFile(join(prefix, "pi.cmd"), "@ECHO OFF\r\n");
     await chmod(join(prefix, "pi.cmd"), 0o755);
-    expect(await selectPiRuntimePackageDir({
-      env: { PATH: prefix }, platform: "win32", resolveLocalSdk: missingLocalSdk,
-    })).toBe(await realpath(host));
+    expect(
+      await selectPiRuntimePackageDir({
+        env: { PATH: prefix },
+        platform: "win32",
+        resolveLocalSdk: missingLocalSdk,
+      }),
+    ).toBe(await realpath(host));
   });
 
   it("does not silently replace an unsupported PATH Pi with a later installation", async () => {
@@ -111,22 +135,33 @@ describe("Pi package selection", () => {
     await executableFixture(join(directory, "standalone"), firstBin);
     const laterHost = await packageFixture(join(directory, "later-host"));
     await executableFixture(laterHost, laterBin);
-    await expect(selectPiRuntimePackageDir({
-      env: { PATH: [firstBin, laterBin].join(delimiter) }, resolveLocalSdk: missingLocalSdk,
-    })).rejects.toThrow("PI WEB will not select a different Pi");
+    await expect(
+      selectPiRuntimePackageDir({
+        env: { PATH: [firstBin, laterBin].join(delimiter) },
+        resolveLocalSdk: missingLocalSdk,
+      }),
+    ).rejects.toThrow("PI WEB will not select a different Pi");
   });
 
   it("does not hide a broken npm dependency behind a PATH fallback", async () => {
     const failure = Object.assign(new Error("Broken package exports"), { code: "ERR_INVALID_PACKAGE_CONFIG" });
-    await expect(selectPiRuntimePackageDir({
-      env: {}, resolveLocalSdk: () => { throw failure; },
-    })).rejects.toBe(failure);
+    await expect(
+      selectPiRuntimePackageDir({
+        env: {},
+        resolveLocalSdk: () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
   });
 
   it("reports missing SDKs with the standalone-binary limitation", async () => {
-    await expect(selectPiRuntimePackageDir({
-      env: { PATH: "" }, resolveLocalSdk: missingLocalSdk,
-    })).rejects.toThrow("Standalone Pi binaries without an SDK package are not supported");
+    await expect(
+      selectPiRuntimePackageDir({
+        env: { PATH: "" },
+        resolveLocalSdk: missingLocalSdk,
+      }),
+    ).rejects.toThrow("Standalone Pi binaries without an SDK package are not supported");
   });
 });
 
@@ -152,7 +187,9 @@ it("loads the selected public SDK/AI graph without changing other Node imports a
   await writeFile(join(application, "piRuntime.js"), output.outputText);
   const resolverRoot = dirname(fileURLToPath(import.meta.resolve("import-meta-resolve/package.json")));
   await symlink(resolverRoot, join(application, "node_modules", "import-meta-resolve"));
-  await writeFile(join(application, "probe.js"), `
+  await writeFile(
+    join(application, "probe.js"),
+    `
     import assert from 'node:assert/strict';
     import { join } from 'node:path';
     import { loadPiSdk, loadPiAi, resolvePiRuntimeImport, piRuntimeCliPath } from './piRuntime.js';
@@ -168,10 +205,12 @@ it("loads the selected public SDK/AI graph without changing other Node imports a
     assert.equal(process.env.PI_WEB_PI_PACKAGE_DIR, ${JSON.stringify(selectedHost)});
     assert.equal(await piRuntimeCliPath(), ${JSON.stringify(join(selectedHost, "bin", "pi.js"))});
     console.log(sdk.identity);
-  `);
-  const run = () => exec(process.execPath, [join(application, "probe.js")], {
-    env: { ...process.env, [PI_WEB_PI_PACKAGE_DIR_ENV]: selectedHost, NODE_OPTIONS: "" },
-  });
+  `,
+  );
+  const run = () =>
+    exec(process.execPath, [join(application, "probe.js")], {
+      env: { ...process.env, [PI_WEB_PI_PACKAGE_DIR_ENV]: selectedHost, NODE_OPTIONS: "" },
+    });
   expect((await run()).stdout.trim()).toBe(firstHost);
   await unlink(selectedHost);
   await symlink(nextHost, selectedHost);

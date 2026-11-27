@@ -22,12 +22,16 @@ const RELAY_PATH = `${RELAYS_ROOT}/my-relay`;
 
 describe("listWorkspaceRelays", () => {
   it("lists relay directories through the workspace files helper, most recently modified first", async () => {
-    const listFiles = vi.fn<RelayDiscoveryFiles["listFiles"]>(() => Promise.resolve(listing(RELAYS_ROOT, [
-      directoryEntry("older", "2026-01-01T00:00:00.000Z"),
-      fileEntry("stray-file.md", "2026-03-01T00:00:00.000Z"),
-      directoryEntry("newer", "2026-02-01T00:00:00.000Z"),
-      symlinkEntry("linked", "2026-04-01T00:00:00.000Z"),
-    ])));
+    const listFiles = vi.fn<RelayDiscoveryFiles["listFiles"]>(() =>
+      Promise.resolve(
+        listing(RELAYS_ROOT, [
+          directoryEntry("older", "2026-01-01T00:00:00.000Z"),
+          fileEntry("stray-file.md", "2026-03-01T00:00:00.000Z"),
+          directoryEntry("newer", "2026-02-01T00:00:00.000Z"),
+          symlinkEntry("linked", "2026-04-01T00:00:00.000Z"),
+        ]),
+      ),
+    );
     const files = filesWith({ listFiles });
 
     const result = await listWorkspaceRelays(files);
@@ -94,22 +98,27 @@ describe("sortRelaysByRecency", () => {
 
 describe("listRelayDocumentTree", () => {
   it("builds an ordered tree: anchors first at the root, then files, then directories, recursed depth-first", async () => {
-    const fake = discoveryFake(new Map([
-      [RELAY_PATH, listing(RELAY_PATH, [
-        file("notes.md"),
-        directory("notes"),
-        file("log.md"),
-        directory("assets"),
-        file("status.md"),
-        file("data.json"),
-        file("operations.md"),
-        file("charter.md"),
-        symlink("linked"),
-      ])],
-      [`${RELAY_PATH}/assets`, listing(`${RELAY_PATH}/assets`, [file("assets/diagram.png")])],
-      [`${RELAY_PATH}/notes`, listing(`${RELAY_PATH}/notes`, [file("notes/b.md"), directory("notes/deep"), file("notes/a.md")])],
-      [`${RELAY_PATH}/notes/deep`, listing(`${RELAY_PATH}/notes/deep`, [file("notes/deep/c.md")])],
-    ]));
+    const fake = discoveryFake(
+      new Map([
+        [
+          RELAY_PATH,
+          listing(RELAY_PATH, [
+            file("notes.md"),
+            directory("notes"),
+            file("log.md"),
+            directory("assets"),
+            file("status.md"),
+            file("data.json"),
+            file("operations.md"),
+            file("charter.md"),
+            symlink("linked"),
+          ]),
+        ],
+        [`${RELAY_PATH}/assets`, listing(`${RELAY_PATH}/assets`, [file("assets/diagram.png")])],
+        [`${RELAY_PATH}/notes`, listing(`${RELAY_PATH}/notes`, [file("notes/b.md"), directory("notes/deep"), file("notes/a.md")])],
+        [`${RELAY_PATH}/notes/deep`, listing(`${RELAY_PATH}/notes/deep`, [file("notes/deep/c.md")])],
+      ]),
+    );
 
     const result = await listRelayDocumentTree(fake, RELAY_PATH);
 
@@ -126,16 +135,28 @@ describe("listRelayDocumentTree", () => {
         fileNode("data.json", 0),
         fileNode("notes.md", 0),
         {
-          kind: "directory", name: "assets", path: `${RELAY_PATH}/assets`, relativePath: "assets", depth: 0,
+          kind: "directory",
+          name: "assets",
+          path: `${RELAY_PATH}/assets`,
+          relativePath: "assets",
+          depth: 0,
           children: [fileNode("assets/diagram.png", 1)],
         },
         {
-          kind: "directory", name: "notes", path: `${RELAY_PATH}/notes`, relativePath: "notes", depth: 0,
+          kind: "directory",
+          name: "notes",
+          path: `${RELAY_PATH}/notes`,
+          relativePath: "notes",
+          depth: 0,
           children: [
             fileNode("notes/a.md", 1),
             fileNode("notes/b.md", 1),
             {
-              kind: "directory", name: "deep", path: `${RELAY_PATH}/notes/deep`, relativePath: "notes/deep", depth: 1,
+              kind: "directory",
+              name: "deep",
+              path: `${RELAY_PATH}/notes/deep`,
+              relativePath: "notes/deep",
+              depth: 1,
               children: [fileNode("notes/deep/c.md", 2)],
             },
           ],
@@ -145,10 +166,12 @@ describe("listRelayDocumentTree", () => {
   });
 
   it("orders nested directories alphabetically without anchor ordering", async () => {
-    const fake = discoveryFake(new Map([
-      [RELAY_PATH, listing(RELAY_PATH, [directory("notes")])],
-      [`${RELAY_PATH}/notes`, listing(`${RELAY_PATH}/notes`, [file("notes/status.md"), file("notes/alpha.md")])],
-    ]));
+    const fake = discoveryFake(
+      new Map([
+        [RELAY_PATH, listing(RELAY_PATH, [directory("notes")])],
+        [`${RELAY_PATH}/notes`, listing(`${RELAY_PATH}/notes`, [file("notes/status.md"), file("notes/alpha.md")])],
+      ]),
+    );
 
     const result = await listRelayDocumentTree(fake, RELAY_PATH);
 
@@ -159,9 +182,7 @@ describe("listRelayDocumentTree", () => {
   });
 
   it("never follows symlink entries", async () => {
-    const fake = discoveryFake(new Map([
-      [RELAY_PATH, listing(RELAY_PATH, [file("status.md"), symlink("escape")])],
-    ]));
+    const fake = discoveryFake(new Map([[RELAY_PATH, listing(RELAY_PATH, [file("status.md"), symlink("escape")])]]));
 
     const result = await listRelayDocumentTree(fake, RELAY_PATH);
 
@@ -194,8 +215,7 @@ describe("listRelayDocumentTree", () => {
   });
 
   it("caps the total document count and flags the listing partial", async () => {
-    const entries = Array.from({ length: MAX_RELAY_DOCUMENTS + 5 }, (_, index) =>
-      file(`file-${String(index).padStart(3, "0")}.md`));
+    const entries = Array.from({ length: MAX_RELAY_DOCUMENTS + 5 }, (_, index) => file(`file-${String(index).padStart(3, "0")}.md`));
     const fake = discoveryFake(new Map([[RELAY_PATH, listing(RELAY_PATH, entries)]]));
 
     const result = await listRelayDocumentTree(fake, RELAY_PATH);
@@ -228,9 +248,7 @@ describe("listRelayDocumentTree", () => {
   });
 
   it("flags the listing partial when the root listing is truncated", async () => {
-    const fake = discoveryFake(new Map([
-      [RELAY_PATH, listing(RELAY_PATH, [file("status.md")], { truncated: true })],
-    ]));
+    const fake = discoveryFake(new Map([[RELAY_PATH, listing(RELAY_PATH, [file("status.md")], { truncated: true })]]));
 
     const result = await listRelayDocumentTree(fake, RELAY_PATH);
 
@@ -238,10 +256,12 @@ describe("listRelayDocumentTree", () => {
   });
 
   it("keeps an unreadable subdirectory as an empty node and flags the listing partial", async () => {
-    const fake = discoveryFake(new Map([
-      [RELAY_PATH, listing(RELAY_PATH, [file("status.md"), directory("broken"), directory("fine")])],
-      [`${RELAY_PATH}/fine`, listing(`${RELAY_PATH}/fine`, [file("fine/ok.md")])],
-    ]));
+    const fake = discoveryFake(
+      new Map([
+        [RELAY_PATH, listing(RELAY_PATH, [file("status.md"), directory("broken"), directory("fine")])],
+        [`${RELAY_PATH}/fine`, listing(`${RELAY_PATH}/fine`, [file("fine/ok.md")])],
+      ]),
+    );
     fake.fail(`${RELAY_PATH}/broken`, new Error("boom"));
 
     const result = await listRelayDocumentTree(fake, RELAY_PATH);
@@ -269,11 +289,7 @@ describe("listRelayDocumentTree", () => {
 describe("defaultRelayDocument", () => {
   it("picks status.md when present at the relay root", () => {
     // The tree arrives in discovery order: anchors lead at the root.
-    const tree: RelayTreeNode[] = [
-      fileNode("status.md", 0),
-      fileNode("charter.md", 0),
-      directoryNode("notes", [fileNode("notes/topic.md", 1)], 0),
-    ];
+    const tree: RelayTreeNode[] = [fileNode("status.md", 0), fileNode("charter.md", 0), directoryNode("notes", [fileNode("notes/topic.md", 1)], 0)];
 
     expect(defaultRelayDocument(tree)?.path).toBe(`${RELAY_PATH}/status.md`);
   });
@@ -302,21 +318,15 @@ describe("flattenRelayTree", () => {
       fileNode("z.md", 0),
     ];
 
-    expect(flattenRelayTree(tree).map((node) => node.relativePath)).toEqual([
-      "status.md", "notes/a.md", "notes/deep/b.md", "z.md",
-    ]);
+    expect(flattenRelayTree(tree).map((node) => node.relativePath)).toEqual(["status.md", "notes/a.md", "notes/deep/b.md", "z.md"]);
   });
 });
 
 describe("ancestorDirectoryPaths", () => {
-  const tree: RelayTreeNode[] = [
-    fileNode("status.md", 0),
-    directoryNode("notes", [directoryNode("notes/deep", [fileNode("notes/deep/b.md", 2)], 1)], 0),
-  ];
+  const tree: RelayTreeNode[] = [fileNode("status.md", 0), directoryNode("notes", [directoryNode("notes/deep", [fileNode("notes/deep/b.md", 2)], 1)], 0)];
 
   it("returns the chain from the relay root down for a nested file", () => {
-    expect(ancestorDirectoryPaths(tree, `${RELAY_PATH}/notes/deep/b.md`))
-      .toEqual([`${RELAY_PATH}/notes`, `${RELAY_PATH}/notes/deep`]);
+    expect(ancestorDirectoryPaths(tree, `${RELAY_PATH}/notes/deep/b.md`)).toEqual([`${RELAY_PATH}/notes`, `${RELAY_PATH}/notes/deep`]);
   });
 
   it("returns an empty chain for a root file", () => {
@@ -330,10 +340,7 @@ describe("ancestorDirectoryPaths", () => {
 
 describe("collectDirectoryPaths", () => {
   it("collects every directory path in the tree", () => {
-    const tree: RelayTreeNode[] = [
-      fileNode("status.md", 0),
-      directoryNode("notes", [directoryNode("notes/deep", [], 1)], 0),
-    ];
+    const tree: RelayTreeNode[] = [fileNode("status.md", 0), directoryNode("notes", [directoryNode("notes/deep", [], 1)], 0)];
 
     expect(collectDirectoryPaths(tree)).toEqual(new Set([`${RELAY_PATH}/notes`, `${RELAY_PATH}/notes/deep`]));
   });
@@ -384,7 +391,9 @@ function discoveryFake(listings: Map<string, FileTreeResponse>): DiscoveryFake {
   return {
     listFiles,
     readFile: () => Promise.reject(new Error("readFile not expected")),
-    fail: (path, error) => { failures.set(path, error); },
+    fail: (path, error) => {
+      failures.set(path, error);
+    },
   };
 }
 

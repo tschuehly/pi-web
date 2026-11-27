@@ -13,7 +13,8 @@ export default defineConfig({
     { name: "touch", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "npm exec -- vite build --config test-fixtures/browser/vite.config.ts && npm exec -- vite preview --config test-fixtures/browser/vite.config.ts --host 127.0.0.1 --port 8516 --strictPort",
+    command:
+      "npm exec -- vite build --config test-fixtures/browser/vite.config.ts && npm exec -- vite preview --config test-fixtures/browser/vite.config.ts --host 127.0.0.1 --port 8516 --strictPort",
     url: "http://127.0.0.1:8516/overlays.html",
     reuseExistingServer: false,
   },

@@ -81,12 +81,40 @@ interface CapturedPhysicalLine extends TerminalCopyLine {
 const DEFAULT_FOREGROUND = "#ffffff";
 const DEFAULT_BACKGROUND = "#000000";
 const DEFAULT_ANSI_COLORS = [
-  "#2e3436", "#cc0000", "#4e9a06", "#c4a000", "#3465a4", "#75507b", "#06989a", "#d3d7cf",
-  "#555753", "#ef2929", "#8ae234", "#fce94f", "#729fcf", "#ad7fa8", "#34e2e2", "#eeeeec",
+  "#2e3436",
+  "#cc0000",
+  "#4e9a06",
+  "#c4a000",
+  "#3465a4",
+  "#75507b",
+  "#06989a",
+  "#d3d7cf",
+  "#555753",
+  "#ef2929",
+  "#8ae234",
+  "#fce94f",
+  "#729fcf",
+  "#ad7fa8",
+  "#34e2e2",
+  "#eeeeec",
 ] as const;
 const ANSI_THEME_KEYS = [
-  "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
-  "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite",
+  "black",
+  "red",
+  "green",
+  "yellow",
+  "blue",
+  "magenta",
+  "cyan",
+  "white",
+  "brightBlack",
+  "brightRed",
+  "brightGreen",
+  "brightYellow",
+  "brightBlue",
+  "brightMagenta",
+  "brightCyan",
+  "brightWhite",
 ] as const satisfies readonly (keyof ITheme)[];
 
 // Pin the palette used by both xterm and its copy snapshot so a dependency
@@ -110,11 +138,7 @@ export const DEFAULT_TERMINAL_ANSI_THEME: ITheme = {
   brightWhite: DEFAULT_ANSI_COLORS[15],
 };
 
-export function createTerminalCopySnapshot(
-  buffer: TerminalCopyBufferSource,
-  columns: number,
-  options: TerminalCopySnapshotOptions = {},
-): TerminalCopySnapshot {
+export function createTerminalCopySnapshot(buffer: TerminalCopyBufferSource, columns: number, options: TerminalCopySnapshotOptions = {}): TerminalCopySnapshot {
   const columnCount = Math.max(0, Math.floor(columns));
   if (buffer.length <= 0 || columnCount === 0) return { text: "", lines: [], physicalLineCount: 0, viewportLine: 0 };
 
@@ -171,7 +195,12 @@ interface CaptureColors {
   drawBoldTextInBrightColors: boolean;
 }
 
-function capturePhysicalLine(sourceLine: TerminalCopyBufferLineSource, columns: number, reusableCell: TerminalCopyBufferCellSource, colors: CaptureColors): CapturedPhysicalLine {
+function capturePhysicalLine(
+  sourceLine: TerminalCopyBufferLineSource,
+  columns: number,
+  reusableCell: TerminalCopyBufferCellSource,
+  colors: CaptureColors,
+): CapturedPhysicalLine {
   const cells: { text: string; meaningful: boolean; style: TerminalCopyRunStyle }[] = [];
   const cellCount = Math.min(columns, sourceLine.length);
 
@@ -213,9 +242,7 @@ function copyRunStyle(cell: TerminalCopyBufferCellSource, colors: CaptureColors)
   if (inverse) [foreground, background] = [background, foreground];
 
   if (cell.isBold() !== 0 && colors.drawBoldTextInBrightColors) {
-    const foregroundPaletteIndex = inverse
-      ? cell.isBgPalette() ? cell.getBgColor() : undefined
-      : cell.isFgPalette() ? cell.getFgColor() : undefined;
+    const foregroundPaletteIndex = inverse ? (cell.isBgPalette() ? cell.getBgColor() : undefined) : cell.isFgPalette() ? cell.getFgColor() : undefined;
     if (foregroundPaletteIndex !== undefined && foregroundPaletteIndex >= 0 && foregroundPaletteIndex < 8) {
       foreground = colors.palette[foregroundPaletteIndex + 8] ?? foreground;
     }
@@ -272,7 +299,8 @@ function appendRun(runs: TerminalCopyRun[], run: TerminalCopyRun): void {
 }
 
 function sameRunStyle(left: TerminalCopyRunStyle, right: TerminalCopyRunStyle): boolean {
-  return left.foreground === right.foreground
+  return (
+    left.foreground === right.foreground
     && left.background === right.background
     && left.bold === right.bold
     && left.italic === right.italic
@@ -280,7 +308,8 @@ function sameRunStyle(left: TerminalCopyRunStyle, right: TerminalCopyRunStyle): 
     && left.underline === right.underline
     && left.invisible === right.invisible
     && left.strikethrough === right.strikethrough
-    && left.overline === right.overline;
+    && left.overline === right.overline
+  );
 }
 
 function terminalAnsiPalette(theme: ITheme | undefined): string[] {
@@ -311,7 +340,7 @@ function terminalAnsiPalette(theme: ITheme | undefined): string[] {
 }
 
 function rgbColor(value: number): string {
-  return `#${(value & 0xFFFFFF).toString(16).padStart(6, "0")}`;
+  return `#${(value & 0xffffff).toString(16).padStart(6, "0")}`;
 }
 
 function rgbChannels(red: number, green: number, blue: number): string {

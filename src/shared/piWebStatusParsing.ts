@@ -1,4 +1,11 @@
-import type { PiWebComponentStatus, PiWebDeprecatedAgentInput, PiWebInstallationInfo, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebVersionResponse } from "./apiTypes.js";
+import type {
+  PiWebComponentStatus,
+  PiWebDeprecatedAgentInput,
+  PiWebInstallationInfo,
+  PiWebRuntimeComponent,
+  PiWebRuntimeResponse,
+  PiWebVersionResponse,
+} from "./apiTypes.js";
 import { parseActiveAgentProfileDescriptor } from "./activeAgentProfile.js";
 import { parseKnownPiWebCapabilities } from "./capabilities.js";
 
@@ -20,7 +27,15 @@ export function parsePiWebRuntimeResponse(value: unknown): PiWebRuntimeResponse 
   const generatedAt = value["generatedAt"];
   const components = value["components"];
   const capabilities = parseKnownPiWebCapabilities(value["capabilities"]);
-  if (typeof packageName !== "string" || packageName === "" || typeof generatedAt !== "string" || generatedAt === "" || !isRecord(components) || capabilities === undefined) return undefined;
+  if (
+    typeof packageName !== "string"
+    || packageName === ""
+    || typeof generatedAt !== "string"
+    || generatedAt === ""
+    || !isRecord(components)
+    || capabilities === undefined
+  )
+    return undefined;
   const web = parsePiWebRuntimeComponent(components["web"]);
   const sessiond = parsePiWebRuntimeComponent(components["sessiond"]);
   if (web === undefined || sessiond === undefined) return undefined;

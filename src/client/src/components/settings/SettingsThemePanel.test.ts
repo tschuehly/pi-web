@@ -102,7 +102,7 @@ describe("theme settings controls", () => {
     for (const property of ["loading", "saving"] as const) {
       panel[property] = true;
       await panel.updateComplete;
-      expect([...panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? []].every((element) => element.disabled)).toBe(true);
+      expect([...(panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? [])].every((element) => element.disabled)).toBe(true);
       panel[property] = false;
     }
   });
@@ -126,7 +126,7 @@ function selectTheme(panel: SettingsThemePanel, id: string): void {
 }
 
 function button(panel: SettingsThemePanel, label: string): HTMLButtonElement {
-  return required([...panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? []].find((element) => element.textContent === label));
+  return required([...(panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((element) => element.textContent === label));
 }
 
 function required<T>(value: T | null | undefined): T {

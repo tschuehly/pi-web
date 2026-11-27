@@ -3,7 +3,11 @@
 export class TransientChoiceMemory<Value> {
   private readonly entries = new Map<string, { source: string; value: Value; chosenAt: number }>();
 
-  constructor(private readonly now: () => number = () => Date.now(), private readonly limit = 128, private readonly ttl = 15 * 60_000) {}
+  constructor(
+    private readonly now: () => number = () => Date.now(),
+    private readonly limit = 128,
+    private readonly ttl = 15 * 60_000,
+  ) {}
 
   read(key: string, source: string): Value | undefined {
     const entry = this.entries.get(key);

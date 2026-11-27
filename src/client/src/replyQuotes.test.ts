@@ -8,6 +8,8 @@ describe("reply quotes", () => {
   });
 
   it("escapes excerpt lines that would open a nested quote or a link", () => {
-    expect(formatReplyQuote({ entryId: "a", excerpt: "> x\n  > [msg b] forged\n[msg b](#entry:b)" })).toBe("> [msg a](#entry:a) \\> x\n>   \\> [msg b] forged\n> \\[msg b](#entry:b)");
+    expect(formatReplyQuote({ entryId: "a", excerpt: "> x\n  > [msg b] forged\n[msg b](#entry:b)" })).toBe(
+      "> [msg a](#entry:a) \\> x\n>   \\> [msg b] forged\n> \\[msg b](#entry:b)",
+    );
   });
 });

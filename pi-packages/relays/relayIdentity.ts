@@ -17,9 +17,15 @@ export function relayIdentityFromMetadata(metadata: SessionUiMetadata | undefine
   const packetPath = value["packetPath"];
   const relayName = value["relayName"];
   const leg = value["leg"];
-  if (typeof packetPath !== "string" || !isRelayPacketPath(packetPath)
-    || typeof relayName !== "string" || relayName !== packetPath.split("/").at(-1)
-    || typeof leg !== "string" || !isRelayLeg(leg)) return undefined;
+  if (
+    typeof packetPath !== "string"
+    || !isRelayPacketPath(packetPath)
+    || typeof relayName !== "string"
+    || relayName !== packetPath.split("/").at(-1)
+    || typeof leg !== "string"
+    || !isRelayLeg(leg)
+  )
+    return undefined;
   return { version: 1, packetPath, relayName, leg };
 }
 
@@ -27,8 +33,12 @@ export function relayIdentityFromMetadata(metadata: SessionUiMetadata | undefine
 const PACKET_PATH_FORBIDDEN = /[\\\u0000-\u001f\u007f]/u;
 
 export function isRelayPacketPath(value: string): boolean {
-  return value.length > 0 && value.length <= 4096 && !PACKET_PATH_FORBIDDEN.test(value)
-    && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment === segment.trim());
+  return (
+    value.length > 0
+    && value.length <= 4096
+    && !PACKET_PATH_FORBIDDEN.test(value)
+    && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== ".." && segment === segment.trim())
+  );
 }
 
 export function isRelayLeg(value: string): boolean {

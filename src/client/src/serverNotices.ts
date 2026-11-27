@@ -165,7 +165,11 @@ export class ServerNoticesController {
   }
 
   async refreshAll(): Promise<void> {
-    await Promise.all([...this.machines.values()].map(async (state) => { await this.refresh(state.machineId); }));
+    await Promise.all(
+      [...this.machines.values()].map(async (state) => {
+        await this.refresh(state.machineId);
+      }),
+    );
   }
 
   dismiss(machineId: string, noticeId: string): Promise<void> {
@@ -241,11 +245,7 @@ export class ServerNoticesController {
     }
   }
 
-  private applyNetworkSnapshot(
-    state: MachineServerNoticeState,
-    snapshot: ServerNoticeSnapshot,
-    observer: NetworkObserver,
-  ): boolean {
+  private applyNetworkSnapshot(state: MachineServerNoticeState, snapshot: ServerNoticeSnapshot, observer: NetworkObserver): boolean {
     if (observer.overflowed) return this.markStale(state);
 
     let candidate = snapshot;
@@ -257,11 +257,12 @@ export class ServerNoticesController {
     const current = state.projection;
     if (current !== undefined && state.projectionVersion !== observer.projectionVersion) {
       if (current.daemonInstanceId !== candidate.daemonInstanceId) return this.markStale(state);
-      if (current.revision > candidate.revision) candidate = {
-        daemonInstanceId: current.daemonInstanceId,
-        revision: current.revision,
-        notices: current.notices,
-      };
+      if (current.revision > candidate.revision)
+        candidate = {
+          daemonInstanceId: current.daemonInstanceId,
+          revision: current.revision,
+          notices: current.notices,
+        };
     }
 
     const changed = this.installProjection(state, projectionFromSnapshot(candidate), "fresh");
@@ -344,9 +345,11 @@ export class ServerNoticesController {
 function serverNoticeIsVisible(notice: ServerNotice, context: ServerNoticeDisplayContext): boolean {
   const scope = notice.scope;
   if (scope === undefined) return true;
-  return (scope.projectId === undefined || scope.projectId === context.projectId)
+  return (
+    (scope.projectId === undefined || scope.projectId === context.projectId)
     && (scope.workspaceId === undefined || scope.workspaceId === context.workspaceId)
-    && (scope.sessionId === undefined || scope.sessionId === context.sessionId);
+    && (scope.sessionId === undefined || scope.sessionId === context.sessionId)
+  );
 }
 
 function projectionFromSnapshot(snapshot: ServerNoticeSnapshot): ProjectionData {

@@ -17,7 +17,7 @@ const { captureServices, builtinFactories } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../piSdk.js", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../../piSdk.js")>(),
+  ...(await importOriginal<typeof import("../../piSdk.js")>()),
   createAgentSessionServices: captureServices,
 }));
 
@@ -55,10 +55,7 @@ describe("PiSessionService builtin extension factory wiring", () => {
       if (sections.length === 0) {
         expect(options?.appendSystemPromptOverride).toBeUndefined();
       } else {
-        expect(options?.appendSystemPromptOverride?.(["Existing prompt section"])).toEqual([
-          "Existing prompt section",
-          ...sections,
-        ]);
+        expect(options?.appendSystemPromptOverride?.(["Existing prompt section"])).toEqual(["Existing prompt section", ...sections]);
       }
     } finally {
       try {

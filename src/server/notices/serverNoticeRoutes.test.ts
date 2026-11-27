@@ -9,7 +9,9 @@ let service: ServerNoticeService;
 
 beforeEach(() => {
   app = Fastify({ logger: false });
-  service = new ServerNoticeService(new ServerNoticeStore({ daemonInstanceId: "daemon-a", createNoticeId: () => "notice-1" }), { publishGlobal: () => undefined });
+  service = new ServerNoticeService(new ServerNoticeStore({ daemonInstanceId: "daemon-a", createNoticeId: () => "notice-1" }), {
+    publishGlobal: () => undefined,
+  });
   registerServerNoticeRoutes(app, service);
 });
 

@@ -22,12 +22,24 @@ export function expandedNavigationSection(expanded: ExpandedNavigationSection, s
   return expanded ?? defaultNavigationSection(state);
 }
 
-export function isNavigationSectionCollapsed(section: NavigationSection, options: { isMobileLayout: boolean; expanded: ExpandedNavigationSection; state: NavigationSelectionState; collapsedSections?: readonly NavigationSection[] | undefined }): boolean {
+export function isNavigationSectionCollapsed(
+  section: NavigationSection,
+  options: {
+    isMobileLayout: boolean;
+    expanded: ExpandedNavigationSection;
+    state: NavigationSelectionState;
+    collapsedSections?: readonly NavigationSection[] | undefined;
+  },
+): boolean {
   if (options.isMobileLayout) return expandedNavigationSection(options.expanded, options.state) !== section;
   return options.collapsedSections?.includes(section) ?? false;
 }
 
-export function toggleNavigationSection(expanded: ExpandedNavigationSection, section: NavigationSection, options: { isMobileLayout: boolean; state: NavigationSelectionState }): ExpandedNavigationSection {
+export function toggleNavigationSection(
+  expanded: ExpandedNavigationSection,
+  section: NavigationSection,
+  options: { isMobileLayout: boolean; state: NavigationSelectionState },
+): ExpandedNavigationSection {
   if (!options.isMobileLayout) return expanded;
   return expandedNavigationSection(expanded, options.state) === section ? "none" : section;
 }

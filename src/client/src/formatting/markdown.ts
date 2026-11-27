@@ -18,9 +18,7 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly Owner
   };
   renderer.code = (token) => {
     if (runnable !== undefined && isOwnerRunInfo(token.lang)) return ownerRunBlock(token.lang ?? "", token.text, runnable);
-    const block = codeBlocks.presentation === "code"
-      ? nativeCodeRenderer.code(token)
-      : `<div class="plain-code-block">${escapeHtml(token.text)}\n</div>\n`;
+    const block = codeBlocks.presentation === "code" ? nativeCodeRenderer.code(token) : `<div class="plain-code-block">${escapeHtml(token.text)}\n</div>\n`;
     // The literal, copy-free baseline has no frame or controls.
     if (codeBlocks.presentation === "plain" && !codeBlocks.copy) return block;
     const language = token.lang?.trim().split(/\s/u)[0] ?? "";
@@ -41,11 +39,12 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly Owner
  */
 function ownerRunBlock(info: string, text: string, runnable: readonly OwnerRunProposal[]): string {
   const proposal = ownerRunProposal(info, text);
-  const control = "error" in proposal
-    ? `<span class="owner-run-invalid">Not runnable: ${escapeHtml(proposal.error)}</span>`
-    : runnable.some((candidate) => sameOwnerRun(candidate, proposal))
-      ? `<button type="button" class="owner-run-button ui-button ui-button--compact" data-owner-run="${escapeHtml(JSON.stringify(proposal)).replaceAll('"', "&quot;")}">${proposal.mode === "terminal" ? "Review for Terminal…" : "Review command…"}</button>`
-      : '<span class="owner-run-invalid">Not runnable: only a closed top-level block runs</span>';
+  const control =
+    "error" in proposal
+      ? `<span class="owner-run-invalid">Not runnable: ${escapeHtml(proposal.error)}</span>`
+      : runnable.some((candidate) => sameOwnerRun(candidate, proposal))
+        ? `<button type="button" class="owner-run-button ui-button ui-button--compact" data-owner-run="${escapeHtml(JSON.stringify(proposal)).replaceAll('"', "&quot;")}">${proposal.mode === "terminal" ? "Review for Terminal…" : "Review command…"}</button>`
+        : '<span class="owner-run-invalid">Not runnable: only a closed top-level block runs</span>';
   const label = `<span class="code-block-label">${"mode" in proposal && proposal.mode === "terminal" ? "pi-run terminal" : "pi-run"}</span>`;
   return `<div class="code-block-wrapper code-block-frame owner-run-block"><div class="code-block-header" role="group" aria-label="Proposed command">${label}${control}</div><pre><code>${escapeHtml(text)}\n</code></pre></div>\n`;
 }
@@ -76,15 +75,34 @@ const MAX_MARKDOWN_CACHE_ENTRIES = 300;
 const markdownHtmlCache = new Map<string, string>();
 
 /** `ownerRuns`: pi-run blocks get a run button (committed assistant text only). */
-export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceContext, imageIntentKey?: string, imagesEnabled = true, codeBlocks: CodeBlockPolicy = DEFAULT_CODE_BLOCK_POLICY, ownerRuns = false): string {
+export function toSafeMarkdownHtml(
+  text: string,
+  workspace?: MarkdownWorkspaceContext,
+  imageIntentKey?: string,
+  imagesEnabled = true,
+  codeBlocks: CodeBlockPolicy = DEFAULT_CODE_BLOCK_POLICY,
+  ownerRuns = false,
+): string {
   // Overflow is applied at the component boundary; preview policy does not alter HTML.
   // Only workspace links depend on the effective application base, not route/query changes.
-  const key = JSON.stringify([text, imagesEnabled, codeBlocks.presentation, codeBlocks.copy, ownerRuns, workspace === undefined ? null : [
-    workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, workspace.sourcePath, resolveAppUrl(""), imageIntentKey,
-  ]]);
+  const key = JSON.stringify([
+    text,
+    imagesEnabled,
+    codeBlocks.presentation,
+    codeBlocks.copy,
+    ownerRuns,
+    workspace === undefined
+      ? null
+      : [workspace.machineId, workspace.projectId, workspace.workspaceId, workspace.root, workspace.sourcePath, resolveAppUrl(""), imageIntentKey],
+  ]);
   const cached = markdownHtmlCache.get(key);
   if (cached !== undefined) return cached;
-  const html = marked.parse(text, { async: false, breaks: true, gfm: true, renderer: markdownRenderer(codeBlocks, ownerRuns ? ownerRunProposals(text) : undefined) });
+  const html = marked.parse(text, {
+    async: false,
+    breaks: true,
+    gfm: true,
+    renderer: markdownRenderer(codeBlocks, ownerRuns ? ownerRunProposals(text) : undefined),
+  });
   const safeHtml = sanitizeHtml(html, workspace, imageIntentKey, imagesEnabled);
   markdownHtmlCache.set(key, safeHtml);
   if (markdownHtmlCache.size > MAX_MARKDOWN_CACHE_ENTRIES) {
@@ -95,10 +113,7 @@ export function toSafeMarkdownHtml(text: string, workspace?: MarkdownWorkspaceCo
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 const TABLE_SCROLL_CLASS = "table-scroll";
@@ -107,7 +122,9 @@ function sanitizeHtml(html: string, workspace: MarkdownWorkspaceContext | undefi
   const template = document.createElement("template");
   template.innerHTML = html;
   if (workspace !== undefined) replaceLocalMarkdownImages(template.content, workspace, imageIntentKey);
-  template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => { node.remove(); });
+  template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => {
+    node.remove();
+  });
   // A quoted or listed copy of a runnable block is not the proposal; only a top-level block keeps its button.
   template.content.querySelectorAll(".owner-run-button").forEach((button) => {
     if (button.closest(".owner-run-block")?.parentNode === template.content) return;
@@ -125,12 +142,21 @@ function sanitizeHtml(html: string, workspace: MarkdownWorkspaceContext | undefi
       const lines = path === undefined && outside === undefined ? undefined : fileLinkLines(href);
       if (lines !== undefined) element.setAttribute("data-lines", `${String(lines.start)}-${String(lines.end)}`);
       if (path !== undefined) {
-        element.setAttribute("href", workspaceFilePreviewUrl(workspace.projectId, workspace.workspaceId, path, { machineId: workspace.machineId, download: true }));
+        element.setAttribute(
+          "href",
+          workspaceFilePreviewUrl(workspace.projectId, workspace.workspaceId, path, { machineId: workspace.machineId, download: true }),
+        );
         element.setAttribute("data-workspace-file", path);
       } else if (outside !== undefined) {
         // Opened through the file's own folder; the Workbench may pick a registered workspace instead.
         const slash = outside.lastIndexOf("/");
-        element.setAttribute("href", workspaceFilePreviewUrl("", adHocFolderWorkspaceId(outside.slice(0, slash) || "/"), outside.slice(slash + 1), { machineId: workspace.machineId, download: true }));
+        element.setAttribute(
+          "href",
+          workspaceFilePreviewUrl("", adHocFolderWorkspaceId(outside.slice(0, slash) || "/"), outside.slice(slash + 1), {
+            machineId: workspace.machineId,
+            download: true,
+          }),
+        );
         element.setAttribute("data-outside-file", outside);
       } else if (workspace.sourcePath !== undefined && !/^(?:[#?]|\/\/|[a-z][a-z\d+.-]*:)/i.test(href.trim())) {
         element.removeAttribute("href");
@@ -152,9 +178,10 @@ function sanitizeHtml(html: string, workspace: MarkdownWorkspaceContext | undefi
     image.setAttribute("decoding", "async");
     if (!imagesEnabled) image.removeAttribute("src");
   });
-  if (!imagesEnabled) template.content.querySelectorAll("pi-web-markdown-image").forEach((image) => {
-    image.setAttribute("loading-disabled", "");
-  });
+  if (!imagesEnabled)
+    template.content.querySelectorAll("pi-web-markdown-image").forEach((image) => {
+      image.setAttribute("loading-disabled", "");
+    });
   wrapTablesInScrollRegions(template.content);
   return template.innerHTML;
 }

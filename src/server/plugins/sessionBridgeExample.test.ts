@@ -10,16 +10,27 @@ import { ReviewStore, reviewScope } from "../../../examples/session-bridge-plugi
 import type { LegacyServerPluginPeerRequestContext as ServerPluginPeerRequestContext } from "../../server-plugin-api.js";
 
 const directories: string[] = [];
-afterEach(async () => { vi.useRealTimers(); await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
-async function directory() { const path = await mkdtemp(join(tmpdir(), "workspace-review-")); directories.push(path); return path; }
+afterEach(async () => {
+  vi.useRealTimers();
+  await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
+async function directory() {
+  const path = await mkdtemp(join(tmpdir(), "workspace-review-"));
+  directories.push(path);
+  return path;
+}
 function connectionFixture() {
   const bus = createEventBus();
   const lifetime = new AbortController();
   const connection = {
     signal: lifetime.signal,
     on: (channel: string, handler: (data: unknown) => void) => bus.on(channel, handler),
-    emit: (channel: string, data: unknown) => { bus.emit(channel, data); },
-    close: vi.fn(() => { lifetime.abort(); }),
+    emit: (channel: string, data: unknown) => {
+      bus.emit(channel, data);
+    },
+    close: vi.fn(() => {
+      lifetime.abort();
+    }),
   };
   return { bus, lifetime, connection };
 }
@@ -31,20 +42,47 @@ async function setup() {
   const connect = vi.fn(() => Promise.resolve(fixture.connection));
   const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const activation = plugin.activate({
-    apiVersion: 3, pluginId: "review", packageRoot: dataDirectory, dataDirectory, logger, settings: {},
-    signal: new AbortController().signal, lifetimeSignal: hostLifetime.signal,
-    execFile: () => { throw new Error("No backend shell commands expected"); },
+    apiVersion: 3,
+    pluginId: "review",
+    packageRoot: dataDirectory,
+    dataDirectory,
+    logger,
+    settings: {},
+    signal: new AbortController().signal,
+    lifetimeSignal: hostLifetime.signal,
+    execFile: () => {
+      throw new Error("No backend shell commands expected");
+    },
   });
-  activation.start({ capabilities: { resolve: (capability) => capability.parse(capability.id === "pi-sessions"
-    ? { version: 1, create, run: () => { throw new Error("Use native companion, not run"); } }
-    : { version: 1, connect }) }, signal: new AbortController().signal });
+  activation.start({
+    capabilities: {
+      resolve: (capability) =>
+        capability.parse(
+          capability.id === "pi-sessions"
+            ? {
+                version: 1,
+                create,
+                run: () => {
+                  throw new Error("Use native companion, not run");
+                },
+              }
+            : { version: 1, connect },
+        ),
+    },
+    signal: new AbortController().signal,
+  });
   const context: ServerPluginPeerRequestContext = {
     project: { id: "project", name: "Project", path: "/workspace" },
     workspace: { id: "workspace", projectId: "project", path: "/workspace", label: "Workspace", isMain: true },
-    operation: "start", input: null, signal: new AbortController().signal,
+    operation: "start",
+    input: null,
+    signal: new AbortController().signal,
   };
   const request = (operation: string, input: string | null = null) => activation.peer.request({ ...context, operation, input });
-  const stop = async () => { hostLifetime.abort(); await activation.dispose(); };
+  const stop = async () => {
+    hostLifetime.abort();
+    await activation.dispose();
+  };
   return { ...fixture, create, connect, activation, context, request, stop, dataDirectory, logger, hostLifetime };
 }
 function onRequest(bus: ReturnType<typeof createEventBus>, handler: (requestId: string) => void) {
@@ -68,7 +106,10 @@ describe("review completion connection", () => {
   it.each([false, true])("bounds missing receipt/completion (accepted=%s) and cleans up timers", async (accepted) => {
     vi.useFakeTimers();
     const { bus, connection } = connectionFixture();
-    if (accepted) onRequest(bus, (requestId) => { bus.emit(REVIEW_REPLY, { requestId, status: "accepted" }); });
+    if (accepted)
+      onRequest(bus, (requestId) => {
+        bus.emit(REVIEW_REPLY, { requestId, status: "accepted" });
+      });
     const result = collectReview(connection, id, new AbortController().signal);
     const rejected = expect(result).rejects.toThrow(accepted ? "10 minutes" : "No companion receipt");
     await vi.advanceTimersByTimeAsync(accepted ? 600_000 : 5_000);
@@ -78,12 +119,16 @@ describe("review completion connection", () => {
   it.each(["connection", "plugin"])("rejects %s lifetime cancellation", async (kind) => {
     const { bus, connection, lifetime } = connectionFixture();
     const pluginLifetime = new AbortController();
-    onRequest(bus, () => { (kind === "connection" ? lifetime : pluginLifetime).abort(); });
+    onRequest(bus, () => {
+      (kind === "connection" ? lifetime : pluginLifetime).abort();
+    });
     await expect(collectReview(connection, id, pluginLifetime.signal)).rejects.toThrow("interrupted");
   });
   it.each(["", "x".repeat(48_001)])("rejects empty or oversized final findings", async (text) => {
     const { bus, connection } = connectionFixture();
-    onRequest(bus, (requestId) => { bus.emit(REVIEW_REPLY, { requestId, status: "completed", text }); });
+    onRequest(bus, (requestId) => {
+      bus.emit(REVIEW_REPLY, { requestId, status: "completed", text });
+    });
     await expect(collectReview(connection, id, new AbortController().signal)).rejects.toThrow("Invalid companion findings");
   });
 });
@@ -91,31 +136,45 @@ describe("review completion connection", () => {
 describe("review backend", () => {
   it("persists final findings, scopes requests, survives browser cancellation, and supports list/read after restart", async () => {
     const fixture = await setup();
-    let complete: () => void = () => { throw new Error("Review not requested yet"); };
+    let complete: () => void = () => {
+      throw new Error("Review not requested yet");
+    };
     onRequest(fixture.bus, (requestId) => {
       fixture.bus.emit(REVIEW_REPLY, { requestId, status: "accepted" });
-      complete = () => { fixture.bus.emit(REVIEW_REPLY, { requestId, status: "completed", text: "Bug in src/file.ts:4" }); };
+      complete = () => {
+        fixture.bus.emit(REVIEW_REPLY, { requestId, status: "completed", text: "Bug in src/file.ts:4" });
+      };
     });
     try {
       const browser = new AbortController();
       const record = await fixture.activation.peer.request({ ...fixture.context, signal: browser.signal });
       expect(record).toMatchObject({ status: "running" });
       if (!isReview(record)) throw new Error("Missing review");
-      await vi.waitFor(() => { expect(fixture.connect).toHaveBeenCalledOnce(); });
+      await vi.waitFor(() => {
+        expect(fixture.connect).toHaveBeenCalledOnce();
+      });
       browser.abort();
       await expect(fixture.request("start")).rejects.toThrow("already running");
       complete();
-      await vi.waitFor(async () => { expect(await fixture.request("read", record.id)).toMatchObject({ status: "completed", text: "Bug in src/file.ts:4" }); });
+      await vi.waitFor(async () => {
+        expect(await fixture.request("read", record.id)).toMatchObject({ status: "completed", text: "Bug in src/file.ts:4" });
+      });
       expect(await fixture.request("list")).toEqual([expect.objectContaining({ id: record.id, text: "", status: "completed" })]);
       expect(fixture.create).toHaveBeenCalledWith({ projectId: "project", workspaceId: "workspace" });
       expect(fixture.connect).toHaveBeenCalledWith({ projectId: "project", workspaceId: "workspace", sessionId: "created-session" });
       expect(fixture.connection.close).toHaveBeenCalledOnce();
-      expect(await fixture.activation.peer.request({ ...fixture.context, operation: "list", workspace: { ...fixture.context.workspace, id: "other" } })).toEqual([]);
-      await expect(fixture.activation.peer.request({ ...fixture.context, operation: "read", input: record.id, workspace: { ...fixture.context.workspace, id: "other" } })).rejects.toThrow();
+      expect(
+        await fixture.activation.peer.request({ ...fixture.context, operation: "list", workspace: { ...fixture.context.workspace, id: "other" } }),
+      ).toEqual([]);
+      await expect(
+        fixture.activation.peer.request({ ...fixture.context, operation: "read", input: record.id, workspace: { ...fixture.context.workspace, id: "other" } }),
+      ).rejects.toThrow();
       await fixture.stop();
       const store = new ReviewStore(fixture.dataDirectory);
       expect(await store.read(reviewScope("project", "workspace"), record.id)).toMatchObject({ status: "completed", text: "Bug in src/file.ts:4" });
-    } finally { await fixture.stop(); }
+    } finally {
+      await fixture.stop();
+    }
   });
   it.each(["provider", "create", "connect", "shutdown"])("records %s failure rather than successful findings", async (kind) => {
     const fixture = await setup();
@@ -133,39 +192,61 @@ describe("review backend", () => {
       // imposing a one-second polling deadline on real filesystem syncs.
       await fixture.activation.dispose();
       expect(await store.read(reviewScope("project", "workspace"), record.id)).toMatchObject({ status: "failed" });
-    } finally { await fixture.stop(); }
+    } finally {
+      await fixture.stop();
+    }
   });
   it("reports stale running files as interrupted, and invalid operations cannot create sessions", async () => {
     const fixture = await setup();
     try {
-      await new ReviewStore(fixture.dataDirectory).save(reviewScope("project", "workspace"), { id, status: "running", sessionId: "old-session", createdAt: "2026-09-01", text: "" });
+      await new ReviewStore(fixture.dataDirectory).save(reviewScope("project", "workspace"), {
+        id,
+        status: "running",
+        sessionId: "old-session",
+        createdAt: "2026-09-01",
+        text: "",
+      });
       expect(await fixture.request("read", id)).toMatchObject({ status: "interrupted" });
       expect(await fixture.request("list")).toEqual([expect.objectContaining({ status: "interrupted" })]);
       await expect(fixture.request("existing", "foreign-session")).rejects.toThrow("Unknown review operation");
       expect(fixture.create).not.toHaveBeenCalled();
-    } finally { await fixture.stop(); }
+    } finally {
+      await fixture.stop();
+    }
   });
   it("surfaces final persistence failure in the panel and logger", async () => {
     const fixture = await setup();
-    let complete: () => void = () => { throw new Error("Review not requested yet"); };
+    let complete: () => void = () => {
+      throw new Error("Review not requested yet");
+    };
     onRequest(fixture.bus, (requestId) => {
       fixture.bus.emit(REVIEW_REPLY, { requestId, status: "accepted" });
-      complete = () => { fixture.bus.emit(REVIEW_REPLY, { requestId, status: "completed", text: "Findings" }); };
+      complete = () => {
+        fixture.bus.emit(REVIEW_REPLY, { requestId, status: "completed", text: "Findings" });
+      };
     });
     try {
       const record = await fixture.request("start");
       if (!isReview(record)) throw new Error("Missing review");
-      await vi.waitFor(() => { expect(fixture.connect).toHaveBeenCalledOnce(); });
+      await vi.waitFor(() => {
+        expect(fixture.connect).toHaveBeenCalledOnce();
+      });
       const spy = vi.spyOn(ReviewStore.prototype, "save").mockRejectedValue(new Error("disk full"));
       try {
         complete();
-        await vi.waitFor(() => { expect(fixture.logger.error).toHaveBeenCalledOnce(); });
+        await vi.waitFor(() => {
+          expect(fixture.logger.error).toHaveBeenCalledOnce();
+        });
         const saved = await fixture.request("read", record.id);
         if (!isReview(saved)) throw new Error("Invalid saved review");
         expect(saved.status).toBe("failed");
         expect(saved.text).toContain("disk full");
-      } finally { spy.mockRestore(); }
-    } finally { await fixture.stop(); }
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
+      await fixture.stop();
+    }
   });
 });
 

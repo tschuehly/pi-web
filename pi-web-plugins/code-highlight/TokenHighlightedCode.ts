@@ -9,7 +9,9 @@ export class TokenHighlightedCode extends LitElement {
   private releaseStyles: (() => void) | undefined;
 
   @property({ attribute: false })
-  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined { return this.integration; }
+  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined {
+    return this.integration;
+  }
   set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
     if (value === this.integration) return;
     this.releaseStyles?.();
@@ -46,16 +48,19 @@ export class TokenHighlightedCode extends LitElement {
     const controller = new AbortController();
     this.controller = controller;
     const signal = AbortSignal.any([input.signal, controller.signal]);
-    void Promise.resolve().then(() => {
-      signal.throwIfAborted();
-      return highlight(input.text, signal);
-    }).then((tokens) => {
-      if (signal.aborted) return;
-      if (tokens === undefined) throw new Error("Syntax highlighter is no longer available");
-      this.tokens = tokens;
-    }).catch((error: unknown) => {
-      if (!signal.aborted) input.fail(error);
-    });
+    void Promise.resolve()
+      .then(() => {
+        signal.throwIfAborted();
+        return highlight(input.text, signal);
+      })
+      .then((tokens) => {
+        if (signal.aborted) return;
+        if (tokens === undefined) throw new Error("Syntax highlighter is no longer available");
+        this.tokens = tokens;
+      })
+      .catch((error: unknown) => {
+        if (!signal.aborted) input.fail(error);
+      });
   }
 
   override render() {

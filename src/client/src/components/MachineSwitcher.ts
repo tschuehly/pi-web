@@ -33,21 +33,38 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
   readonly popup = new AnchoredPopupController(this, () => {
     const anchor = this.switcherButton();
     const panel = this.renderRoot.querySelector<HTMLElement>(".machine-switcher-menu");
-    return this.open && anchor && panel ? {
-      anchor, panel, onClose: () => { this.open = false; this.openActionsMachineId = undefined; },
-      options: { placement: "below-start", padding: 8, width: 280 },
-    } : undefined;
+    return this.open && anchor && panel
+      ? {
+          anchor,
+          panel,
+          onClose: () => {
+            this.open = false;
+            this.openActionsMachineId = undefined;
+          },
+          options: { placement: "below-start", padding: 8, width: 280 },
+        }
+      : undefined;
   });
   readonly actionsPopup = new AnchoredPopupController(this, () => {
     const panel = this.renderRoot.querySelector<HTMLElement>(".machine-option-actions-panel");
     const anchor = panel?.parentElement?.querySelector<HTMLElement>(".machine-option-actions-toggle");
-    return anchor && panel ? { anchor, panel, onClose: () => { this.openActionsMachineId = undefined; }, options: { minWidth: 120 } } : undefined;
+    return anchor && panel
+      ? {
+          anchor,
+          panel,
+          onClose: () => {
+            this.openActionsMachineId = undefined;
+          },
+          options: { minWidth: 120 },
+        }
+      : undefined;
   });
 
   protected override updated(changed: PropertyValues<this>): void {
     if (changed.has("machines") && this.open && this.selectedMachine() === undefined) this.open = false;
     if (changed.has("machines") && this.open && this.machines.length <= 1) this.open = false;
-    if (changed.has("machines") && this.openActionsMachineId !== undefined && !this.machines.some((machine) => machine.id === this.openActionsMachineId)) this.openActionsMachineId = undefined;
+    if (changed.has("machines") && this.openActionsMachineId !== undefined && !this.machines.some((machine) => machine.id === this.openActionsMachineId))
+      this.openActionsMachineId = undefined;
   }
 
   async focusSelectedOrFirst(): Promise<boolean> {
@@ -73,8 +90,12 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           title=${`${selected.name} · ${machineSubtitle(selected)} · ${machineStatusLabel(status)}`}
           aria-label=${this.machineSwitcherAriaLabel(selected)}
           aria-expanded=${String(this.open)}
-          @click=${() => { this.toggleMenu(); }}
-          @keydown=${(event: KeyboardEvent) => { this.handleSwitcherButtonKeydown(event); }}
+          @click=${() => {
+            this.toggleMenu();
+          }}
+          @keydown=${(event: KeyboardEvent) => {
+            this.handleSwitcherButtonKeydown(event);
+          }}
         >
           ${this.renderMachineIcon(selected)}
           ${this.renderActivity(selected)}
@@ -85,11 +106,17 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           ${this.renderOtherMachinesActivity(selected)}
           <span class="machine-chevron" aria-hidden="true">▾</span>
         </button>
-        ${this.open ? html`
-          <div popover="auto" class="machine-switcher-menu ui-menu" @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
+        ${
+          this.open
+            ? html`
+          <div popover="auto" class="machine-switcher-menu ui-menu" @click=${(event: MouseEvent) => {
+            event.stopPropagation();
+          }}>
             ${this.machines.map((machine) => this.renderMachineOption(machine))}
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
     `;
   }
@@ -106,13 +133,19 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
           class="ui-button ui-menu-item machine-option-main"
           title=${machineTitle(machine)}
           data-machine-id=${machine.id}
-          @click=${() => { this.select(machine); }}
-          @keydown=${(event: KeyboardEvent) => { this.handleMachineOptionKeydown(event); }}
+          @click=${() => {
+            this.select(machine);
+          }}
+          @keydown=${(event: KeyboardEvent) => {
+            this.handleMachineOptionKeydown(event);
+          }}
         >
           <span class="machine-option-name">${this.renderMachineIcon(machine)}${this.renderActivity(machine)}<span>${machine.name}</span></span>
           <small>${machineSubtitle(machine)} · ${machineStatusLabel(status)}</small>
         </button>
-        ${hasActions ? html`
+        ${
+          hasActions
+            ? html`
           <div class="machine-option-actions">
             <button
               type="button"
@@ -120,15 +153,28 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
               title="Machine actions"
               aria-label=${`Actions for ${machine.name}`}
               aria-expanded=${String(actionsOpen)}
-              @click=${(event: MouseEvent) => { event.stopPropagation(); this.toggleActionsMenu(machine.id); }}
+              @click=${(event: MouseEvent) => {
+                event.stopPropagation();
+                this.toggleActionsMenu(machine.id);
+              }}
             >⋯</button>
-            ${actionsOpen ? html`
-              <div popover="auto" class="machine-option-actions-panel ui-menu" @click=${(event: MouseEvent) => { event.stopPropagation(); }}>
-                <button class="danger ui-button ui-menu-item" title=${`Remove ${machine.name}`} @click=${() => { this.removeMachine(machine); }}>Remove</button>
+            ${
+              actionsOpen
+                ? html`
+              <div popover="auto" class="machine-option-actions-panel ui-menu" @click=${(event: MouseEvent) => {
+                event.stopPropagation();
+              }}>
+                <button class="danger ui-button ui-menu-item" title=${`Remove ${machine.name}`} @click=${() => {
+                  this.removeMachine(machine);
+                }}>Remove</button>
               </div>
-            ` : null}
+            `
+                : null
+            }
           </div>
-        ` : null}
+        `
+            : null
+        }
       </div>
     `;
   }
@@ -170,14 +216,18 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     const others = this.machines.filter((machine) => machine.id !== selected.id);
     // Offline machines retain unread attention, but their stale work flags
     // must not imply that work is still running.
-    const activeFlags = rollUpStatusFlags(others
-      .filter((machine) => !["offline", "error"].includes(machineStatus(machine, this.statuses)))
-      .map((machine) => this.statusSnapshots[machine.id]?.machine ?? {}));
+    const activeFlags = rollUpStatusFlags(
+      others
+        .filter((machine) => !["offline", "error"].includes(machineStatus(machine, this.statuses)))
+        .map((machine) => this.statusSnapshots[machine.id]?.machine ?? {}),
+    );
     const unread = others.some((machine) => hasStatusUnread(this.statusSnapshots[machine.id]?.machine));
     const kind = statusActivityKind(activeFlags);
-    const indicator = renderActivityIndicator(kind,
+    const indicator = renderActivityIndicator(
+      kind,
       kind === "terminal" ? "Terminal active on other machines" : "Other machines active",
-      unread ? "Unread sessions on other machines" : undefined);
+      unread ? "Unread sessions on other machines" : undefined,
+    );
     return indicator === undefined ? undefined : html`<span class="other-machines-activity">${indicator}</span>`;
   }
 
@@ -241,7 +291,9 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
       event.preventDefault();
       event.stopPropagation();
       this.open = false;
-      void this.updateComplete.then(() => { this.focusSwitcherButton(); });
+      void this.updateComplete.then(() => {
+        this.focusSwitcherButton();
+      });
     }
   }
 
@@ -321,7 +373,10 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     void this.onRemove?.(machine);
   }
 
-  static override styles = [uiButtonStyles, uiMenuStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiMenuStyles,
+    css`
     :host { min-width: 0; display: flex; container: machine-selector / inline-size; }
     .machine-switcher { flex: 1 1 auto; min-width: 0; display: flex; }
     .machine-switcher-button { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 6px; border: 0; border-radius: 0; background: transparent; color: var(--pi-text); padding: 6px 10px; cursor: pointer; text-align: left; }
@@ -359,7 +414,8 @@ export class MachineSwitcher extends LitElement implements KeyboardNavigableSect
     .machine-option-actions-toggle { height: 100%; }
     .machine-option.selected .machine-option-main { background: var(--pi-selection-bg); }
     @keyframes pulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
-  `];
+  `,
+  ];
 }
 
 function machineStatus(machine: Machine, statuses: Record<string, MachineHealth>): MachineStatus {

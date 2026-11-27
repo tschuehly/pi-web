@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createDevelopmentNativeServicePlan,
-  type NativeServicePlan,
-  type NativeServicePlanService,
-} from "./servicePlan.js";
+import { createDevelopmentNativeServicePlan, type NativeServicePlan, type NativeServicePlanService } from "./servicePlan.js";
 import { renderLaunchdPlist, renderSystemdUnit } from "./serviceRendering.js";
 
 function developmentPlan(kind: "systemd" | "launchd"): NativeServicePlan {
@@ -16,7 +12,7 @@ function developmentPlan(kind: "systemd" | "launchd"): NativeServicePlan {
       detectedExecutable: "/bin/zsh",
     },
     environment: {
-      PI_WEB_CONFIG: "/home/user/config with \"quote\".json",
+      PI_WEB_CONFIG: '/home/user/config with "quote".json',
       PI_WEB_PI_PACKAGE_DIR: "/existing/Pi installation",
     },
     workingDirectory: "/checkout with space",

@@ -15,28 +15,62 @@ describe("session daemon shutdown", () => {
       logger,
       onFailure,
       dependencies: {
-        quiesceServer: () => { events.push("quiesce"); },
-        serverPlugins: {
-          beginShutdown: () => { events.push("plugin-lifetimes"); },
-          stop: () => { events.push("plugins"); throw failure; },
+        quiesceServer: () => {
+          events.push("quiesce");
         },
-        catalogRefresher: { dispose: () => { events.push("catalog"); } },
-        auth: { dispose: () => { events.push("auth"); } },
-        sessions: { dispose: () => { events.push("sessions"); } },
-        unreadStore: { flush: () => { events.push("unread"); } },
-        pluginBackends: { closeAll: () => { events.push("backends"); } },
-        workspaceProviders: { closeAll: () => { events.push("providers"); } },
-        workspaceRemovals: { closeAll: () => { events.push("removals"); } },
-        closeServer: () => { events.push("server"); },
+        serverPlugins: {
+          beginShutdown: () => {
+            events.push("plugin-lifetimes");
+          },
+          stop: () => {
+            events.push("plugins");
+            throw failure;
+          },
+        },
+        catalogRefresher: {
+          dispose: () => {
+            events.push("catalog");
+          },
+        },
+        auth: {
+          dispose: () => {
+            events.push("auth");
+          },
+        },
+        sessions: {
+          dispose: () => {
+            events.push("sessions");
+          },
+        },
+        unreadStore: {
+          flush: () => {
+            events.push("unread");
+          },
+        },
+        pluginBackends: {
+          closeAll: () => {
+            events.push("backends");
+          },
+        },
+        workspaceProviders: {
+          closeAll: () => {
+            events.push("providers");
+          },
+        },
+        workspaceRemovals: {
+          closeAll: () => {
+            events.push("removals");
+          },
+        },
+        closeServer: () => {
+          events.push("server");
+        },
       },
     });
 
     expect(events).toEqual(["quiesce", "plugin-lifetimes", "catalog", "removals", "backends", "providers", "plugins", "sessions", "server", "auth", "unread"]);
     expect(onFailure).toHaveBeenCalledOnce();
-    expect(logger.error).toHaveBeenCalledWith(
-      { err: failure, operation: "stop server plugins" },
-      "session daemon shutdown operation failed",
-    );
+    expect(logger.error).toHaveBeenCalledWith({ err: failure, operation: "stop server plugins" }, "session daemon shutdown operation failed");
   });
 
   it("revokes PI session admission before waiting for contribution drains", async () => {
@@ -65,12 +99,13 @@ describe("session daemon shutdown", () => {
     const instance = createServerPluginPiSessionsCapabilityFactory({
       projects: { requireProject: () => Promise.resolve(project) },
       workspaces: {
-        resolve: () => Promise.resolve({
-          status: "folder" as const,
-          projectId: project.id,
-          workspaces: [workspace],
-          diagnostics: [],
-        }),
+        resolve: () =>
+          Promise.resolve({
+            status: "folder" as const,
+            projectId: project.id,
+            workspaces: [workspace],
+            diagnostics: [],
+          }),
       },
       sessions,
     }).create({
@@ -88,7 +123,9 @@ describe("session daemon shutdown", () => {
           beginShutdown: () => {
             lifetime.abort(new DOMException("Server plugin host is shutting down", "AbortError"));
           },
-          stop: async () => { await instance.dispose?.(AbortSignal.timeout(1_000)); },
+          stop: async () => {
+            await instance.dispose?.(AbortSignal.timeout(1_000));
+          },
         },
         catalogRefresher: { dispose: () => undefined },
         auth: { dispose: () => undefined },
@@ -108,11 +145,13 @@ describe("session daemon shutdown", () => {
     await drainStarted.promise;
 
     expect(lifetime.signal.aborted).toBe(true);
-    await expect(capability.run({
-      projectId: project.id,
-      workspaceId: workspace.id,
-      prompt: "Must not start",
-    })).rejects.toThrow("run-consumer is no longer active");
+    await expect(
+      capability.run({
+        projectId: project.id,
+        workspaceId: workspace.id,
+        prompt: "Must not start",
+      }),
+    ).rejects.toThrow("run-consumer is no longer active");
     expect(sessions.startOneShotRun).not.toHaveBeenCalled();
 
     releaseDrain.resolve();
@@ -122,6 +161,8 @@ describe("session daemon shutdown", () => {
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolveDeferred!: () => void;
-  const promise = new Promise<void>((resolvePromise) => { resolveDeferred = resolvePromise; });
+  const promise = new Promise<void>((resolvePromise) => {
+    resolveDeferred = resolvePromise;
+  });
   return { promise, resolve: resolveDeferred };
 }

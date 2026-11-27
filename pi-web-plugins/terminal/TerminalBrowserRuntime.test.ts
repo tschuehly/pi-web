@@ -3,7 +3,9 @@ import type { JsonValue, PluginPeer, WorkspacePanelContext } from "@jmfederico/p
 import { TerminalBrowserRuntime } from "./TerminalBrowserRuntime";
 import { InMemoryTerminalSelectionMemory } from "./terminalSelection";
 
-beforeEach(() => { vi.useFakeTimers(); });
+beforeEach(() => {
+  vi.useFakeTimers();
+});
 afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
@@ -13,17 +15,27 @@ afterEach(() => {
 describe("Terminal browser runtime", () => {
   it("owns active-count refresh and badge state for each machine workspace", async () => {
     let now = 1_000;
-    const request = vi.fn<NonNullable<PluginPeer["request"]>>((operation: string): Promise<JsonValue> => Promise.resolve(operation === "terminal.list" ? [
-      { id: "active", cwd: "/repo", name: "Shell", createdAt: "now", exited: false },
-      { id: "exited", cwd: "/repo", name: "Build", createdAt: "now", exited: true, exitCode: 0 },
-    ] : []));
+    const request = vi.fn<NonNullable<PluginPeer["request"]>>((operation: string): Promise<JsonValue> =>
+      Promise.resolve(
+        operation === "terminal.list"
+          ? [
+              { id: "active", cwd: "/repo", name: "Shell", createdAt: "now", exited: false },
+              { id: "exited", cwd: "/repo", name: "Build", createdAt: "now", exited: true, exitCode: 0 },
+            ]
+          : [],
+      ),
+    );
     const context = workspaceContext("remote-1", request);
     let renderRequests = 0;
-    context.host.requestRender = () => { renderRequests += 1; };
+    context.host.requestRender = () => {
+      renderRequests += 1;
+    };
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory(), () => now);
 
     expect(runtime.activeTerminalBadge(context)).toBeUndefined();
-    await vi.waitFor(() => { expect(renderRequests).toBe(1); });
+    await vi.waitFor(() => {
+      expect(renderRequests).toBe(1);
+    });
     expect(runtime.activeTerminalBadge(context)).toBe(1);
     expect(request.mock.calls[0]?.slice(0, 2)).toEqual(["terminal.list", null]);
     expect(request.mock.calls[0]?.[2]?.signal).toBeInstanceOf(AbortSignal);
@@ -33,7 +45,9 @@ describe("Terminal browser runtime", () => {
     expect(request).toHaveBeenCalledOnce();
     now += 1;
     runtime.activeTerminalBadge(context);
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("backs off badge refresh failures instead of retrying on every render", async () => {
@@ -51,7 +65,9 @@ describe("Terminal browser runtime", () => {
 
     now += 5_000;
     runtime.activeTerminalBadge(context);
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("schedules failed badge recovery without a caller manually reinvoking the badge", async () => {
@@ -71,27 +87,38 @@ describe("Terminal browser runtime", () => {
     expect(request).toHaveBeenCalledOnce();
 
     await vi.advanceTimersByTimeAsync(5_000);
-    await vi.waitFor(() => { expect(request).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(request).toHaveBeenCalledTimes(2);
+    });
     expect(runtime.activeTerminalBadge(context)).toBe(1);
   });
 
   it("cancels in-flight refreshes and scheduled badge work when disposed", async () => {
     let requestSignal: AbortSignal | undefined;
-    const request = vi.fn<NonNullable<PluginPeer["request"]>>((_operation, _input, options): Promise<JsonValue> => new Promise((_resolve, reject) => {
-      const signal = options?.signal;
-      requestSignal = signal;
-      signal?.addEventListener("abort", () => {
-        const reason: unknown = signal.reason;
-        reject(reason instanceof Error ? reason : new Error("Terminal refresh aborted"));
-      }, { once: true });
-    }));
+    const request = vi.fn<NonNullable<PluginPeer["request"]>>(
+      (_operation, _input, options): Promise<JsonValue> =>
+        new Promise((_resolve, reject) => {
+          const signal = options?.signal;
+          requestSignal = signal;
+          signal?.addEventListener(
+            "abort",
+            () => {
+              const reason: unknown = signal.reason;
+              reject(reason instanceof Error ? reason : new Error("Terminal refresh aborted"));
+            },
+            { once: true },
+          );
+        }),
+    );
     const timer = globalThis.setTimeout(() => undefined, 60_000);
     const setTimer = vi.fn((handler: () => void, timeout: number) => {
       void handler;
       void timeout;
       return timer;
     });
-    const clearTimer = vi.fn((id: ReturnType<typeof globalThis.setTimeout>) => { globalThis.clearTimeout(id); });
+    const clearTimer = vi.fn((id: ReturnType<typeof globalThis.setTimeout>) => {
+      globalThis.clearTimeout(id);
+    });
     const context = workspaceContext("remote-1", request);
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory(), () => 1_000, setTimer, clearTimer);
     runtime.activeTerminalBadge(context);
@@ -166,7 +193,13 @@ describe("Terminal browser runtime", () => {
   it.each(["success", "failure"])("does not rearm a stale workspace after in-flight %s", async (outcome) => {
     let complete!: (value: JsonValue) => void;
     let fail!: (error: Error) => void;
-    const oldRequest = vi.fn(() => new Promise<JsonValue>((resolve, reject) => { complete = resolve; fail = reject; }));
+    const oldRequest = vi.fn(
+      () =>
+        new Promise<JsonValue>((resolve, reject) => {
+          complete = resolve;
+          fail = reject;
+        }),
+    );
     const nextRequest = vi.fn((): Promise<JsonValue> => Promise.resolve([]));
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
     runtime.activeTerminalBadge(workspaceContext("local", oldRequest));
@@ -185,19 +218,20 @@ describe("Terminal browser runtime", () => {
   it.each(["success", "failure"])("ignores late in-flight %s after permanent disposal", async (outcome) => {
     let complete!: (value: JsonValue) => void;
     let fail!: (error: Error) => void;
-    const request = vi.fn<NonNullable<PluginPeer["request"]>>(() => new Promise<JsonValue>((resolve, reject) => {
-      complete = resolve;
-      fail = reject;
-    }));
+    const request = vi.fn<NonNullable<PluginPeer["request"]>>(
+      () =>
+        new Promise<JsonValue>((resolve, reject) => {
+          complete = resolve;
+          fail = reject;
+        }),
+    );
     const context = workspaceContext("local", request);
     const requestRender = vi.fn();
     context.host.requestRender = requestRender;
     const runtime = new TerminalBrowserRuntime(new InMemoryTerminalSelectionMemory());
     runtime.activeTerminalBadge(context);
     const invalidation = runtime.invalidate(context);
-    const settled = outcome === "failure"
-      ? expect(invalidation).rejects.toThrow("offline")
-      : expect(invalidation).resolves.toBeUndefined();
+    const settled = outcome === "failure" ? expect(invalidation).rejects.toThrow("offline") : expect(invalidation).resolves.toBeUndefined();
 
     runtime.dispose();
     runtime.dispose();
@@ -246,7 +280,9 @@ describe("Terminal browser runtime", () => {
     const rememberedAtPublication: (string | undefined)[] = [];
     const set = vi.fn();
     const context = workspaceContext("local", vi.fn(), { set });
-    set.mockImplementation(() => { rememberedAtPublication.push(memory.latestTerminalId(runtime.selectionScope(context))); });
+    set.mockImplementation(() => {
+      rememberedAtPublication.push(memory.latestTerminalId(runtime.selectionScope(context)));
+    });
 
     runtime.selectTerminal(context, "terminal-2");
 
@@ -300,9 +336,7 @@ describe("Terminal browser runtime", () => {
   });
 
   it("requests a render after invalidation when the badge count is unchanged", async () => {
-    const request = vi.fn((): Promise<JsonValue> => Promise.resolve([
-      { id: "active", cwd: "/repo", name: "Shell", createdAt: "now", exited: false },
-    ]));
+    const request = vi.fn((): Promise<JsonValue> => Promise.resolve([{ id: "active", cwd: "/repo", name: "Shell", createdAt: "now", exited: false }]));
     const context = workspaceContext("local", request);
     const requestRender = vi.fn();
     context.host.requestRender = requestRender;

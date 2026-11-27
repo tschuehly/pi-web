@@ -10,8 +10,14 @@ import type { SessionLabelContext, SessionLabelItem } from "../plugins/types";
 import { SessionList } from "./SessionList";
 
 const session: SessionInfo = {
-  id: "row", name: "Conversation", path: "/private/session.jsonl", cwd: "/workspace",
-  created: "2026-01-01", modified: "2026-01-01", messageCount: 2, firstMessage: "Private message",
+  id: "row",
+  name: "Conversation",
+  path: "/private/session.jsonl",
+  cwd: "/workspace",
+  created: "2026-01-01",
+  modified: "2026-01-01",
+  messageCount: 2,
+  firstMessage: "Private message",
 };
 
 afterEach(() => {
@@ -54,8 +60,9 @@ it("renders text, safe links, and custom controls without activating the row", a
   expect(selected).toHaveBeenCalledWith(session);
 });
 
-it.each(["javascript:alert(1)", "  JAVASCRIPT:alert(1)", "java\nscript:alert(1)", "data:text/html,unsafe", "file:///private", ""]) (
-  "renders an unsafe link as plain text: %j", async (href) => {
+it.each(["javascript:alert(1)", "  JAVASCRIPT:alert(1)", "java\nscript:alert(1)", "data:text/html,unsafe", "file:///private", ""])(
+  "renders an unsafe link as plain text: %j",
+  async (href) => {
     const list = new SessionList();
     list.sessions = [session];
     list.sessionLabelItems = () => [{ type: "link", text: "Untrusted value", href }];
@@ -70,39 +77,48 @@ it.each(["visible", "items", "render"] as const)("keeps rows and selection usabl
   const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const registry = new PluginRegistry();
   const failure = new Error("Broken plugin label");
-  const fail = (): never => { throw failure; };
+  const fail = (): never => {
+    throw failure;
+  };
   const selected = vi.fn();
   const list = new SessionList();
   list.sessions = [session, { ...session, id: "other", name: "Other conversation" }];
   list.onSelect = selected;
-  list.sessionLabelItems = (row) => registry.getSessionLabelItems({
-    machine: { id: "local", name: "Local", kind: "local" },
-    workspace: { id: "workspace", projectId: "project", path: row.cwd, label: "main", isMain: true, effectiveConfig: {} },
-    state: initialAppState(),
-    session: publicPluginSession(row),
-    files: {
-      readFile: vi.fn<SessionLabelContext["files"]["readFile"]>(),
-      listFiles: vi.fn<SessionLabelContext["files"]["listFiles"]>(),
-      writeFile: vi.fn<SessionLabelContext["files"]["writeFile"]>(),
-      deleteFile: vi.fn<SessionLabelContext["files"]["deleteFile"]>(),
-      moveFile: vi.fn<SessionLabelContext["files"]["moveFile"]>(),
-    },
-    navigate: vi.fn<() => Promise<void>>(),
-    host: { requestRender: vi.fn() },
-  });
+  list.sessionLabelItems = (row) =>
+    registry.getSessionLabelItems({
+      machine: { id: "local", name: "Local", kind: "local" },
+      workspace: { id: "workspace", projectId: "project", path: row.cwd, label: "main", isMain: true, effectiveConfig: {} },
+      state: initialAppState(),
+      session: publicPluginSession(row),
+      files: {
+        readFile: vi.fn<SessionLabelContext["files"]["readFile"]>(),
+        listFiles: vi.fn<SessionLabelContext["files"]["listFiles"]>(),
+        writeFile: vi.fn<SessionLabelContext["files"]["writeFile"]>(),
+        deleteFile: vi.fn<SessionLabelContext["files"]["deleteFile"]>(),
+        moveFile: vi.fn<SessionLabelContext["files"]["moveFile"]>(),
+      },
+      navigate: vi.fn<() => Promise<void>>(),
+      host: { requestRender: vi.fn() },
+    });
   try {
     await registry.register({
       id: "labels",
       plugin: {
-        apiVersion: 4, name: "Labels",
-        activate: () => ({ contributions: { sessionLabels: [
-          {
-            id: "broken", order: 1,
-            ...(phase === "visible" ? { visible: fail } : {}),
-            items: phase === "items" ? fail : () => [{ type: "render", render: fail }],
+        apiVersion: 4,
+        name: "Labels",
+        activate: () => ({
+          contributions: {
+            sessionLabels: [
+              {
+                id: "broken",
+                order: 1,
+                ...(phase === "visible" ? { visible: fail } : {}),
+                items: phase === "items" ? fail : () => [{ type: "render", render: fail }],
+              },
+              { id: "healthy", order: 2, items: () => [{ type: "text", text: "Healthy indicator" }] },
+            ],
           },
-          { id: "healthy", order: 2, items: () => [{ type: "text", text: "Healthy indicator" }] },
-        ] } }),
+        }),
       },
     });
     document.body.append(list);
@@ -116,9 +132,7 @@ it.each(["visible", "items", "render"] as const)("keeps rows and selection usabl
     }
     rows?.[0]?.click();
     expect(selected).toHaveBeenCalledExactlyOnceWith(session);
-    expect(warning).toHaveBeenCalledWith(
-      `PI WEB plugin session label labels:broken ${phase} failed for session row on machine local`, failure,
-    );
+    expect(warning).toHaveBeenCalledWith(`PI WEB plugin session label labels:broken ${phase} failed for session row on machine local`, failure);
   } finally {
     await registry.dispose();
   }

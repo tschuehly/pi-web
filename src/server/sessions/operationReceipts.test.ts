@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { OperationPayloadMismatch, OperationReceipts } from "./operationReceipts.js";
 
 describe("OperationReceipts", () => {
-  afterEach(() => { vi.restoreAllMocks(); });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   it("joins a retry with the same payload, rejects another payload, and keeps a fixed-size digest, not the payload", async () => {
     // Calls through; the recorded calls show every value any Map kept.

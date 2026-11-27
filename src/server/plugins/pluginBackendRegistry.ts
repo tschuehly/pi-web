@@ -30,10 +30,7 @@ import {
 } from "../../shared/pluginBackendProtocol.js";
 import type { WorkspaceListing } from "../../shared/apiTypes.js";
 import type { Project } from "../types.js";
-import type {
-  ServerPluginHealthInspection,
-  ServerPluginPairedBackendContribution,
-} from "./serverPluginRuntime.js";
+import type { ServerPluginHealthInspection, ServerPluginPairedBackendContribution } from "./serverPluginRuntime.js";
 import { PluginCallbackDrain } from "../pluginCallbackDrain.js";
 import type { WorkspaceProviderRegistry } from "../workspaces/workspaceProviderRegistry.js";
 
@@ -161,10 +158,12 @@ export function eligiblePluginBackendContributions(
   inspections: readonly ServerPluginHealthInspection[],
 ): readonly ServerPluginPairedBackendContribution[] {
   const healthByPluginId = new Map(inspections.map(({ pluginId, health }) => [pluginId, health.status]));
-  return Object.freeze(contributions.filter(({ pluginId }) => {
-    const status = healthByPluginId.get(pluginId);
-    return status === "healthy" || status === "degraded";
-  }));
+  return Object.freeze(
+    contributions.filter(({ pluginId }) => {
+      const status = healthByPluginId.get(pluginId);
+      return status === "healthy" || status === "degraded";
+    }),
+  );
 }
 
 /** Dispatches only to a browser package's revision-matched paired server entry. */
@@ -193,29 +192,23 @@ export class PluginBackendRegistry {
 
   constructor(private readonly options: PluginBackendRegistryOptions) {
     this.contributions = snapshotContributions(options.contributions);
-    this.callbackTimeoutMs = positiveInteger(
-      options.callbackTimeoutMs,
-      PLUGIN_BACKEND_REQUEST_TIMEOUT_MS,
-      "callbackTimeoutMs",
-    );
-    this.dispatchTimeoutMs = positiveInteger(
-      options.dispatchTimeoutMs,
-      PLUGIN_BACKEND_DISPATCH_TIMEOUT_MS,
-      "dispatchTimeoutMs",
-    );
+    this.callbackTimeoutMs = positiveInteger(options.callbackTimeoutMs, PLUGIN_BACKEND_REQUEST_TIMEOUT_MS, "callbackTimeoutMs");
+    this.dispatchTimeoutMs = positiveInteger(options.dispatchTimeoutMs, PLUGIN_BACKEND_DISPATCH_TIMEOUT_MS, "dispatchTimeoutMs");
     this.channelCallbackTimeoutMs = positiveInteger(options.channelCallbackTimeoutMs, PLUGIN_BACKEND_CHANNEL_CALLBACK_TIMEOUT_MS, "channelCallbackTimeoutMs");
     this.channelOpenTimeoutMs = positiveInteger(options.channelOpenTimeoutMs, PLUGIN_BACKEND_CHANNEL_OPEN_TIMEOUT_MS, "channelOpenTimeoutMs");
     this.channelLifetimeMs = positiveInteger(options.channelLifetimeMs, PLUGIN_BACKEND_CHANNEL_MAX_LIFETIME_MS, "channelLifetimeMs");
     this.channelMaxTotal = positiveInteger(options.channelMaxTotal, PLUGIN_BACKEND_CHANNEL_MAX_TOTAL, "channelMaxTotal");
     this.channelMaxPerPlugin = positiveInteger(options.channelMaxPerPlugin, PLUGIN_BACKEND_CHANNEL_MAX_PER_PLUGIN, "channelMaxPerPlugin");
-    this.channelMaxPerPluginWorkspace = positiveInteger(options.channelMaxPerPluginWorkspace, PLUGIN_BACKEND_CHANNEL_MAX_PER_PLUGIN_WORKSPACE, "channelMaxPerPluginWorkspace");
+    this.channelMaxPerPluginWorkspace = positiveInteger(
+      options.channelMaxPerPluginWorkspace,
+      PLUGIN_BACKEND_CHANNEL_MAX_PER_PLUGIN_WORKSPACE,
+      "channelMaxPerPluginWorkspace",
+    );
   }
 
   async request(request: PluginBackendRequest, signal?: AbortSignal): Promise<JsonValue> {
     if (this.channelsAreShuttingDown()) throw requestShutdownError(request.pluginId);
-    const operationSignal = signal === undefined
-      ? this.shutdown.signal
-      : AbortSignal.any([signal, this.shutdown.signal]);
+    const operationSignal = signal === undefined ? this.shutdown.signal : AbortSignal.any([signal, this.shutdown.signal]);
     const task = runBoundedPluginBackendOperation(
       request.pluginId,
       "dispatch",
@@ -228,12 +221,7 @@ export class PluginBackendRegistry {
       return await task;
     } catch (error) {
       if (signal?.aborted === true) {
-        throw backendError(
-          "request-cancelled",
-          499,
-          `Server plugin ${request.pluginId} backend request was cancelled`,
-          error,
-        );
+        throw backendError("request-cancelled", 499, `Server plugin ${request.pluginId} backend request was cancelled`, error);
       }
       if (this.channelsAreShuttingDown()) throw requestShutdownError(request.pluginId, error);
       if (error instanceof PluginBackendTimeoutError) {
@@ -249,12 +237,16 @@ export class PluginBackendRegistry {
     if (this.channelsAreShuttingDown()) throw channelError("shutdown", 1012, "Plugin backend channels are shutting down");
     if (!isPiWebPluginId(request.pluginId)) throw channelError("inactive-plugin", 1008, `Server plugin is not active: ${request.pluginId}`);
     const kind = requireScopeKind(request.scope);
-    if ((kind === "machine" && (request.projectId !== undefined || request.workspaceId !== undefined))
-      || (kind === "project" && request.workspaceId !== undefined)) {
+    if (
+      (kind === "machine" && (request.projectId !== undefined || request.workspaceId !== undefined))
+      || (kind === "project" && request.workspaceId !== undefined)
+    ) {
       throw channelError("invalid-scope", 1008, "Invalid plugin backend channel admission scope");
     }
-    if ((kind !== "machine" && (request.projectId === undefined || request.projectId === ""))
-      || (kind === "workspace" && (request.workspaceId === undefined || request.workspaceId === ""))) {
+    if (
+      (kind !== "machine" && (request.projectId === undefined || request.projectId === ""))
+      || (kind === "workspace" && (request.workspaceId === undefined || request.workspaceId === ""))
+    ) {
       throw channelError("workspace-not-found", 1008, `Workspace not found for server plugin ${request.pluginId} channel`);
     }
     const pluginCount = this.channelsByPlugin.get(request.pluginId) ?? 0;
@@ -266,15 +258,12 @@ export class PluginBackendRegistry {
     this.channelAdmissionCount += 1;
     this.channelsByPlugin.set(request.pluginId, pluginCount + 1);
     this.channelsByPluginWorkspace.set(scopeKey, scopeCount + 1);
-    const admission = new ManagedPluginBackendChannelAdmission(
-      request,
-      () => {
-        this.channelAdmissions.delete(admission);
-        this.channelAdmissionCount -= 1;
-        decrementCount(this.channelsByPlugin, request.pluginId);
-        decrementCount(this.channelsByPluginWorkspace, scopeKey);
-      },
-    );
+    const admission = new ManagedPluginBackendChannelAdmission(request, () => {
+      this.channelAdmissions.delete(admission);
+      this.channelAdmissionCount -= 1;
+      decrementCount(this.channelsByPlugin, request.pluginId);
+      decrementCount(this.channelsByPluginWorkspace, scopeKey);
+    });
     this.channelAdmissions.add(admission);
     return admission;
   }
@@ -305,15 +294,18 @@ export class PluginBackendRegistry {
 
     requireSupportedScope(request, contribution, true);
     const admissionRequest = { pluginId, projectId: request.project?.id, workspaceId: request.workspaceId, scope: request.scope };
-    const admission = reservedAdmission === undefined
-      ? this.reserveChannel(admissionRequest)
-      : requireManagedChannelAdmission(reservedAdmission, admissionRequest);
-    const releaseAdmission = (): void => { admission.release(); };
+    const admission =
+      reservedAdmission === undefined ? this.reserveChannel(admissionRequest) : requireManagedChannelAdmission(reservedAdmission, admissionRequest);
+    const releaseAdmission = (): void => {
+      admission.release();
+    };
     const releaseAdmissionOnManagedClose = reservedAdmission === undefined;
     const lifetimeController = new AbortController();
     this.openingChannelControllers.add(lifetimeController);
     let resolveOpeningTask: () => void = () => undefined;
-    const openingTask = new Promise<void>((resolve) => { resolveOpeningTask = resolve; });
+    const openingTask = new Promise<void>((resolve) => {
+      resolveOpeningTask = resolve;
+    });
     this.openingChannelTasks.add(openingTask);
     const finishOpeningTask = (): void => {
       this.openingChannelControllers.delete(lifetimeController);
@@ -332,17 +324,15 @@ export class PluginBackendRegistry {
     const send = (data: JsonValue): void => {
       if (lifetimeController.signal.aborted) throw channelError("channel-closed", 1008, `Server plugin ${pluginId} channel ${operation} is closed`);
       try {
-        const cloned = cloneBoundedPluginBackendJson(
-          data,
-          `Server plugin ${pluginId} channel ${operation} data`,
-          PLUGIN_BACKEND_CHANNEL_DATA_JSON_MAX_BYTES,
-        );
+        const cloned = cloneBoundedPluginBackendJson(data, `Server plugin ${pluginId} channel ${operation} data`, PLUGIN_BACKEND_CHANNEL_DATA_JSON_MAX_BYTES);
         transport.send(cloned);
       } catch (error) {
         const failure = error instanceof Error ? error : new Error(String(error));
         sendFailure = failure;
         if (managed !== undefined) {
-          void managed.fail("send-failed", `Server plugin ${pluginId} channel ${operation} send failed: ${boundedErrorMessage(failure)}`, 1011).catch(() => undefined);
+          void managed
+            .fail("send-failed", `Server plugin ${pluginId} channel ${operation} send failed: ${boundedErrorMessage(failure)}`, 1011)
+            .catch(() => undefined);
         }
         throw failure;
       }
@@ -396,17 +386,15 @@ export class PluginBackendRegistry {
       // route releases it only after attributed teardown completes.
       if (reservedAdmission === undefined) releaseAdmission();
       if (openingChannel !== undefined) {
-        const cleanup = openingChannel.then(async (channel) => {
-          await closeUnpublishedChannel(
-            channel,
-            pluginId,
-            operation,
-            this.channelCallbackTimeoutMs,
-            (callback) => { this.openingChannelCleanup.track(callback); },
-          );
-        }).catch((cleanupError: unknown) => {
-          this.options.logger?.error({ err: cleanupError, pluginId, operation }, "unpublished plugin backend channel cleanup failed");
-        });
+        const cleanup = openingChannel
+          .then(async (channel) => {
+            await closeUnpublishedChannel(channel, pluginId, operation, this.channelCallbackTimeoutMs, (callback) => {
+              this.openingChannelCleanup.track(callback);
+            });
+          })
+          .catch((cleanupError: unknown) => {
+            this.options.logger?.error({ err: cleanupError, pluginId, operation }, "unpublished plugin backend channel cleanup failed");
+          });
         this.openingChannelCleanup.track(cleanup);
       }
       // Let shutdown snapshot the cleanup task only after this failed opening
@@ -422,12 +410,7 @@ export class PluginBackendRegistry {
       if (signal?.aborted === true) {
         throw channelError("channel-closed", 1008, `Server plugin ${pluginId} channel ${operation} was cancelled`, error);
       }
-      throw channelError(
-        "open-failed",
-        1011,
-        `Server plugin ${pluginId} channel ${operation} failed to open: ${boundedErrorMessage(error)}`,
-        error,
-      );
+      throw channelError("open-failed", 1011, `Server plugin ${pluginId} channel ${operation} failed to open: ${boundedErrorMessage(error)}`, error);
     }
   }
 
@@ -446,14 +429,11 @@ export class PluginBackendRegistry {
     await Promise.allSettled([...this.requestTasks, ...this.openingChannelTasks]);
     const channels = [...this.channels];
     const results = await Promise.allSettled([
-      this.requestCallbacks.waitForSettled(
-        this.callbackTimeoutMs,
-        "Plugin backend request callbacks",
-      ),
+      this.requestCallbacks.waitForSettled(this.callbackTimeoutMs, "Plugin backend request callbacks"),
       // Allow a late open, its bounded close invocation, and one final
       // cooperative settlement window after the close signal aborts.
       this.openingChannelCleanup.waitForSettled(
-        this.channelOpenTimeoutMs + (2 * this.channelCallbackTimeoutMs),
+        this.channelOpenTimeoutMs + 2 * this.channelCallbackTimeoutMs,
         "Plugin backend abandoned channel cleanup callbacks",
       ),
       ...channels.map(async (channel) => {
@@ -467,19 +447,21 @@ export class PluginBackendRegistry {
         failures.push(reason);
       }
     }
-    await Promise.all(admissions.map(async (admission) => {
-      try {
-        await waitForPromise(
-          admission.released,
-          PLUGIN_BACKEND_CHANNEL_CALLBACK_TIMEOUT_MS + (2 * PLUGIN_BACKEND_CHANNEL_TEARDOWN_TIMEOUT_MS),
-          "Plugin backend channel admission teardown",
-        );
-      } catch (error) {
-        // Do not counterfeit teardown by dropping admission while a physical
-        // owner has not confirmed close; shutdown reports the bounded failure.
-        failures.push(error);
-      }
-    }));
+    await Promise.all(
+      admissions.map(async (admission) => {
+        try {
+          await waitForPromise(
+            admission.released,
+            PLUGIN_BACKEND_CHANNEL_CALLBACK_TIMEOUT_MS + 2 * PLUGIN_BACKEND_CHANNEL_TEARDOWN_TIMEOUT_MS,
+            "Plugin backend channel admission teardown",
+          );
+        } catch (error) {
+          // Do not counterfeit teardown by dropping admission while a physical
+          // owner has not confirmed close; shutdown reports the bounded failure.
+          failures.push(error);
+        }
+      }),
+    );
     if (failures.length !== 0) throw new AggregateError(failures, "One or more plugin backend channels failed to close");
   }
 
@@ -499,11 +481,7 @@ export class PluginBackendRegistry {
     const contribution = this.contributions.find((candidate) => candidate.pluginId === pluginId);
 
     if (contribution === undefined) {
-      throw backendError(
-        "inactive-plugin",
-        409,
-        `Server plugin ${pluginId} does not expose a paired backend for operation ${operation}`,
-      );
+      throw backendError("inactive-plugin", 409, `Server plugin ${pluginId} does not expose a paired backend for operation ${operation}`);
     }
     if (contribution.moduleRevision !== moduleRevision) {
       throw backendError(
@@ -514,11 +492,7 @@ export class PluginBackendRegistry {
     }
     const pairedRequest = contribution.backend.request?.bind(contribution.backend);
     if (pairedRequest === undefined) {
-      throw backendError(
-        "operation-unavailable",
-        501,
-        `Server plugin ${pluginId} does not expose paired request operation ${operation}`,
-      );
+      throw backendError("operation-unavailable", 501, `Server plugin ${pluginId} does not expose paired request operation ${operation}`);
     }
     requireSupportedScope(request, contribution, false);
     let scope: ServerPluginPeerScope;
@@ -546,27 +520,20 @@ export class PluginBackendRegistry {
         this.callbackTimeoutMs,
         (callbackSignal) => pairedRequest(Object.freeze({ ...context, signal: callbackSignal })),
         dispatchSignal,
-        (callback) => { this.requestCallbacks.track(callback); },
+        (callback) => {
+          this.requestCallbacks.track(callback);
+        },
       );
     } catch (error) {
       if (dispatchSignal.aborted) throw abortError(dispatchSignal);
       if (error instanceof PluginBackendTimeoutError) {
         throw backendError("request-timeout", 504, boundedErrorMessage(error), error);
       }
-      throw backendError(
-        "request-failed",
-        502,
-        `Server plugin ${pluginId} operation ${operation} failed: ${boundedErrorMessage(error)}`,
-        error,
-      );
+      throw backendError("request-failed", 502, `Server plugin ${pluginId} operation ${operation} failed: ${boundedErrorMessage(error)}`, error);
     }
 
     try {
-      return cloneBoundedPluginBackendJson(
-        result,
-        `Server plugin ${pluginId} operation ${operation} result`,
-        PLUGIN_BACKEND_RESPONSE_JSON_MAX_BYTES,
-      );
+      return cloneBoundedPluginBackendJson(result, `Server plugin ${pluginId} operation ${operation} result`, PLUGIN_BACKEND_RESPONSE_JSON_MAX_BYTES);
     } catch (error) {
       throw backendError("invalid-result", 502, boundedErrorMessage(error), error);
     }
@@ -577,7 +544,9 @@ class ManagedPluginBackendChannelAdmission implements PluginBackendChannelAdmiss
   private readonly controller = new AbortController();
   private isReleased = false;
   private resolveReleased: () => void = () => undefined;
-  readonly released = new Promise<void>((resolve) => { this.resolveReleased = resolve; });
+  readonly released = new Promise<void>((resolve) => {
+    this.resolveReleased = resolve;
+  });
 
   constructor(
     readonly request: PluginBackendChannelAdmissionRequest,
@@ -604,11 +573,13 @@ function requireManagedChannelAdmission(
   admission: PluginBackendChannelAdmission,
   expected: PluginBackendChannelAdmissionRequest,
 ): ManagedPluginBackendChannelAdmission {
-  if (!(admission instanceof ManagedPluginBackendChannelAdmission)
+  if (
+    !(admission instanceof ManagedPluginBackendChannelAdmission)
     || admission.request.pluginId !== expected.pluginId
     || admission.request.projectId !== expected.projectId
     || admission.request.workspaceId !== expected.workspaceId
-    || (admission.request.scope ?? "workspace") !== (expected.scope ?? "workspace")) {
+    || (admission.request.scope ?? "workspace") !== (expected.scope ?? "workspace")
+  ) {
     throw channelError("admission-denied", 1013, `Server plugin ${expected.pluginId} channel admission reservation is invalid`);
   }
   if (admission.signal.aborted) {
@@ -643,11 +614,9 @@ class ManagedPluginBackendChannel implements PluginBackendChannelSession {
     this.pluginId = options.pluginId;
     this.workspaceId = options.workspaceId;
     this.lifetimeTimer = setTimeout(() => {
-      void this.fail(
-        "lifetime-expired",
-        `Server plugin ${this.pluginId} channel ${options.operation} reached its maximum lifetime`,
-        1001,
-      ).catch(() => undefined);
+      void this.fail("lifetime-expired", `Server plugin ${this.pluginId} channel ${options.operation} reached its maximum lifetime`, 1001).catch(
+        () => undefined,
+      );
     }, options.lifetimeMs);
     this.lifetimeTimer.unref();
     this.observePluginCompletion();
@@ -674,7 +643,9 @@ class ManagedPluginBackendChannel implements PluginBackendChannelSession {
         this.options.callbackTimeoutMs,
         (signal) => this.options.channel.receive(cloned, signal),
         this.options.lifetimeController.signal,
-        (callback) => { this.receiveCallbacks.track(callback); },
+        (callback) => {
+          this.receiveCallbacks.track(callback);
+        },
       );
     } catch (error) {
       if (this.isClosed()) {
@@ -699,29 +670,34 @@ class ManagedPluginBackendChannel implements PluginBackendChannelSession {
   private observePluginCompletion(): void {
     const closed = this.options.channel.closed;
     if (closed === undefined) return;
-    void Promise.resolve(closed).then(async () => {
-      if (this.isClosed()) return;
-      const reason = "Plugin completed channel";
-      try {
-        await this.close(1000, reason);
-        await this.options.transport.close(1000, reason);
-      } catch (error) {
-        await this.fail(
-          "channel-closed",
-          `Server plugin ${this.pluginId} channel ${this.options.operation} completion cleanup failed: ${boundedErrorMessage(error)}`,
-          1011,
-        );
-      }
-    }, async (error: unknown) => {
-      if (this.isClosed()) return;
-      await this.fail(
-        "channel-closed",
-        `Server plugin ${this.pluginId} channel ${this.options.operation} completion failed: ${boundedErrorMessage(error)}`,
-        1011,
-      );
-    }).catch((error: unknown) => {
-      this.options.onCleanupFailure(error);
-    });
+    void Promise.resolve(closed)
+      .then(
+        async () => {
+          if (this.isClosed()) return;
+          const reason = "Plugin completed channel";
+          try {
+            await this.close(1000, reason);
+            await this.options.transport.close(1000, reason);
+          } catch (error) {
+            await this.fail(
+              "channel-closed",
+              `Server plugin ${this.pluginId} channel ${this.options.operation} completion cleanup failed: ${boundedErrorMessage(error)}`,
+              1011,
+            );
+          }
+        },
+        async (error: unknown) => {
+          if (this.isClosed()) return;
+          await this.fail(
+            "channel-closed",
+            `Server plugin ${this.pluginId} channel ${this.options.operation} completion failed: ${boundedErrorMessage(error)}`,
+            1011,
+          );
+        },
+      )
+      .catch((error: unknown) => {
+        this.options.onCleanupFailure(error);
+      });
   }
 
   close(code = 1000, reason = "Channel closed"): Promise<void> {
@@ -775,7 +751,9 @@ class ManagedPluginBackendChannel implements PluginBackendChannelSession {
             this.options.callbackTimeoutMs,
             (signal) => close(Object.freeze({ code, reason, signal })),
             undefined,
-            (callback) => { this.closeCallbacks.track(callback); },
+            (callback) => {
+              this.closeCallbacks.track(callback);
+            },
           );
         } catch (error) {
           failures.push(error);
@@ -794,9 +772,8 @@ class ManagedPluginBackendChannel implements PluginBackendChannelSession {
     }
 
     if (failures.length !== 0) {
-      const failure = failures.length === 1
-        ? failures[0]
-        : new AggregateError(failures, `Server plugin ${this.pluginId} channel ${this.options.operation} cleanup failed`);
+      const failure =
+        failures.length === 1 ? failures[0] : new AggregateError(failures, `Server plugin ${this.pluginId} channel ${this.options.operation} cleanup failed`);
       this.options.onCleanupFailure(failure);
       throw channelError(
         "close-failed",
@@ -821,11 +798,14 @@ async function closeUnpublishedChannel(
     pluginId,
     `channel ${operation} abandoned-open close`,
     callbackTimeoutMs,
-    (signal) => close(Object.freeze({
-      code: 1011,
-      reason: "Channel open did not complete",
-      signal,
-    })),
+    (signal) =>
+      close(
+        Object.freeze({
+          code: 1011,
+          reason: "Channel open did not complete",
+          signal,
+        }),
+      ),
     undefined,
     onCallbackStarted,
   );
@@ -840,7 +820,8 @@ async function resolveBackendScope(
 ): Promise<ServerPluginPeerScope> {
   const kind = requireScopeKind(request.scope);
   if (kind === "machine") {
-    if (request.project !== undefined || request.workspaceId !== undefined) throw channelError("invalid-scope", 1008, "Machine scope cannot contain project or workspace authority");
+    if (request.project !== undefined || request.workspaceId !== undefined)
+      throw channelError("invalid-scope", 1008, "Machine scope cannot contain project or workspace authority");
     return Object.freeze({ kind });
   }
   if (request.project === undefined) throw channelError("invalid-scope", 1008, "Project authority is required");
@@ -911,18 +892,11 @@ function decrementCount(map: Map<string, number>, key: string): void {
   else map.set(key, count - 1);
 }
 
-function channelError(
-  code: PluginBackendChannelErrorCode,
-  closeCode: number,
-  message: string,
-  cause?: unknown,
-): PluginBackendChannelError {
+function channelError(code: PluginBackendChannelErrorCode, closeCode: number, message: string, cause?: unknown): PluginBackendChannelError {
   return new PluginBackendChannelError(code, closeCode, message, cause === undefined ? {} : { cause });
 }
 
-function snapshotContributions(
-  contributions: readonly ServerPluginPairedBackendContribution[],
-): readonly ServerPluginPairedBackendContribution[] {
+function snapshotContributions(contributions: readonly ServerPluginPairedBackendContribution[]): readonly ServerPluginPairedBackendContribution[] {
   const sorted = [...contributions].sort((left, right) => left.pluginId.localeCompare(right.pluginId));
   for (let index = 1; index < sorted.length; index += 1) {
     if (sorted[index - 1]?.pluginId === sorted[index]?.pluginId) {
@@ -951,12 +925,7 @@ function parseRevision(value: string, operation: string): string {
   try {
     return requirePluginBackendRevision(value);
   } catch (error) {
-    throw backendError(
-      "stale-plugin-revision",
-      409,
-      `Plugin backend revision is unavailable for operation ${operation}: ${boundedErrorMessage(error)}`,
-      error,
-    );
+    throw backendError("stale-plugin-revision", 409, `Plugin backend revision is unavailable for operation ${operation}: ${boundedErrorMessage(error)}`, error);
   }
 }
 
@@ -999,9 +968,7 @@ function snapshotWorkspace(workspace: WorkspaceListing, projectId: string): Serv
 
 function snapshotProvider(provider: WorkspaceProviderMetadata): WorkspaceProviderMetadata {
   if (!isPiWebPluginId(provider.pluginId)) throw new Error("Workspace provider plugin id is invalid");
-  const metadata = provider.metadata === undefined
-    ? undefined
-    : cloneJsonObject(provider.metadata, "Workspace provider public metadata");
+  const metadata = provider.metadata === undefined ? undefined : cloneJsonObject(provider.metadata, "Workspace provider public metadata");
   return Object.freeze({
     pluginId: provider.pluginId,
     capabilities: Object.freeze({ ...provider.capabilities }),
@@ -1022,7 +989,9 @@ function isJsonObject(value: JsonValue): value is JsonObject {
 async function waitForPromise<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => { reject(new Error(`${label} timed out after ${String(timeoutMs)}ms`)); }, timeoutMs);
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${String(timeoutMs)}ms`));
+    }, timeoutMs);
     timer.unref();
   });
   try {
@@ -1049,18 +1018,26 @@ async function runBoundedPluginBackendOperation<T>(
   if (parentSignal?.aborted === true) abortFromParent();
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
 
-  const timeoutError = new PluginBackendTimeoutError(
-    `Server plugin ${pluginId} operation ${operation} timed out after ${String(timeoutMs)}ms`,
-  );
-  const timeout = setTimeout(() => { controller.abort(timeoutError); }, timeoutMs);
+  const timeoutError = new PluginBackendTimeoutError(`Server plugin ${pluginId} operation ${operation} timed out after ${String(timeoutMs)}ms`);
+  const timeout = setTimeout(() => {
+    controller.abort(timeoutError);
+  }, timeoutMs);
   timeout.unref();
   const deadline = controller.signal.aborted
     ? Promise.reject(abortError(controller.signal))
     : new Promise<never>((_resolve, rejectPromise) => {
-        controller.signal.addEventListener("abort", () => { rejectPromise(abortError(controller.signal)); }, { once: true });
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            rejectPromise(abortError(controller.signal));
+          },
+          { once: true },
+        );
       });
   const result = controller.signal.aborted
-    ? new Promise<T>(() => { /* An existing cancellation already won. */ })
+    ? new Promise<T>(() => {
+        /* An existing cancellation already won. */
+      })
     : Promise.resolve().then(() => callback(controller.signal));
   if (!controller.signal.aborted) onCallbackStarted?.(result);
   try {
@@ -1075,12 +1052,7 @@ async function runBoundedPluginBackendOperation<T>(
 }
 
 function requestShutdownError(pluginId: string, cause?: unknown): PluginBackendRequestError {
-  return backendError(
-    "shutdown",
-    503,
-    `Server plugin ${pluginId} backend requests are shutting down`,
-    cause,
-  );
+  return backendError("shutdown", 503, `Server plugin ${pluginId} backend requests are shutting down`, cause);
 }
 
 function backendError(

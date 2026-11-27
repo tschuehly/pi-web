@@ -2,10 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
-  PI_WEB_HOST_WORKSPACES_CAPABILITY,
-} from "../../server-plugin-api.js";
+import { PI_WEB_HOST_PI_SESSIONS_CAPABILITY, PI_WEB_HOST_WORKSPACES_CAPABILITY } from "../../server-plugin-api.js";
 import type {
   JsonObject,
   JsonValue,
@@ -56,16 +53,23 @@ const testScopedService: PluginCapability<TestScopedService, 1> = {
     return {
       version: 1,
       read: async () => await value.read(),
-      write: async (input) => { await value.write(input); },
-      clear: async () => { await value.clear(); },
+      write: async (input) => {
+        await value.write(input);
+      },
+      clear: async () => {
+        await value.clear();
+      },
     };
   },
 };
 
 function isTestScopedService(value: unknown): value is TestScopedService {
-  return typeof value === "object" && value !== null
+  return (
+    typeof value === "object"
+    && value !== null
     && Reflect.get(value, "version") === 1
-    && ["read", "write", "clear"].every((key) => typeof Reflect.get(value, key) === "function");
+    && ["read", "write", "clear"].every((key) => typeof Reflect.get(value, key) === "function")
+  );
 }
 
 const tempRoots: string[] = [];
@@ -76,7 +80,7 @@ afterEach(async () => {
 });
 
 async function createServerPluginRuntime(options: Omit<CreateServerPluginRuntimeOptions, "dataDir"> & { dataDir?: string }) {
-  const dataDir = options.dataDir ?? await mkdtemp(join(tmpdir(), "pi-web-plugin-runtime-"));
+  const dataDir = options.dataDir ?? (await mkdtemp(join(tmpdir(), "pi-web-plugin-runtime-")));
   if (options.dataDir === undefined) tempRoots.push(dataDir);
   return createRuntime({ ...options, dataDir, enforceRequiredTerminal: options.enforceRequiredTerminal ?? false });
 }
@@ -96,23 +100,35 @@ describe("server plugin runtime", () => {
       logger,
       importer: (url) => {
         const legacy = pluginIdFromUrl(url) === "legacy";
-        return Promise.resolve({ default: {
-          apiVersion: legacy ? 3 : 5,
-          name: legacy ? "Legacy" : "Modern",
-          activate(context: { apiVersion: number }) {
-            activated.push(context.apiVersion);
-            return { peer: { request: legacy ? legacyRequest : modernRequest } };
+        return Promise.resolve({
+          default: {
+            apiVersion: legacy ? 3 : 5,
+            name: legacy ? "Legacy" : "Modern",
+            activate(context: { apiVersion: number }) {
+              activated.push(context.apiVersion);
+              return { peer: { request: legacy ? legacyRequest : modernRequest } };
+            },
           },
-        } });
+        });
       },
     });
     expect(activated.sort()).toEqual([3, 5]);
-    const scope = { kind: "workspace" as const, project: { id: "p", name: "P", path: "/p" }, workspace: { id: "w", projectId: "p", path: "/p", label: "P", isMain: true } };
+    const scope = {
+      kind: "workspace" as const,
+      project: { id: "p", name: "P", path: "/p" },
+      workspace: { id: "w", projectId: "p", path: "/p", label: "P", isMain: true },
+    };
     const invocation = { scope, operation: "read", input: null, signal: new AbortController().signal };
     const contributions = runtime.pairedBackendContributions();
     await contributions.find(({ pluginId }) => pluginId === "legacy")?.backend.request?.(invocation);
     await contributions.find(({ pluginId }) => pluginId === "modern")?.backend.request?.({ ...invocation, scope: { kind: "machine" } });
-    expect(legacyRequest.mock.calls[0]?.[0]).toEqual({ project: scope.project, workspace: scope.workspace, operation: "read", input: null, signal: invocation.signal });
+    expect(legacyRequest.mock.calls[0]?.[0]).toEqual({
+      project: scope.project,
+      workspace: scope.workspace,
+      operation: "read",
+      input: null,
+      signal: invocation.signal,
+    });
     expect(modernRequest.mock.calls[0]?.[0]).toMatchObject({ scope: { kind: "machine" } });
     expect(logger.warn).toHaveBeenCalledExactlyOnceWith({ pluginId: "legacy", apiVersion: 3 }, "Server plugin API v3 is deprecated; migrate to API v5");
     await runtime.stop();
@@ -122,24 +138,33 @@ describe("server plugin runtime", () => {
     tempRoots.push(root);
     const dataDir = join(root, "data");
     const directories = new Map<string, string>();
-    const start = (revision: number) => createServerPluginRuntime({
-      dataDir: relative(process.cwd(), dataDir),
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        { ...entry("alpha"), packageRoot: `/packages/revision-${String(revision)}/alpha` },
-        entry("beta"),
-        { ...entry("disabled"), enabled: false },
-      ])) },
-      importer: () => Promise.resolve({ default: plugin("Directory fixture", async (context) => {
-        expect(Object.isFrozen(context)).toBe(true);
-        expect(context.dataDirectory).toBe(resolve(dataDir, "plugin-data", context.pluginId));
-        directories.set(context.pluginId, context.dataDirectory);
-        const filePath = join(context.dataDirectory, "owned.txt");
-        if (revision === 1) await writeFile(filePath, context.pluginId);
-        else expect(await readFile(filePath, "utf8")).toBe(context.pluginId);
-        return {};
-      }) }),
-      logger: testLogger(),
-    });
+    const start = (revision: number) =>
+      createServerPluginRuntime({
+        dataDir: relative(process.cwd(), dataDir),
+        catalog: {
+          snapshot: () =>
+            Promise.resolve(
+              testSnapshot([
+                { ...entry("alpha"), packageRoot: `/packages/revision-${String(revision)}/alpha` },
+                entry("beta"),
+                { ...entry("disabled"), enabled: false },
+              ]),
+            ),
+        },
+        importer: () =>
+          Promise.resolve({
+            default: plugin("Directory fixture", async (context) => {
+              expect(Object.isFrozen(context)).toBe(true);
+              expect(context.dataDirectory).toBe(resolve(dataDir, "plugin-data", context.pluginId));
+              directories.set(context.pluginId, context.dataDirectory);
+              const filePath = join(context.dataDirectory, "owned.txt");
+              if (revision === 1) await writeFile(filePath, context.pluginId);
+              else expect(await readFile(filePath, "utf8")).toBe(context.pluginId);
+              return {};
+            }),
+          }),
+        logger: testLogger(),
+      });
     const first = await start(1);
     expect(first.healthRecords().filter(({ state }) => state === "active")).toHaveLength(2);
     expect(directories.get("alpha")).not.toBe(directories.get("beta"));
@@ -164,30 +189,33 @@ describe("server plugin runtime", () => {
     const runtime = await createServerPluginRuntime({
       dataDir,
       catalog: { snapshot: () => Promise.resolve(testSnapshot([{ ...entry("state-only"), packageRoot }])) },
-      importer: () => Promise.resolve({ default: plugin("State-only fixture", (context) => {
-        activatedPackageRoot = context.packageRoot;
-        const filePath = join(context.dataDirectory, "state.json");
-        return {
-          start: async () => { await writeFile(filePath, JSON.stringify({ starts: 1 })); },
-          dispose: async () => {
-            revokedDuringDisposal = context.lifetimeSignal.aborted;
-            await writeFile(join(context.dataDirectory, "disposed.json"), await readFile(filePath, "utf8"));
-          },
-        };
-      }) }),
+      importer: () =>
+        Promise.resolve({
+          default: plugin("State-only fixture", (context) => {
+            activatedPackageRoot = context.packageRoot;
+            const filePath = join(context.dataDirectory, "state.json");
+            return {
+              start: async () => {
+                await writeFile(filePath, JSON.stringify({ starts: 1 }));
+              },
+              dispose: async () => {
+                revokedDuringDisposal = context.lifetimeSignal.aborted;
+                await writeFile(join(context.dataDirectory, "disposed.json"), await readFile(filePath, "utf8"));
+              },
+            };
+          }),
+        }),
       logger: testLogger(),
     });
     try {
       expect(runtime.healthRecords()).toEqual([expect.objectContaining({ pluginId: "state-only", state: "active" })]);
       expect(activatedPackageRoot).toBe(packageRoot);
-      expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "state.json"), "utf8")))
-        .toEqual({ starts: 1 });
+      expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "state.json"), "utf8"))).toEqual({ starts: 1 });
     } finally {
       await runtime.stop();
     }
     expect(revokedDuringDisposal).toBe(true);
-    expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "disposed.json"), "utf8")))
-      .toEqual({ starts: 1 });
+    expect(JSON.parse(await readFile(join(dataDir, "plugin-data", "state-only", "disposed.json"), "utf8"))).toEqual({ starts: 1 });
     expect(await readdir(packageRoot)).toEqual(["package.json"]);
     expect(await readFile(join(packageRoot, "package.json"), "utf8")).toBe("{}\n");
   });
@@ -213,30 +241,56 @@ describe("server plugin runtime", () => {
     const events: string[] = [];
     const provider = testProvider();
     const modules = new Map<string, unknown>([
-      ["alpha", pluginModule("Alpha", {
-        workspaceProvider: provider,
-        peer: {
-          request: () => ({ ready: true }),
-          openChannel: () => ({ receive: () => undefined }),
+      [
+        "alpha",
+        pluginModule("Alpha", {
+          workspaceProvider: provider,
+          peer: {
+            request: () => ({ ready: true }),
+            openChannel: () => ({ receive: () => undefined }),
+          },
+          start: () => {
+            events.push("start:alpha");
+          },
+          dispose: () => {
+            events.push("stop:alpha");
+          },
+        }),
+      ],
+      [
+        "bad-activate",
+        {
+          default: plugin("Bad activate", () => {
+            throw new Error("activate exploded");
+          }),
         },
-        start: () => { events.push("start:alpha"); },
-        dispose: () => { events.push("stop:alpha"); },
-      })],
-      ["bad-activate", { default: plugin("Bad activate", () => { throw new Error("activate exploded"); }) }],
+      ],
       ["bad-api", { default: { apiVersion: 2, name: "Legacy", activate: () => ({}) } }],
-      ["bad-start", pluginModule("Bad start", {
-        workspaceProvider: testProvider(),
-        start: () => {
-          events.push("start:bad-start");
-          throw new Error("start exploded");
-        },
-        dispose: () => { events.push("rollback:bad-start"); },
-      })],
-      ["omega", pluginModule("Omega", {
-        workspaceProvider: testProvider(),
-        start: () => { events.push("start:omega"); },
-        dispose: () => { events.push("stop:omega"); },
-      })],
+      [
+        "bad-start",
+        pluginModule("Bad start", {
+          workspaceProvider: testProvider(),
+          start: () => {
+            events.push("start:bad-start");
+            throw new Error("start exploded");
+          },
+          dispose: () => {
+            events.push("rollback:bad-start");
+          },
+        }),
+      ],
+      [
+        "omega",
+        pluginModule("Omega", {
+          workspaceProvider: testProvider(),
+          start: () => {
+            events.push("start:omega");
+          },
+          dispose: () => {
+            events.push("stop:omega");
+          },
+        }),
+      ],
     ]);
     const imported: string[] = [];
     const importer: ServerPluginModuleImporter = (url) => {
@@ -261,7 +315,16 @@ describe("server plugin runtime", () => {
     expect(imported).toEqual(["alpha", "bad-activate", "bad-api", "bad-import", "bad-start", "omega"]);
     expect(events).toEqual(["start:alpha", "start:bad-start", "rollback:bad-start", "start:omega"]);
     expect(runtime.healthRecords()).toEqual([
-      expect.objectContaining({ pluginId: "alpha", state: "active", name: "Alpha", browserRevision: "browser-7", settingsRevision: "settings-1", machineSpecific: true, pairedRequestVersion: 1, pairedChannelVersion: 1 }),
+      expect.objectContaining({
+        pluginId: "alpha",
+        state: "active",
+        name: "Alpha",
+        browserRevision: "browser-7",
+        settingsRevision: "settings-1",
+        machineSpecific: true,
+        pairedRequestVersion: 1,
+        pairedChannelVersion: 1,
+      }),
       expect.objectContaining({ pluginId: "bad-activate", state: "failed", phase: "activate", message: "activate exploded" }),
       expect.objectContaining({ pluginId: "bad-api", state: "incompatible", phase: "validate", message: "Unsupported server plugin API version: 2" }),
       expect.objectContaining({ pluginId: "bad-import", state: "failed", phase: "import", message: "import exploded" }),
@@ -274,14 +337,7 @@ describe("server plugin runtime", () => {
     await runtime.stop();
     await runtime.stop();
 
-    expect(events).toEqual([
-      "start:alpha",
-      "start:bad-start",
-      "rollback:bad-start",
-      "start:omega",
-      "stop:omega",
-      "stop:alpha",
-    ]);
+    expect(events).toEqual(["start:alpha", "start:bad-start", "rollback:bad-start", "start:omega", "stop:omega", "stop:alpha"]);
     expect(runtime.providerContributions()).toEqual([]);
     expect(runtime.pairedBackendContributions()).toEqual([]);
   });
@@ -312,42 +368,45 @@ describe("server plugin runtime", () => {
                   events.push("start:provider");
                   sourceValue.label = "mutated during start";
                 },
-                dispose: () => { events.push("dispose:provider"); },
+                dispose: () => {
+                  events.push("dispose:provider");
+                },
               };
             }),
           });
         }
         return Promise.resolve({
-          default: plugin("Consumer", (context) => {
-            events.push("activate:consumer");
-            lifetimes.set(pluginId, context.lifetimeSignal);
-            return {
-              start: (startContext) => {
-                events.push("start:consumer");
-                startSignal = startContext.signal;
-                startContextWasFrozen = Object.isFrozen(startContext);
-                resolverWasFrozen = Object.isFrozen(startContext.capabilities);
-                resolvedLabel = startContext.capabilities.resolve(service).label;
-                try {
-                  startContext.capabilities.resolve(undeclared);
-                } catch (error) {
-                  undeclaredMessage = errorMessage(error);
-                }
-              },
-              dispose: () => { events.push("dispose:consumer"); },
-            };
-          }, [service]),
+          default: plugin(
+            "Consumer",
+            (context) => {
+              events.push("activate:consumer");
+              lifetimes.set(pluginId, context.lifetimeSignal);
+              return {
+                start: (startContext) => {
+                  events.push("start:consumer");
+                  startSignal = startContext.signal;
+                  startContextWasFrozen = Object.isFrozen(startContext);
+                  resolverWasFrozen = Object.isFrozen(startContext.capabilities);
+                  resolvedLabel = startContext.capabilities.resolve(service).label;
+                  try {
+                    startContext.capabilities.resolve(undeclared);
+                  } catch (error) {
+                    undeclaredMessage = errorMessage(error);
+                  }
+                },
+                dispose: () => {
+                  events.push("dispose:consumer");
+                },
+              };
+            },
+            [service],
+          ),
         });
       },
       logger: testLogger(),
     });
 
-    expect(events).toEqual([
-      "activate:consumer",
-      "activate:provider",
-      "start:provider",
-      "start:consumer",
-    ]);
+    expect(events).toEqual(["activate:consumer", "activate:provider", "start:provider", "start:consumer"]);
     expect(resolvedLabel).toBe("activation snapshot");
     expect(startSignal?.aborted).toBe(true);
     expect(startContextWasFrozen).toBe(true);
@@ -370,20 +429,30 @@ describe("server plugin runtime", () => {
     const provider = testCapability("fixture.host", "service", 1);
     const requirement = { ...provider, parse: vi.fn((value: unknown) => ({ label: `requirement:${provider.parse(value).label}` })) };
     const request = { ...provider, parse: (value: unknown) => ({ label: `request:${provider.parse(value).label}` }) };
-    const rejectingRequest = { ...provider, parse: () => { throw new Error("request rejected"); } };
+    const rejectingRequest = {
+      ...provider,
+      parse: () => {
+        throw new Error("request rejected");
+      },
+    };
     let resolved: TestCapabilityValue | undefined;
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("consumer")])) },
       hostCapabilities: [{ capability: provider, value: { label: "ready" } }],
-      importer: () => Promise.resolve({
-        default: plugin("Consumer", () => ({
-          start: ({ capabilities }) => {
-            expect(requirement.parse).toHaveBeenCalledWith({ label: "ready" });
-            resolved = capabilities.resolve(request);
-            expect(() => capabilities.resolve(rejectingRequest)).toThrow("request rejected");
-          },
-        }), [requirement]),
-      }),
+      importer: () =>
+        Promise.resolve({
+          default: plugin(
+            "Consumer",
+            () => ({
+              start: ({ capabilities }) => {
+                expect(requirement.parse).toHaveBeenCalledWith({ label: "ready" });
+                resolved = capabilities.resolve(request);
+                expect(() => capabilities.resolve(rejectingRequest)).toThrow("request rejected");
+              },
+            }),
+            [requirement],
+          ),
+        }),
       logger: testLogger(),
     });
     expect(resolved).toEqual({ label: "request:ready" });
@@ -397,11 +466,18 @@ describe("server plugin runtime", () => {
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("consumer")])) },
       hostCapabilities: [{ capability: hostService, value: { label: "host clock" } }],
-      importer: () => Promise.resolve({
-        default: plugin("Consumer", () => ({
-          start: ({ capabilities }) => { resolved = capabilities.resolve(hostService); },
-        }), [hostService]),
-      }),
+      importer: () =>
+        Promise.resolve({
+          default: plugin(
+            "Consumer",
+            () => ({
+              start: ({ capabilities }) => {
+                resolved = capabilities.resolve(hostService);
+              },
+            }),
+            [hostService],
+          ),
+        }),
       logger: testLogger(),
     });
 
@@ -427,7 +503,9 @@ describe("server plugin runtime", () => {
         expect(Object.isFrozen(context)).toBe(true);
         expect(context.packageRoot).toBe(`/plugins/${context.pluginId}`);
         contexts.set(context.pluginId, context.lifetimeSignal);
-        Reflect.set(mutableCapability, "parse", () => { throw new Error("mutated parser was used"); });
+        Reflect.set(mutableCapability, "parse", () => {
+          throw new Error("mutated parser was used");
+        });
         if (context.pluginId === "factory-failure") throw new Error("state factory failed");
         const assertActive = (): void => {
           if (context.lifetimeSignal.aborted) throw new Error(`state revoked for ${context.pluginId}`);
@@ -450,7 +528,9 @@ describe("server plugin runtime", () => {
               return Promise.resolve();
             },
           },
-          dispose: () => { cleanups.push(context.pluginId); },
+          dispose: () => {
+            cleanups.push(context.pluginId);
+          },
         };
       },
     };
@@ -459,31 +539,46 @@ describe("server plugin runtime", () => {
       version: 2,
     };
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("state-beta"),
-        entry("wrong-version"),
-        entry("independent"),
-        entry("state-alpha"),
-        entry("start-failure"),
-        entry("factory-failure"),
-      ])) },
+      catalog: {
+        snapshot: () =>
+          Promise.resolve(
+            testSnapshot([
+              entry("state-beta"),
+              entry("wrong-version"),
+              entry("independent"),
+              entry("state-alpha"),
+              entry("start-failure"),
+              entry("factory-failure"),
+            ]),
+          ),
+      },
       hostCapabilityFactories: [factory],
       importer: (url) => {
         const pluginId = pluginIdFromUrl(url);
         if (pluginId === "independent") {
-          return Promise.resolve(pluginModule("Independent", { start: () => { starts.push(pluginId); } }));
+          return Promise.resolve(
+            pluginModule("Independent", {
+              start: () => {
+                starts.push(pluginId);
+              },
+            }),
+          );
         }
         const requirement = pluginId === "wrong-version" ? stateV2 : testScopedService;
         return Promise.resolve({
-          default: plugin(pluginId, () => ({
-            async start({ capabilities }) {
-              starts.push(pluginId);
-              const state = capabilities.resolve(requirement);
-              resolvedStates.set(pluginId, state);
-              await state.write({ pluginId });
-              if (pluginId === "start-failure") throw new Error("start failed after state resolution");
-            },
-          }), [requirement]),
+          default: plugin(
+            pluginId,
+            () => ({
+              async start({ capabilities }) {
+                starts.push(pluginId);
+                const state = capabilities.resolve(requirement);
+                resolvedStates.set(pluginId, state);
+                await state.write({ pluginId });
+                if (pluginId === "start-failure") throw new Error("start failed after state resolution");
+              },
+            }),
+            [requirement],
+          ),
         });
       },
       logger: testLogger(),
@@ -503,8 +598,9 @@ describe("server plugin runtime", () => {
       expect.objectContaining({ pluginId: "state-beta", state: "active" }),
       expect.objectContaining({ pluginId: "wrong-version", state: "failed", phase: "start" }),
     ]);
-    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "wrong-version")?.message)
-      .toContain("requires unavailable capability fixture.host/scoped-service v2");
+    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "wrong-version")?.message).toContain(
+      "requires unavailable capability fixture.host/scoped-service v2",
+    );
     expect(contexts.has("wrong-version")).toBe(false);
 
     const alphaState = resolvedStates.get("state-alpha");
@@ -538,82 +634,99 @@ describe("server plugin runtime", () => {
       }),
     };
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("late-omega"),
-        entry("late-pi"),
-        entry("wrong-version"),
-        entry("provider"),
-        entry("late-beta"),
-        entry("early-state"),
-        entry("late-gamma"),
-        entry("late-alpha"),
-      ])) },
+      catalog: {
+        snapshot: () =>
+          Promise.resolve(
+            testSnapshot([
+              entry("late-omega"),
+              entry("late-pi"),
+              entry("wrong-version"),
+              entry("provider"),
+              entry("late-beta"),
+              entry("early-state"),
+              entry("late-gamma"),
+              entry("late-alpha"),
+            ]),
+          ),
+      },
       hostCapabilityFactories: [stateFactory],
       lateHostCapabilities: [PI_WEB_HOST_WORKSPACES_CAPABILITY, PI_WEB_HOST_PI_SESSIONS_CAPABILITY],
       importer: (url) => {
         const pluginId = pluginIdFromUrl(url);
         if (pluginId === "provider") {
-          return Promise.resolve({ default: plugin("Provider", () => ({
-            provides: [{ capability: service, value: { label: "ready" } }],
-            start: () => { events.push("start:provider"); },
-            dispose: () => { events.push("dispose:provider"); },
-          })) });
+          return Promise.resolve({
+            default: plugin("Provider", () => ({
+              provides: [{ capability: service, value: { label: "ready" } }],
+              start: () => {
+                events.push("start:provider");
+              },
+              dispose: () => {
+                events.push("dispose:provider");
+              },
+            })),
+          });
         }
         if (pluginId === "early-state") {
-          return Promise.resolve({ default: plugin("Early state", () => ({
-            start: ({ capabilities }) => {
-              capabilities.resolve(testScopedService);
-              events.push("start:early-state");
-            },
-            dispose: () => { events.push("dispose:early-state"); },
-          }), [testScopedService]) });
+          return Promise.resolve({
+            default: plugin(
+              "Early state",
+              () => ({
+                start: ({ capabilities }) => {
+                  capabilities.resolve(testScopedService);
+                  events.push("start:early-state");
+                },
+                dispose: () => {
+                  events.push("dispose:early-state");
+                },
+              }),
+              [testScopedService],
+            ),
+          });
         }
-        const requirement = pluginId === "wrong-version"
-          ? workspacesV2
-          : pluginId === "late-pi"
-            ? PI_WEB_HOST_PI_SESSIONS_CAPABILITY
-            : PI_WEB_HOST_WORKSPACES_CAPABILITY;
+        const requirement =
+          pluginId === "wrong-version" ? workspacesV2 : pluginId === "late-pi" ? PI_WEB_HOST_PI_SESSIONS_CAPABILITY : PI_WEB_HOST_WORKSPACES_CAPABILITY;
         const requirements = pluginId === "late-alpha" ? [service, requirement] : [requirement];
-        return Promise.resolve({ default: plugin(pluginId, (context) => {
-          lateContexts.set(pluginId, context.lifetimeSignal);
-          return {
-            start: ({ capabilities }) => {
-              events.push(`start:${pluginId}`);
-              if (pluginId === "late-pi") capabilities.resolve(PI_WEB_HOST_PI_SESSIONS_CAPABILITY);
-              else {
-                const workspaceRequirement = pluginId === "wrong-version"
-                  ? workspacesV2
-                  : PI_WEB_HOST_WORKSPACES_CAPABILITY;
-                const resolved = capabilities.resolve(workspaceRequirement);
-                if (pluginId !== "wrong-version") resolvedWorkspaces.set(pluginId, resolved);
-              }
-              if (pluginId === "late-alpha" && capabilities.resolve(service).label !== "ready") {
-                throw new Error("provider capability was not ready");
-              }
-              if (pluginId === "late-gamma") throw new Error("late start failed");
+        return Promise.resolve({
+          default: plugin(
+            pluginId,
+            (context) => {
+              lateContexts.set(pluginId, context.lifetimeSignal);
+              return {
+                start: ({ capabilities }) => {
+                  events.push(`start:${pluginId}`);
+                  if (pluginId === "late-pi") capabilities.resolve(PI_WEB_HOST_PI_SESSIONS_CAPABILITY);
+                  else {
+                    const workspaceRequirement = pluginId === "wrong-version" ? workspacesV2 : PI_WEB_HOST_WORKSPACES_CAPABILITY;
+                    const resolved = capabilities.resolve(workspaceRequirement);
+                    if (pluginId !== "wrong-version") resolvedWorkspaces.set(pluginId, resolved);
+                  }
+                  if (pluginId === "late-alpha" && capabilities.resolve(service).label !== "ready") {
+                    throw new Error("provider capability was not ready");
+                  }
+                  if (pluginId === "late-gamma") throw new Error("late start failed");
+                },
+                dispose: () => {
+                  events.push(`dispose:${pluginId}:${String(context.lifetimeSignal.aborted)}`);
+                },
+              };
             },
-            dispose: () => { events.push(`dispose:${pluginId}:${String(context.lifetimeSignal.aborted)}`); },
-          };
-        }, requirements) });
+            requirements,
+          ),
+        });
       },
       logger: testLogger(),
     });
 
-    expect(events).toEqual([
-      "start:early-state",
-      "start:provider",
-      "dispose:wrong-version:true",
-    ]);
+    expect(events).toEqual(["start:early-state", "start:provider", "dispose:wrong-version:true"]);
     expect(runtime.healthRecords()).toEqual([
       expect.objectContaining({ pluginId: "early-state", state: "active" }),
       expect.objectContaining({ pluginId: "provider", state: "active" }),
       expect.objectContaining({ pluginId: "wrong-version", state: "failed", phase: "start" }),
     ]);
-    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "wrong-version")?.message)
-      .toContain("requires unavailable capability pi-web.host/workspaces v2");
-    expect([...lateContexts.entries()]
-      .filter(([pluginId]) => pluginId !== "wrong-version")
-      .every(([, signal]) => !signal.aborted)).toBe(true);
+    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "wrong-version")?.message).toContain(
+      "requires unavailable capability pi-web.host/workspaces v2",
+    );
+    expect([...lateContexts.entries()].filter(([pluginId]) => pluginId !== "wrong-version").every(([, signal]) => !signal.aborted)).toBe(true);
 
     const lateFactory: ServerPluginHostCapabilityFactory<PiWebHostWorkspacesV1> = {
       capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
@@ -624,7 +737,9 @@ describe("server plugin runtime", () => {
             version: 1,
             resolve: () => Promise.reject(new Error("not exercised by this lifecycle fixture")),
           },
-          dispose: () => { lateCleanups.push(context.pluginId); },
+          dispose: () => {
+            lateCleanups.push(context.pluginId);
+          },
         };
       },
     };
@@ -634,15 +749,17 @@ describe("server plugin runtime", () => {
         value: {
           version: 1,
           create: () => Promise.resolve({ sessionId: "session-created" }),
-          run: () => Promise.resolve({
-            sessionId: "session-1",
-            completion: Promise.resolve({ status: "completed" as const }),
-          }),
+          run: () =>
+            Promise.resolve({
+              sessionId: "session-1",
+              completion: Promise.resolve({ status: "completed" as const }),
+            }),
         },
       }),
     };
-    await expect(runtime.resumeWithHostCapabilityFactories([lateFactory]))
-      .rejects.toThrow("Late host capability pi-web.host/pi-sessions v1 was not registered");
+    await expect(runtime.resumeWithHostCapabilityFactories([lateFactory])).rejects.toThrow(
+      "Late host capability pi-web.host/pi-sessions v1 was not registered",
+    );
     await runtime.resumeWithHostCapabilityFactories([lateFactory, piSessionsFactory]);
 
     expect(events).toEqual([
@@ -669,49 +786,62 @@ describe("server plugin runtime", () => {
       expect.objectContaining({ pluginId: "provider", state: "active" }),
       expect.objectContaining({ pluginId: "wrong-version", state: "failed" }),
     ]);
-    await expect(runtime.resumeWithHostCapabilityFactories([lateFactory, piSessionsFactory]))
-      .rejects.toThrow("already resumed");
+    await expect(runtime.resumeWithHostCapabilityFactories([lateFactory, piSessionsFactory])).rejects.toThrow("already resumed");
 
     runtime.beginShutdown();
     expect([...lateContexts.values()].every((signal) => signal.aborted)).toBe(true);
     await runtime.stop();
     expect(lateCleanups).toEqual(["late-gamma", "late-omega", "late-alpha"]);
-    expect(events.slice(-5)).toEqual([
-      "dispose:late-pi:true",
-      "dispose:late-omega:true",
-      "dispose:late-alpha:true",
-      "dispose:provider",
-      "dispose:early-state",
-    ]);
+    expect(events.slice(-5)).toEqual(["dispose:late-pi:true", "dispose:late-omega:true", "dispose:late-alpha:true", "dispose:provider", "dispose:early-state"]);
   });
 
   it("rejects workspace providers blocked on late authority as topology cycles before publishing the registry", async () => {
     const providerService = testCapability("cycle-provider", "service", 1);
     const starts: string[] = [];
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("ordinary-consumer"),
-        entry("downstream"),
-        entry("cycle-provider"),
-      ])) },
+      catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("ordinary-consumer"), entry("downstream"), entry("cycle-provider")])) },
       lateHostCapabilities: [PI_WEB_HOST_WORKSPACES_CAPABILITY],
       importer: (url) => {
         const pluginId = pluginIdFromUrl(url);
         if (pluginId === "cycle-provider") {
-          return Promise.resolve({ default: plugin("Cycle provider", () => ({
-            workspaceProvider: testProvider(),
-            provides: [{ capability: providerService, value: { label: "provider" } }],
-            start: () => { starts.push(pluginId); },
-          }), [PI_WEB_HOST_WORKSPACES_CAPABILITY]) });
+          return Promise.resolve({
+            default: plugin(
+              "Cycle provider",
+              () => ({
+                workspaceProvider: testProvider(),
+                provides: [{ capability: providerService, value: { label: "provider" } }],
+                start: () => {
+                  starts.push(pluginId);
+                },
+              }),
+              [PI_WEB_HOST_WORKSPACES_CAPABILITY],
+            ),
+          });
         }
         if (pluginId === "downstream") {
-          return Promise.resolve({ default: plugin("Downstream", () => ({
-            start: () => { starts.push(pluginId); },
-          }), [providerService]) });
+          return Promise.resolve({
+            default: plugin(
+              "Downstream",
+              () => ({
+                start: () => {
+                  starts.push(pluginId);
+                },
+              }),
+              [providerService],
+            ),
+          });
         }
-        return Promise.resolve({ default: plugin("Ordinary", () => ({
-          start: () => { starts.push(pluginId); },
-        }), [PI_WEB_HOST_WORKSPACES_CAPABILITY]) });
+        return Promise.resolve({
+          default: plugin(
+            "Ordinary",
+            () => ({
+              start: () => {
+                starts.push(pluginId);
+              },
+            }),
+            [PI_WEB_HOST_WORKSPACES_CAPABILITY],
+          ),
+        });
       },
       logger: testLogger(),
     });
@@ -722,23 +852,24 @@ describe("server plugin runtime", () => {
       expect.objectContaining({ pluginId: "cycle-provider", state: "failed", phase: "start" }),
       expect.objectContaining({ pluginId: "downstream", state: "failed", phase: "start" }),
     ]);
-    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "cycle-provider")?.message)
-      .toContain("workspace provider that depends on late host capability pi-web.host/workspaces v1 in a capability dependency cycle");
-    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "downstream")?.message)
-      .toContain("provider plugin cycle-provider did not start");
+    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "cycle-provider")?.message).toContain(
+      "workspace provider that depends on late host capability pi-web.host/workspaces v1 in a capability dependency cycle",
+    );
+    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "downstream")?.message).toContain("provider plugin cycle-provider did not start");
 
-    await runtime.resumeWithHostCapabilityFactories([{
-      capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
-      create: () => ({
-        value: {
-          version: 1,
-          resolve: () => Promise.reject(new Error("not exercised by this topology fixture")),
-        },
-      }),
-    }]);
+    await runtime.resumeWithHostCapabilityFactories([
+      {
+        capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
+        create: () => ({
+          value: {
+            version: 1,
+            resolve: () => Promise.reject(new Error("not exercised by this topology fixture")),
+          },
+        }),
+      },
+    ]);
     expect(starts).toEqual(["ordinary-consumer"]);
-    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "ordinary-consumer"))
-      .toEqual(expect.objectContaining({ state: "active" }));
+    expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "ordinary-consumer")).toEqual(expect.objectContaining({ state: "active" }));
     await runtime.stop();
   });
 
@@ -748,12 +879,7 @@ describe("server plugin runtime", () => {
     const events: string[] = [];
     const lifetimes = new Map<string, AbortSignal>();
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("versioned"),
-        entry("provider"),
-        entry("independent"),
-        entry("consumer"),
-      ])) },
+      catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("versioned"), entry("provider"), entry("independent"), entry("consumer")])) },
       importer: (url) => {
         const pluginId = pluginIdFromUrl(url);
         const activate = (context: ServerPluginActivationContext): ServerPluginActivation => {
@@ -762,19 +888,32 @@ describe("server plugin runtime", () => {
           if (pluginId === "provider") {
             return {
               provides: [{ capability: serviceV1, value: { label: "provider" } }],
-              start: () => { events.push("start:provider"); throw new Error("provider exploded"); },
-              dispose: () => { events.push(`dispose:provider:${String(context.lifetimeSignal.aborted)}`); },
+              start: () => {
+                events.push("start:provider");
+                throw new Error("provider exploded");
+              },
+              dispose: () => {
+                events.push(`dispose:provider:${String(context.lifetimeSignal.aborted)}`);
+              },
             };
           }
           if (pluginId === "independent") {
             return {
-              start: () => { events.push("start:independent"); },
-              dispose: () => { events.push("dispose:independent"); },
+              start: () => {
+                events.push("start:independent");
+              },
+              dispose: () => {
+                events.push("dispose:independent");
+              },
             };
           }
           return {
-            start: () => { events.push(`unexpected-start:${pluginId}`); },
-            dispose: () => { events.push(`dispose:${pluginId}:${String(context.lifetimeSignal.aborted)}`); },
+            start: () => {
+              events.push(`unexpected-start:${pluginId}`);
+            },
+            dispose: () => {
+              events.push(`dispose:${pluginId}:${String(context.lifetimeSignal.aborted)}`);
+            },
           };
         };
         const requires = pluginId === "consumer" ? [serviceV1] : pluginId === "versioned" ? [serviceV2] : undefined;
@@ -785,13 +924,9 @@ describe("server plugin runtime", () => {
 
     expect(events).not.toContain("unexpected-start:consumer");
     expect(events).not.toContain("unexpected-start:versioned");
-    expect(events).toEqual(expect.arrayContaining([
-      "start:independent",
-      "start:provider",
-      "dispose:provider:true",
-      "dispose:consumer:true",
-      "dispose:versioned:true",
-    ]));
+    expect(events).toEqual(
+      expect.arrayContaining(["start:independent", "start:provider", "dispose:provider:true", "dispose:consumer:true", "dispose:versioned:true"]),
+    );
     const records = runtime.healthRecords();
     expect(records.map(({ pluginId, state, phase }) => [pluginId, state, phase])).toEqual([
       ["consumer", "failed", "start"],
@@ -799,8 +934,7 @@ describe("server plugin runtime", () => {
       ["provider", "failed", "start"],
       ["versioned", "failed", "start"],
     ]);
-    expect(records.find(({ pluginId }) => pluginId === "consumer")?.message)
-      .toContain("provider plugin provider did not start");
+    expect(records.find(({ pluginId }) => pluginId === "consumer")?.message).toContain("provider plugin provider did not start");
     expect(records.find(({ pluginId }) => pluginId === "provider")?.message).toBe("provider exploded");
     expect(records.find(({ pluginId }) => pluginId === "versioned")?.message).toContain("provider/service v2");
     expect(() => runtime.resolve(serviceV1)).toThrow("is not active");
@@ -816,32 +950,57 @@ describe("server plugin runtime", () => {
     const betaService = testCapability("beta", "service", 1);
     const starts: string[] = [];
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("downstream"),
-        entry("beta"),
-        entry("independent"),
-        entry("alpha"),
-      ])) },
+      catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("downstream"), entry("beta"), entry("independent"), entry("alpha")])) },
       importer: (url) => {
         const pluginId = pluginIdFromUrl(url);
         if (pluginId === "alpha") {
-          return Promise.resolve({ default: plugin("Alpha", () => ({
-            provides: [{ capability: alphaService, value: { label: "alpha" } }],
-            start: () => { starts.push("alpha"); },
-          }), [betaService]) });
+          return Promise.resolve({
+            default: plugin(
+              "Alpha",
+              () => ({
+                provides: [{ capability: alphaService, value: { label: "alpha" } }],
+                start: () => {
+                  starts.push("alpha");
+                },
+              }),
+              [betaService],
+            ),
+          });
         }
         if (pluginId === "beta") {
-          return Promise.resolve({ default: plugin("Beta", () => ({
-            provides: [{ capability: betaService, value: { label: "beta" } }],
-            start: () => { starts.push("beta"); },
-          }), [alphaService]) });
+          return Promise.resolve({
+            default: plugin(
+              "Beta",
+              () => ({
+                provides: [{ capability: betaService, value: { label: "beta" } }],
+                start: () => {
+                  starts.push("beta");
+                },
+              }),
+              [alphaService],
+            ),
+          });
         }
         if (pluginId === "downstream") {
-          return Promise.resolve({ default: plugin("Downstream", () => ({
-            start: () => { starts.push("downstream"); },
-          }), [alphaService]) });
+          return Promise.resolve({
+            default: plugin(
+              "Downstream",
+              () => ({
+                start: () => {
+                  starts.push("downstream");
+                },
+              }),
+              [alphaService],
+            ),
+          });
         }
-        return Promise.resolve(pluginModule("Independent", { start: () => { starts.push("independent"); } }));
+        return Promise.resolve(
+          pluginModule("Independent", {
+            start: () => {
+              starts.push("independent");
+            },
+          }),
+        );
       },
       logger: testLogger(),
     });
@@ -875,12 +1034,15 @@ describe("server plugin runtime", () => {
             },
           });
         }
-        const activation = pluginId === "foreign"
-          ? { provides: [{ capability: testCapability("other", "service", 1), value: { label: "wrong owner" } }] }
-          : { provides: [
-              { capability: duplicate, value: { label: "first" } },
-              { capability: duplicate, value: { label: "second" } },
-            ] };
+        const activation =
+          pluginId === "foreign"
+            ? { provides: [{ capability: testCapability("other", "service", 1), value: { label: "wrong owner" } }] }
+            : {
+                provides: [
+                  { capability: duplicate, value: { label: "first" } },
+                  { capability: duplicate, value: { label: "second" } },
+                ],
+              };
         return Promise.resolve(pluginModule(pluginId, activation));
       },
       logger: testLogger(),
@@ -906,14 +1068,16 @@ describe("server plugin runtime", () => {
       return Promise.resolve(Object.freeze({ ...globalSettings, owner: pluginId, projectId: project.id }));
     });
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("alpha", { settings: alphaSettings }),
-        entry("beta", { settings: { value: "global beta" } }),
-      ])) },
-      importer: () => Promise.resolve({ default: plugin("Project settings fixture", (context) => {
-        contexts.set(context.pluginId, context);
-        return {};
-      }) }),
+      catalog: {
+        snapshot: () => Promise.resolve(testSnapshot([entry("alpha", { settings: alphaSettings }), entry("beta", { settings: { value: "global beta" } })])),
+      },
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Project settings fixture", (context) => {
+            contexts.set(context.pluginId, context);
+            return {};
+          }),
+        }),
       projectSettingsResolver: resolver,
       logger: testLogger(),
     });
@@ -949,20 +1113,25 @@ describe("server plugin runtime", () => {
     const lifecycleSignals: AbortSignal[] = [];
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("scoped")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Scoped", (context) => {
-          activationContext = context;
-          lifecycleSignals.push(context.signal);
-          return {
-            start: ({ signal }) => { lifecycleSignals.push(signal); },
-            health: (signal) => {
-              lifecycleSignals.push(signal);
-              return { status: "healthy" };
-            },
-            dispose: (signal) => { lifecycleSignals.push(signal); },
-          };
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Scoped", (context) => {
+            activationContext = context;
+            lifecycleSignals.push(context.signal);
+            return {
+              start: ({ signal }) => {
+                lifecycleSignals.push(signal);
+              },
+              health: (signal) => {
+                lifecycleSignals.push(signal);
+                return { status: "healthy" };
+              },
+              dispose: (signal) => {
+                lifecycleSignals.push(signal);
+              },
+            };
+          }),
         }),
-      }),
       logger: testLogger(),
     });
 
@@ -1002,7 +1171,9 @@ describe("server plugin runtime", () => {
         });
       },
       logger: testLogger(),
-      noticeSink: (source, input) => { records.push({ source, input }); },
+      noticeSink: (source, input) => {
+        records.push({ source, input });
+      },
     });
 
     const terminalReporter = reporters.get("pi-web.terminal");
@@ -1026,11 +1197,13 @@ describe("server plugin runtime", () => {
       },
     ]);
     expect(() => {
-      Reflect.apply(workspaceDeleteReporter.record, workspaceDeleteReporter, [{
-        severity: "error",
-        message: "Spoof",
-        source: "workspace.delete",
-      }]);
+      Reflect.apply(workspaceDeleteReporter.record, workspaceDeleteReporter, [
+        {
+          severity: "error",
+          message: "Spoof",
+          source: "workspace.delete",
+        },
+      ]);
     }).toThrow("cannot set their source");
     expect(records).toHaveLength(2);
 
@@ -1043,24 +1216,29 @@ describe("server plugin runtime", () => {
     const records: ServerPluginNoticeInput[] = [];
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("alpha")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Alpha", (context) => {
-          reporter = context.notices;
-          reporter?.record({ severity: "info", message: "activation" });
-          return {
-            start: () => { reporter?.record({ severity: "info", message: "start" }); },
-            dispose: () => {
-              try {
-                reporter?.record({ severity: "info", message: "stop" });
-              } catch (error) {
-                stopError = error;
-              }
-            },
-          };
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Alpha", (context) => {
+            reporter = context.notices;
+            reporter?.record({ severity: "info", message: "activation" });
+            return {
+              start: () => {
+                reporter?.record({ severity: "info", message: "start" });
+              },
+              dispose: () => {
+                try {
+                  reporter?.record({ severity: "info", message: "stop" });
+                } catch (error) {
+                  stopError = error;
+                }
+              },
+            };
+          }),
         }),
-      }),
       logger: testLogger(),
-      noticeSink: (_source, input) => { records.push(input); },
+      noticeSink: (_source, input) => {
+        records.push(input);
+      },
     });
 
     const noticeReporter = reporter;
@@ -1069,8 +1247,9 @@ describe("server plugin runtime", () => {
     await runtime.stop();
 
     expect(stopError).toMatchObject({ message: "Server plugin notice reporter for alpha is no longer active" });
-    expect(() => { noticeReporter.record({ severity: "error", message: "too late" }); })
-      .toThrow("no longer active");
+    expect(() => {
+      noticeReporter.record({ severity: "error", message: "too late" });
+    }).toThrow("no longer active");
     expect(records.map(({ message }) => message)).toEqual(["activation", "start", "active"]);
   });
 
@@ -1080,33 +1259,35 @@ describe("server plugin runtime", () => {
     const noticeSink = vi.fn();
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("failed")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Failed", (context) => {
-          reporter = context.notices;
-          return {
-            start: () => { throw new Error("start failed"); },
-            dispose: () => {
-              try {
-                reporter?.record({ severity: "error", message: "rollback" });
-              } catch (error) {
-                rollbackError = error;
-              }
-            },
-          };
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Failed", (context) => {
+            reporter = context.notices;
+            return {
+              start: () => {
+                throw new Error("start failed");
+              },
+              dispose: () => {
+                try {
+                  reporter?.record({ severity: "error", message: "rollback" });
+                } catch (error) {
+                  rollbackError = error;
+                }
+              },
+            };
+          }),
         }),
-      }),
       logger: testLogger(),
       noticeSink,
     });
 
     const noticeReporter = reporter;
     if (noticeReporter === undefined) throw new Error("Expected notice reporter");
-    expect(runtime.healthRecords()).toEqual([
-      expect.objectContaining({ pluginId: "failed", state: "failed", phase: "start", message: "start failed" }),
-    ]);
+    expect(runtime.healthRecords()).toEqual([expect.objectContaining({ pluginId: "failed", state: "failed", phase: "start", message: "start failed" })]);
     expect(rollbackError).toMatchObject({ message: "Server plugin notice reporter for failed is no longer active" });
-    expect(() => { noticeReporter.record({ severity: "error", message: "too late" }); })
-      .toThrow("no longer active");
+    expect(() => {
+      noticeReporter.record({ severity: "error", message: "too late" });
+    }).toThrow("no longer active");
     expect(noticeSink).not.toHaveBeenCalled();
   });
 
@@ -1115,14 +1296,17 @@ describe("server plugin runtime", () => {
     const records: { source: string; input: ServerPluginNoticeInput }[] = [];
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("alpha")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Alpha", (context) => {
-          reporter = context.notices;
-          return {};
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Alpha", (context) => {
+            reporter = context.notices;
+            return {};
+          }),
         }),
-      }),
       logger: testLogger(),
-      noticeSink: (source, input) => { records.push({ source, input }); },
+      noticeSink: (source, input) => {
+        records.push({ source, input });
+      },
     });
 
     const noticeReporter = reporter;
@@ -1162,24 +1346,33 @@ describe("server plugin runtime", () => {
     const preservedContext = requireRecord(records[1]?.input.context, "Expected prototype-key context");
     expect(Object.hasOwn(preservedContext, "__proto__")).toBe(true);
     expect(Object.getPrototypeOf(preservedContext)).toBe(Object.prototype);
-    expect(requireRecord(preservedContext["__proto__"], "Expected preserved __proto__ value"))
-      .toEqual({ preserved: true });
+    expect(requireRecord(preservedContext["__proto__"], "Expected preserved __proto__ value")).toEqual({ preserved: true });
     expect(preservedContext["label"]).toBe("safe");
     expect(Object.isFrozen(preservedContext)).toBe(true);
 
     const circular: Record<string, unknown> = {};
     circular["self"] = circular;
     const recordContext = (invalidContext: unknown): void => {
-      Reflect.apply(noticeReporter.record, noticeReporter, [{
-        severity: "error",
-        message: "Invalid JSON",
-        context: invalidContext,
-      }]);
+      Reflect.apply(noticeReporter.record, noticeReporter, [
+        {
+          severity: "error",
+          message: "Invalid JSON",
+          context: invalidContext,
+        },
+      ]);
     };
-    expect(() => { recordContext(new Date()); }).toThrow("must be a JSON object");
-    expect(() => { recordContext({ createdAt: new Date() }); }).toThrow("must contain only JSON values");
-    expect(() => { recordContext({ count: Number.NaN }); }).toThrow("finite JSON numbers");
-    expect(() => { recordContext(circular); }).toThrow("must not contain cycles");
+    expect(() => {
+      recordContext(new Date());
+    }).toThrow("must be a JSON object");
+    expect(() => {
+      recordContext({ createdAt: new Date() });
+    }).toThrow("must contain only JSON values");
+    expect(() => {
+      recordContext({ count: Number.NaN });
+    }).toThrow("finite JSON numbers");
+    expect(() => {
+      recordContext(circular);
+    }).toThrow("must not contain cycles");
     expect(records).toHaveLength(2);
 
     await runtime.stop();
@@ -1190,14 +1383,17 @@ describe("server plugin runtime", () => {
     const records: ServerPluginNoticeInput[] = [];
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("alpha")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Alpha", (context) => {
-          reporter = context.notices;
-          return {};
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Alpha", (context) => {
+            reporter = context.notices;
+            return {};
+          }),
         }),
-      }),
       logger: testLogger(),
-      noticeSink: (_source, input) => { records.push(input); },
+      noticeSink: (_source, input) => {
+        records.push(input);
+      },
     });
 
     const noticeReporter = reporter;
@@ -1212,10 +1408,8 @@ describe("server plugin runtime", () => {
     const escapedUnit = "\u0000";
     const escapedUnitBytes = JSON.stringify(escapedUnit).length - 2;
     const escapedCapacity = SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES - serializedEmptyContextBytes;
-    const escapedValue = escapedUnit.repeat(Math.floor(escapedCapacity / escapedUnitBytes))
-      + "x".repeat(escapedCapacity % escapedUnitBytes);
-    expect(new TextEncoder().encode(JSON.stringify({ value: escapedValue })).byteLength)
-      .toBe(SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES);
+    const escapedValue = escapedUnit.repeat(Math.floor(escapedCapacity / escapedUnitBytes)) + "x".repeat(escapedCapacity % escapedUnitBytes);
+    expect(new TextEncoder().encode(JSON.stringify({ value: escapedValue })).byteLength).toBe(SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES);
     noticeReporter.record({
       severity: "info",
       message: "Escaped context boundary",
@@ -1228,11 +1422,13 @@ describe("server plugin runtime", () => {
       cursor["nested"] = nested;
       cursor = nested;
     }
-    Reflect.apply(noticeReporter.record, noticeReporter, [{
-      severity: "warning",
-      message: "Maximum depth",
-      context: maximumDepth,
-    }]);
+    Reflect.apply(noticeReporter.record, noticeReporter, [
+      {
+        severity: "warning",
+        message: "Maximum depth",
+        context: maximumDepth,
+      },
+    ]);
 
     expect(records).toHaveLength(3);
     await runtime.stop();
@@ -1243,14 +1439,17 @@ describe("server plugin runtime", () => {
     const records: { source: string; input: ServerPluginNoticeInput }[] = [];
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("alpha")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Alpha", (context) => {
-          reporter = context.notices;
-          return {};
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Alpha", (context) => {
+            reporter = context.notices;
+            return {};
+          }),
         }),
-      }),
       logger: testLogger(),
-      noticeSink: (source, input) => { records.push({ source, input }); },
+      noticeSink: (source, input) => {
+        records.push({ source, input });
+      },
     });
 
     const noticeReporter = reporter;
@@ -1276,11 +1475,13 @@ describe("server plugin runtime", () => {
     });
     const subclassedArray = new PluginArray(subclassSourceItem);
 
-    Reflect.apply(noticeReporter.record, noticeReporter, [{
-      severity: "info",
-      message: "Dense arrays",
-      context: { own: ownMapArray, inherited: subclassedArray },
-    }]);
+    Reflect.apply(noticeReporter.record, noticeReporter, [
+      {
+        severity: "info",
+        message: "Dense arrays",
+        context: { own: ownMapArray, inherited: subclassedArray },
+      },
+    ]);
     ownSourceItem.label = "mutated";
     subclassSourceItem.label = "mutated";
 
@@ -1313,12 +1514,13 @@ describe("server plugin runtime", () => {
     });
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("alpha")])) },
-      importer: () => Promise.resolve({
-        default: plugin("Alpha", (context) => {
-          reporter = context.notices;
-          return {};
+      importer: () =>
+        Promise.resolve({
+          default: plugin("Alpha", (context) => {
+            reporter = context.notices;
+            return {};
+          }),
         }),
-      }),
       logger: testLogger(),
       noticeSink,
     });
@@ -1360,19 +1562,29 @@ describe("server plugin runtime", () => {
       { input: { severity: "error", message: "Invalid array", context: { values: [() => undefined] } }, message: "must contain only JSON values" },
       { input: { severity: "error", message: "Invalid array", context: { values: circularArray } }, message: "must not contain cycles" },
       { input: { severity: "error", message: "Invalid array", context: { values: sparseArray } }, message: "must not contain sparse arrays" },
-      { input: { severity: "error", message: "🙂".repeat((SERVER_PLUGIN_NOTICE_MESSAGE_MAX_BYTES / 4) + 1) }, message: "message exceeds the 4096 byte limit" },
+      { input: { severity: "error", message: "🙂".repeat(SERVER_PLUGIN_NOTICE_MESSAGE_MAX_BYTES / 4 + 1) }, message: "message exceeds the 4096 byte limit" },
       { input: { severity: "error", message: "Broad oversized context", context: broadContext }, message: "context exceeds the 16384 byte limit" },
-      { input: { severity: "error", message: "Oversized context", context: { value: "x".repeat(SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES) } }, message: "context exceeds the 16384 byte limit" },
+      {
+        input: { severity: "error", message: "Oversized context", context: { value: "x".repeat(SERVER_PLUGIN_NOTICE_CONTEXT_MAX_BYTES) } },
+        message: "context exceeds the 16384 byte limit",
+      },
       { input: { severity: "error", message: "Deep context", context: tooDeep }, message: "maximum JSON depth of 32" },
       { input: { severity: "error", message: "Empty scope", scope: {} }, message: "must contain at least one" },
-      { input: { severity: "error", message: "Unknown scope", scope: { projectId: "project-1", tenantId: "tenant-1" } }, message: "Unsupported Server plugin notice scope field" },
+      {
+        input: { severity: "error", message: "Unknown scope", scope: { projectId: "project-1", tenantId: "tenant-1" } },
+        message: "Unsupported Server plugin notice scope field",
+      },
       { input: { severity: "error", message: "Blank scope", scope: { workspaceId: " " } }, message: "workspaceId must be a non-empty string" },
-      { input: { severity: "error", message: "Long scope", scope: { sessionId: "x".repeat(SERVER_NOTICE_SCOPE_ID_MAX_LENGTH + 1) } }, message: "at most 512 characters" },
+      {
+        input: { severity: "error", message: "Long scope", scope: { sessionId: "x".repeat(SERVER_NOTICE_SCOPE_ID_MAX_LENGTH + 1) } },
+        message: "at most 512 characters",
+      },
     ];
 
     for (const invalid of invalidCases) {
-      expect(() => { Reflect.apply(noticeReporter.record, noticeReporter, [invalid.input]); })
-        .toThrow(invalid.message);
+      expect(() => {
+        Reflect.apply(noticeReporter.record, noticeReporter, [invalid.input]);
+      }).toThrow(invalid.message);
     }
 
     expect(sanitizingMap).not.toHaveBeenCalled();
@@ -1418,13 +1630,16 @@ describe("server plugin runtime", () => {
       logger: testLogger(),
       lateHostCapabilities: [PI_WEB_HOST_WORKSPACES_CAPABILITY, PI_WEB_HOST_PI_SESSIONS_CAPABILITY],
     });
-    await bundledOnly.resumeWithHostCapabilityFactories([{
-      capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
-      create: createBundledLateHostCapability,
-    }, {
-      capability: PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
-      create: createBundledPiSessionsCapability,
-    }]);
+    await bundledOnly.resumeWithHostCapabilityFactories([
+      {
+        capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
+        create: createBundledLateHostCapability,
+      },
+      {
+        capability: PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
+        create: createBundledPiSessionsCapability,
+      },
+    ]);
 
     expect(imported).toEqual(["bundled"]);
     expect(bundledOnly.healthRecords()).toEqual([
@@ -1461,13 +1676,16 @@ describe("server plugin runtime", () => {
       hostCapabilityFactories: [{ capability: testScopedService, create: createHostCapability }],
       lateHostCapabilities: [PI_WEB_HOST_WORKSPACES_CAPABILITY, PI_WEB_HOST_PI_SESSIONS_CAPABILITY],
     });
-    await none.resumeWithHostCapabilityFactories([{
-      capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
-      create: createLateHostCapability,
-    }, {
-      capability: PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
-      create: createPiSessionsCapability,
-    }]);
+    await none.resumeWithHostCapabilityFactories([
+      {
+        capability: PI_WEB_HOST_WORKSPACES_CAPABILITY,
+        create: createLateHostCapability,
+      },
+      {
+        capability: PI_WEB_HOST_PI_SESSIONS_CAPABILITY,
+        create: createPiSessionsCapability,
+      },
+    ]);
 
     expect(imported).toEqual([]);
     expect(noneCatalog.snapshot).not.toHaveBeenCalled();
@@ -1481,20 +1699,29 @@ describe("server plugin runtime", () => {
     vi.useFakeTimers();
     const observedSignals: AbortSignal[] = [];
     let markStarted: (() => void) | undefined;
-    const started = new Promise<void>((resolve) => { markStarted = resolve; });
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
     const importer: ServerPluginModuleImporter = (url) => {
       const pluginId = pluginIdFromUrl(url);
       if (pluginId === "hang") {
-        return Promise.resolve(pluginModule("Hang", {
-          start: ({ signal }) => new Promise((_resolve, reject) => {
-            observedSignals.push(signal);
-            markStarted?.();
-            signal.addEventListener("abort", () => {
-              const reason: unknown = signal.reason;
-              reject(reason instanceof Error ? reason : new Error("fixture aborted", { cause: reason }));
-            }, { once: true });
+        return Promise.resolve(
+          pluginModule("Hang", {
+            start: ({ signal }) =>
+              new Promise((_resolve, reject) => {
+                observedSignals.push(signal);
+                markStarted?.();
+                signal.addEventListener(
+                  "abort",
+                  () => {
+                    const reason: unknown = signal.reason;
+                    reject(reason instanceof Error ? reason : new Error("fixture aborted", { cause: reason }));
+                  },
+                  { once: true },
+                );
+              }),
           }),
-        }));
+        );
       }
       return Promise.resolve(pluginModule("Later", {}));
     };
@@ -1525,24 +1752,36 @@ describe("server plugin runtime", () => {
     const importer: ServerPluginModuleImporter = (url) => {
       const pluginId = pluginIdFromUrl(url);
       if (pluginId === "bad-health") {
-        return Promise.resolve(pluginModule("Bad health", {
-          health: () => { throw new Error("health exploded"); },
-          dispose: () => {
-            stops.push("bad-health");
-            throw new Error("stop exploded");
-          },
-        }));
+        return Promise.resolve(
+          pluginModule("Bad health", {
+            health: () => {
+              throw new Error("health exploded");
+            },
+            dispose: () => {
+              stops.push("bad-health");
+              throw new Error("stop exploded");
+            },
+          }),
+        );
       }
       if (pluginId === "bad-health-details") {
-        return Promise.resolve(pluginModule("Bad health details", {
-          health: () => ({ status: "healthy", details: { checkedAt: new Date() } }),
-          dispose: () => { stops.push("bad-health-details"); },
-        }));
+        return Promise.resolve(
+          pluginModule("Bad health details", {
+            health: () => ({ status: "healthy", details: { checkedAt: new Date() } }),
+            dispose: () => {
+              stops.push("bad-health-details");
+            },
+          }),
+        );
       }
-      return Promise.resolve(pluginModule("Degraded", {
-        health: () => ({ status: "degraded", message: "tool unavailable", details: { retry: true } }),
-        dispose: () => { stops.push("degraded"); },
-      }));
+      return Promise.resolve(
+        pluginModule("Degraded", {
+          health: () => ({ status: "degraded", message: "tool unavailable", details: { retry: true } }),
+          dispose: () => {
+            stops.push("degraded");
+          },
+        }),
+      );
     };
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("bad-health"), entry("bad-health-details"), entry("degraded")])) },
@@ -1568,20 +1807,24 @@ describe("server plugin runtime", () => {
         health: { status: "degraded", message: "tool unavailable", details: { retry: true } },
       },
     ]);
-    await expect(runtime.inspectHealth(["degraded"])).resolves.toEqual([{
-      pluginId: "degraded",
-      health: { status: "degraded", message: "tool unavailable", details: { retry: true } },
-    }]);
+    await expect(runtime.inspectHealth(["degraded"])).resolves.toEqual([
+      {
+        pluginId: "degraded",
+        health: { status: "degraded", message: "tool unavailable", details: { retry: true } },
+      },
+    ]);
 
     await runtime.stop();
 
     expect(stops).toEqual(["degraded", "bad-health-details", "bad-health"]);
-    expect(runtime.healthRecords()).toContainEqual(expect.objectContaining({
-      pluginId: "bad-health",
-      state: "failed",
-      phase: "dispose",
-      message: "stop exploded",
-    }));
+    expect(runtime.healthRecords()).toContainEqual(
+      expect.objectContaining({
+        pluginId: "bad-health",
+        state: "failed",
+        phase: "dispose",
+        message: "stop exploded",
+      }),
+    );
   });
 
   it("bounds health inspection and reports a timed-out provider as unhealthy", async () => {
@@ -1589,16 +1832,24 @@ describe("server plugin runtime", () => {
     let observedSignal: AbortSignal | undefined;
     const runtime = await createServerPluginRuntime({
       catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("health-timeout")])) },
-      importer: () => Promise.resolve(pluginModule("Health timeout", {
-        workspaceProvider: testProvider(),
-        health: (signal) => new Promise((_resolve, rejectPromise) => {
-          observedSignal = signal;
-          signal.addEventListener("abort", () => {
-            const reason: unknown = signal.reason;
-            rejectPromise(reason instanceof Error ? reason : new Error("Fixture health inspection aborted", { cause: reason }));
-          }, { once: true });
-        }),
-      })),
+      importer: () =>
+        Promise.resolve(
+          pluginModule("Health timeout", {
+            workspaceProvider: testProvider(),
+            health: (signal) =>
+              new Promise((_resolve, rejectPromise) => {
+                observedSignal = signal;
+                signal.addEventListener(
+                  "abort",
+                  () => {
+                    const reason: unknown = signal.reason;
+                    rejectPromise(reason instanceof Error ? reason : new Error("Fixture health inspection aborted", { cause: reason }));
+                  },
+                  { once: true },
+                );
+              }),
+          }),
+        ),
       logger: testLogger(),
       lifecycleTimeoutMs: 50,
     });
@@ -1619,18 +1870,11 @@ describe("server plugin runtime", () => {
 
   it("publishes paired request and channel capabilities independently", async () => {
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("channel-only"),
-        entry("empty"),
-        entry("request-only"),
-      ])) },
+      catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("channel-only"), entry("empty"), entry("request-only")])) },
       importer: (url) => {
         const pluginId = pluginIdFromUrl(url);
-        const peer = pluginId === "request-only"
-          ? { request: () => null }
-          : pluginId === "channel-only"
-            ? { openChannel: () => ({ receive: () => undefined }) }
-            : {};
+        const peer =
+          pluginId === "request-only" ? { request: () => null } : pluginId === "channel-only" ? { openChannel: () => ({ receive: () => undefined }) } : {};
         return Promise.resolve(pluginModule(pluginId, { peer }));
       },
       logger: testLogger(),
@@ -1662,7 +1906,9 @@ describe("server plugin runtime", () => {
     const throwingActivation: Record<string, unknown> = {};
     Object.defineProperty(throwingActivation, "stop", {
       enumerable: true,
-      get() { throw new Error("stop getter exploded"); },
+      get() {
+        throw new Error("stop getter exploded");
+      },
     });
     const importer: ServerPluginModuleImporter = (url) => {
       const pluginId = pluginIdFromUrl(url);
@@ -1672,11 +1918,7 @@ describe("server plugin runtime", () => {
     };
 
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("mutable"),
-        entry("throwing-accessor"),
-        entry("later"),
-      ])) },
+      catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("mutable"), entry("throwing-accessor"), entry("later")])) },
       importer,
       logger: testLogger(),
     });
@@ -1685,16 +1927,20 @@ describe("server plugin runtime", () => {
     expect(runtime.pairedBackendContributions().map((contribution) => contribution.pluginId)).toEqual(["mutable"]);
     expect(Object.isFrozen(runtime.pairedBackendContributions()[0]?.backend)).toBe(true);
     expect(runtime.healthRecords().find(({ pluginId }) => pluginId === "mutable")).toMatchObject({ pairedRequestVersion: 1, pairedChannelVersion: 1 });
-    await expect(Promise.resolve(runtime.pairedBackendContributions()[0]?.backend.request?.({
-      scope: {
-        kind: "workspace",
-        project: { id: "p", name: "P", path: "/p" },
-        workspace: { id: "w", projectId: "p", path: "/p", label: "P", isMain: true },
-      },
-      operation: "status",
-      input: null,
-      signal: new AbortController().signal,
-    }))).resolves.toEqual({ captured: true });
+    await expect(
+      Promise.resolve(
+        runtime.pairedBackendContributions()[0]?.backend.request?.({
+          scope: {
+            kind: "workspace",
+            project: { id: "p", name: "P", path: "/p" },
+            workspace: { id: "w", projectId: "p", path: "/p", label: "P", isMain: true },
+          },
+          operation: "status",
+          input: null,
+          signal: new AbortController().signal,
+        }),
+      ),
+    ).resolves.toEqual({ captured: true });
     const channel = await runtime.pairedBackendContributions()[0]?.backend.openChannel?.({
       scope: {
         kind: "workspace",
@@ -1708,10 +1954,7 @@ describe("server plugin runtime", () => {
     });
     expect(channel).toBeDefined();
     expect(Object.isFrozen(channel)).toBe(true);
-    await expect(runtime.providerContributions()[0]?.provider.probe(
-      { id: "p", name: "P", path: "/p" },
-      new AbortController().signal,
-    )).resolves.toBe("pass");
+    await expect(runtime.providerContributions()[0]?.provider.probe({ id: "p", name: "P", path: "/p" }, new AbortController().signal)).resolves.toBe("pass");
     expect(runtime.healthRecords().map((record) => [record.pluginId, record.state, record.message])).toEqual([
       ["later", "active", undefined],
       ["mutable", "active", undefined],
@@ -1725,21 +1968,29 @@ describe("server plugin runtime", () => {
     circular["self"] = circular;
     const importer: ServerPluginModuleImporter = (url) => {
       const pluginId = pluginIdFromUrl(url);
-      const activation = pluginId === "plural"
-        ? pluralActivation
-        : pluginId === "invalid-backend" ? { peer: {} }
-          : pluginId === "invalid-channel" ? { peer: { request: () => null, openChannel: true } }
-            : {};
+      const activation =
+        pluginId === "plural"
+          ? pluralActivation
+          : pluginId === "invalid-backend"
+            ? { peer: {} }
+            : pluginId === "invalid-channel"
+              ? { peer: { request: () => null, openChannel: true } }
+              : {};
       return Promise.resolve(pluginModule("Plural", activation));
     };
     const runtime = await createServerPluginRuntime({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("plural"),
-        entry("invalid-backend"),
-        entry("invalid-channel"),
-        entry("invalid-settings", { settings: circular }),
-        entry("non-json-settings", { settings: { installedAt: new Date() } }),
-      ])) },
+      catalog: {
+        snapshot: () =>
+          Promise.resolve(
+            testSnapshot([
+              entry("plural"),
+              entry("invalid-backend"),
+              entry("invalid-channel"),
+              entry("invalid-settings", { settings: circular }),
+              entry("non-json-settings", { settings: { installedAt: new Date() } }),
+            ]),
+          ),
+      },
       importer,
       logger: testLogger(),
     });
@@ -1763,10 +2014,12 @@ describe("server plugin runtime", () => {
   it("requires the bundled Terminal shape in normal and bundled-only startup but bypasses discovery in no-plugin recovery", async () => {
     const catalog = { snapshot: vi.fn(() => Promise.resolve(testSnapshot([]))) };
 
-    await expect(createServerPluginRuntimeWithRequiredTerminal({ catalog, logger: testLogger() }))
-      .rejects.toThrow("Required bundled Terminal package is missing");
-    await expect(createServerPluginRuntimeWithRequiredTerminal({ catalog, safeStart: "bundled-only", logger: testLogger() }))
-      .rejects.toThrow("safe-start set none");
+    await expect(createServerPluginRuntimeWithRequiredTerminal({ catalog, logger: testLogger() })).rejects.toThrow(
+      "Required bundled Terminal package is missing",
+    );
+    await expect(createServerPluginRuntimeWithRequiredTerminal({ catalog, safeStart: "bundled-only", logger: testLogger() })).rejects.toThrow(
+      "safe-start set none",
+    );
 
     const recovery = await createServerPluginRuntimeWithRequiredTerminal({
       catalog: { snapshot: vi.fn(() => Promise.reject(new Error("recovery must not discover plugins"))) },
@@ -1774,8 +2027,7 @@ describe("server plugin runtime", () => {
       logger: testLogger(),
     });
     expect(recovery.healthRecords()).toEqual([]);
-    expect(() => recovery.resolve(REQUIRED_TERMINAL_SERVICE_CAPABILITY))
-      .toThrow("is not active");
+    expect(() => recovery.resolve(REQUIRED_TERMINAL_SERVICE_CAPABILITY)).toThrow("is not active");
     await recovery.stop();
   });
 
@@ -1784,27 +2036,37 @@ describe("server plugin runtime", () => {
     const imported: string[] = [];
     const requiredService = requiredTerminalServiceFixture();
     const runtime = await createServerPluginRuntimeWithRequiredTerminal({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("zeta", { scope: "bundled" }),
-        entry("pi-web.terminal", { scope: "bundled", browserRevision: "terminal-browser" }),
-      ])) },
+      catalog: {
+        snapshot: () =>
+          Promise.resolve(
+            testSnapshot([entry("zeta", { scope: "bundled" }), entry("pi-web.terminal", { scope: "bundled", browserRevision: "terminal-browser" })]),
+          ),
+      },
       importer: (url) => {
         const id = pluginIdFromUrl(url);
         imported.push(id);
         if (id === "pi-web.terminal") {
-          return Promise.resolve(pluginModule("Terminal", {
-            peer: {
-              request: () => null,
-              openChannel: () => ({ receive: () => undefined }),
-            },
-            provides: [{ capability: REQUIRED_TERMINAL_SERVICE_CAPABILITY, value: requiredService }],
-            health: () => ({ status: "healthy" }),
-            dispose: () => { events.push("stop:terminal"); },
-          }));
+          return Promise.resolve(
+            pluginModule("Terminal", {
+              peer: {
+                request: () => null,
+                openChannel: () => ({ receive: () => undefined }),
+              },
+              provides: [{ capability: REQUIRED_TERMINAL_SERVICE_CAPABILITY, value: requiredService }],
+              health: () => ({ status: "healthy" }),
+              dispose: () => {
+                events.push("stop:terminal");
+              },
+            }),
+          );
         }
-        return Promise.resolve(pluginModule("Zeta", {
-          dispose: () => { events.push("stop:zeta"); },
-        }));
+        return Promise.resolve(
+          pluginModule("Zeta", {
+            dispose: () => {
+              events.push("stop:zeta");
+            },
+          }),
+        );
       },
       logger: testLogger(),
     });
@@ -1823,47 +2085,56 @@ describe("server plugin runtime", () => {
 
   it("rolls back a required Terminal activation that fails contribution validation", async () => {
     const stopped = vi.fn();
-    await expect(createServerPluginRuntimeWithRequiredTerminal({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("pi-web.terminal", { scope: "bundled", browserRevision: "terminal-browser" }),
-      ])) },
-      importer: () => Promise.resolve(pluginModule("Terminal", {
-        peer: {
-          request: () => null,
-          openChannel: () => ({ receive: () => undefined }),
-        },
-        provides: [{ capability: REQUIRED_TERMINAL_SERVICE_CAPABILITY, value: {} }],
-        dispose: stopped,
-      })),
-      logger: testLogger(),
-    })).rejects.toThrow("did not provide its composition service");
+    await expect(
+      createServerPluginRuntimeWithRequiredTerminal({
+        catalog: { snapshot: () => Promise.resolve(testSnapshot([entry("pi-web.terminal", { scope: "bundled", browserRevision: "terminal-browser" })])) },
+        importer: () =>
+          Promise.resolve(
+            pluginModule("Terminal", {
+              peer: {
+                request: () => null,
+                openChannel: () => ({ receive: () => undefined }),
+              },
+              provides: [{ capability: REQUIRED_TERMINAL_SERVICE_CAPABILITY, value: {} }],
+              dispose: stopped,
+            }),
+          ),
+        logger: testLogger(),
+      }),
+    ).rejects.toThrow("did not provide its composition service");
     expect(stopped).toHaveBeenCalledOnce();
   });
 
   it("rolls back two-stage startup when required Terminal is unhealthy before publication", async () => {
     const imported: string[] = [];
     const stopped = vi.fn();
-    await expect(createServerPluginRuntimeWithRequiredTerminal({
-      catalog: { snapshot: () => Promise.resolve(testSnapshot([
-        entry("alpha", { scope: "bundled" }),
-        entry("pi-web.terminal", { scope: "bundled", browserRevision: "terminal-browser" }),
-      ])) },
-      importer: (url) => {
-        const id = pluginIdFromUrl(url);
-        imported.push(id);
-        if (id !== "pi-web.terminal") return Promise.resolve(pluginModule("Alpha", { dispose: stopped }));
-        return Promise.resolve(pluginModule("Terminal", {
-          peer: {
-            request: () => null,
-            openChannel: () => ({ receive: () => undefined }),
-          },
-          provides: [{ capability: REQUIRED_TERMINAL_SERVICE_CAPABILITY, value: requiredTerminalServiceFixture() }],
-          health: () => ({ status: "unhealthy", message: "PTY unavailable" }),
-          dispose: stopped,
-        }));
-      },
-      logger: testLogger(),
-    })).rejects.toThrow("Required Terminal server entry is unhealthy: PTY unavailable");
+    await expect(
+      createServerPluginRuntimeWithRequiredTerminal({
+        catalog: {
+          snapshot: () =>
+            Promise.resolve(
+              testSnapshot([entry("alpha", { scope: "bundled" }), entry("pi-web.terminal", { scope: "bundled", browserRevision: "terminal-browser" })]),
+            ),
+        },
+        importer: (url) => {
+          const id = pluginIdFromUrl(url);
+          imported.push(id);
+          if (id !== "pi-web.terminal") return Promise.resolve(pluginModule("Alpha", { dispose: stopped }));
+          return Promise.resolve(
+            pluginModule("Terminal", {
+              peer: {
+                request: () => null,
+                openChannel: () => ({ receive: () => undefined }),
+              },
+              provides: [{ capability: REQUIRED_TERMINAL_SERVICE_CAPABILITY, value: requiredTerminalServiceFixture() }],
+              health: () => ({ status: "unhealthy", message: "PTY unavailable" }),
+              dispose: stopped,
+            }),
+          );
+        },
+        logger: testLogger(),
+      }),
+    ).rejects.toThrow("Required Terminal server entry is unhealthy: PTY unavailable");
     expect(imported).toEqual(["pi-web.terminal", "alpha"]);
     expect(stopped).toHaveBeenCalledTimes(2);
   });
@@ -1896,7 +2167,9 @@ function entry(
   return {
     id,
     packageRoot: `/plugins/${id}`,
-    ...(options.browserRevision === undefined ? {} : { browserModule: { path: "browser.js", filePath: `/plugins/${id}/browser.js`, revision: options.browserRevision } }),
+    ...(options.browserRevision === undefined
+      ? {}
+      : { browserModule: { path: "browser.js", filePath: `/plugins/${id}/browser.js`, revision: options.browserRevision } }),
     serverModule: { path: "server.js", filePath: `/plugins/${id}/server.js`, revision: "1" },
     source: options.scope === "bundled" ? "bundled" : "fixture",
     scope: options.scope ?? "local",
@@ -1915,11 +2188,7 @@ function pluginModule(name: string, activation: ServerPluginActivation | Record<
   return { default: plugin(name, () => activation) };
 }
 
-function plugin(
-  name: string,
-  activate: PiWebServerPlugin["activate"],
-  requires?: readonly PluginCapability[],
-): PiWebServerPlugin {
+function plugin(name: string, activate: PiWebServerPlugin["activate"], requires?: readonly PluginCapability[]): PiWebServerPlugin {
   return { apiVersion: 3, name, ...(requires === undefined ? {} : { requires }), activate };
 }
 

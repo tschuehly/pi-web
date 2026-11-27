@@ -23,31 +23,77 @@ interface CellOptions {
 }
 
 class TestCell implements TerminalCopyBufferCellSource {
-  constructor(private readonly chars: string, private readonly options: CellOptions = {}) {}
+  constructor(
+    private readonly chars: string,
+    private readonly options: CellOptions = {},
+  ) {}
 
-  getWidth(): number { return this.options.width ?? 1; }
-  getChars(): string { return this.chars; }
-  getCode(): number { return this.chars.codePointAt(0) ?? 0; }
-  getFgColorMode(): number { return 0; }
-  getBgColorMode(): number { return 0; }
-  getFgColor(): number { return colorValue(this.options.foreground); }
-  getBgColor(): number { return colorValue(this.options.background); }
-  isBold(): number { return Number(this.options.bold === true); }
-  isItalic(): number { return Number(this.options.italic === true); }
-  isDim(): number { return Number(this.options.dim === true); }
-  isUnderline(): number { return Number(this.options.underline === true); }
-  isInverse(): number { return Number(this.options.inverse === true); }
-  isInvisible(): number { return Number(this.options.invisible === true); }
-  isStrikethrough(): number { return Number(this.options.strikethrough === true); }
-  isOverline(): number { return Number(this.options.overline === true); }
-  isFgRGB(): boolean { return this.options.foreground?.mode === "rgb"; }
-  isBgRGB(): boolean { return this.options.background?.mode === "rgb"; }
-  isFgPalette(): boolean { return this.options.foreground?.mode === "palette"; }
-  isBgPalette(): boolean { return this.options.background?.mode === "palette"; }
-  isFgDefault(): boolean { return this.options.foreground === undefined || this.options.foreground.mode === "default"; }
-  isBgDefault(): boolean { return this.options.background === undefined || this.options.background.mode === "default"; }
+  getWidth(): number {
+    return this.options.width ?? 1;
+  }
+  getChars(): string {
+    return this.chars;
+  }
+  getCode(): number {
+    return this.chars.codePointAt(0) ?? 0;
+  }
+  getFgColorMode(): number {
+    return 0;
+  }
+  getBgColorMode(): number {
+    return 0;
+  }
+  getFgColor(): number {
+    return colorValue(this.options.foreground);
+  }
+  getBgColor(): number {
+    return colorValue(this.options.background);
+  }
+  isBold(): number {
+    return Number(this.options.bold === true);
+  }
+  isItalic(): number {
+    return Number(this.options.italic === true);
+  }
+  isDim(): number {
+    return Number(this.options.dim === true);
+  }
+  isUnderline(): number {
+    return Number(this.options.underline === true);
+  }
+  isInverse(): number {
+    return Number(this.options.inverse === true);
+  }
+  isInvisible(): number {
+    return Number(this.options.invisible === true);
+  }
+  isStrikethrough(): number {
+    return Number(this.options.strikethrough === true);
+  }
+  isOverline(): number {
+    return Number(this.options.overline === true);
+  }
+  isFgRGB(): boolean {
+    return this.options.foreground?.mode === "rgb";
+  }
+  isBgRGB(): boolean {
+    return this.options.background?.mode === "rgb";
+  }
+  isFgPalette(): boolean {
+    return this.options.foreground?.mode === "palette";
+  }
+  isBgPalette(): boolean {
+    return this.options.background?.mode === "palette";
+  }
+  isFgDefault(): boolean {
+    return this.options.foreground === undefined || this.options.foreground.mode === "default";
+  }
+  isBgDefault(): boolean {
+    return this.options.background === undefined || this.options.background.mode === "default";
+  }
   isAttributeDefault(): boolean {
-    return this.options.foreground === undefined
+    return (
+      this.options.foreground === undefined
       && this.options.background === undefined
       && this.options.bold !== true
       && this.options.italic !== true
@@ -56,14 +102,18 @@ class TestCell implements TerminalCopyBufferCellSource {
       && this.options.inverse !== true
       && this.options.invisible !== true
       && this.options.strikethrough !== true
-      && this.options.overline !== true;
+      && this.options.overline !== true
+    );
   }
 }
 
 class TestLine implements TerminalCopyBufferLineSource {
   readonly length: number;
 
-  constructor(private readonly cells: (TestCell | undefined)[], readonly isWrapped = false) {
+  constructor(
+    private readonly cells: (TestCell | undefined)[],
+    readonly isWrapped = false,
+  ) {
     this.length = cells.length;
   }
 
@@ -96,11 +146,7 @@ class TestBuffer implements TerminalCopyBufferSource {
 
 describe("createTerminalCopySnapshot", () => {
   it("joins wrapped physical rows into selectable logical lines", () => {
-    const buffer = new TestBuffer([
-      line("abc"),
-      line("def", true),
-      line("next"),
-    ]);
+    const buffer = new TestBuffer([line("abc"), line("def", true), line("next")]);
 
     const snapshot = createTerminalCopySnapshot(buffer, 20);
 
@@ -176,13 +222,7 @@ describe("createTerminalCopySnapshot", () => {
   });
 
   it("keeps interior blanks while trimming unused cells on the right", () => {
-    const source = new TestLine([
-      new TestCell("A"),
-      new TestCell(""),
-      new TestCell("B"),
-      new TestCell(""),
-      new TestCell(""),
-    ]);
+    const source = new TestLine([new TestCell("A"), new TestCell(""), new TestCell("B"), new TestCell(""), new TestCell("")]);
 
     const snapshot = createTerminalCopySnapshot(new TestBuffer([source]), 5);
 
@@ -190,11 +230,7 @@ describe("createTerminalCopySnapshot", () => {
   });
 
   it("includes the cursor line but omits unused rows below it", () => {
-    const buffer = new TestBuffer([
-      line("output"),
-      new TestLine([new TestCell("")]),
-      new TestLine([new TestCell("")]),
-    ], 0, 1, 1);
+    const buffer = new TestBuffer([line("output"), new TestLine([new TestCell("")]), new TestLine([new TestCell("")])], 0, 1, 1);
 
     const snapshot = createTerminalCopySnapshot(buffer, 20);
 
@@ -205,12 +241,7 @@ describe("createTerminalCopySnapshot", () => {
   });
 
   it("preserves wide and combined cells while skipping continuation cells", () => {
-    const source = new TestLine([
-      new TestCell("👩‍💻", { width: 2 }),
-      new TestCell("", { width: 0 }),
-      new TestCell("é"),
-      new TestCell("!"),
-    ]);
+    const source = new TestLine([new TestCell("👩‍💻", { width: 2 }), new TestCell("", { width: 0 }), new TestCell("é"), new TestCell("!")]);
 
     const snapshot = createTerminalCopySnapshot(new TestBuffer([source]), 10);
 
@@ -218,11 +249,7 @@ describe("createTerminalCopySnapshot", () => {
   });
 
   it("respects disabled bold-to-bright color promotion and terminal column bounds", () => {
-    const source = new TestLine([
-      new TestCell("A", { foreground: { mode: "palette", value: 1 }, bold: true }),
-      new TestCell("B"),
-      new TestCell("C"),
-    ]);
+    const source = new TestLine([new TestCell("A", { foreground: { mode: "palette", value: 1 }, bold: true }), new TestCell("B"), new TestCell("C")]);
 
     const snapshot = createTerminalCopySnapshot(new TestBuffer([source]), 2, { drawBoldTextInBrightColors: false });
 
@@ -241,7 +268,10 @@ describe("createTerminalCopySnapshot", () => {
 });
 
 function line(text: string, isWrapped = false): TestLine {
-  return new TestLine(Array.from(text, (character) => new TestCell(character)), isWrapped);
+  return new TestLine(
+    Array.from(text, (character) => new TestCell(character)),
+    isWrapped,
+  );
 }
 
 function colorValue(color: CellColor | undefined): number {

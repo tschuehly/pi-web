@@ -27,11 +27,16 @@ export class AnchoredPopupController implements ReactiveController {
   private frame: number | undefined;
   private readonly cleanups: (() => void)[] = [];
 
-  constructor(private readonly host: ReactiveControllerHost, private readonly getPopup: () => AnchoredPopup | undefined) {
+  constructor(
+    private readonly host: ReactiveControllerHost,
+    private readonly getPopup: () => AnchoredPopup | undefined,
+  ) {
     host.addController(this);
   }
 
-  hostConnected(): void { this.host.requestUpdate(); }
+  hostConnected(): void {
+    this.host.requestUpdate();
+  }
 
   hostUpdated(): void {
     const next = this.getPopup();
@@ -42,7 +47,9 @@ export class AnchoredPopupController implements ReactiveController {
     this.refresh();
   }
 
-  hostDisconnected(): void { this.close(); }
+  hostDisconnected(): void {
+    this.close();
+  }
 
   close = (): void => {
     const popup = this.current;
@@ -59,7 +66,10 @@ export class AnchoredPopupController implements ReactiveController {
   }
 
   private start(popup: AnchoredPopup): void {
-    if (!canOpenTransientPopup(popup.anchor)) { popup.onClose(); return; }
+    if (!canOpenTransientPopup(popup.anchor)) {
+      popup.onClose();
+      return;
+    }
     this.current = popup;
     const { panel, anchor, options } = popup;
     panel.setAttribute("popover", "auto");
@@ -68,7 +78,9 @@ export class AnchoredPopupController implements ReactiveController {
     Object.assign(panel.style, { position: "fixed", inset: "auto", margin: "0", zIndex: "auto", boxSizing: "border-box", minWidth: "0" });
     const listen = (source: EventTarget, type: string, listener: EventListener, capture = false): void => {
       source.addEventListener(type, listener, capture);
-      this.cleanups.push(() => { source.removeEventListener(type, listener, capture); });
+      this.cleanups.push(() => {
+        source.removeEventListener(type, listener, capture);
+      });
     };
     const onToggle = (event: Event): void => {
       if ("newState" in event && event.newState === "closed") this.dismiss();
@@ -77,13 +89,18 @@ export class AnchoredPopupController implements ReactiveController {
     listen(panel, "toggle", onToggle);
     // Handle Escape before modal and consumer shortcuts. Only the top popup
     // closes; nested parents remain open for the next Escape.
-    listen(window, "keydown", (event: Event) => {
-      if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || event.isComposing || activePopups.at(-1) !== this) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      this.close();
-      if (options?.preserveFocus !== true) anchor.focus();
-    }, true);
+    listen(
+      window,
+      "keydown",
+      (event: Event) => {
+        if (!(event instanceof KeyboardEvent) || event.key !== "Escape" || event.isComposing || activePopups.at(-1) !== this) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.close();
+        if (options?.preserveFocus !== true) anchor.focus();
+      },
+      true,
+    );
     listen(window, "resize", this.scheduleRefresh);
     listen(window, "scroll", this.scheduleRefresh, true);
     if (window.visualViewport) {
@@ -94,7 +111,9 @@ export class AnchoredPopupController implements ReactiveController {
     if (observer) {
       observer.observe(anchor);
       observer.observe(panel);
-      this.cleanups.push(() => { observer.disconnect(); });
+      this.cleanups.push(() => {
+        observer.disconnect();
+      });
     }
     let ancestor: Element = anchor;
     for (;;) {
@@ -124,13 +143,21 @@ export class AnchoredPopupController implements ReactiveController {
     if (popup && hide) popup.panel.hidePopover();
   }
 
-  private readonly scheduleRefresh = (): void => { this.frame ??= requestAnimationFrame(this.onFrame); };
-  private readonly onFrame = (): void => { this.frame = undefined; this.refresh(); };
+  private readonly scheduleRefresh = (): void => {
+    this.frame ??= requestAnimationFrame(this.onFrame);
+  };
+  private readonly onFrame = (): void => {
+    this.frame = undefined;
+    this.refresh();
+  };
 
   private refresh(): void {
     const popup = this.current;
     if (!popup) return;
-    if (!canOpenTransientPopup(popup.anchor) || !popup.panel.isConnected) { this.close(); return; }
+    if (!canOpenTransientPopup(popup.anchor) || !popup.panel.isConnected) {
+      this.close();
+      return;
+    }
     const style = anchoredPopupStyle(popup.anchor, popup.options, popup.panel);
     for (const [key, value] of Object.entries(style)) popup.panel.style.setProperty(key, value);
   }

@@ -9,11 +9,7 @@ import {
   type SelectedSessionNotificationInbox,
   type SessionNotificationTarget,
 } from "../sessionNotifications";
-import type {
-  SessionNotificationInboxEvent,
-  SessionNotificationInboxSnapshot,
-  SessionRef,
-} from "../../../shared/apiTypes";
+import type { SessionNotificationInboxEvent, SessionNotificationInboxSnapshot, SessionRef } from "../../../shared/apiTypes";
 import type { GetState, SetState } from "./types";
 
 export interface SessionNotificationApi {
@@ -61,7 +57,11 @@ export class SessionNotificationController {
     dependencies: SessionNotificationControllerDependencies = {},
   ) {
     this.api = dependencies.api ?? defaultApi;
-    this.onBackgroundError = dependencies.onBackgroundError ?? ((message, error) => { console.warn(message, error); });
+    this.onBackgroundError =
+      dependencies.onBackgroundError
+      ?? ((message, error) => {
+        console.warn(message, error);
+      });
   }
 
   dispose(): void {
@@ -135,8 +135,7 @@ export class SessionNotificationController {
   syncEnvironment(previous: AppState, next: AppState): void {
     if (this.disposed) return;
 
-    const environmentChanged = previous.machines !== next.machines
-      || previous.machineStatuses !== next.machineStatuses;
+    const environmentChanged = previous.machines !== next.machines || previous.machineStatuses !== next.machineStatuses;
     const selected = this.selectedTarget;
     if (!environmentChanged || selected === undefined) return;
 
@@ -166,10 +165,11 @@ export class SessionNotificationController {
     }));
     try {
       const snapshot = await this.api.dismissNotification({ id: target.sessionId, cwd: target.cwd }, view.daemonInstanceId, notificationId, target.machineId);
-      if (this.isCurrentTarget(target, generation)) this.applyMutationSnapshot(target, snapshot, (current) => ({
-        ...current,
-        optimisticDismissedIds: current.optimisticDismissedIds.filter((id) => id !== notificationId),
-      }));
+      if (this.isCurrentTarget(target, generation))
+        this.applyMutationSnapshot(target, snapshot, (current) => ({
+          ...current,
+          optimisticDismissedIds: current.optimisticDismissedIds.filter((id) => id !== notificationId),
+        }));
     } catch (error) {
       if (this.isCurrentTarget(target, generation)) {
         this.patchSelectedOverlay(target, (current) => ({
@@ -195,11 +195,12 @@ export class SessionNotificationController {
     this.patchSelectedOverlay(target, (current) => ({ ...current, optimisticDismissAllThrough: through }));
     try {
       const snapshot = await this.api.dismissAllNotifications({ id: target.sessionId, cwd: target.cwd }, view.daemonInstanceId, through, target.machineId);
-      if (this.isCurrentTarget(target, generation)) this.applyMutationSnapshot(target, snapshot, (current) => {
-        const next = { ...current };
-        delete next.optimisticDismissAllThrough;
-        return next;
-      });
+      if (this.isCurrentTarget(target, generation))
+        this.applyMutationSnapshot(target, snapshot, (current) => {
+          const next = { ...current };
+          delete next.optimisticDismissAllThrough;
+          return next;
+        });
     } catch (error) {
       if (this.isCurrentTarget(target, generation)) {
         this.patchSelectedOverlay(target, (current) => {
@@ -228,9 +229,10 @@ export class SessionNotificationController {
           return;
         }
         const current = this.getState().selectedNotificationInbox;
-        let inbox = current === undefined || shouldInstallSelectedSnapshot(current, target, snapshot)
-          ? installSelectedNotificationSnapshot(current, target, snapshot)
-          : current;
+        let inbox =
+          current === undefined || shouldInstallSelectedSnapshot(current, target, snapshot)
+            ? installSelectedNotificationSnapshot(current, target, snapshot)
+            : current;
         for (const event of [...join.events].sort((left, right) => left.summary.inboxRevision - right.summary.inboxRevision)) {
           const result = applySelectedNotificationEvent(inbox, target, event);
           inbox = result.value;
@@ -240,7 +242,8 @@ export class SessionNotificationController {
       } catch (error) {
         if (this.isCurrentTarget(target, operation.generation)) {
           const current = this.getState().selectedNotificationInbox;
-          if (current !== undefined && notificationTargetsEqual(current, target) && current.status !== "stale") this.setState({ selectedNotificationInbox: { ...current, status: "stale" } });
+          if (current !== undefined && notificationTargetsEqual(current, target) && current.status !== "stale")
+            this.setState({ selectedNotificationInbox: { ...current, status: "stale" } });
           this.onBackgroundError(`Failed to refresh notifications for session ${target.sessionId}`, error);
         }
         return;
@@ -261,16 +264,11 @@ export class SessionNotificationController {
       this.setState({ selectedNotificationInbox: { ...removeOverlay(current), status: "stale" } });
       return;
     }
-    const authoritative = shouldInstallSelectedSnapshot(current, target, snapshot)
-      ? installSelectedNotificationSnapshot(current, target, snapshot)
-      : current;
+    const authoritative = shouldInstallSelectedSnapshot(current, target, snapshot) ? installSelectedNotificationSnapshot(current, target, snapshot) : current;
     this.setState({ selectedNotificationInbox: removeOverlay(authoritative) });
   }
 
-  private patchSelectedOverlay(
-    target: SessionNotificationTarget,
-    update: (inbox: SelectedSessionNotificationInbox) => SelectedSessionNotificationInbox,
-  ): void {
+  private patchSelectedOverlay(target: SessionNotificationTarget, update: (inbox: SelectedSessionNotificationInbox) => SelectedSessionNotificationInbox): void {
     const current = this.getState().selectedNotificationInbox;
     if (current === undefined || !notificationTargetsEqual(current, target)) return;
     this.setState({ selectedNotificationInbox: update(current) });
@@ -278,7 +276,8 @@ export class SessionNotificationController {
 
   private ensureSelectedProjection(target: SessionNotificationTarget): void {
     const current = this.getState().selectedNotificationInbox;
-    if (current === undefined || !notificationTargetsEqual(current, target)) this.setState({ selectedNotificationInbox: loadingSelectedNotificationInbox(target) });
+    if (current === undefined || !notificationTargetsEqual(current, target))
+      this.setState({ selectedNotificationInbox: loadingSelectedNotificationInbox(target) });
   }
 
   private scheduleSelectedRefresh(target: SessionNotificationTarget): void {
@@ -296,10 +295,9 @@ export class SessionNotificationController {
   }
 
   private isCurrentTarget(target: SessionNotificationTarget, generation: number): boolean {
-    return !this.disposed
-      && generation === this.selectedGeneration
-      && this.selectedTarget !== undefined
-      && notificationTargetsEqual(this.selectedTarget, target);
+    return (
+      !this.disposed && generation === this.selectedGeneration && this.selectedTarget !== undefined && notificationTargetsEqual(this.selectedTarget, target)
+    );
   }
 
   private machineIsReachable(machineId: string): boolean {
@@ -323,10 +321,12 @@ function shouldInstallSelectedSnapshot(
   target: SessionNotificationTarget,
   snapshot: SessionNotificationInboxSnapshot,
 ): boolean {
-  return !notificationTargetsEqual(current, target)
+  return (
+    !notificationTargetsEqual(current, target)
     || current.daemonInstanceId !== snapshot.daemonInstanceId
     || current.summary === undefined
-    || snapshot.summary.inboxRevision >= current.summary.inboxRevision;
+    || snapshot.summary.inboxRevision >= current.summary.inboxRevision
+  );
 }
 
 function errorMessage(error: unknown): string {

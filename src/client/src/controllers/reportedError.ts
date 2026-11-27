@@ -11,7 +11,10 @@ import type { GetState, SetState } from "./types";
 export class ReportedError {
   private reported: string | undefined;
 
-  constructor(private readonly getState: GetState, private readonly setState: SetState) {}
+  constructor(
+    private readonly getState: GetState,
+    private readonly setState: SetState,
+  ) {}
 
   /** Shows `message` in the shared banner and takes ownership of clearing it. */
   report(message: string): void {

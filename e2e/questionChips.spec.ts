@@ -9,12 +9,30 @@ const [NOTES, ASKING, CROWDED, RELEASE] = [E2E_SESSION_ID, E2E_ASK_CHAT.id, E2E_
 
 /** One window with the Chat that asks beside a Chat that does not, the asking one focused. */
 async function openAskingWindow(page: Page, focused: string = ASKING, layout: "tabs" | "grid" = "tabs"): Promise<void> {
-  await openWindow(page, [[NOTES, "Where are the notes?"], [ASKING, E2E_ASK_CHAT.question]], focused, layout);
+  await openWindow(
+    page,
+    [
+      [NOTES, "Where are the notes?"],
+      [ASKING, E2E_ASK_CHAT.question],
+    ],
+    focused,
+    layout,
+  );
 }
 
 /** Four Grid tiles: the Chat asking twelve questions focused, beside the one asking two and two that ask nothing. */
 async function openCrowdedGrid(page: Page): Promise<void> {
-  await openWindow(page, [[NOTES, "Where are the notes?"], [ASKING, E2E_ASK_CHAT.question], [RELEASE, E2E_MORE_CHATS[0].question], [CROWDED, E2E_CROWDED_ASK_CHAT.question]], CROWDED, "grid");
+  await openWindow(
+    page,
+    [
+      [NOTES, "Where are the notes?"],
+      [ASKING, E2E_ASK_CHAT.question],
+      [RELEASE, E2E_MORE_CHATS[0].question],
+      [CROWDED, E2E_CROWDED_ASK_CHAT.question],
+    ],
+    CROWDED,
+    "grid",
+  );
 }
 
 async function openWindow(page: Page, chats: readonly (readonly [string, string])[], focused: string, layout: "tabs" | "grid"): Promise<void> {
@@ -23,8 +41,15 @@ async function openWindow(page: Page, chats: readonly (readonly [string, string]
   if (workspaceId === undefined || url === undefined) throw new Error("Isolated PI WEB was not started");
   const workstream = { id: "ws-ask", title: "Ask context" };
   const chat = (sessionId: string, title: string) => ({ sessionId, title, machineId: "local", projectId: E2E_PROJECT_ID, workspaceId, workstream });
-  const store = { q: { name: "Window 1", layout, maximized: false, focused, lastActive: {}, chats: chats.map(([sessionId, title]) => chat(sessionId, title)) } };
-  await page.addInitScript(([key, value]) => { if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, [STORE_KEY, JSON.stringify(store)] as const);
+  const store = {
+    q: { name: "Window 1", layout, maximized: false, focused, lastActive: {}, chats: chats.map(([sessionId, title]) => chat(sessionId, title)) },
+  };
+  await page.addInitScript(
+    ([key, value]) => {
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+    },
+    [STORE_KEY, JSON.stringify(store)] as const,
+  );
   const target = new URL(url);
   target.searchParams.set("win", "q");
   target.searchParams.set("session", focused);
@@ -88,28 +113,51 @@ test("captures the question bar and drawer for review", async ({ browser }) => {
 async function openCrampedDrawer(page: Page): Promise<void> {
   await openAskingWindow(page);
   // Pins the roster's status: the live session status would replace a plain assignment.
-  await shownChat(page).locator("delegate-roster").evaluate((element: HTMLElement & { requestUpdate: () => void }) => {
-    const items = ["Reviewer", "Builder", "Scout", "Tester", "Writer", "Linter", "Designer", "Planner"].map((name, index) => ({ id: `d${String(index)}`, kind: "subagent", name, reportedStatus: `${name} is working on the next step` }));
-    const status = { extensionStatuses: { "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items }) } };
-    Object.defineProperty(element, "status", { configurable: true, get: () => status, set: () => undefined });
-    element.requestUpdate();
-  });
-  await shownChat(page).locator("workbench-question-chips").evaluate((element: HTMLElement & { asks: { questions: { question: string; options: { detail?: string }[] }[] }[] }) => {
-    const [ask] = element.asks;
-    if (ask === undefined) return;
-    const [first, second] = ask.questions;
-    if (first === undefined || second === undefined) return;
-    const long = "Restarts the session daemon, so every running session is interrupted and has to be resumed by hand afterwards. ".repeat(3);
-    element.asks = [{ ...ask, questions: [{ ...first, options: first.options.map((option) => ({ ...option, detail: long })) }, { ...second, question: "Fix the support bot's prompt so it stops promising refunds it cannot grant, and which checks should run first?" }] }];
-  });
+  await shownChat(page)
+    .locator("delegate-roster")
+    .evaluate((element: HTMLElement & { requestUpdate: () => void }) => {
+      const items = ["Reviewer", "Builder", "Scout", "Tester", "Writer", "Linter", "Designer", "Planner"].map((name, index) => ({
+        id: `d${String(index)}`,
+        kind: "subagent",
+        name,
+        reportedStatus: `${name} is working on the next step`,
+      }));
+      const status = { extensionStatuses: { "pi-workbench:activity": JSON.stringify({ schemaVersion: 1, items }) } };
+      Object.defineProperty(element, "status", { configurable: true, get: () => status, set: () => undefined });
+      element.requestUpdate();
+    });
+  await shownChat(page)
+    .locator("workbench-question-chips")
+    .evaluate((element: HTMLElement & { asks: { questions: { question: string; options: { detail?: string }[] }[] }[] }) => {
+      const [ask] = element.asks;
+      if (ask === undefined) return;
+      const [first, second] = ask.questions;
+      if (first === undefined || second === undefined) return;
+      const long = "Restarts the session daemon, so every running session is interrupted and has to be resumed by hand afterwards. ".repeat(3);
+      element.asks = [
+        {
+          ...ask,
+          questions: [
+            { ...first, options: first.options.map((option) => ({ ...option, detail: long })) },
+            { ...second, question: "Fix the support bot's prompt so it stops promising refunds it cannot grant, and which checks should run first?" },
+          ],
+        },
+      ];
+    });
   await expect(shownChat(page).locator("delegate-roster section")).toBeVisible();
   await bar(page).click();
   await expect(drawer(page)).toBeVisible();
 }
 
 test("fits one flat question drawer above the bar and composer in a short window", async ({ browser }) => {
-  const sizes = SHOTS === undefined ? [[1000, 650]] as const : [[1000, 650], [1440, 900]] as const;
-  for (const scheme of SHOTS === undefined ? ["light"] as const : ["dark", "light"] as const) {
+  const sizes =
+    SHOTS === undefined
+      ? ([[1000, 650]] as const)
+      : ([
+          [1000, 650],
+          [1440, 900],
+        ] as const);
+  for (const scheme of SHOTS === undefined ? (["light"] as const) : (["dark", "light"] as const)) {
     for (const [width, height] of sizes) {
       const context = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
       const page = await context.newPage();
@@ -121,14 +169,26 @@ test("fits one flat question drawer above the bar and composer in a short window
         expect(box !== null && box.y >= 0 && box.y + box.height <= height + 0.5).toBe(true);
       }
       const layout = await drawer(page).evaluate((root) => {
-        const all = (node: Element | ShadowRoot): Element[] => [...node.querySelectorAll("*")].flatMap((element) => [element, ...(element.shadowRoot === null ? [] : all(element.shadowRoot))]);
+        const all = (node: Element | ShadowRoot): Element[] =>
+          [...node.querySelectorAll("*")].flatMap((element) => [element, ...(element.shadowRoot === null ? [] : all(element.shadowRoot))]);
         const elements = [root, ...all(root)];
-        const visible = (style: CSSStyleDeclaration, side: string) => parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0 && style.getPropertyValue(`border-${side}-style`) !== "none" && !/rgba\(.*, 0\)$|transparent/.test(style.getPropertyValue(`border-${side}-color`));
-        const framed = elements.filter((element) => !element.matches("button, input, textarea, label, code") && ["top", "right", "bottom", "left"].every((side) => visible(getComputedStyle(element), side)));
+        const visible = (style: CSSStyleDeclaration, side: string) =>
+          parseFloat(style.getPropertyValue(`border-${side}-width`)) > 0
+          && style.getPropertyValue(`border-${side}-style`) !== "none"
+          && !/rgba\(.*, 0\)$|transparent/.test(style.getPropertyValue(`border-${side}-color`));
+        const framed = elements.filter(
+          (element) =>
+            !element.matches("button, input, textarea, label, code")
+            && ["top", "right", "bottom", "left"].every((side) => visible(getComputedStyle(element), side)),
+        );
         const headings = elements.filter((element) => element.matches("legend")).map((element) => element.getBoundingClientRect());
         // A fieldset's top border paints through its legend, so separators must be elements of their own.
-        const lines = elements.filter((element) => element.matches("fieldset") ? visible(getComputedStyle(element), "top") : element.matches("hr")).map((element) => element.getBoundingClientRect());
-        const crossing = lines.filter((line) => headings.some((heading) => line.top < heading.bottom && line.bottom > heading.top && line.left < heading.right && line.right > heading.left));
+        const lines = elements
+          .filter((element) => (element.matches("fieldset") ? visible(getComputedStyle(element), "top") : element.matches("hr")))
+          .map((element) => element.getBoundingClientRect());
+        const crossing = lines.filter((line) =>
+          headings.some((heading) => line.top < heading.bottom && line.bottom > heading.top && line.left < heading.right && line.right > heading.left),
+        );
         return { framed: framed.length, separators: lines.length, crossing: crossing.length };
       });
       // Nothing in the drawer draws a frame of its own, the drawer included.
@@ -141,8 +201,12 @@ test("fits one flat question drawer above the bar and composer in a short window
 test("counts an idle Chat's open questions on its tab right after a reload, without opening it", async ({ page }) => {
   // Anything but the read-only asks read would open the cold Chat in the daemon.
   const reads: string[] = [];
-  page.on("request", (request) => { reads.push(new URL(request.url()).pathname); });
-  page.on("websocket", (socket) => { reads.push(new URL(socket.url()).pathname); });
+  page.on("request", (request) => {
+    reads.push(new URL(request.url()).pathname);
+  });
+  page.on("websocket", (socket) => {
+    reads.push(new URL(socket.url()).pathname);
+  });
   await openAskingWindow(page, NOTES);
   await expect(tabCount(page, ASKING)).toHaveText("2");
   await expect(bar(page)).toHaveCount(0);
@@ -155,10 +219,13 @@ test("keeps a long set's send action in view at the drawer's bottom while its qu
   await bar(page).click();
   await expect(drawer(page)).toBeVisible();
   // A long context and many questions: the drawer must scroll, or the check below proves nothing.
-  await shownChat(page).locator("workbench-question-chips").evaluate((element: HTMLElement & { asks: { context: string; questions: unknown[] }[] }) => {
-    const [ask] = element.asks;
-    if (ask !== undefined) element.asks = [{ ...ask, context: `${ask.context}\n\n`.repeat(6), questions: [...ask.questions, ...ask.questions, ...ask.questions] }];
-  });
+  await shownChat(page)
+    .locator("workbench-question-chips")
+    .evaluate((element: HTMLElement & { asks: { context: string; questions: unknown[] }[] }) => {
+      const [ask] = element.asks;
+      if (ask !== undefined)
+        element.asks = [{ ...ask, context: `${ask.context}\n\n`.repeat(6), questions: [...ask.questions, ...ask.questions, ...ask.questions] }];
+    });
   const sets = drawer(page).locator(".sets");
   expect(await sets.evaluate((element) => element.scrollHeight > element.clientHeight + 100)).toBe(true);
   const send = drawer(page).getByRole("button", { name: "Send all" });
@@ -167,11 +234,15 @@ test("keeps a long set's send action in view at the drawer's bottom while its qu
     expect(area !== null && button !== null && button.y >= area.y && button.y + button.height <= area.y + area.height + 1).toBe(true);
   };
   await within();
-  await sets.evaluate((element) => { element.scrollTop = element.scrollHeight / 2; });
+  await sets.evaluate((element) => {
+    element.scrollTop = element.scrollHeight / 2;
+  });
   await within();
 });
 
-test("keeps twelve questions to one bar in a crowded grid, opens a side tile's questions in one click, and answers through a drawer with room", async ({ page }) => {
+test("keeps twelve questions to one bar in a crowded grid, opens a side tile's questions in one click, and answers through a drawer with room", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 900, height: 820 });
   await openCrowdedGrid(page);
   await expect(bar(page)).toHaveText("12 open questions");

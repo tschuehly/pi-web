@@ -19,7 +19,12 @@ describe("settings-packages-panel installable known packages", () => {
   it("offers a one-click install for a known package that is not currently configured", async () => {
     const onInstallPackage = vi.fn();
     const panel = await mountPanel(
-      { packages: [], installableKnownPackages: [{ id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" }] },
+      {
+        packages: [],
+        installableKnownPackages: [
+          { id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" },
+        ],
+      },
       { onInstallPackage },
     );
 
@@ -38,7 +43,10 @@ describe("settings-packages-panel installable known packages", () => {
     const onInstallPackage = vi.fn();
     const source = "/pi-web/dist/pi-packages/captains-log";
     const panel = await mountPanel(
-      { packages: [], installableKnownPackages: [{ id: "@jmfederico/pi-captains-log", label: "Captain’s Log", description: "Optional session logging.", source }] },
+      {
+        packages: [],
+        installableKnownPackages: [{ id: "@jmfederico/pi-captains-log", label: "Captain’s Log", description: "Optional session logging.", source }],
+      },
       { onInstallPackage },
     );
 
@@ -50,9 +58,12 @@ describe("settings-packages-panel installable known packages", () => {
   });
 
   it("disables the known-package install button while any package operation is pending", async () => {
-    const panel = await mountPanel(
-      { packages: [], installableKnownPackages: [{ id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" }] },
-    );
+    const panel = await mountPanel({
+      packages: [],
+      installableKnownPackages: [
+        { id: "@jmfederico/pi-relay", label: "Relays", description: "Relay method prompts and skill.", source: "/pi-web/dist/pi-packages/relays" },
+      ],
+    });
     panel.operation = { kind: "update-all" };
     await panel.updateComplete;
 

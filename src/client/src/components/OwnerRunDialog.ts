@@ -6,7 +6,11 @@ import type { OwnerRunProposal } from "../../../shared/ownerRun";
 import "./ModalSurface";
 
 /** The committed assistant message a pi-run block belongs to. */
-export interface OwnerRunTarget { session: SessionRef; machineId: string; entryId: string }
+export interface OwnerRunTarget {
+  session: SessionRef;
+  machineId: string;
+  entryId: string;
+}
 
 /**
  * Confirms one pi-run proposal before it runs outside the write fence: the folder, the whole literal command and where
@@ -29,7 +33,9 @@ export class OwnerRunDialog extends LitElement {
     if (proposal === undefined) return html``;
     const terminal = proposal.mode === "terminal";
     return html`
-      <modal-surface .onClose=${() => { this.close(); }} .busy=${this.sending} .initialFocus=${".cancel"} .label=${"Run outside the write fence"}>
+      <modal-surface .onClose=${() => {
+        this.close();
+      }} .busy=${this.sending} .initialFocus=${".cancel"} .label=${"Run outside the write fence"}>
         <header><h1>Run outside the write fence</h1></header>
         <div class="body">
           <p class="warning">Runs as you, not in the agent's sandbox: it can change or delete anything you can.</p>
@@ -38,8 +44,12 @@ export class OwnerRunDialog extends LitElement {
           ${this.error === "" ? null : html`<p class="dialog-error" role="status">${this.error}</p>`}
         </div>
         <footer>
-          <button class="cancel" ?disabled=${this.sending} @click=${() => { this.close(); }}>Cancel</button>
-          <button class="danger run" ?disabled=${this.sending} @click=${() => { void this.run(); }}>${terminal ? "Open in Terminal" : "Run once"}</button>
+          <button class="cancel" ?disabled=${this.sending} @click=${() => {
+            this.close();
+          }}>Cancel</button>
+          <button class="danger run" ?disabled=${this.sending} @click=${() => {
+            void this.run();
+          }}>${terminal ? "Open in Terminal" : "Run once"}</button>
         </footer>
       </modal-surface>
     `;
@@ -94,5 +104,7 @@ export function openOwnerRunDialog(target: OwnerRunTarget, proposal: OwnerRunPro
 }
 
 declare global {
-  interface HTMLElementTagNameMap { "owner-run-dialog": OwnerRunDialog }
+  interface HTMLElementTagNameMap {
+    "owner-run-dialog": OwnerRunDialog;
+  }
 }

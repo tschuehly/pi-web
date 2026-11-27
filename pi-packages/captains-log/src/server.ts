@@ -26,9 +26,17 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
     function visible(scope: string, entry: LogEntry): LogEntry {
       const live = active.get(scope);
       if (live?.id === entry.id) return live;
-      return unsaved.get(entry.id) ?? (entry.status === "running"
-        ? { ...entry, status: "interrupted", failureCode: "interrupted", text: "Captain's Log stopped before recording completion. Inspect the previous session before retrying. Nothing was resent automatically." }
-        : entry);
+      return (
+        unsaved.get(entry.id)
+        ?? (entry.status === "running"
+          ? {
+              ...entry,
+              status: "interrupted",
+              failureCode: "interrupted",
+              text: "Captain's Log stopped before recording completion. Inspect the previous session before retrying. Nothing was resent automatically.",
+            }
+          : entry)
+      );
     }
     return {
       start({ capabilities }) {
@@ -62,8 +70,12 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
           let listening = true;
           const send = (frame: CaptainServerFrame) => {
             if (!listening) return;
-            try { context.send(frame.type === "entry" ? { ...frame, entry: { ...frame.entry } } : frame); }
-            catch (error) { cleanup(); host.logger.warn(`Captain subscriber disconnected: ${String(error)}`); }
+            try {
+              context.send(frame.type === "entry" ? { ...frame, entry: { ...frame.entry } } : frame);
+            } catch (error) {
+              cleanup();
+              host.logger.warn(`Captain subscriber disconnected: ${String(error)}`);
+            }
           };
           const cleanup = () => {
             listening = false;
@@ -84,9 +96,23 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
               signal.throwIfAborted();
               host.lifetimeSignal.throwIfAborted();
               if (!isCaptainClientFrame(data)) throw new Error("Invalid Captain translation frame");
-              const reject = (message: string) => { send({ type: "rejected", requestId: data.requestId, message: message.slice(0, 2000) }); };
-              if (active.has(scope)) { reject("Captain is already working."); return; }
-              const entry: LogEntry = { id: randomUUID(), createdAt: new Date().toISOString(), sessionId: "", question: "Translate last reply", sourceSessionId: data.sourceSessionId, status: "running", stages: ["Backend admitted translation"], text: "Preparing Captain's Log…" };
+              const reject = (message: string) => {
+                send({ type: "rejected", requestId: data.requestId, message: message.slice(0, 2000) });
+              };
+              if (active.has(scope)) {
+                reject("Captain is already working.");
+                return;
+              }
+              const entry: LogEntry = {
+                id: randomUUID(),
+                createdAt: new Date().toISOString(),
+                sessionId: "",
+                question: "Translate last reply",
+                sourceSessionId: data.sourceSessionId,
+                status: "running",
+                stages: ["Backend admitted translation"],
+                text: "Preparing Captain's Log…",
+              };
               // Lock before any I/O so concurrent tabs cannot create two dedicated sessions.
               active.set(scope, entry);
               try {
@@ -95,9 +121,14 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
                 const latestTime = Math.max(0, ...previous.map((record) => Date.parse(record.createdAt)).filter(Number.isFinite));
                 entry.createdAt = new Date(Math.max(Date.now(), latestTime + 1)).toISOString();
                 entry.sessionId = currentSessions.get(scope) ?? previous.find((record) => record.sessionId)?.sessionId ?? "";
-                if (entry.sessionId === data.sourceSessionId || previous.some((record) => record.sessionId === data.sourceSessionId)) throw new Error("Select a source session other than the pirate conversation.");
+                if (entry.sessionId === data.sourceSessionId || previous.some((record) => record.sessionId === data.sourceSessionId))
+                  throw new Error("Select a source session other than the pirate conversation.");
                 await store.save(scope, entry);
-              } catch (error) { active.delete(scope); reject(String(error)); return; }
+              } catch (error) {
+                active.delete(scope);
+                reject(String(error));
+                return;
+              }
               send({ type: "admitted", requestId: data.requestId, id: entry.id });
               publish(scope, entry, true);
               const progress = (stage: string) => {
@@ -109,8 +140,11 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
                   host.lifetimeSignal.throwIfAborted();
                   const source = await events.connect({ ...selection, sessionId: data.sourceSessionId });
                   let sourceText: string;
-                  try { sourceText = await collectSourceReply(source, entry.id, host.lifetimeSignal, progress); }
-                  finally { source.close(); }
+                  try {
+                    sourceText = await collectSourceReply(source, entry.id, host.lifetimeSignal, progress);
+                  } finally {
+                    source.close();
+                  }
                   progress("Source reply read without changing source");
                   const createPirate = async () => {
                     ({ sessionId: entry.sessionId } = await sessions.create(selection));
@@ -122,20 +156,27 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
                   const previousSessionId = entry.sessionId;
                   const connection = previousSessionId
                     ? await events.connect({ ...selection, sessionId: previousSessionId }).catch((error: unknown) => {
-                      // Only a definitive rejection before sending permits automatic replacement.
-                      if (error instanceof Error && error.message === "Selected session is not hosted in this workspace on this machine") return createPirate();
-                      throw error;
-                    })
+                        // Only a definitive rejection before sending permits automatic replacement.
+                        if (error instanceof Error && error.message === "Selected session is not hosted in this workspace on this machine")
+                          return createPirate();
+                        throw error;
+                      })
                     : await createPirate();
                   progress("Pirate conversation selected");
                   try {
                     entry.text = await collectReply(connection, entry.id, sourceText, host.lifetimeSignal, progress);
-                  } finally { connection.close(); }
+                  } finally {
+                    connection.close();
+                  }
                   entry.status = "completed";
                 } catch (error) {
                   entry.status = "failed";
                   entry.failureCode ??= "request-failed";
-                  entry.text = `Captain could not finish this request. Inspect the session before retrying; nothing was resent automatically.\n${error instanceof Error ? error.message : String(error)}`.slice(0, 4000);
+                  entry.text =
+                    `Captain could not finish this request. Inspect the session before retrying; nothing was resent automatically.\n${error instanceof Error ? error.message : String(error)}`.slice(
+                      0,
+                      4000,
+                    );
                   progress("Backend recorded failure (not success)");
                 }
                 let saved = false;
@@ -143,18 +184,22 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
                   if (entry.status === "completed") entry.stages.push("Backend saved completed roundtrip");
                   await store.save(scope, entry);
                   saved = true;
-                }
-                catch (error) {
+                } catch (error) {
                   entry.status = "failed";
                   entry.failureCode = "request-failed";
                   entry.stages = entry.stages.filter((stage) => stage !== "Backend saved completed roundtrip");
                   entry.text = `Could not save Captain's Log: ${String(error)}. Inspect session ${entry.sessionId}.`.slice(0, 4000);
                   unsaved.set(entry.id, { ...entry });
                   host.logger.error(entry.text);
-                } finally { active.delete(scope); publish(scope, entry, saved); }
+                } finally {
+                  active.delete(scope);
+                  publish(scope, entry, saved);
+                }
               })();
               tasks.add(task);
-              void task.finally(() => { tasks.delete(task); });
+              void task.finally(() => {
+                tasks.delete(task);
+              });
             },
           };
         },
@@ -162,7 +207,9 @@ const plugin: Extract<PiWebServerPlugin, { apiVersion: 3 }> = {
       async dispose() {
         await Promise.all(tasks);
         for (const cleanup of channelCleanups) cleanup();
-        active.clear(); unsaved.clear(); currentSessions.clear();
+        active.clear();
+        unsaved.clear();
+        currentSessions.clear();
       },
     };
   },

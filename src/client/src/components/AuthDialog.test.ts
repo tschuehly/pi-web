@@ -73,7 +73,14 @@ describe("provider authentication entry points", () => {
 describe("unified MCP authentication dialog", () => {
   it("keeps the authorization link and redirect input together in the modal", async () => {
     const onOAuthRespond = vi.fn();
-    const dialog = await mountDialog(oauthState({ target: "mcp", auth: { url: "https://auth.example/authorize" }, prompt: { requestId: "redirect", message: "Paste the redirected URL", promptType: "text" } }), { onOAuthRespond });
+    const dialog = await mountDialog(
+      oauthState({
+        target: "mcp",
+        auth: { url: "https://auth.example/authorize" },
+        prompt: { requestId: "redirect", message: "Paste the redirected URL", promptType: "text" },
+      }),
+      { onOAuthRespond },
+    );
     expect(dialogSection(dialog).getAttribute("aria-label")).toBe("MCP authentication");
     expect(oauthAuthorizationLink(dialog).getAttribute("href")).toBe("https://auth.example/authorize");
     expect(promptInput(dialog).getAttribute("type")).toBe("text");
@@ -95,7 +102,9 @@ describe("unified MCP authentication dialog", () => {
   });
 
   it("retains Pi's terminal messages without assuming command completion means signed in", async () => {
-    const dialog = await mountDialog(oauthState({ target: "mcp", status: "complete", auth: { url: "https://auth.example/authorize" }, progress: ["No enabled MCP server uses OAuth."] }));
+    const dialog = await mountDialog(
+      oauthState({ target: "mcp", status: "complete", auth: { url: "https://auth.example/authorize" }, progress: ["No enabled MCP server uses OAuth."] }),
+    );
     expect(dialog.shadowRoot?.textContent).toContain("Operation finished");
     expect(dialog.shadowRoot?.textContent).toContain("No enabled MCP server uses OAuth.");
     expect(dialog.shadowRoot?.textContent).not.toContain("Login complete");
@@ -106,7 +115,10 @@ describe("unified MCP authentication dialog", () => {
   it("explains cancellation races and lets the user close without claiming Pi has stopped", async () => {
     const onCancel = vi.fn();
     const onOAuthCancel = vi.fn();
-    const dialog = await mountDialog(oauthState({ target: "mcp", cancelRequested: true, prompt: { requestId: "redirect", message: "Paste URL", promptType: "manual_code" } }), { onCancel, onOAuthCancel });
+    const dialog = await mountDialog(
+      oauthState({ target: "mcp", cancelRequested: true, prompt: { requestId: "redirect", message: "Paste URL", promptType: "manual_code" } }),
+      { onCancel, onOAuthCancel },
+    );
     expect(dialog.shadowRoot?.textContent).toContain("Waiting for Pi to finish");
     expect(dialog.shadowRoot?.textContent).toContain("Credentials may have been saved");
     expect(dialog.shadowRoot?.querySelector("input")).toBeNull();
@@ -116,7 +128,9 @@ describe("unified MCP authentication dialog", () => {
   });
 
   it("names the selected server and explains credential reuse without forcing browser authentication", async () => {
-    const dialog = await mountDialog(oauthState({ target: "mcp", mcpMode: "login", providerName: "Budgeter", status: "complete", progress: ["Signed in to MCP server Budgeter."] }));
+    const dialog = await mountDialog(
+      oauthState({ target: "mcp", mcpMode: "login", providerName: "Budgeter", status: "complete", progress: ["Signed in to MCP server Budgeter."] }),
+    );
     expect(dialogSection(dialog).getAttribute("aria-label")).toBe("MCP login: Budgeter");
     expect(dialog.shadowRoot?.textContent).toContain("No browser authorization was requested");
     expect(dialog.shadowRoot?.textContent).toContain("may have reused existing credentials");
@@ -129,7 +143,10 @@ describe("unified MCP authentication dialog", () => {
 
   it("renders startup failures inside the same modal", async () => {
     const onCancel = vi.fn();
-    const dialog = await mountDialog({ step: "starting", machineId: "local", title: "Sign in to an MCP server", error: "MCP extension is disabled" }, { onCancel });
+    const dialog = await mountDialog(
+      { step: "starting", machineId: "local", title: "Sign in to an MCP server", error: "MCP extension is disabled" },
+      { onCancel },
+    );
     expect(dialog.shadowRoot?.querySelector("[role=alert]")?.textContent).toContain("MCP extension is disabled");
     requiredElement(dialog.shadowRoot?.querySelector<HTMLButtonElement>(".ui-form-actions button"), "Close action").click();
     expect(onCancel).toHaveBeenCalledOnce();
@@ -182,7 +199,13 @@ describe("auth-dialog focus on open", () => {
 
     // The host app answers the method choice by advancing the dialog to the
     // providers step, replacing the button that held focus.
-    dialog.state = { step: "providers", mode: "login", machineId: "local", authType: "oauth", providers: [providerOption("p1", "One"), providerOption("p2", "Two")] };
+    dialog.state = {
+      step: "providers",
+      mode: "login",
+      machineId: "local",
+      authType: "oauth",
+      providers: [providerOption("p1", "One"), providerOption("p2", "Two")],
+    };
     await settleDialog(dialog);
 
     expect(deepActiveElement()).toBe(searchInput(dialog));
@@ -206,10 +229,7 @@ describe("auth-dialog focus on open", () => {
 
   it("refocuses when OAuth selection and waiting controls replace each other", async () => {
     const onOAuthCancel = vi.fn<() => void>();
-    const dialog = await mountDialog(
-      oauthState({ prompt: { requestId: "req-1", message: "Enter the code", promptType: "text" } }),
-      { onOAuthCancel },
-    );
+    const dialog = await mountDialog(oauthState({ prompt: { requestId: "req-1", message: "Enter the code", promptType: "text" } }), { onOAuthCancel });
 
     dialog.state = oauthState({ select: oauthSelect("select-1", "Account one") });
     await settleDialog(dialog);
@@ -269,7 +289,12 @@ describe("auth-dialog Escape", () => {
 
 describe("auth-dialog option-list keyboard navigation", () => {
   it("moves the selection with ArrowDown and ArrowUp, wrapping at both ends", async () => {
-    const dialog = await mountDialog({ step: "providers", mode: "login", machineId: "local", providers: [providerOption("p1", "One"), providerOption("p2", "Two"), providerOption("p3", "Three")] });
+    const dialog = await mountDialog({
+      step: "providers",
+      mode: "login",
+      machineId: "local",
+      providers: [providerOption("p1", "One"), providerOption("p2", "Two"), providerOption("p3", "Three")],
+    });
     expect(selectedOptionIndex(dialog)).toBe(0);
 
     // happy-dom does not propagate events out of shadow roots, so key presses
@@ -341,7 +366,10 @@ describe("auth-dialog option-list keyboard navigation", () => {
 
   it("activates the selected stored credential with Enter on the logout step", async () => {
     const onLogoutProvider = vi.fn<(providerId: string) => void>();
-    const dialog = await mountDialog({ step: "logout", machineId: "local", providers: [providerOption("p1", "One"), providerOption("p2", "Two")] }, { onLogoutProvider });
+    const dialog = await mountDialog(
+      { step: "logout", machineId: "local", providers: [providerOption("p1", "One"), providerOption("p2", "Two")] },
+      { onLogoutProvider },
+    );
 
     pressKey(dialogSurface(dialog), "Enter");
 
@@ -371,7 +399,12 @@ describe("auth-dialog option-list keyboard navigation", () => {
   });
 
   it("restarts the selection at the first option when the step changes", async () => {
-    const dialog = await mountDialog({ step: "providers", mode: "login", machineId: "local", providers: [providerOption("p1", "One"), providerOption("p2", "Two")] });
+    const dialog = await mountDialog({
+      step: "providers",
+      mode: "login",
+      machineId: "local",
+      providers: [providerOption("p1", "One"), providerOption("p2", "Two")],
+    });
     pressKey(dialogSurface(dialog), "ArrowDown");
     await settleDialog(dialog);
     expect(selectedOptionIndex(dialog)).toBe(1);
@@ -386,7 +419,9 @@ describe("auth-dialog option-list keyboard navigation", () => {
 describe("auth-dialog provider search", () => {
   it("filters providers by name and id as the query narrows the list", async () => {
     const dialog = await mountDialog({
-      step: "providers", mode: "login", machineId: "local",
+      step: "providers",
+      mode: "login",
+      machineId: "local",
       providers: [providerOption("anthropic", "Anthropic"), providerOption("openai", "OpenAI"), providerOption("github-copilot", "GitHub Copilot")],
     });
     expect(optionButtons(dialog)).toHaveLength(3);
@@ -404,7 +439,13 @@ describe("auth-dialog provider search", () => {
   it("activates the filtered provider with Enter from the search box", async () => {
     const onSelectProvider = vi.fn<(providerId: string, authType: "oauth" | "api_key") => void>();
     const dialog = await mountDialog(
-      { step: "providers", mode: "login", machineId: "local", authType: "oauth", providers: [providerOption("anthropic", "Anthropic"), providerOption("openai", "OpenAI")] },
+      {
+        step: "providers",
+        mode: "login",
+        machineId: "local",
+        authType: "oauth",
+        providers: [providerOption("anthropic", "Anthropic"), providerOption("openai", "OpenAI")],
+      },
       { onSelectProvider },
     );
 
@@ -416,7 +457,9 @@ describe("auth-dialog provider search", () => {
 
   it("moves the roving selection within the filtered list", async () => {
     const dialog = await mountDialog({
-      step: "providers", mode: "login", machineId: "local",
+      step: "providers",
+      mode: "login",
+      machineId: "local",
       providers: [providerOption("anthropic", "Anthropic"), providerOption("openai", "OpenAI")],
     });
 
@@ -428,7 +471,9 @@ describe("auth-dialog provider search", () => {
 
   it("shows a no-match message when the query matches no provider", async () => {
     const dialog = await mountDialog({
-      step: "providers", mode: "login", machineId: "local",
+      step: "providers",
+      mode: "login",
+      machineId: "local",
       providers: [providerOption("anthropic", "Anthropic"), providerOption("openai", "OpenAI")],
     });
 
@@ -446,7 +491,9 @@ describe("auth-dialog provider search", () => {
 
   it("resets the search query when the step changes", async () => {
     const dialog = await mountDialog({
-      step: "providers", mode: "login", machineId: "local",
+      step: "providers",
+      mode: "login",
+      machineId: "local",
       providers: [providerOption("p1", "One"), providerOption("p2", "Two")],
     });
 
@@ -477,10 +524,7 @@ describe("auth-dialog provider search", () => {
 describe("auth-dialog OAuth prompt keys", () => {
   it("associates the OAuth prompt label with its input and forwards edits", async () => {
     const onOAuthInput = vi.fn<(value: string) => void>();
-    const dialog = await mountDialog(
-      oauthState({ prompt: { requestId: "req-1", message: "Enter the code", promptType: "text" } }),
-      { onOAuthInput },
-    );
+    const dialog = await mountDialog(oauthState({ prompt: { requestId: "req-1", message: "Enter the code", promptType: "text" } }), { onOAuthInput });
     const input = promptInput(dialog);
     const label = requiredElement(dialog.shadowRoot?.querySelector("label"), "OAuth prompt label");
 
@@ -505,10 +549,10 @@ describe("auth-dialog OAuth prompt keys", () => {
   it("lets a focused OAuth Cancel button own Enter instead of submitting", async () => {
     const onOAuthRespond = vi.fn<(value?: string) => void>();
     const onOAuthCancel = vi.fn<() => void>();
-    const dialog = await mountDialog(
-      oauthState({ prompt: { requestId: "req-1", message: "Enter the code", promptType: "text" } }),
-      { onOAuthRespond, onOAuthCancel },
-    );
+    const dialog = await mountDialog(oauthState({ prompt: { requestId: "req-1", message: "Enter the code", promptType: "text" } }), {
+      onOAuthRespond,
+      onOAuthCancel,
+    });
     const cancel = oauthActionButton(dialog, "Cancel");
     cancel.focus();
 
@@ -605,8 +649,9 @@ function oauthAuthorizationLink(dialog: AuthDialog): HTMLAnchorElement {
 }
 
 function oauthActionButton(dialog: AuthDialog, label: string): HTMLButtonElement {
-  const button = [...(dialog.shadowRoot?.querySelectorAll<HTMLButtonElement>(".actions button") ?? [])]
-    .find((candidate) => candidate.textContent.trim() === label);
+  const button = [...(dialog.shadowRoot?.querySelectorAll<HTMLButtonElement>(".actions button") ?? [])].find(
+    (candidate) => candidate.textContent.trim() === label,
+  );
   return requiredElement(button, `OAuth ${label} button`);
 }
 

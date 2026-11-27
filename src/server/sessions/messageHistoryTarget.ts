@@ -14,8 +14,7 @@ export function messageHistoryTargetId(branch: readonly unknown[], entryId: stri
   // earlier answer (custom messages are otherwise part of a checkpoint's tail).
   if (isQuestionResult(entry)) return entryId;
   // Pi restores a selected user message to the editor by positioning before it.
-  if (isRecord(entry) && entry["type"] === "message" && isRecord(entry["message"])
-    && entry["message"]["role"] === "user") return entryId;
+  if (isRecord(entry) && entry["type"] === "message" && isRecord(entry["message"]) && entry["message"]["role"] === "user") return entryId;
 
   let targetId = entryId;
   for (let nextIndex = index + 1; nextIndex < branch.length; nextIndex += 1) {
@@ -33,8 +32,9 @@ function isQuestionResult(entry: unknown): boolean {
   if (!isRecord(entry) || entry["type"] !== "message" || !isRecord(entry["message"])) return false;
   const message = entry["message"];
   const details = message["details"];
-  return message["role"] === "toolResult" && message["toolName"] === "ask_user" && message["isError"] === false
-    && isRecord(details) && isRecord(details["ask"]);
+  return (
+    message["role"] === "toolResult" && message["toolName"] === "ask_user" && message["isError"] === false && isRecord(details) && isRecord(details["ask"])
+  );
 }
 
 /**

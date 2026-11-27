@@ -10,14 +10,21 @@ for (const phase of ["before admission", "after commit before browser acknowledg
     const marker = `ack-window-${session}`;
     await mock.script({ match: marker, turns: [[{ text: "Held admitted prompt " }, { barrier: marker }]] });
     let reached!: () => void;
-    const barrier = new Promise<void>((resolve) => { reached = resolve; });
+    const barrier = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const operations: string[] = [];
     await page.route("**/sessions/*/prompt", async (route) => {
       const payload = route.request().postDataJSON() as { operationId: string };
       operations.push(payload.operationId);
-      if (operations.length !== 1) { await route.continue(); return; }
+      if (operations.length !== 1) {
+        await route.continue();
+        return;
+      }
       if (phase === "after commit before browser acknowledgement") {
         const committed = await route.fetch();
         expect(committed.ok()).toBe(true);
@@ -44,7 +51,15 @@ for (const phase of ["before admission", "after commit before browser acknowledg
 
 test("AC-P004: steer reaches the tool boundary and follow-ups run in admission order", async ({ page }) => {
   const session = await create(page);
-  await mock.script({ match: session, turns: [[{ barrier: session }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], "Steering applied.", "First follow-up done.", "Second follow-up done."] });
+  await mock.script({
+    match: session,
+    turns: [
+      [{ barrier: session }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }],
+      "Steering applied.",
+      "First follow-up done.",
+      "Second follow-up done.",
+    ],
+  });
   await send(page, session);
   await mock.waitForBarrier(session);
   await send(page, "steer-now", "Steer current response");
@@ -80,7 +95,13 @@ test("AC-P003 P004 P007: failed turn retains waiting input through SIGKILL, with
 test("AC-P005: completed shell effect is not replayed when the following generation is killed", async ({ page }) => {
   const session = await create(page);
   const effect = join(project(), `effects-${session}.txt`);
-  await mock.script({ match: session, turns: [[{ toolCall: { name: "bash", args: { command: `printf effect >> '${effect}'`, description: "Fixture effect", foreground: true } } }], [{ text: "Effect finished streaming " }, { barrier: session }]] });
+  await mock.script({
+    match: session,
+    turns: [
+      [{ toolCall: { name: "bash", args: { command: `printf effect >> '${effect}'`, description: "Fixture effect", foreground: true } } }],
+      [{ text: "Effect finished streaming " }, { barrier: session }],
+    ],
+  });
   await send(page, session);
   await mock.waitForBarrier(session);
   expect(await readFile(effect, "utf8")).toBe("effect");
@@ -97,7 +118,10 @@ test("AC-P011: Stop failure is visible and does not claim generation stopped", a
   await send(page, session);
   await mock.waitForBarrier(session);
   let refused = false;
-  await page.route("**/sessions/*/abort", async (route) => { refused = true; await route.fulfill({ status: 400, json: { error: "fixture stop refused" } }); });
+  await page.route("**/sessions/*/abort", async (route) => {
+    refused = true;
+    await route.fulfill({ status: 400, json: { error: "fixture stop refused" } });
+  });
   await page.getByRole("button", { name: "Stop current work" }).click();
   await expect.poll(() => refused).toBe(true);
   await expect(page.getByText(/fixture stop refused/)).toBeVisible();

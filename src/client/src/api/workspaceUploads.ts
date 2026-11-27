@@ -113,8 +113,12 @@ export function uploadWorkspaceFile(
       }
       fail(new Error(readXhrErrorMessage(xhr)));
     };
-    xhr.onerror = () => { fail(new Error("Workspace upload failed")); };
-    xhr.onabort = () => { fail(new WorkspaceUploadCancelledError(cancelled ? undefined : "Workspace upload aborted")); };
+    xhr.onerror = () => {
+      fail(new Error("Workspace upload failed"));
+    };
+    xhr.onabort = () => {
+      fail(new WorkspaceUploadCancelledError(cancelled ? undefined : "Workspace upload aborted"));
+    };
     xhr.send(input.file);
   });
 

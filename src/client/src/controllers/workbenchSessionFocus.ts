@@ -15,8 +15,12 @@ export class WorkbenchChatSession {
   private starting = false;
   private disposed = false;
   private snapshot: AppState;
-  get state(): AppState { return this.snapshot; }
-  get pending(): boolean { return this.loading !== undefined || this.starting || this.sessions.pendingSession(this.state.selectedSession?.id ?? "", undefined, true) !== undefined; }
+  get state(): AppState {
+    return this.snapshot;
+  }
+  get pending(): boolean {
+    return this.loading !== undefined || this.starting || this.sessions.pendingSession(this.state.selectedSession?.id ?? "", undefined, true) !== undefined;
+  }
 
   constructor(
     state: AppState,
@@ -26,27 +30,44 @@ export class WorkbenchChatSession {
   ) {
     this.snapshot = state;
     const get = () => this.state;
-    const set = (patch: Partial<AppState>) => { this.patch(patch); };
+    const set = (patch: Partial<AppState>) => {
+      this.patch(patch);
+    };
     this.notifications = new SessionNotificationController(get, set);
     this.sessions = new SessionController(get, set, updateUrl, undefined, {
       ...dependencies,
       notifications: this.notifications,
-      onSelectedSessionReady: (selection) => { this.ready = true; dependencies.onSelectedSessionReady?.(selection); },
+      onSelectedSessionReady: (selection) => {
+        this.ready = true;
+        dependencies.onSelectedSessionReady?.(selection);
+      },
     });
-    this.auth = new AuthController(get, set, (status) => { this.sessions.applySessionStatus(status); });
+    this.auth = new AuthController(get, set, (status) => {
+      this.sessions.applySessionStatus(status);
+    });
   }
 
   async prepare(session: SessionInfo): Promise<void> {
     if (this.ready) return;
     if (this.loading !== undefined) return this.loading;
     this.patch({ selectedSession: session }, false);
-    this.loading = this.sessions.selectSession(session, { updateUrl: false }).then(() => { this.ready = true; });
-    try { await this.loading; } finally { this.loading = undefined; }
+    this.loading = this.sessions.selectSession(session, { updateUrl: false }).then(() => {
+      this.ready = true;
+    });
+    try {
+      await this.loading;
+    } finally {
+      this.loading = undefined;
+    }
   }
 
   async start(options?: Parameters<SessionController["startSessionWithOptions"]>[0]): Promise<SessionInfo | undefined> {
     this.starting = true;
-    try { return await this.sessions.startSessionWithOptions(options); } finally { this.starting = false; }
+    try {
+      return await this.sessions.startSessionWithOptions(options);
+    } finally {
+      this.starting = false;
+    }
   }
 
   patch(patch: Partial<AppState>, publish = true): void {
@@ -78,14 +99,60 @@ export class WorkbenchSessionFocus {
   focus(chat: WorkbenchChatSession): void {
     this.current = chat;
     // Only the focused Chat and its workspace context project into the shell; machine-wide aggregates stay window-owned.
-    const { selectedMachine, selectedProject, selectedWorkspace, selectedSession, projects, workspaces, sessions,
-      messages, messagePageStart, messagePageEnd, messagePageTotal, isLoadingEarlierMessages, sendingPrompts,
-      clientQueuedSessionMessages, status, activity, pendingAsks, pendingDialogs, closedDialogs, availableThinkingLevels,
-      selectedNotificationInbox, commandDialog, treeDialog, authDialog, error } = chat.state;
-    this.publish({ selectedMachine, selectedProject, selectedWorkspace, selectedSession, projects, workspaces, sessions,
-      messages, messagePageStart, messagePageEnd, messagePageTotal, isLoadingEarlierMessages, sendingPrompts,
-      clientQueuedSessionMessages, status, activity, pendingAsks, pendingDialogs, closedDialogs, availableThinkingLevels,
-      selectedNotificationInbox, commandDialog, treeDialog, authDialog, error });
+    const {
+      selectedMachine,
+      selectedProject,
+      selectedWorkspace,
+      selectedSession,
+      projects,
+      workspaces,
+      sessions,
+      messages,
+      messagePageStart,
+      messagePageEnd,
+      messagePageTotal,
+      isLoadingEarlierMessages,
+      sendingPrompts,
+      clientQueuedSessionMessages,
+      status,
+      activity,
+      pendingAsks,
+      pendingDialogs,
+      closedDialogs,
+      availableThinkingLevels,
+      selectedNotificationInbox,
+      commandDialog,
+      treeDialog,
+      authDialog,
+      error,
+    } = chat.state;
+    this.publish({
+      selectedMachine,
+      selectedProject,
+      selectedWorkspace,
+      selectedSession,
+      projects,
+      workspaces,
+      sessions,
+      messages,
+      messagePageStart,
+      messagePageEnd,
+      messagePageTotal,
+      isLoadingEarlierMessages,
+      sendingPrompts,
+      clientQueuedSessionMessages,
+      status,
+      activity,
+      pendingAsks,
+      pendingDialogs,
+      closedDialogs,
+      availableThinkingLevels,
+      selectedNotificationInbox,
+      commandDialog,
+      treeDialog,
+      authDialog,
+      error,
+    });
   }
 
   changed(chat: WorkbenchChatSession, patch: Partial<AppState>): void {

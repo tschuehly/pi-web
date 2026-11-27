@@ -5,7 +5,14 @@ import { createAssistantMessageEventStream, type AssistantMessage } from "@earen
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "../../piSdk.js";
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService, type PiSessionRuntime } from "./piSessionService.js";
-import { CapturingSessionEventHub, createTestModelRuntime, emptyArchiveStore, runtimeCreator, sessionGateway, testModel } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  createTestModelRuntime,
+  emptyArchiveStore,
+  runtimeCreator,
+  sessionGateway,
+  testModel,
+} from "./piSessionService.testSupport.js";
 
 // Real Pi prompt/event semantics; only the model transport and host runtime
 // construction are substituted. No live daemon, provider network, or user config.
@@ -27,12 +34,14 @@ describe("managed launcher native Pi integration", () => {
       noPromptTemplates: true,
       noThemes: true,
       agentsFilesOverride: () => ({ agentsFiles: [] }),
-      extensionFactories: [(pi) => {
-        pi.on("session_start", () => {
-          pi.sendMessage({ customType: "startup", content: "Startup observed", display: true });
-        });
-        pi.on("input", (event) => event.text === "handled" ? { action: "handled" } : undefined);
-      }],
+      extensionFactories: [
+        (pi) => {
+          pi.on("session_start", () => {
+            pi.sendMessage({ customType: "startup", content: "Startup observed", display: true });
+          });
+          pi.on("input", (event) => (event.text === "handled" ? { action: "handled" } : undefined));
+        },
+      ],
     });
     await loader.reload();
     const { session } = await createAgentSession({
@@ -50,9 +59,14 @@ describe("managed launcher native Pi integration", () => {
     session.agent.streamFunction = () => {
       expect(hub.globalEvents.some((event) => event.type === "session.created")).toBe(true);
       const message: AssistantMessage = {
-        role: "assistant", content: [], api: "anthropic-messages", provider: "anthropic", model: testModel().id,
+        role: "assistant",
+        content: [],
+        api: "anthropic-messages",
+        provider: "anthropic",
+        model: testModel().id,
         usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-        stopReason: providerFails ? "error" : "stop", timestamp: Date.now(),
+        stopReason: providerFails ? "error" : "stop",
+        timestamp: Date.now(),
         ...(providerFails ? { errorMessage: initialPrompt === "retry-cancelled" ? "429 rate limit exceeded" : "synthetic provider failure" } : {}),
       };
       const stream = createAssistantMessageEventStream();
@@ -62,7 +76,9 @@ describe("managed launcher native Pi integration", () => {
       return stream;
     };
     let notifyRetryStarted!: () => void;
-    const retryStarted = new Promise<void>((resolve) => { notifyRetryStarted = resolve; });
+    const retryStarted = new Promise<void>((resolve) => {
+      notifyRetryStarted = resolve;
+    });
     const retryEnds: unknown[] = [];
     const unsubscribeRetry = session.subscribe((event) => {
       if (event.type === "auto_retry_start") notifyRetryStarted();
@@ -70,16 +86,22 @@ describe("managed launcher native Pi integration", () => {
     });
     const nativePrompt = vi.spyOn(session, "prompt");
     const runtime: PiSessionRuntime = {
-      cwd: directory, session,
+      cwd: directory,
+      session,
       setRebindSession: () => undefined,
       fork: () => Promise.resolve({ cancelled: true }),
-      dispose: () => { session.dispose(); return Promise.resolve(); },
+      dispose: () => {
+        session.dispose();
+        return Promise.resolve();
+      },
     };
     const service = new PiSessionService(hub, {
-      agentDir: directory, modelRuntime,
+      agentDir: directory,
+      modelRuntime,
       createAgentRuntime: runtimeCreator(runtime),
       sessionManager: sessionGateway([]),
-      archiveStore: emptyArchiveStore(), heartbeatIntervalMs: 60_000,
+      archiveStore: emptyArchiveStore(),
+      heartbeatIntervalMs: 60_000,
     });
     try {
       const run = await service.startOneShotRun(directory, initialPrompt, new AbortController().signal);
@@ -95,7 +117,7 @@ describe("managed launcher native Pi integration", () => {
       else await expect(run.completion).resolves.toBeUndefined();
       // The actual SDK promise fulfills: checking only rejection is insufficient.
       await expect(nativePrompt.mock.results[0]?.value).resolves.toBeUndefined();
-      const finishedMessages = hub.sessionEvents.flatMap(({ event }) => event.type === "message.end" ? [event.message] : []);
+      const finishedMessages = hub.sessionEvents.flatMap(({ event }) => (event.type === "message.end" ? [event.message] : []));
       expect(finishedMessages[0]).toMatchObject({ customType: "startup", content: "Startup observed" });
       if (initialPrompt === "initial") {
         expect(hub.sessionEvents.some(({ event }) => event.type === "agent.start")).toBe(true);

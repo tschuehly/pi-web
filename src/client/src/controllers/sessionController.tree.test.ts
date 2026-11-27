@@ -44,8 +44,15 @@ describe("SessionController message shortcuts", () => {
     const runCommand = vi.fn<typeof defaultApi.runCommand>(() => Promise.resolve({ type: "tree", tree }));
     const forkTree = vi.fn<typeof defaultApi.forkTree>(() => Promise.resolve({ cancelled: true }));
     const navigateTree = vi.fn<typeof defaultApi.navigateTree>(() => Promise.resolve({ cancelled: true }));
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined,
-      new InMemorySessionSelectionMemory(), { api: { ...defaultApi, runCommand, forkTree, navigateTree }, socket: new FakeSocket() });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      new InMemorySessionSelectionMemory(),
+      { api: { ...defaultApi, runCommand, forkTree, navigateTree }, socket: new FakeSocket() },
+    );
     await controller.actOnMessage("root", action);
     expect(runCommand).toHaveBeenCalledWith(oldSession, "/tree", "local");
     expect(state.treeDialog).toBeUndefined();
@@ -53,7 +60,11 @@ describe("SessionController message shortcuts", () => {
       expect(forkTree).toHaveBeenCalledWith(oldSession, { entryId: "root", expectedLeafId: "leaf-1", retainCheckpoint: true }, "local");
       expect(navigateTree).not.toHaveBeenCalled();
     } else {
-      expect(navigateTree).toHaveBeenCalledWith(oldSession, { targetId: "root", expectedLeafId: "leaf-1", summary: { mode: "none" }, retainCheckpoint: true }, "local");
+      expect(navigateTree).toHaveBeenCalledWith(
+        oldSession,
+        { targetId: "root", expectedLeafId: "leaf-1", summary: { mode: "none" }, retainCheckpoint: true },
+        "local",
+      );
       expect(forkTree).not.toHaveBeenCalled();
     }
     await expect(controller.actOnMessage("missing", action)).rejects.toThrow("no longer available");
@@ -63,8 +74,15 @@ describe("SessionController message shortcuts", () => {
     let state: AppState = { ...initialAppState(), selectedSession: oldSession };
     const result = deferred<CommandResult>();
     const forkTree = vi.fn<typeof defaultApi.forkTree>();
-    const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined,
-      new InMemorySessionSelectionMemory(), { api: { ...defaultApi, runCommand: () => result.promise, forkTree }, socket: new FakeSocket() });
+    const controller = new SessionController(
+      () => state,
+      (patch) => {
+        state = { ...state, ...patch };
+      },
+      () => undefined,
+      new InMemorySessionSelectionMemory(),
+      { api: { ...defaultApi, runCommand: () => result.promise, forkTree }, socket: new FakeSocket() },
+    );
     const action = controller.actOnMessage("root", "fork");
     state = { ...state, selectedSession: replacementSession };
     result.resolve({ type: "tree", tree });
@@ -88,7 +106,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket: new FakeSocket() },
@@ -101,10 +121,12 @@ describe("SessionController session tree navigation", () => {
     await controller.send("/tree");
 
     expect(state.treeDialog).toBeUndefined();
-    expect(state.messages).toEqual([{
-      role: "system",
-      parts: [{ type: "text", text: "Session tree navigation is unavailable on this server" }],
-    }]);
+    expect(state.messages).toEqual([
+      {
+        role: "system",
+        parts: [{ type: "text", text: "Session tree navigation is unavailable on this server" }],
+      },
+    ]);
     expect(navigateTree).not.toHaveBeenCalled();
   });
 
@@ -138,12 +160,19 @@ describe("SessionController session tree navigation", () => {
     };
     const transcripts = new ChatTranscriptStore({
       read: (key) => cachedPages.get(key),
-      write: (key, value) => { cachedPages.set(key, value); },
-      remove: (key) => { removedKeys.push(key); cachedPages.delete(key); },
+      write: (key, value) => {
+        cachedPages.set(key, value);
+      },
+      remove: (key) => {
+        removedKeys.push(key);
+        cachedPages.delete(key);
+      },
     });
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       new InMemorySessionSelectionMemory(),
       { api, socket, transcripts, replacePromptEditorText },
@@ -164,11 +193,13 @@ describe("SessionController session tree navigation", () => {
     await Promise.all([oldRefresh, navigation]);
     runPendingAnimationFrames();
 
-    expect(navigationCalls).toEqual([{
-      sessionId: oldSession.id,
-      request: { targetId: "root", expectedLeafId: "leaf-1", summary: { mode: "custom", instructions: "focus on the prompt" } },
-      machineId: "local",
-    }]);
+    expect(navigationCalls).toEqual([
+      {
+        sessionId: oldSession.id,
+        request: { targetId: "root", expectedLeafId: "leaf-1", summary: { mode: "custom", instructions: "focus on the prompt" } },
+        machineId: "local",
+      },
+    ]);
     expect(snapshotCalls).toBe(3);
     expect(removedKeys).toEqual([cacheKey]);
     expect(cachedPages.get(cacheKey)).toEqual(freshPage);
@@ -199,19 +230,25 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
     );
 
     const navigation = controller.navigateTree("root", { mode: "none" });
-    await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(transcriptSnapshot).toHaveBeenCalledOnce();
+    });
     expect(state.treeDialog).toBe(tree);
     expect(replacePromptEditorText).toHaveBeenCalledWith({ machineId: "local", sessionId: oldSession.id, text: "edit after refresh" });
 
     authoritativePage.resolve(page("authoritative branch", 1));
-    await vi.waitFor(() => { expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "authoritative branch" }]); });
+    await vi.waitFor(() => {
+      expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "authoritative branch" }]);
+    });
     expect(state.treeDialog).toBe(tree);
     editorReplacement.resolve(undefined);
     await navigation;
@@ -238,7 +275,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -247,7 +286,12 @@ describe("SessionController session tree navigation", () => {
     await expect(controller.navigateTree("root", { mode: "none" })).rejects.toThrow("authoritative history refresh failed");
 
     expect(state.treeDialog).toBe(tree);
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("authoritative history refresh failed");    expect(loadDraft(cacheKey)).toBe("recovered draft");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("authoritative history refresh failed");
+    expect(loadDraft(cacheKey)).toBe("recovered draft");
     expect(replacePromptEditorText).toHaveBeenCalledWith({ machineId: "local", sessionId: oldSession.id, text: "recovered draft" });
   });
 
@@ -268,7 +312,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -278,7 +324,12 @@ describe("SessionController session tree navigation", () => {
 
     expect(state.messages).toEqual([{ role: "assistant", parts: [{ type: "text", text: "authoritative branch" }] }]);
     expect(state.treeDialog).toBe(tree);
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("prompt editor replacement failed");  });
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("prompt editor replacement failed");
+  });
 
   it("preserves the editor draft when navigation returns no editor text", async () => {
     const cacheKey = machineSessionKey("local", oldSession.id);
@@ -293,7 +344,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -315,7 +368,9 @@ describe("SessionController session tree navigation", () => {
     const api: typeof defaultApi = { ...defaultApi, navigateTree, abort };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -326,7 +381,11 @@ describe("SessionController session tree navigation", () => {
 
     await expect(controller.navigateTree("root", { mode: "none" })).rejects.toThrow("reopen /tree");
     expect(state.treeDialog).toBe(tree);
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("reopen /tree");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("reopen /tree");
     await controller.abortTreeNavigation();
     expect(abort).toHaveBeenCalledWith(oldSession, "local");
     controller.closeTreeDialog();
@@ -343,7 +402,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -352,7 +413,11 @@ describe("SessionController session tree navigation", () => {
     await controller.selectSession(oldSession, { updateUrl: false });
     socket.emit({ type: "message.append", message: { role: "assistant", content: "live after failed refresh" }, seq: 1 });
 
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("history refresh failed");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("history refresh failed");
     expect(state.messages).toEqual([]);
   });
 
@@ -370,7 +435,9 @@ describe("SessionController session tree navigation", () => {
     const api: typeof defaultApi = { ...defaultApi, navigateTree: () => navigationResult.promise, transcriptSnapshot };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -407,7 +474,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
@@ -445,14 +514,18 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), replacePromptEditorText },
     );
 
     const navigation = controller.navigateTree("root", { mode: "none" });
-    await vi.waitFor(() => { expect(messageCalls).toBe(1); });
+    await vi.waitFor(() => {
+      expect(messageCalls).toBe(1);
+    });
     const reselection = controller.selectSession(oldSession, { updateUrl: false });
     firstRefresh.resolve(page("superseded branch", 1));
     await Promise.all([navigation, reselection]);
@@ -491,12 +564,19 @@ describe("SessionController session tree navigation", () => {
     };
     const transcripts = new ChatTranscriptStore({
       read: (key) => cachedPages.get(key),
-      write: (key, value) => { cachedPages.set(key, value); },
-      remove: (key) => { removedKeys.push(key); cachedPages.delete(key); },
+      write: (key, value) => {
+        cachedPages.set(key, value);
+      },
+      remove: (key) => {
+        removedKeys.push(key);
+        cachedPages.delete(key);
+      },
     });
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), transcripts, replacePromptEditorText },
@@ -534,7 +614,9 @@ describe("SessionController session tree navigation", () => {
     const api: typeof defaultApi = { ...defaultApi, runCommand: () => command.promise };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -546,7 +628,11 @@ describe("SessionController session tree navigation", () => {
     await run;
 
     expect(state.treeDialog).toBeUndefined();
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("needs input; open the session and run it again");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("needs input; open the session and run it again");
   });
 
   it("requires a delayed interactive tree command to be rerun after its session is no longer selected", async () => {
@@ -560,7 +646,9 @@ describe("SessionController session tree navigation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -572,7 +660,11 @@ describe("SessionController session tree navigation", () => {
     await run;
 
     expect(state.treeDialog).toBeUndefined();
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("needs input; open the session and run it again");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("needs input; open the session and run it again");
   });
 });
 
@@ -595,12 +687,19 @@ describe("SessionController session tree fork", () => {
     };
     const transcripts = new ChatTranscriptStore({
       read: (key) => cachedPages.get(key),
-      write: (key, value) => { cachedPages.set(key, value); },
-      remove: (key) => { removedKeys.push(key); cachedPages.delete(key); },
+      write: (key, value) => {
+        cachedPages.set(key, value);
+      },
+      remove: (key) => {
+        removedKeys.push(key);
+        cachedPages.delete(key);
+      },
     });
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket(), transcripts },
@@ -631,7 +730,9 @@ describe("SessionController session tree fork", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       {
@@ -659,7 +760,9 @@ describe("SessionController session tree fork", () => {
     const api: typeof defaultApi = { ...defaultApi, forkTree };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -675,11 +778,15 @@ describe("SessionController session tree fork", () => {
 
   it("surfaces daemon fork errors and keeps the navigator open", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession], treeDialog: tree };
-    const forkTree = vi.fn<typeof defaultApi.forkTree>(() => Promise.reject(new Error("Cannot fork while the session is active. Stop current activity before forking.")));
+    const forkTree = vi.fn<typeof defaultApi.forkTree>(() =>
+      Promise.reject(new Error("Cannot fork while the session is active. Stop current activity before forking.")),
+    );
     const api: typeof defaultApi = { ...defaultApi, forkTree };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -688,7 +795,12 @@ describe("SessionController session tree fork", () => {
     await expect(controller.forkFromTree("root")).rejects.toThrow("Stop current activity before forking.");
 
     expect(state.treeDialog).toBe(tree);
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("Stop current activity before forking.");  });
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("Stop current activity before forking.");
+  });
 
   it("reports unavailable forks from older daemons without closing the navigator", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession], treeDialog: tree };
@@ -696,7 +808,9 @@ describe("SessionController session tree fork", () => {
     const api: typeof defaultApi = { ...defaultApi, forkTree };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -705,7 +819,12 @@ describe("SessionController session tree fork", () => {
     await expect(controller.forkFromTree("root")).rejects.toThrow(SessionTreeForkUnavailableError);
 
     expect(state.treeDialog).toBe(tree);
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("Fork from the session tree is unavailable");  });
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("Fork from the session tree is unavailable");
+  });
 
   it("rejects forks when the navigator is unavailable", async () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
@@ -713,7 +832,9 @@ describe("SessionController session tree fork", () => {
     const api: typeof defaultApi = { ...defaultApi, forkTree };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

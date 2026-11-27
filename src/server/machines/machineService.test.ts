@@ -73,13 +73,15 @@ describe("MachineService", () => {
 
     const persistedAfterUpdate: unknown = JSON.parse(await readFile(storePath, "utf8"));
     expect(persistedAfterUpdate).toMatchObject({
-      machines: [expect.objectContaining({
-        id: machine.id,
-        name: "Updated Remote",
-        baseUrl: "https://updated.example.test",
-        token: "updated-secret",
-        headers: { "X-Pi-Web-Test": "updated" },
-      })],
+      machines: [
+        expect.objectContaining({
+          id: machine.id,
+          name: "Updated Remote",
+          baseUrl: "https://updated.example.test",
+          token: "updated-secret",
+          headers: { "X-Pi-Web-Test": "updated" },
+        }),
+      ],
     });
 
     await expect(service.remove(machine.id)).resolves.toBe(true);
@@ -92,17 +94,27 @@ describe("MachineService", () => {
   });
 
   it.skipIf(process.platform === "win32")("tightens permissions after reading an existing machine store", async () => {
-    await writeFile(storePath, `${JSON.stringify({
-      machines: [{
-        id: "remote-1",
-        name: "Remote",
-        kind: "remote",
-        baseUrl: "https://remote.example.test",
-        token: "secret",
-        createdAt: "2026-05-25T00:00:00.000Z",
-        updatedAt: "2026-05-25T00:00:00.000Z",
-      }],
-    }, null, 2)}\n`, { encoding: "utf8", mode: 0o644 });
+    await writeFile(
+      storePath,
+      `${JSON.stringify(
+        {
+          machines: [
+            {
+              id: "remote-1",
+              name: "Remote",
+              kind: "remote",
+              baseUrl: "https://remote.example.test",
+              token: "secret",
+              createdAt: "2026-05-25T00:00:00.000Z",
+              updatedAt: "2026-05-25T00:00:00.000Z",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      { encoding: "utf8", mode: 0o644 },
+    );
     await chmod(storePath, 0o644);
 
     await expect(service.list()).resolves.toEqual([expect.objectContaining({ id: "local" }), expect.objectContaining({ id: "remote-1" })]);
@@ -122,15 +134,17 @@ describe("MachineService", () => {
   });
 
   it("uses the lightweight runtime check for local machine health", async () => {
-    const localRuntime = vi.fn(() => Promise.resolve({
-      packageName: "@jmfederico/pi-web",
-      generatedAt: "2026-05-25T00:00:00.000Z",
-      components: {
-        web: { component: "web" as const, label: "Web/UI", runtimeVersion: "1.0.0", available: true, capabilities: [] },
-        sessiond: { component: "sessiond" as const, label: "Session daemon", runtimeVersion: "1.0.0", available: true, capabilities: [] },
-      },
-      capabilities: [],
-    }));
+    const localRuntime = vi.fn(() =>
+      Promise.resolve({
+        packageName: "@jmfederico/pi-web",
+        generatedAt: "2026-05-25T00:00:00.000Z",
+        components: {
+          web: { component: "web" as const, label: "Web/UI", runtimeVersion: "1.0.0", available: true, capabilities: [] },
+          sessiond: { component: "sessiond" as const, label: "Session daemon", runtimeVersion: "1.0.0", available: true, capabilities: [] },
+        },
+        capabilities: [],
+      }),
+    );
     const healthService = new MachineService(new MachineStore(storePath), {
       localRuntime,
       now: () => new Date("2026-05-25T00:00:00.000Z"),
@@ -227,7 +241,8 @@ describe("MachineService", () => {
   it("caches remote runtime errors and clears them after remote updates", async () => {
     let now = new Date("2026-05-25T00:00:00.000Z");
     const body = remoteRuntimeBody();
-    const requestJson = vi.fn<MachineClient["requestJson"]>()
+    const requestJson = vi
+      .fn<MachineClient["requestJson"]>()
       .mockRejectedValueOnce(new Error("network down"))
       .mockResolvedValueOnce({ statusCode: 200, headers: {}, body });
     const remoteService = new MachineService(new MachineStore(storePath), {
@@ -305,9 +320,15 @@ function remoteRuntimeBody(): PiWebRuntimeResponse {
 
 function fakeRemoteClient(overrides: Partial<MachineClient>): MachineClient {
   return {
-    request: () => { throw new Error("HTTP request not configured for test"); },
-    requestJson: () => { throw new Error("JSON request not configured for test"); },
-    connectWebSocket: () => { throw new Error("WebSocket not configured for test"); },
+    request: () => {
+      throw new Error("HTTP request not configured for test");
+    },
+    requestJson: () => {
+      throw new Error("JSON request not configured for test");
+    },
+    connectWebSocket: () => {
+      throw new Error("WebSocket not configured for test");
+    },
     ...overrides,
   };
 }

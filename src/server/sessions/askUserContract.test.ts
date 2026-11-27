@@ -9,7 +9,11 @@ import { stubExtensionToolContext } from "./piSessionService.testSupport.js";
 interface Fixture {
   valid: { input: { context: string; questions: AskUserQuestion[] }; expected: { context: string; questions: unknown[] } };
   invalid: { name: string; questions: AskUserQuestion[]; error: string }[];
-  approval: { accepted: [boolean | null, true | null][]; invalid: { value: unknown; error: string }; withoutQuestions: { name: string; questions: AskUserQuestion[]; expected: unknown[]; error: string } };
+  approval: {
+    accepted: [boolean | null, true | null][];
+    invalid: { value: unknown; error: string };
+    withoutQuestions: { name: string; questions: AskUserQuestion[]; expected: unknown[]; error: string };
+  };
 }
 // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- the fixture file is this test's own input.
 const fixture = JSON.parse(readFileSync(new URL("./askUserContract.fixture.json", import.meta.url), "utf8")) as Fixture;
@@ -40,7 +44,8 @@ describe("ask_user question rules contract", () => {
   });
 
   it("keeps approval true, drops false, and rejects other values with the host's message", async () => {
-    for (const [given, kept] of fixture.approval.accepted) expect((await post("c", fixture.valid.input.questions, given ?? undefined))?.approval).toBe(kept ?? undefined);
+    for (const [given, kept] of fixture.approval.accepted)
+      expect((await post("c", fixture.valid.input.questions, given ?? undefined))?.approval).toBe(kept ?? undefined);
     await expect(post("c", fixture.valid.input.questions, fixture.approval.invalid.value)).rejects.toThrow(fixture.approval.invalid.error);
   });
 

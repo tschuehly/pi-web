@@ -6,7 +6,7 @@ const renderer = new marked.Renderer();
 // never become nodes that the application can execute or load resources from.
 renderer.html = ({ text }) => escapeHtml(text);
 renderer.image = ({ text }) => escapeHtml(text === "" ? "[Image omitted]" : `[Image omitted: ${text}]`);
-renderer.checkbox = ({ checked }) => checked ? "[x] " : "[ ] ";
+renderer.checkbox = ({ checked }) => (checked ? "[x] " : "[ ] ");
 
 const NO_ATTRIBUTES = new Set<string>();
 
@@ -137,8 +137,5 @@ function wrapTablesInScrollRegions(root: DocumentFragment): void {
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }

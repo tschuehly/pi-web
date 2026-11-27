@@ -125,10 +125,7 @@ export class SessionNotificationStore {
     return state.activeGeneration;
   }
 
-  beginReplacement(
-    activeGeneration: SessionNotificationGeneration,
-    target: { sessionId: string; cwd: string },
-  ): SessionNotificationGeneration {
+  beginReplacement(activeGeneration: SessionNotificationGeneration, target: { sessionId: string; cwd: string }): SessionNotificationGeneration {
     requireIdentity(target.sessionId, target.cwd);
     const binding = this.bindings.get(activeGeneration);
     if (binding?.role !== "active") throw new Error("Notification runtime generation is no longer active");
@@ -197,10 +194,7 @@ export class SessionNotificationStore {
     return mutations;
   }
 
-  abortReplacement(
-    candidateGeneration: SessionNotificationGeneration,
-    survivingGeneration: "prior" | "candidate" = "prior",
-  ): SessionNotificationMutation[] {
+  abortReplacement(candidateGeneration: SessionNotificationGeneration, survivingGeneration: "prior" | "candidate" = "prior"): SessionNotificationMutation[] {
     const binding = this.requireCandidate(candidateGeneration);
     const state = binding.state;
     const candidate = state.candidate;
@@ -224,11 +218,7 @@ export class SessionNotificationStore {
       mutations.push(...this.clearProjection(sourceProjection, "replacement"));
       this.statesBySessionId.delete(sourceProjection.sessionId);
       const transferredDiscardedCount = survivingGeneration === "candidate" ? oldDiscardedCount : candidateDiscardedCount;
-      targetProjection.overflowWatermark = addSafe(
-        targetProjection.overflowWatermark,
-        transferredDiscardedCount,
-        "Notification overflow watermark exhausted",
-      );
+      targetProjection.overflowWatermark = addSafe(targetProjection.overflowWatermark, transferredDiscardedCount, "Notification overflow watermark exhausted");
     }
 
     const merged = [...oldEntries, ...candidateEntries].sort((left, right) => left.order - right.order);
@@ -253,11 +243,7 @@ export class SessionNotificationStore {
     return mutations;
   }
 
-  addNotification(
-    generation: SessionNotificationGeneration,
-    message: string,
-    severity: unknown,
-  ): SessionNotificationAddResult {
+  addNotification(generation: SessionNotificationGeneration, message: string, severity: unknown): SessionNotificationAddResult {
     const binding = this.bindings.get(generation);
     if (binding === undefined) return { mutations: [] };
     const { state } = binding;
@@ -308,12 +294,7 @@ export class SessionNotificationStore {
     return this.snapshot(this.requireProjection(sessionId, cwd));
   }
 
-  dismissNotification(
-    sessionId: string,
-    cwd: string,
-    daemonInstanceId: string,
-    notificationId: string,
-  ): SessionNotificationSnapshotResult {
+  dismissNotification(sessionId: string, cwd: string, daemonInstanceId: string, notificationId: string): SessionNotificationSnapshotResult {
     const projection = this.requireProjection(sessionId, cwd);
     if (daemonInstanceId !== this.daemonInstanceId) return { snapshot: this.snapshot(projection), mutations: [] };
 
@@ -336,9 +317,7 @@ export class SessionNotificationStore {
     if (!previouslyRetainedIds.has(notificationId) && before === after) {
       return { snapshot: this.snapshot(projection), mutations: [] };
     }
-    const delta: SessionNotificationInboxDelta = newlyRevealed
-      ? { kind: "resync" }
-      : { kind: "dismissed", notificationIds: [notificationId] };
+    const delta: SessionNotificationInboxDelta = newlyRevealed ? { kind: "resync" } : { kind: "dismissed", notificationIds: [notificationId] };
     const mutation = this.mutation(projection, delta);
     return { snapshot: this.snapshot(projection), mutations: [mutation] };
   }
@@ -386,9 +365,7 @@ export class SessionNotificationStore {
   clearSession(sessionId: string, reason: SessionNotificationClearReason): SessionNotificationMutation[] {
     const state = this.statesBySessionId.get(sessionId);
     if (state === undefined) return [];
-    const projections = state.candidate === undefined
-      ? [state.activeProjection]
-      : uniqueProjectionList([state.activeProjection, state.candidate.projection]);
+    const projections = state.candidate === undefined ? [state.activeProjection] : uniqueProjectionList([state.activeProjection, state.candidate.projection]);
     const mutations = projections.flatMap((projection) => this.clearProjection(projection, reason));
     this.statesBySessionId.delete(state.activeProjection.sessionId);
     if (state.candidate !== undefined) {
@@ -419,11 +396,12 @@ export class SessionNotificationStore {
   private requireProjection(sessionId: string, cwd: string): NotificationProjection {
     const state = this.statesBySessionId.get(sessionId);
     if (state === undefined) throw new Error("Session not found");
-    const projection = state.activeProjection.sessionId === sessionId
-      ? state.activeProjection
-      : state.candidate?.projection.sessionId === sessionId
-        ? state.candidate.projection
-        : undefined;
+    const projection =
+      state.activeProjection.sessionId === sessionId
+        ? state.activeProjection
+        : state.candidate?.projection.sessionId === sessionId
+          ? state.candidate.projection
+          : undefined;
     if (projection === undefined) throw new Error("Session not found");
     if (projection.cwd !== cwd) throw new Error("Session cwd mismatch");
     return projection;
@@ -481,10 +459,7 @@ export class SessionNotificationStore {
   }
 }
 
-export function truncateSessionNotificationMessage(
-  message: string,
-  maxBytes = SESSION_NOTIFICATION_MESSAGE_BYTES,
-): { message: string; truncated: boolean } {
+export function truncateSessionNotificationMessage(message: string, maxBytes = SESSION_NOTIFICATION_MESSAGE_BYTES): { message: string; truncated: boolean } {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new Error("maxBytes must be a non-negative safe integer");
   const encoder = new TextEncoder();
   if (encoder.encode(message).byteLength <= maxBytes) return { message, truncated: false };

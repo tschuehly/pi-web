@@ -138,8 +138,8 @@ export interface FileContentResponse {
 }
 
 export interface WriteWorkspaceFileOptions {
-  createDirs?: boolean;     // default: true — mkdir -p equivalent
-  overwrite?: boolean;      // default: true — throw if false and file exists
+  createDirs?: boolean; // default: true — mkdir -p equivalent
+  overwrite?: boolean; // default: true — throw if false and file exists
   expectedVersion?: string; // reject a changed/deleted file unless overwrite is explicitly true
 }
 
@@ -147,17 +147,17 @@ export interface WriteWorkspaceFileResponse {
   path: string;
   size: number;
   modifiedAt: string;
-  created: boolean;  // true if the file was created, false if it was overwritten
+  created: boolean; // true if the file was created, false if it was overwritten
 }
 
 export interface DeleteWorkspaceFileResponse {
   path: string;
-  existed: boolean;  // true if the file existed and was deleted, false if it did not exist
+  existed: boolean; // true if the file existed and was deleted, false if it did not exist
 }
 
 export interface MoveWorkspaceFileOptions {
-  createDirs?: boolean;   // default: true — mkdir -p equivalent for target parent directory
-  overwrite?: boolean;    // default: false — throw if target exists (safer default than writeFile)
+  createDirs?: boolean; // default: true — mkdir -p equivalent for target parent directory
+  overwrite?: boolean; // default: false — throw if target exists (safer default than writeFile)
 }
 
 export interface MoveWorkspaceFileResponse {

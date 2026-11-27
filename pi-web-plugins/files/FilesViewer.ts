@@ -5,7 +5,12 @@ import { keyed } from "lit/directives/keyed.js";
 import { ifDefined } from "lit/directives/if-defined.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { renderWorkspaceMarkdownHtml } from "./workspaceMarkdown";
-import { DEFAULT_WORKSPACE_FILE_VIEW_MODE, workspaceFileViewModeStore, type WorkspaceFileViewMode, type WorkspaceFileViewModeStore } from "./workspaceFileViewMode";
+import {
+  DEFAULT_WORKSPACE_FILE_VIEW_MODE,
+  workspaceFileViewModeStore,
+  type WorkspaceFileViewMode,
+  type WorkspaceFileViewModeStore,
+} from "./workspaceFileViewMode";
 
 export const DEFAULT_MAX_INLINE_PREVIEW_BYTES = 1024 * 1024;
 
@@ -15,12 +20,7 @@ export interface WorkspaceFilePreviewUrlOptions {
   download?: boolean;
 }
 
-export type WorkspaceFilePreviewUrlBuilder = (
-  projectId: string,
-  workspaceId: string,
-  path: string,
-  options?: WorkspaceFilePreviewUrlOptions,
-) => string;
+export type WorkspaceFilePreviewUrlBuilder = (projectId: string, workspaceId: string, path: string, options?: WorkspaceFilePreviewUrlOptions) => string;
 
 export type WorkspaceFilePreviewKind = "image" | "html" | "pdf" | "markdown" | "download" | "code";
 
@@ -37,7 +37,9 @@ export class WorkspaceFileViewer extends LitElement {
   private releaseStyles: (() => void) | undefined;
 
   @property({ attribute: false })
-  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined { return this.integration; }
+  get stylesheetIntegration(): StylesheetIntegrationCapabilityV1 | undefined {
+    return this.integration;
+  }
   set stylesheetIntegration(value: StylesheetIntegrationCapabilityV1 | undefined) {
     if (value === this.integration) return;
     this.releaseStyles?.();
@@ -131,14 +133,21 @@ export class WorkspaceFileViewer extends LitElement {
     const kind = workspaceFilePreviewKind(file);
     const request = { machineId: this.machineId, text: file.content, filePath: file.path, ...(file.language === undefined ? {} : { language: file.language }) };
     const eligible = kind === "code" && !file.truncated && file.size > 0 && file.size <= this.maxInlinePreviewBytes;
-    this.rendererOptions = eligible ? this.contentRendering?.listRenderers(request) ?? [] : [];
+    this.rendererOptions = eligible ? (this.contentRendering?.listRenderers(request) ?? []) : [];
     if (!this.rendererChosen || !this.rendererOptions.some(({ id }) => id === this.rendererId)) {
       this.rendererChosen = false;
       this.rendererId = (this.rendererOptions.filter(({ renderMode }) => renderMode === "automatic").at(-1) ?? this.rendererOptions[0])?.id;
     }
-    this.mode = this.preference ?? (this.rendererOptions.find(({ id }) => id === this.rendererId)?.renderMode === "automatic" ? "preview" : DEFAULT_WORKSPACE_FILE_VIEW_MODE);
+    this.mode =
+      this.preference
+      ?? (this.rendererOptions.find(({ id }) => id === this.rendererId)?.renderMode === "automatic" ? "preview" : DEFAULT_WORKSPACE_FILE_VIEW_MODE);
     this.customPreview = eligible
-      ? this.contentRendering?.renderText({ ...request, controls: "external", allowManualPreview: this.preference === "preview", ...(this.rendererId === undefined ? {} : { rendererId: this.rendererId }) })
+      ? this.contentRendering?.renderText({
+          ...request,
+          controls: "external",
+          allowManualPreview: this.preference === "preview",
+          ...(this.rendererId === undefined ? {} : { rendererId: this.rendererId }),
+        })
       : undefined;
     const canOpen = isBrowserPreviewKind(kind) && file.size > 0 && file.size <= this.maxInlinePreviewBytes;
     return html`
@@ -152,12 +161,18 @@ export class WorkspaceFileViewer extends LitElement {
     if (file.size === 0) return this.renderStatus("This file is empty.");
 
     switch (kind) {
-      case "image": return this.renderImagePreview(file, token);
-      case "html": return this.renderFramePreview(file, "html", token);
-      case "pdf": return this.renderFramePreview(file, "pdf", token);
-      case "markdown": return this.renderMarkdownPreview(file);
-      case "download": return this.renderUnsupportedFile(file);
-      case "code": return this.customPreview ?? this.renderRawSource(file);
+      case "image":
+        return this.renderImagePreview(file, token);
+      case "html":
+        return this.renderFramePreview(file, "html", token);
+      case "pdf":
+        return this.renderFramePreview(file, "pdf", token);
+      case "markdown":
+        return this.renderMarkdownPreview(file);
+      case "download":
+        return this.renderUnsupportedFile(file);
+      case "code":
+        return this.customPreview ?? this.renderRawSource(file);
     }
   }
 
@@ -172,7 +187,9 @@ export class WorkspaceFileViewer extends LitElement {
         <div class="viewer-actions">
           <small>${metadata}</small>
           ${this.selectionHasRawAndPreviewModes() ? this.renderModeControls(file, this.selectionToken) : null}
-          ${canOpen ? html`
+          ${
+            canOpen
+              ? html`
             <a
               class="viewer-action"
               href=${openUrl}
@@ -181,7 +198,9 @@ export class WorkspaceFileViewer extends LitElement {
               referrerpolicy="no-referrer"
               title="Open in new window"
             >Open ↗</a>
-          ` : null}
+          `
+              : null
+          }
           <a class="viewer-action" href=${downloadUrl} download=${name} title=${`Download ${name}`}>Download</a>
         </div>
       </div>
@@ -192,20 +211,30 @@ export class WorkspaceFileViewer extends LitElement {
     const showingPreview = this.mode === "preview";
     return html`
       <div class="viewer-mode" role="group" aria-label=${`View ${file.path}`}>
-        ${this.rendererOptions.length === 0 ? html`
-          <button type="button" aria-pressed=${String(showingPreview)} @click=${() => { this.setMode("preview", token); }}>Preview</button>
-        ` : this.rendererOptions.map(({ id, label }) => html`
+        ${
+          this.rendererOptions.length === 0
+            ? html`
+          <button type="button" aria-pressed=${String(showingPreview)} @click=${() => {
+            this.setMode("preview", token);
+          }}>Preview</button>
+        `
+            : this.rendererOptions.map(
+                ({ id, label }) => html`
           <button type="button" aria-pressed=${String(showingPreview && id === this.rendererId)} @click=${() => {
             if (token !== this.selectionToken) return;
             this.rendererId = id;
             this.rendererChosen = true;
             this.setMode("preview", token);
           }}>${label}</button>
-        `)}
+        `,
+              )
+        }
         <button
           type="button"
           aria-pressed=${showingPreview ? "false" : "true"}
-          @click=${() => { this.setMode("raw", token); }}
+          @click=${() => {
+            this.setMode("raw", token);
+          }}
         >Raw</button>
       </div>
     `;
@@ -222,10 +251,14 @@ export class WorkspaceFileViewer extends LitElement {
   private renderMarkdownPreview(file: FileContentResponse): TemplateResult {
     if (file.size > this.maxInlinePreviewBytes) return this.renderPreviewTooLarge(file);
     try {
-      const content = this.contentRendering?.renderMarkdown({
-        machineId: this.machineId, text: file.content, truncated: file.truncated,
-        toSafeHtml: renderWorkspaceMarkdownHtml, allowManualPreview: this.preference === "preview",
-      }) ?? unsafeHTML(renderWorkspaceMarkdownHtml(file.content));
+      const content =
+        this.contentRendering?.renderMarkdown({
+          machineId: this.machineId,
+          text: file.content,
+          truncated: file.truncated,
+          toSafeHtml: renderWorkspaceMarkdownHtml,
+          allowManualPreview: this.preference === "preview",
+        }) ?? unsafeHTML(renderWorkspaceMarkdownHtml(file.content));
       return html`
         ${file.truncated ? html`<p class="preview-note" role="status">Preview is rendered from truncated source. Use Download for the complete file.</p>` : null}
         <div class="formatted markdown-preview" dir="auto">${content}</div>
@@ -246,7 +279,9 @@ export class WorkspaceFileViewer extends LitElement {
           alt=${`Preview of ${file.path}`}
           decoding="async"
           referrerpolicy="no-referrer"
-          @error=${() => { this.recordPreviewFailure(token); }}
+          @error=${() => {
+            this.recordPreviewFailure(token);
+          }}
         />
       </div>
     `;
@@ -266,7 +301,9 @@ export class WorkspaceFileViewer extends LitElement {
         allow=""
         referrerpolicy="no-referrer"
         title=${`Preview of ${file.path}`}
-        @error=${() => { this.recordPreviewFailure(token); }}
+        @error=${() => {
+          this.recordPreviewFailure(token);
+        }}
       ></iframe>
     `;
   }
@@ -276,7 +313,9 @@ export class WorkspaceFileViewer extends LitElement {
       <div class="preview-state" role="alert">
         <strong>Preview failed for ${file.path}.</strong>
         <span>Open it in a new window or use Download above.</span>
-        <button type="button" @click=${() => { this.retryPreview(token); }}>Retry preview</button>
+        <button type="button" @click=${() => {
+          this.retryPreview(token);
+        }}>Retry preview</button>
       </div>
     `;
   }
@@ -297,13 +336,13 @@ export class WorkspaceFileViewer extends LitElement {
   }
 
   private renderPreviewTooLarge(file: FileContentResponse): TemplateResult {
-    return this.renderStatus(`File too large to preview: ${formatFileSize(file.size)} · limit ${formatFileSize(this.maxInlinePreviewBytes)}. Use Download above.`);
+    return this.renderStatus(
+      `File too large to preview: ${formatFileSize(file.size)} · limit ${formatFileSize(this.maxInlinePreviewBytes)}. Use Download above.`,
+    );
   }
 
   private renderStatus(message: string, alert = false): TemplateResult {
-    return alert
-      ? html`<p class="viewer-status" role="alert">${message}</p>`
-      : html`<p class="viewer-status" role="status" aria-live="polite">${message}</p>`;
+    return alert ? html`<p class="viewer-status" role="alert">${message}</p>` : html`<p class="viewer-status" role="status" aria-live="polite">${message}</p>`;
   }
 
   private previewUrl(file: FileContentResponse): string {
@@ -451,13 +490,14 @@ function isBrowserPreviewKind(kind: WorkspaceFilePreviewKind): kind is "image" |
 }
 
 function metadataForFile(file: FileContentResponse, kind: WorkspaceFilePreviewKind): string {
-  const format = kind === "code"
-    ? file.language ?? "text"
-    : kind === "download"
-      ? file.mimeType ?? "binary"
-      : kind === "markdown"
-        ? "markdown"
-        : file.mimeType ?? kind;
+  const format =
+    kind === "code"
+      ? (file.language ?? "text")
+      : kind === "download"
+        ? (file.mimeType ?? "binary")
+        : kind === "markdown"
+          ? "markdown"
+          : (file.mimeType ?? kind);
   return `${format} · ${formatFileSize(file.size)}${file.truncated ? " · truncated" : ""}`;
 }
 

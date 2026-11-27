@@ -24,7 +24,8 @@ export const realWorktreePreRemoveHookProbe: WorktreePreRemoveHookProbe = {
         || isNodeErrorWithCode(error, "ENOTDIR")
         || isNodeErrorWithCode(error, "EACCES")
         || isNodeErrorWithCode(error, "EPERM")
-      ) return false;
+      )
+        return false;
       throw error;
     }
   },

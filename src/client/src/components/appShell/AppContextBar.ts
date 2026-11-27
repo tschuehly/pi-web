@@ -64,34 +64,54 @@ export class AppContextBar extends LitElement {
       <nav class=${this.contextBarClass()} aria-label="Current location">
         <span class="context-bar-label">Location</span>
         <ol class="context-items" @scroll=${this.onContextScroll}>
-          ${showMachineChip ? html`
+          ${
+            showMachineChip
+              ? html`
             <li class="context-item">
-              ${machineChoice ? html`
-                <button type="button" class=${machineChipClass} title=${machineContextTitle(machine)} aria-label=${`Machine: ${machineContextLabel(machine)}. Open machine selection.`} @click=${() => { this.onOpenSection?.("machines"); }}>
+              ${
+                machineChoice
+                  ? html`
+                <button type="button" class=${machineChipClass} title=${machineContextTitle(machine)} aria-label=${`Machine: ${machineContextLabel(machine)}. Open machine selection.`} @click=${() => {
+                  this.onOpenSection?.("machines");
+                }}>
                   ${this.renderMachineChipContent(machine, this.locationIndicator)}
                 </button>
-              ` : html`
+              `
+                  : html`
                 <!-- No machine choice: the chip is the instance identity, not a control. -->
                 <span class="${machineChipClass} static" title=${machineContextTitle(machine)}>
                   ${this.renderMachineChipContent(machine, true)}
                 </span>
-              `}
+              `
+              }
             </li>
-          ` : null}
+          `
+              : null
+          }
           <li class="context-item">
-            <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${`Project: ${projectLabel}. Open project selection.`} @click=${() => { this.onOpenSection?.("projects"); }}>
+            <button type="button" class=${this.project === undefined ? "context-chip empty" : "context-chip"} title=${projectContextTitle(this.project)} aria-label=${`Project: ${projectLabel}. Open project selection.`} @click=${() => {
+              this.onOpenSection?.("projects");
+            }}>
               <span class="context-kind">Project</span>
               <span class="context-value">${projectLabel}</span>
             </button>
           </li>
-          ${this.workspaceSelectionVisible ? html`<li class="context-item">
-            <button type="button" class=${this.workspace === undefined ? "context-chip empty" : "context-chip"} title=${workspaceContextTitle(this.workspace)} aria-label=${`Workspace: ${workspaceLabel}. Open workspace selection.`} @click=${() => { this.onOpenSection?.("workspaces"); }}>
+          ${
+            this.workspaceSelectionVisible
+              ? html`<li class="context-item">
+            <button type="button" class=${this.workspace === undefined ? "context-chip empty" : "context-chip"} title=${workspaceContextTitle(this.workspace)} aria-label=${`Workspace: ${workspaceLabel}. Open workspace selection.`} @click=${() => {
+              this.onOpenSection?.("workspaces");
+            }}>
               <span class="context-kind">Workspace</span>
               <span class="context-value">${workspaceLabel}</span>
             </button>
-          </li>` : null}
+          </li>`
+              : null
+          }
           <li class="context-item">
-            <button type="button" class=${this.session === undefined ? "context-chip empty" : "context-chip"} title=${sessionContextTitle(this.session)} aria-label=${`Session: ${sessionLabel}. Open session selection.`} @click=${() => { this.onOpenSection?.("sessions"); }}>
+            <button type="button" class=${this.session === undefined ? "context-chip empty" : "context-chip"} title=${sessionContextTitle(this.session)} aria-label=${`Session: ${sessionLabel}. Open session selection.`} @click=${() => {
+              this.onOpenSection?.("sessions");
+            }}>
               <span class="context-kind">Session</span>
               <span class="context-value">${sessionLabel}</span>
             </button>
@@ -122,7 +142,10 @@ export class AppContextBar extends LitElement {
   private renderActionsButton() {
     if (this.onShowActions === undefined) return null;
     return html`
-      <button type="button" class="context-action-button" title="Show Actions" aria-label="Show Actions" @click=${(event: MouseEvent) => { event.stopPropagation(); this.onShowActions?.(); }}>
+      <button type="button" class="context-action-button" title="Show Actions" aria-label="Show Actions" @click=${(event: MouseEvent) => {
+        event.stopPropagation();
+        this.onShowActions?.();
+      }}>
         <svg class="context-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M13 2 4 14h7l-1 8 10-13h-7V2Z"></path>
         </svg>
@@ -233,7 +256,7 @@ export function machineContextDetail(machine: Machine, gatewayDisplay: string): 
 }
 
 function machineContextTitle(machine: Machine | undefined): string {
-  return machine === undefined ? "No machine selected" : machine.baseUrl ?? machine.name;
+  return machine === undefined ? "No machine selected" : (machine.baseUrl ?? machine.name);
 }
 
 function projectContextLabel(project: Project | undefined): string {

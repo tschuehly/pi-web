@@ -34,8 +34,12 @@ describe("saving a theme default", () => {
     const save = vi.spyOn(configApi, "saveConfig").mockResolvedValue(configResponse({ ...current, defaultTheme }));
     vi.mocked(configApi.config).mockClear();
     button(themePanel(dialog), "Set gateway default").click();
-    await vi.waitFor(() => { expect(save).toHaveBeenCalledWith({ ...current, defaultTheme }); });
-    await vi.waitFor(() => { expect(onSaved).toHaveBeenCalledWith({ ...current, defaultTheme }); });
+    await vi.waitFor(() => {
+      expect(save).toHaveBeenCalledWith({ ...current, defaultTheme });
+    });
+    await vi.waitFor(() => {
+      expect(onSaved).toHaveBeenCalledWith({ ...current, defaultTheme });
+    });
     expect(vi.mocked(configApi.config).mock.calls).toContainEqual([]);
     expect(save.mock.calls).toHaveLength(1);
   });
@@ -46,7 +50,9 @@ describe("saving a theme default", () => {
     dialog.onConfigSaved = onSaved;
     vi.spyOn(configApi, "saveConfig").mockRejectedValue(new Error("Disk is read-only"));
     button(themePanel(dialog), "Set gateway default").click();
-    await vi.waitFor(() => { expect(generalPanel(dialog).error).toContain("Couldn't save the default theme: Disk is read-only"); });
+    await vi.waitFor(() => {
+      expect(generalPanel(dialog).error).toContain("Couldn't save the default theme: Disk is read-only");
+    });
     expect(onSaved).not.toHaveBeenCalled();
     expect(themePanel(dialog).defaultPreference).toEqual({ themeId: "themes:pi-web-dark", auto: true });
   });
@@ -58,7 +64,9 @@ async function mountDialog(): Promise<SettingsDialog> {
   const dialog = new SettingsDialog();
   dialog.themes = registry.getThemes();
   document.body.append(dialog);
-  await vi.waitFor(() => { expect(themePanel(dialog).loading).toBe(false); });
+  await vi.waitFor(() => {
+    expect(themePanel(dialog).loading).toBe(false);
+  });
   await themePanel(dialog).updateComplete;
   await registry.dispose();
   return dialog;
@@ -77,7 +85,7 @@ function themePanel(dialog: SettingsDialog): SettingsThemePanel {
 }
 
 function button(panel: SettingsThemePanel, label: string): HTMLButtonElement {
-  const control = [...panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? []].find((element) => element.textContent === label);
+  const control = [...(panel.shadowRoot?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((element) => element.textContent === label);
   if (control === undefined) throw new Error(`Expected ${label}`);
   return control;
 }

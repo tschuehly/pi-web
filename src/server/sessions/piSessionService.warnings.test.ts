@@ -50,11 +50,13 @@ describe("collectRuntimeWarnings", () => {
   });
 
   it("maps resource diagnostics to their source labels and carries an optional path", () => {
-    const warnings = collectRuntimeWarnings(runtimeWith({
-      skills: [{ type: "error", message: "bad skill", path: "/skills/a.md" }],
-      prompts: [{ type: "warning", message: "odd prompt" }],
-      themes: [{ type: "warning", message: "odd theme" }],
-    }));
+    const warnings = collectRuntimeWarnings(
+      runtimeWith({
+        skills: [{ type: "error", message: "bad skill", path: "/skills/a.md" }],
+        prompts: [{ type: "warning", message: "odd prompt" }],
+        themes: [{ type: "warning", message: "odd theme" }],
+      }),
+    );
 
     expect(warnings).toEqual([
       { severity: "error", message: "bad skill", source: "skill", path: "/skills/a.md" },
@@ -75,10 +77,12 @@ describe("collectRuntimeWarnings", () => {
   });
 
   it("orders runtime diagnostics before resource diagnostics", () => {
-    const warnings = collectRuntimeWarnings(runtimeWith({
-      diagnostics: [{ type: "warning", message: "runtime first" }],
-      skills: [{ type: "error", message: "skill second" }],
-    }));
+    const warnings = collectRuntimeWarnings(
+      runtimeWith({
+        diagnostics: [{ type: "warning", message: "runtime first" }],
+        skills: [{ type: "error", message: "skill second" }],
+      }),
+    );
 
     expect(warnings.map((warning) => warning.message)).toEqual(["runtime first", "skill second"]);
   });
@@ -95,10 +99,7 @@ function anthropicModel(provider: string): PiAgentSession["model"] {
   return { ...testModel(), provider };
 }
 
-function subscriptionSession(options: {
-  provider?: string;
-  anthropicExtraUsage?: boolean;
-}): SubscriptionSession {
+function subscriptionSession(options: { provider?: string; anthropicExtraUsage?: boolean }): SubscriptionSession {
   return {
     model: options.provider === undefined ? undefined : anthropicModel(options.provider),
     settingsManager: {
@@ -125,19 +126,15 @@ async function anthropicAuthPath(credential: { type: "oauth" } | { type: "api_ke
   const dir = await mkdtemp(join(tmpdir(), "pi-web-warnings-"));
   tempDirs.push(dir);
   const authPath = join(dir, "auth.json");
-  const stored = credential.type === "oauth"
-    ? { type: "oauth", access: "a", refresh: "r", expires: Date.now() + 3_600_000 }
-    : { type: "api_key", key: credential.key };
+  const stored =
+    credential.type === "oauth" ? { type: "oauth", access: "a", refresh: "r", expires: Date.now() + 3_600_000 } : { type: "api_key", key: credential.key };
   await writeFile(authPath, JSON.stringify({ anthropic: stored }));
   return authPath;
 }
 
 describe("anthropicSubscriptionWarning", () => {
   it("warns with the verbatim SDK wording for a stored oauth credential", async () => {
-    expect(anthropicSubscriptionWarning(
-      subscriptionSession({ provider: "anthropic" }),
-      await anthropicAuthPath({ type: "oauth" }),
-    )).toEqual({
+    expect(anthropicSubscriptionWarning(subscriptionSession({ provider: "anthropic" }), await anthropicAuthPath({ type: "oauth" }))).toEqual({
       severity: "warning",
       message: ANTHROPIC_SUBSCRIPTION_AUTH_WARNING,
       source: "anthropic",
@@ -146,82 +143,91 @@ describe("anthropicSubscriptionWarning", () => {
   });
 
   it("warns for an sk-ant-oat subscription API key", async () => {
-    expect(anthropicSubscriptionWarning(
-      subscriptionSession({ provider: "anthropic" }),
-      await anthropicAuthPath({ type: "api_key", key: "sk-ant-oat-abc123" }),
-    )?.message).toBe(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+    expect(
+      anthropicSubscriptionWarning(subscriptionSession({ provider: "anthropic" }), await anthropicAuthPath({ type: "api_key", key: "sk-ant-oat-abc123" }))
+        ?.message,
+    ).toBe(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
   });
 
   it("does not warn for a standard anthropic API key", async () => {
-    expect(anthropicSubscriptionWarning(
-      subscriptionSession({ provider: "anthropic" }),
-      await anthropicAuthPath({ type: "api_key", key: "sk-ant-api-abc123" }),
-    )).toBeUndefined();
+    expect(
+      anthropicSubscriptionWarning(subscriptionSession({ provider: "anthropic" }), await anthropicAuthPath({ type: "api_key", key: "sk-ant-api-abc123" })),
+    ).toBeUndefined();
   });
 
   it("respects the anthropicExtraUsage suppression gate", async () => {
-    expect(anthropicSubscriptionWarning(
-      subscriptionSession({ provider: "anthropic", anthropicExtraUsage: false }),
-      await anthropicAuthPath({ type: "oauth" }),
-    )).toBeUndefined();
+    expect(
+      anthropicSubscriptionWarning(subscriptionSession({ provider: "anthropic", anthropicExtraUsage: false }), await anthropicAuthPath({ type: "oauth" })),
+    ).toBeUndefined();
   });
 
   it("does not warn when the active provider is not anthropic", async () => {
-    expect(anthropicSubscriptionWarning(
-      subscriptionSession({ provider: "openai" }),
-      await anthropicAuthPath({ type: "oauth" }),
-    )).toBeUndefined();
+    expect(anthropicSubscriptionWarning(subscriptionSession({ provider: "openai" }), await anthropicAuthPath({ type: "oauth" }))).toBeUndefined();
   });
 
   it("does not warn when no anthropic credential is stored", async () => {
     const dir = await mkdtemp(join(tmpdir(), "pi-web-warnings-"));
     tempDirs.push(dir);
-    expect(anthropicSubscriptionWarning(
-      subscriptionSession({ provider: "anthropic" }),
-      join(dir, "auth.json"),
-    )).toBeUndefined();
+    expect(anthropicSubscriptionWarning(subscriptionSession({ provider: "anthropic" }), join(dir, "auth.json"))).toBeUndefined();
   });
 });
 
 describe("dismissSessionWarning", () => {
   it("durably suppresses the anthropic notice via pi's WarningSettings key", () => {
     const calls: { anthropicExtraUsage?: boolean }[] = [];
-    dismissSessionWarning({
-      settingsManager: {
-        getWarnings: () => ({}),
-        setWarnings: (warnings) => { calls.push(warnings); },
-        getEnabledModels: () => undefined,
-        setEnabledModels: () => undefined,
+    dismissSessionWarning(
+      {
+        settingsManager: {
+          getWarnings: () => ({}),
+          setWarnings: (warnings) => {
+            calls.push(warnings);
+          },
+          getEnabledModels: () => undefined,
+          setEnabledModels: () => undefined,
+        },
       },
-    }, "anthropicExtraUsage");
+      "anthropicExtraUsage",
+    );
 
     expect(calls).toEqual([{ anthropicExtraUsage: false }]);
   });
 
   it("preserves other warning settings when suppressing", () => {
     const calls: { anthropicExtraUsage?: boolean }[] = [];
-    dismissSessionWarning({
-      settingsManager: {
-        getWarnings: () => ({ anthropicExtraUsage: true }),
-        setWarnings: (warnings) => { calls.push(warnings); },
-        getEnabledModels: () => undefined,
-        setEnabledModels: () => undefined,
+    dismissSessionWarning(
+      {
+        settingsManager: {
+          getWarnings: () => ({ anthropicExtraUsage: true }),
+          setWarnings: (warnings) => {
+            calls.push(warnings);
+          },
+          getEnabledModels: () => undefined,
+          setEnabledModels: () => undefined,
+        },
       },
-    }, "anthropicExtraUsage");
+      "anthropicExtraUsage",
+    );
 
     expect(calls).toEqual([{ anthropicExtraUsage: false }]);
   });
 
   it("rejects an unknown dismiss id instead of silently no-opping", () => {
     let called = false;
-    expect(() => { dismissSessionWarning({
-      settingsManager: {
-        getWarnings: () => ({}),
-        setWarnings: () => { called = true; },
-        getEnabledModels: () => undefined,
-        setEnabledModels: () => undefined,
-      },
-    }, "somethingElse"); }).toThrow("Unknown session warning dismiss id: somethingElse");
+    expect(() => {
+      dismissSessionWarning(
+        {
+          settingsManager: {
+            getWarnings: () => ({}),
+            setWarnings: () => {
+              called = true;
+            },
+            getEnabledModels: () => undefined,
+            setEnabledModels: () => undefined,
+          },
+        },
+        "somethingElse",
+      );
+    }).toThrow("Unknown session warning dismiss id: somethingElse");
     expect(called).toBe(false);
   });
 });

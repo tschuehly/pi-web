@@ -5,7 +5,15 @@ import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, realp
 import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
-import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, fullAccessDigestArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
+import {
+  daemonPathEnvironment,
+  DURABLE_HOST_PROTOCOL,
+  durableHostLaunchArgs,
+  fullAccessDigestArgs,
+  type DurableHostLauncher,
+  type DurableHostOptions,
+  type DurableHostProcess,
+} from "./durableChatService.js";
 import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCode, storeCodeRefusal } from "./sessionRuntimeLocator.js";
 
 /** Runs `launchctl` with these arguments; rejects with its output on failure. Tests may pass their own. */
@@ -40,21 +48,26 @@ export function durableHostSocketPath(hostsDir: string, storeId: string): string
  * recorded owner epoch and revision; a stale or foreign one is refused (never sent a request) and the family's own job
  * is started again in its place.
  */
-export function launchdDurableHost(options: DurableHostOptions & {
-  labelPrefix: string;
-  hostsDir: string;
-  locator: SessionRuntimeLocator;
-  launchctl?: Launchctl;
-  /** How long a started job may take to answer on its socket; default 60 s. */
-  startTimeoutMs?: number;
-}): DurableHostLauncher {
+export function launchdDurableHost(
+  options: DurableHostOptions & {
+    labelPrefix: string;
+    hostsDir: string;
+    locator: SessionRuntimeLocator;
+    launchctl?: Launchctl;
+    /** How long a started job may take to answer on its socket; default 60 s. */
+    startTimeoutMs?: number;
+  },
+): DurableHostLauncher {
   if (!/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(options.labelPrefix)) throw new Error(`Invalid Durable host launchd label prefix ${options.labelPrefix}`);
   const entry = realpathSync(options.entry);
   if (entry.split(sep).some((part) => part.endsWith(".installed"))) throw new Error(`Durable hosts start from a revision folder, not ${entry}`);
   const context: LaunchContext = { ...options, entry, launchctl: options.launchctl ?? launchctl, startTimeoutMs: options.startTimeoutMs ?? 60_000 };
-  return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir)
-    : launch?.readTranscript === true ? readTranscript(context, record, storeDir)
-    : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true, launch?.fullAccessDigest);
+  return (record, storeDir, launch) =>
+    launch?.endJobs === true
+      ? endJobs(context, record, storeDir)
+      : launch?.readTranscript === true
+        ? readTranscript(context, record, storeDir)
+        : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true, launch?.fullAccessDigest);
 }
 
 /**
@@ -66,14 +79,21 @@ function familyEntry(context: LaunchContext, record: DurableChatRecord): string 
   const durable = context.locator.durable(record.id);
   const pinned = durable?.hostEntry;
   if (pinned === undefined || existsSync(pinned)) return pinned ?? context.entry;
-  const refusal = durable?.hostStore === undefined ? "Which store this Chat's host code wrote was never recorded" : storeCodeRefusal(durable.hostStore, storeCode(context.entry));
+  const refusal =
+    durable?.hostStore === undefined
+      ? "Which store this Chat's host code wrote was never recorded"
+      : storeCodeRefusal(durable.hostStore, storeCode(context.entry));
   if (refusal !== undefined) throw new Error(`${refusal}, and its host code (${dirname(pinned)}) is gone; reinstall it to open this Chat`);
   return context.entry;
 }
 
 /** The daemon's environment, as a forked host inherited it, less secret-named variables (a plist is a file on disk). */
 function hostEnvironment(context: LaunchContext) {
-  return Object.fromEntries(Object.entries({ ...process.env, ...daemonPathEnvironment(process.env, context.webPort), PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
+  return Object.fromEntries(
+    Object.entries({ ...process.env, ...daemonPathEnvironment(process.env, context.webPort), PI_CODING_AGENT_DIR: context.agentDir }).filter(
+      ([name]) => !SECRET_NAME.test(name),
+    ),
+  );
 }
 
 /** Unload the family's job (bootout returns once its process is gone), remove its plist and forget the host. */
@@ -92,17 +112,23 @@ async function unload(context: LaunchContext, record: DurableChatRecord): Promis
  */
 function endJobs(context: LaunchContext, record: DurableChatRecord, storeDir: string): DurableHostProcess {
   const ended = Object.assign(new EventEmitter(), { send: () => false, kill: () => false });
-  void unload(context, record).then(() => {
-    mkdirSync(storeDir, { recursive: true, mode: 0o700 });
-    const log = openSync(join(storeDir, "host.log"), "a", 0o600);
-    try {
-      spawn(process.execPath, [familyEntry(context, record), ...durableHostLaunchArgs(context, record, storeDir), "--end-jobs"], { cwd: storeDir, env: hostEnvironment(context), stdio: ["ignore", log, log] })
-        .on("error", (error) => ended.emit("error", error))
-        .on("exit", (code, signal) => ended.emit("exit", code, signal));
-    } finally {
-      closeSync(log);
-    }
-  }).catch((error: unknown) => ended.emit("error", error));
+  void unload(context, record)
+    .then(() => {
+      mkdirSync(storeDir, { recursive: true, mode: 0o700 });
+      const log = openSync(join(storeDir, "host.log"), "a", 0o600);
+      try {
+        spawn(process.execPath, [familyEntry(context, record), ...durableHostLaunchArgs(context, record, storeDir), "--end-jobs"], {
+          cwd: storeDir,
+          env: hostEnvironment(context),
+          stdio: ["ignore", log, log],
+        })
+          .on("error", (error) => ended.emit("error", error))
+          .on("exit", (code, signal) => ended.emit("exit", code, signal));
+      } finally {
+        closeSync(log);
+      }
+    })
+    .catch((error: unknown) => ended.emit("error", error));
   return ended;
 }
 
@@ -126,15 +152,31 @@ function readTranscript(context: LaunchContext, record: DurableChatRecord, store
   mkdirSync(storeDir, { recursive: true, mode: 0o700 });
   const log = openSync(join(storeDir, "host.log"), "a", 0o600);
   try {
-    return spawn(process.execPath, [entry, ...durableHostLaunchArgs(context, record, storeDir), "--read-transcript"], { cwd: storeDir, env: hostEnvironment(context), stdio: ["ignore", log, log, "ipc"] });
+    return spawn(process.execPath, [entry, ...durableHostLaunchArgs(context, record, storeDir), "--read-transcript"], {
+      cwd: storeDir,
+      env: hostEnvironment(context),
+      stdio: ["ignore", log, log, "ipc"],
+    });
   } finally {
     closeSync(log);
   }
 }
 
-type LaunchContext = DurableHostOptions & { labelPrefix: string; hostsDir: string; locator: SessionRuntimeLocator; launchctl: Launchctl; startTimeoutMs: number };
+type LaunchContext = DurableHostOptions & {
+  labelPrefix: string;
+  hostsDir: string;
+  locator: SessionRuntimeLocator;
+  launchctl: Launchctl;
+  startTimeoutMs: number;
+};
 
-interface Ready { protocol: number; storeId: string; ownerEpoch: number; revision: string; pid: number }
+interface Ready {
+  protocol: number;
+  storeId: string;
+  ownerEpoch: number;
+  revision: string;
+  pid: number;
+}
 
 /** A launchd host behind the `DurableHostProcess` shape: "exit" means the connection ended (after `close`, the job too). */
 class LaunchdHost extends EventEmitter implements DurableHostProcess {
@@ -149,7 +191,13 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   /** The entry this object launched its host from; a reattached host's is the locator's. */
   #entry: string | undefined;
 
-  constructor(private readonly context: LaunchContext, private readonly record: DurableChatRecord, private readonly storeDir: string, attachOnly: boolean, private readonly fullAccessDigest?: string) {
+  constructor(
+    private readonly context: LaunchContext,
+    private readonly record: DurableChatRecord,
+    private readonly storeDir: string,
+    attachOnly: boolean,
+    private readonly fullAccessDigest?: string,
+  ) {
     super();
     this.#label = `${context.labelPrefix}.${record.storeId}`;
     void this.#open(attachOnly).catch((error: unknown) => {
@@ -188,7 +236,14 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
     this.#entry = entry;
-    const programArguments = [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket, ...fullAccessDigestArgs(this.fullAccessDigest, entry)];
+    const programArguments = [
+      process.execPath,
+      entry,
+      ...durableHostLaunchArgs(this.context, this.record, this.storeDir),
+      "--socket",
+      socket,
+      ...fullAccessDigestArgs(this.fullAccessDigest, entry),
+    ];
     const job = launchdPlist({
       Label: this.#label,
       ProgramArguments: programArguments,
@@ -216,7 +271,11 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
         }
         throw new Error("the started host did not prove a new owner epoch");
       } catch (error) {
-        if (!(error instanceof NotListening) || Date.now() > deadline) throw new Error(`Durable host ${this.#label} did not start (see ${join(this.storeDir, "host.log")}): ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+        if (!(error instanceof NotListening) || Date.now() > deadline)
+          throw new Error(
+            `Durable host ${this.#label} did not start (see ${join(this.storeDir, "host.log")}): ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          );
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
@@ -233,8 +292,13 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     socket.setEncoding("utf8");
     let buffer = "";
     const first = await new Promise<string>((resolve, reject) => {
-      const fail = (error: Error) => { socket.destroy(); reject(error); };
-      const timer = setTimeout(() => { fail(new Error("no handshake within 5 s")); }, 5000);
+      const fail = (error: Error) => {
+        socket.destroy();
+        reject(error);
+      };
+      const timer = setTimeout(() => {
+        fail(new Error("no handshake within 5 s"));
+      }, 5000);
       socket.on("error", (error: NodeJS.ErrnoException) => {
         clearTimeout(timer);
         fail(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? new NotListening(error.message) : error);
@@ -253,12 +317,23 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     });
     const message = parse(first);
     const ready = isRecord(message) && isRecord(message["ready"]) ? message["ready"] : undefined;
-    if (ready?.["protocol"] !== DURABLE_HOST_PROTOCOL || ready["storeId"] !== this.record.storeId
-      || typeof ready["ownerEpoch"] !== "number" || typeof ready["revision"] !== "string" || typeof ready["pid"] !== "number") {
+    if (
+      ready?.["protocol"] !== DURABLE_HOST_PROTOCOL
+      || ready["storeId"] !== this.record.storeId
+      || typeof ready["ownerEpoch"] !== "number"
+      || typeof ready["revision"] !== "string"
+      || typeof ready["pid"] !== "number"
+    ) {
       socket.destroy();
       throw new Error(`not this family's host (handshake ${JSON.stringify({ protocol: ready?.["protocol"], storeId: ready?.["storeId"] })})`);
     }
-    const proven: Ready = { protocol: DURABLE_HOST_PROTOCOL, storeId: this.record.storeId, ownerEpoch: ready["ownerEpoch"], revision: ready["revision"], pid: ready["pid"] };
+    const proven: Ready = {
+      protocol: DURABLE_HOST_PROTOCOL,
+      storeId: this.record.storeId,
+      ownerEpoch: ready["ownerEpoch"],
+      revision: ready["revision"],
+      pid: ready["pid"],
+    };
     if (!accept(proven)) {
       socket.destroy();
       return false;
@@ -266,7 +341,9 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     this.#socket = socket;
     this.#pid = proven.pid;
     socket.on("error", () => undefined);
-    socket.on("close", () => { void this.#closed(); });
+    socket.on("close", () => {
+      void this.#closed();
+    });
     socket.on("data", (chunk: string) => {
       buffer += chunk;
       for (let end = buffer.indexOf("\n"); end !== -1; end = buffer.indexOf("\n")) {
@@ -279,7 +356,14 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
         if (line !== undefined) this.emit("message", line);
       }
     });
-    if (record) this.context.locator.setHost(this.record.id, { label: this.#label, socket: path, revision: proven.revision, ownerEpoch: proven.ownerEpoch, pid: proven.pid } satisfies DurableHostAttachment);
+    if (record)
+      this.context.locator.setHost(this.record.id, {
+        label: this.#label,
+        socket: path,
+        revision: proven.revision,
+        ownerEpoch: proven.ownerEpoch,
+        pid: proven.pid,
+      } satisfies DurableHostAttachment);
     this.emit("message", message);
     // Lines that arrived with the handshake, then the rest.
     socket.emit("data", "");
@@ -305,7 +389,9 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       if (isRecord(message["params"]) && message["params"]["ifRestartSafe"] === true) this.#conditionalClose = message["id"];
       else this.#closing = true;
     }
-    return socket.write(`${JSON.stringify(message)}\n`, (error) => { callback?.(error ?? null); });
+    return socket.write(`${JSON.stringify(message)}\n`, (error) => {
+      callback?.(error ?? null);
+    });
   }
 
   kill(signal: NodeJS.Signals = "SIGTERM"): boolean {
@@ -361,10 +447,18 @@ type PlistValue = string | number | boolean | PlistValue[] | { [key: string]: Pl
 function launchdPlist(values: Record<string, PlistValue>): string {
   const escape = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
   const value = (item: PlistValue): string =>
-    typeof item === "string" ? `<string>${escape(item)}</string>`
-    : typeof item === "number" ? `<integer>${String(item)}</integer>`
-    : typeof item === "boolean" ? (item ? "<true/>" : "<false/>")
-    : Array.isArray(item) ? `<array>${item.map(value).join("")}</array>`
-    : `<dict>${Object.entries(item).map(([key, entry]) => `<key>${escape(key)}</key>${value(entry)}`).join("")}</dict>`;
+    typeof item === "string"
+      ? `<string>${escape(item)}</string>`
+      : typeof item === "number"
+        ? `<integer>${String(item)}</integer>`
+        : typeof item === "boolean"
+          ? item
+            ? "<true/>"
+            : "<false/>"
+          : Array.isArray(item)
+            ? `<array>${item.map(value).join("")}</array>`
+            : `<dict>${Object.entries(item)
+                .map(([key, entry]) => `<key>${escape(key)}</key>${value(entry)}`)
+                .join("")}</dict>`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">${value(values)}</plist>\n`;
 }

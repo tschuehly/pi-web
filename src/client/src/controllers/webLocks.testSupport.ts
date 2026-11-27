@@ -8,7 +8,10 @@ export class FakeLocks implements WindowLocks {
     const queue = this.queues.get(name);
     if (queue === undefined) this.queues.set(name, []);
     else if (options.ifAvailable === true) return await callback(null);
-    else await new Promise<void>((granted) => { queue.push(granted); });
+    else
+      await new Promise<void>((granted) => {
+        queue.push(granted);
+      });
     try {
       return await callback({ name, mode: "exclusive" });
     } finally {
@@ -25,7 +28,16 @@ export class FakeLocks implements WindowLocks {
   /** Holds `name` as another page would, until the returned release is called. */
   hold(name: string): () => void {
     let release = (): void => undefined;
-    void this.request(name, {}, () => new Promise<void>((resolve) => { release = resolve; }));
-    return () => { release(); };
+    void this.request(
+      name,
+      {},
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    return () => {
+      release();
+    };
   }
 }

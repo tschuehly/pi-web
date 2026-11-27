@@ -270,7 +270,9 @@ function summarizeToolArgs(args: unknown): string {
   if (typeof args["oldText"] === "string" && typeof args["newText"] === "string") return "edit text replacement";
   const edits = args["edits"];
   if (Array.isArray(edits)) return `${String(edits.length)} edit${edits.length === 1 ? "" : "s"}`;
-  const entries = Object.entries(args).filter(([, value]) => value != null).slice(0, 3);
+  const entries = Object.entries(args)
+    .filter(([, value]) => value != null)
+    .slice(0, 3);
   return entries.map(([key, value]) => `${key}: ${shortValue(value)}`).join(" · ");
 }
 
@@ -286,7 +288,7 @@ function stringifyContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .map((part) => (getString(part, "type") === "image" ? "[image]" : getString(part, "text") ?? ""))
+      .map((part) => (getString(part, "type") === "image" ? "[image]" : (getString(part, "text") ?? "")))
       .filter((text) => text !== "")
       .join("\n");
   }

@@ -12,7 +12,9 @@ import {
   type PromptEnterMedia,
 } from "./promptEnterBehavior";
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("promptEnterBehavior", () => {
   it("uses coarse-pointer capability without changing semantics at narrow widths", () => {
@@ -85,7 +87,9 @@ describe("promptEnterBehavior", () => {
     const storage = new ThrowingStorage();
 
     expect(readPromptEnterPreference(storage)).toBe("auto");
-    expect(() => { writePromptEnterPreference("send", storage); }).not.toThrow();
+    expect(() => {
+      writePromptEnterPreference("send", storage);
+    }).not.toThrow();
   });
 });
 

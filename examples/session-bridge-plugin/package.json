@@ -4,23 +4,35 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "keywords": ["pi-package"],
-  "scripts": { "build": "tsc -p tsconfig.json" },
+  "keywords": [
+    "pi-package"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "devDependencies": {
     "@jmfederico/pi-web": "^1.202609.1",
     "@earendil-works/pi-coding-agent": "^1.1.0",
     "@types/node": "^24.19.2",
     "typescript": "^6.0.3"
   },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "^1.0.0" },
-  "pi": { "extensions": ["./src/companion.ts"] },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.0.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/companion.ts"
+    ]
+  },
   "piWeb": {
-    "plugins": [{
-      "id": "workspace-reviews-example",
-      "browserRoot": "dist/browser",
-      "module": "dist/browser/index.js",
-      "serverModule": "dist/server.js",
-      "machineSpecific": true
-    }]
+    "plugins": [
+      {
+        "id": "workspace-reviews-example",
+        "browserRoot": "dist/browser",
+        "module": "dist/browser/index.js",
+        "serverModule": "dist/server.js",
+        "machineSpecific": true
+      }
+    ]
   }
 }

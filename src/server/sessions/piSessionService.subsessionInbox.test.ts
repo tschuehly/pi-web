@@ -4,9 +4,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  fakeSessionManager,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 import type { SubsessionReadQuery } from "./spawnSubsessionTool.js";
-import { completionReceiptIds, persistedSubsessionCompletions, SUBSESSION_COMPLETION_ENTRY_TYPE, SUBSESSION_NOTIFICATION_CUSTOM_TYPE, SUBSESSION_RECEIPT_ENTRY_TYPE, type SubsessionCompletion } from "./subsessionCompletionInbox.js";
+import {
+  completionReceiptIds,
+  persistedSubsessionCompletions,
+  SUBSESSION_COMPLETION_ENTRY_TYPE,
+  SUBSESSION_NOTIFICATION_CUSTOM_TYPE,
+  SUBSESSION_RECEIPT_ENTRY_TYPE,
+  type SubsessionCompletion,
+} from "./subsessionCompletionInbox.js";
 
 const CWD = "/workspace";
 const PARENT_ID = "parent-1";
@@ -103,10 +119,15 @@ async function settleParent(parent: ParentFixture): Promise<void> {
 function receiveCustomMessage(parent: ParentFixture, draft: DeliveryDraft): void {
   // SDK persistence precedes message_end; the service does not append the draft.
   parent.journal.entries.push(draft);
-  parent.emit({ type: "message_end", message: { role: "custom", customType: draft.customType, content: draft.content, display: draft.display, details: draft.details } });
+  parent.emit({
+    type: "message_end",
+    message: { role: "custom", customType: draft.customType, content: draft.content, display: draft.display, details: draft.details },
+  });
 }
 
-beforeEach(() => { vi.useFakeTimers(); });
+beforeEach(() => {
+  vi.useFakeTimers();
+});
 afterEach(async () => {
   try {
     await Promise.all([...services].map((service) => service.dispose()));
@@ -147,10 +168,16 @@ describe("PiSessionService shared subsession completion inbox", () => {
     if (timing === "before idle heartbeat") child.emit({ type: "agent_end" }); // still streaming
     finishChildRun(child, "checked answer", timing === "finalized event");
     // No timer flush here: check itself must finalize an idle, still-armed run.
-    await expect(service.checkSubsession(PARENT_ID, "child-1", PARENT_FILE)).resolves.toMatchObject({ status: "idle", finalText: "checked answer", messageCount: 1 });
+    await expect(service.checkSubsession(PARENT_ID, "child-1", PARENT_FILE)).resolves.toMatchObject({
+      status: "idle",
+      finalText: "checked answer",
+      messageCount: 1,
+    });
     const completions = persistedSubsessionCompletions(child.journal.entries);
     expect(completions).toHaveLength(1);
-    expect(parent.journal.appendCustomEntry).toHaveBeenCalledWith(SUBSESSION_RECEIPT_ENTRY_TYPE, { completionIds: completions.map(({ completionId }) => completionId) });
+    expect(parent.journal.appendCustomEntry).toHaveBeenCalledWith(SUBSESSION_RECEIPT_ENTRY_TYPE, {
+      completionIds: completions.map(({ completionId }) => completionId),
+    });
 
     child.emit({ type: "agent_end" }); // a late finalizing event must not re-arm it
     await settleParent(parent);
@@ -183,11 +210,16 @@ describe("PiSessionService shared subsession completion inbox", () => {
     const { service, parent, child } = await inboxService();
     child.journal.entries.push({ type: "message", message: { role: "assistant", content: "historical answer" } });
     startChildRun(child);
-    finishChildRun(child, [{ type: "thinking", thinking: "private reasoning" }, { type: "text", text: "final answer" }]);
+    finishChildRun(child, [
+      { type: "thinking", thinking: "private reasoning" },
+      { type: "text", text: "final answer" },
+    ]);
 
     const read = await service.readSubsession(PARENT_ID, "child-1", { roles: ["assistant"], include: ["text"], limit: 1 }, PARENT_FILE);
     expect(read.entries).toEqual([{ index: 1, role: "assistant", parts: [{ kind: "text", text: "final answer" }] }]);
-    expect(parent.journal.appendCustomEntry).toHaveBeenCalledWith(SUBSESSION_RECEIPT_ENTRY_TYPE, { completionIds: persistedSubsessionCompletions(child.journal.entries).map(({ completionId }) => completionId) });
+    expect(parent.journal.appendCustomEntry).toHaveBeenCalledWith(SUBSESSION_RECEIPT_ENTRY_TYPE, {
+      completionIds: persistedSubsessionCompletions(child.journal.entries).map(({ completionId }) => completionId),
+    });
     await settleParent(parent);
     expect(parent.calls.sendCustomMessage).toHaveLength(0);
     await expect(service.prepareSubsessionDelivery(PARENT_ID, PARENT_FILE)).resolves.toBeUndefined();
@@ -198,7 +230,11 @@ describe("PiSessionService shared subsession completion inbox", () => {
     child.session.prompt = vi.fn(() => Promise.reject(new Error("No model selected")));
     await service.prompt(sessionRef("child-1"), "try work");
     await vi.advanceTimersByTimeAsync(0);
-    await expect(service.readSubsession(PARENT_ID, "child-1", {}, PARENT_FILE)).resolves.toMatchObject({ status: "error", errorDetail: "No model selected", entries: [] });
+    await expect(service.readSubsession(PARENT_ID, "child-1", {}, PARENT_FILE)).resolves.toMatchObject({
+      status: "error",
+      errorDetail: "No model selected",
+      entries: [],
+    });
     await settleParent(parent);
     expect(parent.calls.sendCustomMessage).toHaveLength(0);
   });
@@ -217,7 +253,10 @@ describe("PiSessionService shared subsession completion inbox", () => {
       { type: "message", message: { role: "assistant", content: "historical answer" } },
     );
     startChildRun(child);
-    finishChildRun(child, [{ type: "thinking", thinking: "private reasoning" }, { type: "text", text: "final answer" }]);
+    finishChildRun(child, [
+      { type: "thinking", thinking: "private reasoning" },
+      { type: "text", text: "final answer" },
+    ]);
 
     const read = await service.readSubsession(PARENT_ID, "child-1", query, PARENT_FILE);
     expect(read.status).toBe("idle");
@@ -238,7 +277,10 @@ describe("PiSessionService shared subsession completion inbox", () => {
     finishChildRun(first, "first child answer");
 
     const joined = await service.joinSubsessions(PARENT_ID, PARENT_FILE);
-    expect(joined.subsessions).toEqual([{ sessionId: "child-1", cwd: CWD, status: "idle" }, { sessionId: "child-2", cwd: CWD, status: "working" }]);
+    expect(joined.subsessions).toEqual([
+      { sessionId: "child-1", cwd: CWD, status: "idle" },
+      { sessionId: "child-2", cwd: CWD, status: "working" },
+    ]);
     expect(joined.completions).toMatchObject([{ sessionId: "child-1", finalText: "first child answer" }]);
     await settleParent(parent);
     expect(parent.calls.sendCustomMessage).toHaveLength(0);
@@ -292,7 +334,10 @@ describe("PiSessionService shared subsession completion inbox", () => {
     expect(parent.calls.sendCustomMessage).toHaveLength(0);
 
     const joined = await service.joinSubsessions(PARENT_ID, PARENT_FILE);
-    expect(joined.completions).toMatchObject([{ sessionId: "child-1", finalText: "first run answer", messageCount: 1 }, { sessionId: "child-1", finalText: "second run answer", messageCount: 2 }]);
+    expect(joined.completions).toMatchObject([
+      { sessionId: "child-1", finalText: "first run answer", messageCount: 1 },
+      { sessionId: "child-1", finalText: "second run answer", messageCount: 2 },
+    ]);
     expect(new Set(joined.completions.map(({ completionId }) => completionId)).size).toBe(2);
     await settleParent(parent);
     expect(parent.calls.sendCustomMessage).toHaveLength(0);
@@ -313,7 +358,10 @@ describe("PiSessionService shared subsession completion inbox", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(parent.calls.sendCustomMessage).toHaveLength(0);
     const runs = persistedSubsessionCompletions(child.journal.entries);
-    expect(runs).toMatchObject([{ finalText: "same answer", messageCount: 1 }, { finalText: "same answer", messageCount: 2 }]);
+    expect(runs).toMatchObject([
+      { finalText: "same answer", messageCount: 1 },
+      { finalText: "same answer", messageCount: 2 },
+    ]);
     expect(new Set(runs.map(({ completionId }) => completionId)).size).toBe(2);
     await settleParent(parent);
     expect(parent.calls.sendCustomMessage).toHaveLength(1);
@@ -406,7 +454,12 @@ describe("PiSessionService shared subsession completion inbox", () => {
     const { service, parent, child } = await inboxService();
     parent.session.isStreaming = false;
     let finish!: (result: Awaited<ReturnType<typeof parent.session.executeBash>>) => void;
-    parent.session.executeBash = vi.fn(() => new Promise<Awaited<ReturnType<typeof parent.session.executeBash>>>((resolve) => { finish = resolve; }));
+    parent.session.executeBash = vi.fn(
+      () =>
+        new Promise<Awaited<ReturnType<typeof parent.session.executeBash>>>((resolve) => {
+          finish = resolve;
+        }),
+    );
     await service.shell(sessionRef(PARENT_ID), "!do independent work");
     startChildRun(child);
     finishChildRun(child);
@@ -438,7 +491,9 @@ describe("PiSessionService shared subsession completion inbox", () => {
     const append = child.journal.appendCustomEntry.getMockImplementation();
     if (append === undefined) throw new Error("Expected a journal writer");
     startChildRun(child);
-    child.journal.appendCustomEntry.mockImplementation(() => { throw new Error("child storage failed"); });
+    child.journal.appendCustomEntry.mockImplementation(() => {
+      throw new Error("child storage failed");
+    });
     finishChildRun(child);
     await expect(service.checkSubsession(PARENT_ID, "child-1", PARENT_FILE)).rejects.toThrow("Could not record completion");
     child.journal.appendCustomEntry.mockImplementation(append);
@@ -480,7 +535,9 @@ describe("PiSessionService shared subsession completion inbox", () => {
     finishChildRun(child);
     await vi.advanceTimersByTimeAsync(0);
     const completed = persistedSubsessionCompletions(child.journal.entries);
-    parent.journal.appendCustomEntry.mockImplementationOnce(() => { throw new Error("receipt storage failed"); });
+    parent.journal.appendCustomEntry.mockImplementationOnce(() => {
+      throw new Error("receipt storage failed");
+    });
     const inspect = () => {
       if (method === "join") return service.joinSubsessions(PARENT_ID, PARENT_FILE);
       if (method === "check") return service.checkSubsession(PARENT_ID, "child-1", PARENT_FILE);
@@ -500,26 +557,53 @@ describe("PiSessionService shared subsession completion inbox", () => {
     tempDirs.push(dir);
     const parentFile = join(dir, "parent.jsonl");
     const childFile = join(dir, "child.jsonl");
-    const first: SubsessionCompletion = { completionId: "persisted-run-1", sessionId: "child-1", cwd: CWD, status: "idle", finalText: "earlier answer", messageCount: 1 };
+    const first: SubsessionCompletion = {
+      completionId: "persisted-run-1",
+      sessionId: "child-1",
+      cwd: CWD,
+      status: "idle",
+      finalText: "earlier answer",
+      messageCount: 1,
+    };
     const second: SubsessionCompletion = { ...first, completionId: "persisted-run-2", finalText: "recovered answer", messageCount: 2 };
     const timestamp = "2026-01-01T00:00:00.000Z";
     const entry = (id: string, parentId: string | null, fields: object) => ({ id, parentId, timestamp, ...fields });
-    await writeFile(parentFile, [
-      { type: "session", version: 3, id: PARENT_ID, cwd: CWD, timestamp },
-      // A conversational assistant entry makes SDK appends flush to disk, not
-      // stay in its pre-conversation buffer. Use the real manager for receipts.
-      entry("parent-answer", null, { type: "message", message: { role: "assistant", content: "delegated" } }),
-      entry("parent-link", "parent-answer", { type: "custom", customType: "pi-web.subsession.link", data: { version: 1, spawnedBySessionId: PARENT_ID, spawnedSessionId: "child-1", spawnedSessionFile: childFile, cwd: CWD } }),
-      entry("first-receipt", "parent-link", { type: "custom", customType: SUBSESSION_RECEIPT_ENTRY_TYPE, data: { completionIds: [first.completionId] } }),
-    ].map((value) => JSON.stringify(value)).join("\n") + "\n", "utf8");
-    await writeFile(childFile, [
-      { type: "session", version: 3, id: "child-1", cwd: CWD, timestamp, parentSession: parentFile },
-      entry("child-marker", null, { type: "custom", customType: "pi-web.subsession.spawned", data: { version: 1, spawnedBySessionId: PARENT_ID, spawnedSessionId: "child-1" } }),
-      entry("child-answer-1", "child-marker", { type: "message", message: { role: "assistant", content: first.finalText } }),
-      entry("child-completion-1", "child-answer-1", { type: "custom", customType: SUBSESSION_COMPLETION_ENTRY_TYPE, data: first }),
-      entry("child-answer-2", "child-completion-1", { type: "message", message: { role: "assistant", content: second.finalText } }),
-      entry("child-completion-2", "child-answer-2", { type: "custom", customType: SUBSESSION_COMPLETION_ENTRY_TYPE, data: second }),
-    ].map((value) => JSON.stringify(value)).join("\n") + "\n", "utf8");
+    await writeFile(
+      parentFile,
+      [
+        { type: "session", version: 3, id: PARENT_ID, cwd: CWD, timestamp },
+        // A conversational assistant entry makes SDK appends flush to disk, not
+        // stay in its pre-conversation buffer. Use the real manager for receipts.
+        entry("parent-answer", null, { type: "message", message: { role: "assistant", content: "delegated" } }),
+        entry("parent-link", "parent-answer", {
+          type: "custom",
+          customType: "pi-web.subsession.link",
+          data: { version: 1, spawnedBySessionId: PARENT_ID, spawnedSessionId: "child-1", spawnedSessionFile: childFile, cwd: CWD },
+        }),
+        entry("first-receipt", "parent-link", { type: "custom", customType: SUBSESSION_RECEIPT_ENTRY_TYPE, data: { completionIds: [first.completionId] } }),
+      ]
+        .map((value) => JSON.stringify(value))
+        .join("\n") + "\n",
+      "utf8",
+    );
+    await writeFile(
+      childFile,
+      [
+        { type: "session", version: 3, id: "child-1", cwd: CWD, timestamp, parentSession: parentFile },
+        entry("child-marker", null, {
+          type: "custom",
+          customType: "pi-web.subsession.spawned",
+          data: { version: 1, spawnedBySessionId: PARENT_ID, spawnedSessionId: "child-1" },
+        }),
+        entry("child-answer-1", "child-marker", { type: "message", message: { role: "assistant", content: first.finalText } }),
+        entry("child-completion-1", "child-answer-1", { type: "custom", customType: SUBSESSION_COMPLETION_ENTRY_TYPE, data: first }),
+        entry("child-answer-2", "child-completion-1", { type: "message", message: { role: "assistant", content: second.finalText } }),
+        entry("child-completion-2", "child-answer-2", { type: "custom", customType: SUBSESSION_COMPLETION_ENTRY_TYPE, data: second }),
+      ]
+        .map((value) => JSON.stringify(value))
+        .join("\n") + "\n",
+      "utf8",
+    );
 
     const reopen = async () => {
       const parentManager = SessionManager.open(parentFile, dir);
@@ -535,7 +619,10 @@ describe("PiSessionService shared subsession completion inbox", () => {
           throw new Error("Unexpected recovered manager");
         },
         sessionManager: {
-          ...sessionGateway([{ ...sessionRecord(PARENT_ID), path: parentFile }, { ...sessionRecord("child-1"), path: childFile }]),
+          ...sessionGateway([
+            { ...sessionRecord(PARENT_ID), path: parentFile },
+            { ...sessionRecord("child-1"), path: childFile },
+          ]),
           open: (path) => {
             if (path === parentFile) return parentManager;
             if (path === childFile) return childManager;
@@ -551,7 +638,10 @@ describe("PiSessionService shared subsession completion inbox", () => {
     };
 
     const original = await reopen();
-    await expect(original.service.joinSubsessions(PARENT_ID, parentFile)).resolves.toEqual({ subsessions: [{ sessionId: "child-1", cwd: CWD, status: "idle" }], completions: [second] });
+    await expect(original.service.joinSubsessions(PARENT_ID, parentFile)).resolves.toEqual({
+      subsessions: [{ sessionId: "child-1", cwd: CWD, status: "idle" }],
+      completions: [second],
+    });
     expect(original.parent.calls.sendCustomMessage).toHaveLength(0);
     await original.service.dispose();
     services.delete(original.service);
@@ -559,7 +649,11 @@ describe("PiSessionService shared subsession completion inbox", () => {
     const reopened = await reopen();
     await expect(reopened.service.joinSubsessions(PARENT_ID, parentFile)).resolves.toMatchObject({ completions: [] });
     await expect(reopened.service.prepareSubsessionDelivery(PARENT_ID, parentFile)).resolves.toBeUndefined();
-    await expect(reopened.service.checkSubsession(PARENT_ID, "child-1", parentFile)).resolves.toMatchObject({ status: "idle", finalText: second.finalText, messageCount: 2 });
+    await expect(reopened.service.checkSubsession(PARENT_ID, "child-1", parentFile)).resolves.toMatchObject({
+      status: "idle",
+      finalText: second.finalText,
+      messageCount: 2,
+    });
     reopened.parent.session.isStreaming = false;
     reopened.parent.emit({ type: "agent_settled" });
     await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);

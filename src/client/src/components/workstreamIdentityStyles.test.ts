@@ -36,8 +36,12 @@ describe("Workstream identity presentation contracts", () => {
     // The tab row paints --pi-surface, so these are exactly the tab surfaces the palette sweep above holds at AA.
     expect(resting).toContain(`background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tab)}%, var(--pi-surface))`);
     expect(resting).toContain("color: var(--pi-text)");
-    expect(rule(tabs, ".tinted:hover")).toContain(`background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tab)}%, var(--pi-surface-hover))`);
-    expect(rule(tabs, '.tinted[aria-selected="true"]')).toContain(`background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tabSelected)}%, var(--pi-surface-hover))`);
+    expect(rule(tabs, ".tinted:hover")).toContain(
+      `background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tab)}%, var(--pi-surface-hover))`,
+    );
+    expect(rule(tabs, '.tinted[aria-selected="true"]')).toContain(
+      `background: color-mix(in srgb, var(--ws) ${String(WORKSTREAM_TINT_PERCENTAGES.tabSelected)}%, var(--pi-surface-hover))`,
+    );
   });
 
   it("declares --pi-text foreground on every recolored label", () => {
@@ -74,11 +78,7 @@ describe("Workstream identity presentation contracts", () => {
 
 function hexRgb(value: string): Rgb {
   const hex = value.slice(1, 7);
-  return [
-    Number.parseInt(hex.slice(0, 2), 16) / 255,
-    Number.parseInt(hex.slice(2, 4), 16) / 255,
-    Number.parseInt(hex.slice(4, 6), 16) / 255,
-  ];
+  return [Number.parseInt(hex.slice(0, 2), 16) / 255, Number.parseInt(hex.slice(2, 4), 16) / 255, Number.parseInt(hex.slice(4, 6), 16) / 255];
 }
 
 function mix(foreground: Rgb, background: Rgb, amount: number): Rgb {

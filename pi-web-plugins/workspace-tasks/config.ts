@@ -17,9 +17,7 @@ export interface WorkspaceTask {
   confirm: boolean;
 }
 
-export type ParseTasksConfigResult =
-  | { ok: true; config: WorkspaceTasksConfig }
-  | { ok: false; error: string };
+export type ParseTasksConfigResult = { ok: true; config: WorkspaceTasksConfig } | { ok: false; error: string };
 
 export function parseTasksConfigText(text: string): ParseTasksConfigResult {
   let parsed: unknown;
@@ -51,9 +49,7 @@ export function parseTasksConfig(value: unknown): ParseTasksConfigResult {
   return { ok: true, config: { version: TASKS_CONFIG_VERSION, tasks: parsedTasks } };
 }
 
-type ParseTaskResult =
-  | { ok: true; task: WorkspaceTask }
-  | { ok: false; error: string };
+type ParseTaskResult = { ok: true; task: WorkspaceTask } | { ok: false; error: string };
 
 function parseTask(value: unknown, index: number): ParseTaskResult {
   const label = `Task ${String(index + 1)}`;
@@ -91,13 +87,9 @@ function parseTask(value: unknown, index: number): ParseTaskResult {
   };
 }
 
-type StringFieldResult =
-  | { ok: true; value: string }
-  | { ok: false; error: string };
+type StringFieldResult = { ok: true; value: string } | { ok: false; error: string };
 
-type OptionalStringFieldResult =
-  | { ok: true; value: string | undefined }
-  | { ok: false; error: string };
+type OptionalStringFieldResult = { ok: true; value: string | undefined } | { ok: false; error: string };
 
 function requireNonEmptyString(record: Record<string, unknown>, key: string, label: string): StringFieldResult {
   const value = record[key];

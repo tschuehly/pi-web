@@ -2,11 +2,7 @@ import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  disableServerPlugin,
-  loadServerPluginRecoveryConfig,
-  setServerPluginSafeStart,
-} from "./serverPluginRecovery.js";
+import { disableServerPlugin, loadServerPluginRecoveryConfig, setServerPluginSafeStart } from "./serverPluginRecovery.js";
 
 let tempDir: string;
 let configPath: string;
@@ -117,7 +113,7 @@ describe("server plugin offline recovery config", () => {
 
     const loaded = loadServerPluginRecoveryConfig({ configPath });
     expect(loaded).toMatchObject({ path: configPath, exists: true, safeStart: "none" });
-    expect(loaded.safeStartDiagnostic).toContain("serverPlugins.safeStart must be \"bundled-only\" or \"none\"");
+    expect(loaded.safeStartDiagnostic).toContain('serverPlugins.safeStart must be "bundled-only" or "none"');
 
     const recovery = disableServerPlugin("broken", { configPath });
 

@@ -1,4 +1,13 @@
-import type { Machine, MachineHealth, MachineRuntime, PiWebComponentStatus, PiWebDeprecatedAgentInput, PiWebRuntimeComponent, PiWebRuntimeResponse, PiWebStatusResponse } from "../../shared/apiTypes.js";
+import type {
+  Machine,
+  MachineHealth,
+  MachineRuntime,
+  PiWebComponentStatus,
+  PiWebDeprecatedAgentInput,
+  PiWebRuntimeComponent,
+  PiWebRuntimeResponse,
+  PiWebStatusResponse,
+} from "../../shared/apiTypes.js";
 import { parsePiWebRuntimeResponse } from "../../shared/piWebStatusParsing.js";
 import { getPiWebRuntime } from "../piWebStatus.js";
 import { DEFAULT_REMOTE_HEALTH_TIMEOUT_MS, RemoteMachineClient, type MachineClient, validateConfiguredMachineHeaders } from "./machineClient.js";
@@ -28,7 +37,10 @@ export class MachineService {
   private readonly healthCache = new Map<string, { expiresAt: number; health: MachineHealth }>();
   private readonly runtimeCache = new Map<string, { expiresAt: number; runtime: MachineRuntime }>();
 
-  constructor(private readonly store = new MachineStore(), private readonly deps: MachineServiceDependencies = {}) {}
+  constructor(
+    private readonly store = new MachineStore(),
+    private readonly deps: MachineServiceDependencies = {},
+  ) {}
 
   async list(): Promise<Machine[]> {
     return [localMachine(), ...(await this.store.list()).map(publicMachine)];
@@ -268,10 +280,12 @@ function isPiWebStatusResponse(value: unknown): value is PiWebStatusResponse {
 function isPiWebComponentStatus(value: unknown): value is PiWebComponentStatus {
   if (!isRecord(value)) return false;
   const component = value["component"];
-  return (component === "web" || component === "sessiond")
+  return (
+    (component === "web" || component === "sessiond")
     && typeof value["label"] === "string"
     && typeof value["stale"] === "boolean"
-    && typeof value["available"] === "boolean";
+    && typeof value["available"] === "boolean"
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

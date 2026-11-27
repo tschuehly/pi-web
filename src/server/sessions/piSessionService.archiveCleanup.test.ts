@@ -2,7 +2,17 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
 import { SessionNotificationStore } from "./sessionNotificationStore.js";
-import { CapturingSessionEventHub, fakeRuntime, fakeSessionManager, resolveSessionFileFromList, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  fakeRuntime,
+  fakeSessionManager,
+  resolveSessionFileFromList,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 
@@ -60,7 +70,21 @@ describe("PiSessionService archive and cleanup", () => {
       notificationStore,
       createAgentRuntime: runtimeCreator(fake.runtime),
       archiveStore: {
-        list: () => Promise.resolve([{ sessionId: "archived-child", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", originalPath: archivedChild.path, archivePath: "/archive/archived-child.jsonl", created: "2026-01-01T00:00:00.000Z", modified: "2026-01-01T00:01:00.000Z", messageCount: 1, firstMessage: "archived", parentSessionPath: root.path }]),
+        list: () =>
+          Promise.resolve([
+            {
+              sessionId: "archived-child",
+              cwd: "/workspace",
+              archivedAt: "2026-01-02T00:00:00.000Z",
+              originalPath: archivedChild.path,
+              archivePath: "/archive/archived-child.jsonl",
+              created: "2026-01-01T00:00:00.000Z",
+              modified: "2026-01-01T00:01:00.000Z",
+              messageCount: 1,
+              firstMessage: "archived",
+              parentSessionPath: root.path,
+            },
+          ]),
         get: () => Promise.resolve(undefined),
         archive: (input) => {
           archivedInputs.push(input.sessionId);
@@ -74,7 +98,9 @@ describe("PiSessionService archive and cleanup", () => {
         list: (cwd) => Promise.resolve(cwd === "/workspace" ? [root, directChild, archivedChild, grandchild] : [otherWorkspaceChild]),
         listAll: () => Promise.resolve([]),
         invalidateSessionFile: () => undefined,
-        resolveSessionFile: resolveSessionFileFromList((cwd) => Promise.resolve(cwd === "/workspace" ? [root, directChild, archivedChild, grandchild] : [otherWorkspaceChild])),
+        resolveSessionFile: resolveSessionFileFromList((cwd) =>
+          Promise.resolve(cwd === "/workspace" ? [root, directChild, archivedChild, grandchild] : [otherWorkspaceChild]),
+        ),
         open: () => fakeSessionManager(),
       },
       heartbeatIntervalMs: 60_000,
@@ -181,7 +207,9 @@ describe("PiSessionService archive and cleanup", () => {
       archiveStore: {
         list: () => Promise.resolve([{ ...archivedRecord, sessionId: "archived-extended" }, archivedRecord]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("archive should not be called for records that already have archive files"); },
+        archive: () => {
+          throw new Error("archive should not be called for records that already have archive files");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
         deleteArchived: (sessionId) => {
@@ -222,7 +250,8 @@ describe("PiSessionService archive and cleanup", () => {
       notificationStore,
       archiveStore: {
         list: () => Promise.resolve([]),
-        get: () => Promise.resolve({ sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/archived.jsonl" }),
+        get: () =>
+          Promise.resolve({ sessionId: "archived", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/archived.jsonl" }),
         archive: () => Promise.reject(new Error("archive should not be called")),
         restore,
         isArchived: () => Promise.resolve(true),
@@ -240,17 +269,28 @@ describe("PiSessionService archive and cleanup", () => {
 
   it("bulk archives inactive sessions oldest activity first without opening runtimes", async () => {
     const recordsByCwd = new Map([
-      ["/one", [
-        { ...sessionRecord("a", "/one"), modified: new Date("2026-01-03T00:00:00.000Z") },
-        { ...sessionRecord("b", "/one"), modified: new Date("2026-01-01T00:00:00.000Z") },
-      ]],
+      [
+        "/one",
+        [
+          { ...sessionRecord("a", "/one"), modified: new Date("2026-01-03T00:00:00.000Z") },
+          { ...sessionRecord("b", "/one"), modified: new Date("2026-01-01T00:00:00.000Z") },
+        ],
+      ],
       ["/two", [{ ...sessionRecord("c", "/two"), modified: new Date("2026-01-02T00:00:00.000Z") }]],
     ]);
     const listCalls: string[] = [];
-    const open = vi.fn(() => { throw new Error("bulk archive should not open inactive runtimes"); });
-    const archiveMany = vi.fn((inputs: readonly { sessionId: string; cwd: string }[]) => Promise.resolve(inputs.map((input) => ({ sessionId: input.sessionId, cwd: input.cwd, archivedAt: "2026-01-03T00:00:00.000Z" }))));
+    const open = vi.fn(() => {
+      throw new Error("bulk archive should not open inactive runtimes");
+    });
+    const archiveMany = vi.fn((inputs: readonly { sessionId: string; cwd: string }[]) =>
+      Promise.resolve(inputs.map((input) => ({ sessionId: input.sessionId, cwd: input.cwd, archivedAt: "2026-01-03T00:00:00.000Z" }))),
+    );
     const notificationStore = new SessionNotificationStore({ daemonInstanceId: "daemon-bulk-archive-test" });
-    for (const [sessionId, cwd] of [["a", "/one"], ["b", "/one"], ["c", "/two"]] as const) {
+    for (const [sessionId, cwd] of [
+      ["a", "/one"],
+      ["b", "/one"],
+      ["c", "/two"],
+    ] as const) {
       const registration = notificationStore.registerSession(sessionId, cwd);
       notificationStore.addNotification(registration.generation, `notice ${sessionId}`, "info");
     }
@@ -280,7 +320,11 @@ describe("PiSessionService archive and cleanup", () => {
       heartbeatIntervalMs: 60_000,
     });
 
-    const result = await service.archiveMany([{ id: "a", cwd: "/one" }, { id: "b", cwd: "/one" }, { id: "c", cwd: "/two" }]);
+    const result = await service.archiveMany([
+      { id: "a", cwd: "/one" },
+      { id: "b", cwd: "/one" },
+      { id: "c", cwd: "/two" },
+    ]);
 
     expect(result).toMatchObject({ archived: true, archivedSessionIds: ["b", "c", "a"], failures: [] });
     expect(listCalls).toEqual(["/one", "/two"]);
@@ -294,11 +338,18 @@ describe("PiSessionService archive and cleanup", () => {
   it("bulk archive requires exact listed and archived ids within the requested cwd", async () => {
     const records = [sessionRecord("listed-extended"), sessionRecord("listed"), sessionRecord("listed-only-full")];
     const archivedRecords = ["archived-extended", "archived", "archived-only-full"].map((sessionId) => ({
-      sessionId, cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z",
+      sessionId,
+      cwd: "/workspace",
+      archivedAt: "2026-01-02T00:00:00.000Z",
     }));
-    const archiveMany = vi.fn((inputs: readonly { sessionId: string; cwd: string }[]) => Promise.resolve(inputs.map((input) => ({
-      ...input, archivedAt: "2026-01-03T00:00:00.000Z",
-    }))));
+    const archiveMany = vi.fn((inputs: readonly { sessionId: string; cwd: string }[]) =>
+      Promise.resolve(
+        inputs.map((input) => ({
+          ...input,
+          archivedAt: "2026-01-03T00:00:00.000Z",
+        })),
+      ),
+    );
     const gateway = sessionGateway(records);
     gateway.list = (cwd) => Promise.resolve(records.filter((record) => record.cwd === cwd));
     const open = vi.spyOn(gateway, "open");
@@ -343,7 +394,9 @@ describe("PiSessionService archive and cleanup", () => {
   it("bulk archive reports per-session failures without aborting other archives", async () => {
     const busy = fakeRuntime("busy", { isStreaming: true });
     let createCalls = 0;
-    const archiveMany = vi.fn((inputs: readonly { sessionId: string; cwd: string }[]) => Promise.resolve(inputs.map((input) => ({ sessionId: input.sessionId, cwd: input.cwd, archivedAt: "2026-01-03T00:00:00.000Z" }))));
+    const archiveMany = vi.fn((inputs: readonly { sessionId: string; cwd: string }[]) =>
+      Promise.resolve(inputs.map((input) => ({ sessionId: input.sessionId, cwd: input.cwd, archivedAt: "2026-01-03T00:00:00.000Z" }))),
+    );
     const service = new PiSessionService(new CapturingSessionEventHub(), {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
@@ -371,7 +424,11 @@ describe("PiSessionService archive and cleanup", () => {
     });
 
     await service.status(sessionRef("busy"));
-    const result = await service.archiveMany([{ id: "busy", cwd: "/workspace" }, { id: "ok", cwd: "/workspace" }, { id: "missing", cwd: "/workspace" }]);
+    const result = await service.archiveMany([
+      { id: "busy", cwd: "/workspace" },
+      { id: "ok", cwd: "/workspace" },
+      { id: "missing", cwd: "/workspace" },
+    ]);
 
     expect(createCalls).toBe(1);
     expect(busy.calls.abort).toBe(0);
@@ -396,7 +453,9 @@ describe("PiSessionService archive and cleanup", () => {
       archiveStore: {
         list: () => Promise.resolve([busyRecord, idleRecord]),
         get: (sessionId) => Promise.resolve(sessionId === "busy-archived" ? busyRecord : undefined),
-        archive: () => { throw new Error("archive should not be called for records that already have archive files"); },
+        archive: () => {
+          throw new Error("archive should not be called for records that already have archive files");
+        },
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
         deleteArchived: () => Promise.resolve(),
@@ -414,7 +473,11 @@ describe("PiSessionService archive and cleanup", () => {
     });
 
     await service.status(sessionRef("busy-archived"));
-    const result = await service.deleteArchivedMany([{ id: "busy-archived", cwd: "/workspace" }, { id: "idle-archived", cwd: "/workspace" }, { id: "unarchived", cwd: "/workspace" }]);
+    const result = await service.deleteArchivedMany([
+      { id: "busy-archived", cwd: "/workspace" },
+      { id: "idle-archived", cwd: "/workspace" },
+      { id: "unarchived", cwd: "/workspace" },
+    ]);
 
     expect(busy.calls.abort).toBe(0);
     expect(deleteArchivedMany).toHaveBeenCalledWith(["idle-archived"]);
@@ -434,13 +497,16 @@ describe("PiSessionService archive and cleanup", () => {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       archiveStore: {
-        list: () => Promise.resolve([
-          { sessionId: "legacy-a", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z" },
-          { sessionId: "legacy-b", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z" },
-          { sessionId: "moved", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/moved.jsonl" },
-        ]),
+        list: () =>
+          Promise.resolve([
+            { sessionId: "legacy-a", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z" },
+            { sessionId: "legacy-b", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z" },
+            { sessionId: "moved", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/moved.jsonl" },
+          ]),
         get: () => Promise.resolve(undefined),
-        archive: () => { throw new Error("archive should not be called"); },
+        archive: () => {
+          throw new Error("archive should not be called");
+        },
         archiveMany,
         restore: () => Promise.resolve(),
         isArchived: () => Promise.resolve(false),
@@ -461,7 +527,11 @@ describe("PiSessionService archive and cleanup", () => {
       heartbeatIntervalMs: 60_000,
     });
 
-    const result = await service.deleteArchivedMany([{ id: "legacy-a", cwd: "/workspace" }, { id: "legacy-b", cwd: "/workspace" }, { id: "moved", cwd: "/workspace" }]);
+    const result = await service.deleteArchivedMany([
+      { id: "legacy-a", cwd: "/workspace" },
+      { id: "legacy-b", cwd: "/workspace" },
+      { id: "moved", cwd: "/workspace" },
+    ]);
 
     expect(listCalls).toEqual([]);
     expect(archiveMany).not.toHaveBeenCalled();
@@ -476,7 +546,12 @@ describe("PiSessionService archive and cleanup", () => {
     const deletedSessionIds: string[] = [];
     let listAllCalls = 0;
     const archived = { sessionId: "archived-old", cwd: "/old-project", archivedAt: "2026-04-01T00:00:00.000Z", archivePath: "/archive/archived-old.jsonl" };
-    const otherArchived = { sessionId: "archived-other", cwd: "/other-project", archivedAt: "2026-04-01T00:00:00.000Z", archivePath: "/archive/archived-other.jsonl" };
+    const otherArchived = {
+      sessionId: "archived-other",
+      cwd: "/other-project",
+      archivedAt: "2026-04-01T00:00:00.000Z",
+      archivePath: "/archive/archived-other.jsonl",
+    };
     const notificationStore = new SessionNotificationStore({ daemonInstanceId: "daemon-cleanup-test" });
     for (const sessionId of ["execute-only", "archived-old"]) {
       const registration = notificationStore.registerSession(sessionId, "/old-project");
@@ -546,10 +621,11 @@ describe("PiSessionService archive and cleanup", () => {
       modelRuntime: testModelRuntime,
       now: () => new Date("2026-06-25T00:00:00.000Z"),
       archiveStore: {
-        list: () => Promise.resolve([
-          { sessionId: "legacy-a", cwd: "/old-project", archivedAt: "2026-04-01T00:00:00.000Z" },
-          { sessionId: "legacy-b", cwd: "/old-project", archivedAt: "2026-04-01T00:00:00.000Z" },
-        ]),
+        list: () =>
+          Promise.resolve([
+            { sessionId: "legacy-a", cwd: "/old-project", archivedAt: "2026-04-01T00:00:00.000Z" },
+            { sessionId: "legacy-b", cwd: "/old-project", archivedAt: "2026-04-01T00:00:00.000Z" },
+          ]),
         get: () => Promise.resolve(undefined),
         archive: () => Promise.reject(new Error("cleanup should use archiveMany")),
         archiveMany,
@@ -621,5 +697,4 @@ describe("PiSessionService archive and cleanup", () => {
 
     await service.dispose();
   });
-
 });

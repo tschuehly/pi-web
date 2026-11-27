@@ -2,7 +2,15 @@ import { html } from "lit";
 import { expect, it, vi } from "vitest";
 import { initialAppState } from "../appState";
 import { PluginRegistry, installSessionLabelScope } from "./registry";
-import type { PiWebPlugin, PluginContributions, PluginPeer, SessionLabelContext, SessionLabelContribution, SessionLabelItem, WorkspacePluginBinding } from "./types";
+import type {
+  PiWebPlugin,
+  PluginContributions,
+  PluginPeer,
+  SessionLabelContext,
+  SessionLabelContribution,
+  SessionLabelItem,
+  WorkspacePluginBinding,
+} from "./types";
 
 it("collects visible row items by order, default order, and qualified contribution id", async () => {
   const registry = new PluginRegistry();
@@ -24,9 +32,7 @@ it("collects visible row items by order, default order, and qualified contributi
   ];
   try {
     await registry.register({ id: "zeta", plugin: sessionLabelPlugin(labels) });
-    await registry.register({ id: "alpha", plugin: sessionLabelPlugin([
-      { id: "z", order: 20, items: () => [{ type: "text", text: "alpha:z" }] },
-    ]) });
+    await registry.register({ id: "alpha", plugin: sessionLabelPlugin([{ id: "z", order: 20, items: () => [{ type: "text", text: "alpha:z" }] }]) });
 
     const collected = registry.getSessionLabelItems(context);
     expect(collected).toHaveLength(7);
@@ -52,8 +58,10 @@ it("collects visible row items by order, default order, and qualified contributi
 
 it("gates portable labels against the row machine and rechecks availability without reactivation", async () => {
   const availableMachines = new Set(["remote"]);
-  const isContributionEnabled = vi.fn((pluginId: string, effectiveMachineId: string | undefined) =>
-    pluginId === "labels" && effectiveMachineId !== undefined && availableMachines.has(effectiveMachineId));
+  const isContributionEnabled = vi.fn(
+    (pluginId: string, effectiveMachineId: string | undefined) =>
+      pluginId === "labels" && effectiveMachineId !== undefined && availableMachines.has(effectiveMachineId),
+  );
   const registry = new PluginRegistry({ isContributionEnabled });
   const visible = vi.fn<NonNullable<SessionLabelContribution["visible"]>>(() => true);
   const items = vi.fn<SessionLabelContribution["items"]>((row) => [{ type: "text", text: row.machine.id }]);
@@ -248,14 +256,17 @@ it("does not fall back to portable labels when a declared machine-specific remot
     name: "Failed remote labels",
     activate: () => ({
       contributions: { sessionLabels: [{ id: "badge", items }] },
-      start: () => { throw new Error("remote start failed"); },
+      start: () => {
+        throw new Error("remote start failed");
+      },
     }),
   };
   try {
     await registry.register({ id: "labels", plugin: sessionLabelPlugin([{ id: "badge", items: () => [{ type: "text", text: "portable" }] }]) });
     expect(registry.getSessionLabelItems(sessionLabelContext("remote"))).toEqual([{ type: "text", text: "portable" }]);
-    await expect(registry.register({ id: "remote-labels", sourcePluginId: "labels", machineId: "remote", machineSpecific: true, plugin: remote }))
-      .rejects.toThrow("remote start failed");
+    await expect(
+      registry.register({ id: "remote-labels", sourcePluginId: "labels", machineId: "remote", machineSpecific: true, plugin: remote }),
+    ).rejects.toThrow("remote start failed");
 
     expect(registry.getSessionLabelItems(sessionLabelContext("remote"))).toEqual([]);
     expect(registry.getSessionLabelItems(sessionLabelContext("local"))).toEqual([{ type: "text", text: "portable" }]);
@@ -270,10 +281,12 @@ it("does not fall back to portable labels when a declared machine-specific remot
 it.each(["", "Upper", "labels:badge", "badge/name"])("rejects invalid session-label local id %j without publishing earlier labels", async (id) => {
   const registry = new PluginRegistry();
   const items = vi.fn<SessionLabelContribution["items"]>(() => [{ type: "text", text: "partial" }]);
-  const labels: SessionLabelContribution[] = [{ id: "valid", items }, { id, items }];
+  const labels: SessionLabelContribution[] = [
+    { id: "valid", items },
+    { id, items },
+  ];
   try {
-    await expect(registry.register({ id: "labels", plugin: sessionLabelPlugin(labels) }))
-      .rejects.toThrow(`Invalid contribution id: ${id}`);
+    await expect(registry.register({ id: "labels", plugin: sessionLabelPlugin(labels) })).rejects.toThrow(`Invalid contribution id: ${id}`);
     expect(registry.hasPlugin("labels")).toBe(false);
     expect(registry.getSessionLabelItems(sessionLabelContext("local"))).toEqual([]);
     expect(items).not.toHaveBeenCalled();
@@ -308,7 +321,9 @@ it.each(["visible", "items"] as const)("isolates a throwing %s callback and retr
   const context = sessionLabelContext("remote");
   const error = new Error(`broken ${phase}`);
   let broken = true;
-  const failIfBroken = () => { if (broken) throw error; };
+  const failIfBroken = () => {
+    if (broken) throw error;
+  };
   const visible = vi.fn<NonNullable<SessionLabelContribution["visible"]>>(() => {
     if (phase === "visible") failIfBroken();
     return true;
@@ -318,21 +333,26 @@ it.each(["visible", "items"] as const)("isolates a throwing %s callback and retr
     return [{ type: "text", text: "Recovered" }];
   });
   try {
-    await registry.register({ id: "labels", plugin: sessionLabelPlugin([
-      { id: "broken", order: 1, visible, items },
-      { id: "healthy", order: 2, items: () => [{ type: "text", text: "Healthy" }] },
-    ]) });
+    await registry.register({
+      id: "labels",
+      plugin: sessionLabelPlugin([
+        { id: "broken", order: 1, visible, items },
+        { id: "healthy", order: 2, items: () => [{ type: "text", text: "Healthy" }] },
+      ]),
+    });
     warning.mockClear(); // Ignore the separately tested legacy activation diagnostic.
     expect(registry.getSessionLabelItems(context)).toEqual([{ type: "text", text: "Healthy" }]);
     expect(warning).toHaveBeenCalledExactlyOnceWith(
-      `PI WEB plugin session label labels:broken ${phase} failed for session row-session on machine remote`, error,
+      `PI WEB plugin session label labels:broken ${phase} failed for session row-session on machine remote`,
+      error,
     );
     if (phase === "visible") expect(items).not.toHaveBeenCalled();
     expect(registry.hasPlugin("labels")).toBe(true);
 
     broken = false;
     expect(registry.getSessionLabelItems(context)).toEqual([
-      { type: "text", text: "Recovered" }, { type: "text", text: "Healthy" },
+      { type: "text", text: "Recovered" },
+      { type: "text", text: "Healthy" },
     ]);
     expect(warning).toHaveBeenCalledOnce();
   } finally {
@@ -349,23 +369,33 @@ it("omits only a throwing render item and evaluates healthy templates once per c
   const template = html`<button>Healthy control</button>`;
   const render = vi.fn(() => template);
   try {
-    await registry.register({ id: "labels", plugin: sessionLabelPlugin([
-      { id: "mixed", items: () => [
-        { type: "text", text: "Before" },
-        { type: "render", render: () => { throw error; } },
-        { type: "render", render },
-        { type: "text", text: "After" },
-      ] },
-    ]) });
+    await registry.register({
+      id: "labels",
+      plugin: sessionLabelPlugin([
+        {
+          id: "mixed",
+          items: () => [
+            { type: "text", text: "Before" },
+            {
+              type: "render",
+              render: () => {
+                throw error;
+              },
+            },
+            { type: "render", render },
+            { type: "text", text: "After" },
+          ],
+        },
+      ]),
+    });
     warning.mockClear(); // Ignore the separately tested legacy activation diagnostic.
     const collected = registry.getSessionLabelItems(context);
     expect(collected).toHaveLength(3);
     expect([collected[0], collected[2]]).toEqual([
-      { type: "text", text: "Before" }, { type: "text", text: "After" },
+      { type: "text", text: "Before" },
+      { type: "text", text: "After" },
     ]);
-    expect(warning).toHaveBeenCalledExactlyOnceWith(
-      "PI WEB plugin session label labels:mixed render failed for session row-session on machine remote", error,
-    );
+    expect(warning).toHaveBeenCalledExactlyOnceWith("PI WEB plugin session label labels:mixed render failed for session row-session on machine remote", error);
     expect(render).toHaveBeenCalledOnce();
     const item = collected[1];
     if (item?.type !== "render") throw new Error("Expected healthy custom item");

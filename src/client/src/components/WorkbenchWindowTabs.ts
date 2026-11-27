@@ -2,15 +2,41 @@ import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { styleMap } from "lit/directives/style-map.js";
 import type { SessionStatus } from "../api";
-import { ACTIVITY_STATUS_KEY, BACKGROUND_BASH_STATUS_KEY, delegateOutcome, parseBackgroundBashStatusSnapshot, parseDelegateActivitySnapshot, visibleShellExecutions } from "../extensionStatusSnapshots";
-import { gridPage, gridPageCount, gridPageLead, NO_WORKSTREAM_KEY, windowGroups, workstreamKey, workstreamTabTarget, type ChatGroup, type WindowChat, type WindowLayout, type WorkbenchWindow } from "../workbenchWindows";
+import {
+  ACTIVITY_STATUS_KEY,
+  BACKGROUND_BASH_STATUS_KEY,
+  delegateOutcome,
+  parseBackgroundBashStatusSnapshot,
+  parseDelegateActivitySnapshot,
+  visibleShellExecutions,
+} from "../extensionStatusSnapshots";
+import {
+  gridPage,
+  gridPageCount,
+  gridPageLead,
+  NO_WORKSTREAM_KEY,
+  windowGroups,
+  workstreamKey,
+  workstreamTabTarget,
+  type ChatGroup,
+  type WindowChat,
+  type WindowLayout,
+  type WorkbenchWindow,
+} from "../workbenchWindows";
 import { WORKSTREAM_TINT_PERCENTAGES, WorkstreamColorController, workstreamAccentColor } from "../workstreamColor";
 import { renderBuiltinTabIcon } from "./tabIcons";
 import { workingModeIcon } from "./WorkingModeControls";
 
 export type ChatTabStatus = "needs" | "running" | "waiting" | "shell" | "done" | "idle";
 
-const STATUS_LABELS: Record<ChatTabStatus, string> = { needs: "Needs you", running: "Working", waiting: "Waiting on a Subagent or Worker", shell: "Running a shell command", done: "Done while you were away", idle: "Idle" };
+const STATUS_LABELS: Record<ChatTabStatus, string> = {
+  needs: "Needs you",
+  running: "Working",
+  waiting: "Waiting on a Subagent or Worker",
+  shell: "Running a shell command",
+  done: "Done while you were away",
+  idle: "Idle",
+};
 
 /**
  * Needs you › working (its own turn) › waiting on a running Subagent or Worker › only a shell command running (`!`, a
@@ -18,12 +44,22 @@ const STATUS_LABELS: Record<ChatTabStatus, string> = { needs: "Needs you", runni
  * read without opening it.
  */
 export function chatTabStatus(status: Partial<SessionStatus> | undefined, unread: boolean): ChatTabStatus {
-  if ((status?.pendingAsks?.length ?? 0) > 0 || status?.pendingAsk !== undefined || (status?.pendingDialogs?.length ?? 0) > 0 || status?.attentionRequest !== undefined) return "needs";
+  if (
+    (status?.pendingAsks?.length ?? 0) > 0
+    || status?.pendingAsk !== undefined
+    || (status?.pendingDialogs?.length ?? 0) > 0
+    || status?.attentionRequest !== undefined
+  )
+    return "needs";
   if (status?.isStreaming === true || status?.isCompacting === true) return "running";
   const extensions = status?.extensionStatuses;
   if (parseDelegateActivitySnapshot(extensions?.[ACTIVITY_STATUS_KEY]).some((delegate) => delegateOutcome(delegate) === "running")) return "waiting";
-  if (status?.isBashRunning === true || visibleShellExecutions(status?.activeToolExecutions).length > 0
-    || parseBackgroundBashStatusSnapshot(extensions?.[BACKGROUND_BASH_STATUS_KEY]).length > 0) return "shell";
+  if (
+    status?.isBashRunning === true
+    || visibleShellExecutions(status?.activeToolExecutions).length > 0
+    || parseBackgroundBashStatusSnapshot(extensions?.[BACKGROUND_BASH_STATUS_KEY]).length > 0
+  )
+    return "shell";
   return unread ? "done" : "idle";
 }
 
@@ -50,7 +86,10 @@ export const chatStatusDotStyles = css`
 /** Chats dragged out of a window's tabs or tiles; only PI WEB pages of the same origin can read the type. */
 const CHAT_DRAG_TYPE = "application/x-pi-workbench-chats";
 
-export interface DraggedChats { windowId: string; sessionIds: string[] }
+export interface DraggedChats {
+  windowId: string;
+  sessionIds: string[];
+}
 
 export function startChatDrag(event: DragEvent, dragged: DraggedChats, label: string): void {
   if (event.dataTransfer === null) return;
@@ -65,28 +104,56 @@ export function carriesChats(event: DragEvent): boolean {
 
 export function droppedChats(event: DragEvent): DraggedChats | undefined {
   let parsed: unknown;
-  try { parsed = JSON.parse(event.dataTransfer?.getData(CHAT_DRAG_TYPE) ?? ""); } catch { return undefined; }
+  try {
+    parsed = JSON.parse(event.dataTransfer?.getData(CHAT_DRAG_TYPE) ?? "");
+  } catch {
+    return undefined;
+  }
   if (typeof parsed !== "object" || parsed === null) return undefined;
   const windowId: unknown = Reflect.get(parsed, "windowId");
   const sessionIds: unknown = Reflect.get(parsed, "sessionIds");
   return typeof windowId === "string" && Array.isArray(sessionIds) && sessionIds.every((id) => typeof id === "string") ? { windowId, sessionIds } : undefined;
 }
 
-export interface ScreenFrame { screenX: number; screenY: number; outerWidth: number; outerHeight: number }
+export interface ScreenFrame {
+  screenX: number;
+  screenY: number;
+  outerWidth: number;
+  outerHeight: number;
+}
 
 /** A drag that ended beyond this window's frame, where no PI WEB window took it, opens a new window. */
 export function endedOutside(point: { screenX: number; screenY: number }, frame: ScreenFrame): boolean {
-  return point.screenX < frame.screenX || point.screenX > frame.screenX + frame.outerWidth
-    || point.screenY < frame.screenY || point.screenY > frame.screenY + frame.outerHeight;
+  return (
+    point.screenX < frame.screenX
+    || point.screenX > frame.screenX + frame.outerWidth
+    || point.screenY < frame.screenY
+    || point.screenY > frame.screenY + frame.outerHeight
+  );
 }
 
-export interface ChatTabMenuDetail { sessionIds: string[]; label: string; clientX: number; clientY: number }
+export interface ChatTabMenuDetail {
+  sessionIds: string[];
+  label: string;
+  clientX: number;
+  clientY: number;
+}
 
-export interface ChatTabSelectDetail { sessionId: string }
-export interface ChatTabCloseDetail { sessionIds: string[] }
+export interface ChatTabSelectDetail {
+  sessionId: string;
+}
+export interface ChatTabCloseDetail {
+  sessionIds: string[];
+}
 /** A tab's new one- or two-word name, empty to restore the generated one: a Chat's, or a Workstream's for its tab. */
-export interface TabRenameDetail { sessionId?: string; workstreamId?: string; name: string }
-export interface WindowLayoutDetail { layout: WindowLayout }
+export interface TabRenameDetail {
+  sessionId?: string;
+  workstreamId?: string;
+  name: string;
+}
+export interface WindowLayoutDetail {
+  layout: WindowLayout;
+}
 
 /** The Workstream identity colour, as the home card's marker uses it. */
 /** Marks a Workstream's tab, which otherwise reads like a Chat's once it holds a single Chat (lucide "layers"). */
@@ -122,7 +189,10 @@ export class WorkbenchWindowTabs extends LitElement {
   /** This window's id, carried by a drag so the receiving window knows where the Chats come from. */
   @property({ attribute: false }) windowId = "";
 
-  private emit(type: string, detail: ChatTabSelectDetail | ChatTabCloseDetail | TabRenameDetail | ChatTabMenuDetail | DraggedChats | WindowLayoutDetail | undefined): void {
+  private emit(
+    type: string,
+    detail: ChatTabSelectDetail | ChatTabCloseDetail | TabRenameDetail | ChatTabMenuDetail | DraggedChats | WindowLayoutDetail | undefined,
+  ): void {
     this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
   }
 
@@ -147,7 +217,9 @@ export class WorkbenchWindowTabs extends LitElement {
         event.preventDefault();
         this.emit("chat-tab-menu", { sessionIds, label, clientX: event.clientX, clientY: event.clientY });
       },
-      dragstart: (event: DragEvent) => { startChatDrag(event, { windowId: this.windowId, sessionIds }, label); },
+      dragstart: (event: DragEvent) => {
+        startChatDrag(event, { windowId: this.windowId, sessionIds }, label);
+      },
       dragend: (event: DragEvent) => {
         if (event.dataTransfer?.dropEffect === "none" && endedOutside(event, window)) this.emit("chat-tab-drag-out", { windowId: this.windowId, sessionIds });
       },
@@ -237,34 +309,55 @@ export class WorkbenchWindowTabs extends LitElement {
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
         <div class="bar" @mousedown=${this.onBarMouseDown}>
-          ${!tabs ? this.renderGridLead(window) : workstreamTabs ? html`
+          ${
+            !tabs
+              ? this.renderGridLead(window)
+              : workstreamTabs
+                ? html`
             <div class="tabs workstreams" role="tablist" aria-label=${`${window.name} Workstreams`}>
-              ${groups.map((group) => group.key === NO_WORKSTREAM_KEY
-                ? group.chats.map((chat) => this.renderChatTab(chat))
-                : this.renderWorkstreamTab(window, group, this.selected !== undefined && group === activeGroup))}
-            </div>` : html`
+              ${groups.map((group) =>
+                group.key === NO_WORKSTREAM_KEY
+                  ? group.chats.map((chat) => this.renderChatTab(chat))
+                  : this.renderWorkstreamTab(window, group, this.selected !== undefined && group === activeGroup),
+              )}
+            </div>`
+                : html`
             <div class="tabs chats" role="tablist" aria-label=${chatsLabel(activeGroup)}>
               ${activeGroup?.chats.map((chat) => this.renderChatTab(chat, activeGroup.workstream?.id))}
-            </div>`}
+            </div>`
+          }
           <slot name="tools"></slot>
           <div class="actions">
-            <button class="add" title="Open or start a Chat (⌘T)" aria-pressed=${this.selected === undefined} @click=${() => { this.emit("window-home", undefined); }}>${renderBuiltinTabIcon("plus")}Add</button>
+            <button class="add" title="Open or start a Chat (⌘T)" aria-pressed=${this.selected === undefined} @click=${() => {
+              this.emit("window-home", undefined);
+            }}>${renderBuiltinTabIcon("plus")}Add</button>
             <div class="segmented" role="group" aria-label="Layout" title="Toggle layout (⌃G)">
-              ${(["grid", "tabs"] as const).map((layout) => html`<button aria-pressed=${String(window.layout === layout)} @click=${() => { if (window.layout !== layout) this.emit("window-layout", { layout }); }}>${layout === "grid" ? "Grid" : "Tabs"}</button>`)}
+              ${(["grid", "tabs"] as const).map(
+                (layout) =>
+                  html`<button aria-pressed=${String(window.layout === layout)} @click=${() => {
+                    if (window.layout !== layout) this.emit("window-layout", { layout });
+                  }}>${layout === "grid" ? "Grid" : "Tabs"}</button>`,
+              )}
             </div>
           </div>
         </div>
-        ${lowerChats === undefined ? nothing : html`
+        ${
+          lowerChats === undefined
+            ? nothing
+            : html`
           <div class="tabs chats lower" role="tablist" aria-label=${chatsLabel(lowerChats)}>
             ${lowerChats.chats.map((chat) => this.renderChatTab(chat))}
-          </div>`}
+          </div>`
+        }
       </nav>
     `;
   }
 
   /** One Chat needs no layout: its name, status and Workstream, its tools, and Add. A second Chat turns the window into a Grid. */
   private renderSoloBar(window: WorkbenchWindow, chat: WindowChat) {
-    const open = () => { this.select(chat.sessionId); };
+    const open = () => {
+      this.select(chat.sessionId);
+    };
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
       <nav aria-label=${window.name} @dragover=${this.onDragOver} @drop=${this.onDrop}>
@@ -278,7 +371,9 @@ export class WorkbenchWindowTabs extends LitElement {
           </div>
           <slot name="tools"></slot>
           <div class="actions">
-            <button class="add" title="Open or start a Chat (⌘T)" aria-pressed=${this.selected === undefined} @click=${() => { this.emit("window-home", undefined); }}>${renderBuiltinTabIcon("plus")}Add</button>
+            <button class="add" title="Open or start a Chat (⌘T)" aria-pressed=${this.selected === undefined} @click=${() => {
+              this.emit("window-home", undefined);
+            }}>${renderBuiltinTabIcon("plus")}Add</button>
           </div>
         </div>
       </nav>
@@ -300,47 +395,70 @@ export class WorkbenchWindowTabs extends LitElement {
     const pages = gridPageCount(window);
     if (pages < 2 || window.maximized) return nothing;
     const page = gridPage(window);
-    const turn = (to: number) => { this.select(gridPageLead(window, to)); };
+    const turn = (to: number) => {
+      this.select(gridPageLead(window, to));
+    };
     return html`
       <span class="pager" role="group" aria-label="Grid pages">
-        <button aria-label="Previous page" ?disabled=${page === 0} @click=${() => { turn(page - 1); }}>${renderBuiltinTabIcon("chevron-left")}</button>
+        <button aria-label="Previous page" ?disabled=${page === 0} @click=${() => {
+          turn(page - 1);
+        }}>${renderBuiltinTabIcon("chevron-left")}</button>
         <span>${String(page + 1)} / ${String(pages)}</span>
-        <button aria-label="Next page" ?disabled=${page >= pages - 1} @click=${() => { turn(page + 1); }}>${renderBuiltinTabIcon("chevron")}</button>
+        <button aria-label="Next page" ?disabled=${page >= pages - 1} @click=${() => {
+          turn(page + 1);
+        }}>${renderBuiltinTabIcon("chevron")}</button>
       </span>`;
   }
 
   private renderWorkstreamTab(window: WorkbenchWindow, group: ChatGroup, selected: boolean) {
     const label = group.workstream?.title ?? "No Workstream";
     const workstream = group.workstream;
-    const open = () => { this.select(workstreamTabTarget(window, group.key)); };
+    const open = () => {
+      this.select(workstreamTabTarget(window, group.key));
+    };
     // A Workstream with one Chat has no lower tab, so its tab stands for that Chat: its status, its menu and ×.
     const only = group.chats.length === 1 ? group.chats[0] : undefined;
-    const move = this.moveHandlers(group.chats.map((chat) => chat.sessionId), only?.title ?? label);
+    const move = this.moveHandlers(
+      group.chats.map((chat) => chat.sessionId),
+      only?.title ?? label,
+    );
     return html`
       <div role="tab" tabindex="0" class=${group.workstream === undefined ? "workstream-tab" : "workstream-tab tinted"} data-session=${only?.sessionId ?? nothing} ?data-unaligned=${only !== undefined && this.isUnaligned(only)} style=${workstreamStyle(group.workstream?.id)} aria-selected=${String(selected)} title=${only === undefined ? `Workstream: ${label}` : `Workstream: ${label} · ${only.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
-        @auxclick=${(event: MouseEvent) => { if (only !== undefined && event.button === 1) this.close([only.sessionId]); }}
-        @dblclick=${() => { if (workstream !== undefined) this.rename({ workstreamId: workstream.id }, workstream.shortTitle ?? ""); }}>
+        @auxclick=${(event: MouseEvent) => {
+          if (only !== undefined && event.button === 1) this.close([only.sessionId]);
+        }}
+        @dblclick=${() => {
+          if (workstream !== undefined) this.rename({ workstreamId: workstream.id }, workstream.shortTitle ?? "");
+        }}>
         ${only === undefined ? nothing : this.renderChatMarker(only)}
         ${workstream === undefined ? nothing : workstreamIcon}
         <span class="title">${workstream?.shortTitle ?? label}</span>
         ${only === undefined ? nothing : html`${this.renderAttention(only)}${this.renderUnaligned(only)}`}
-        ${only === undefined
-          ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
-          : this.renderCloseButton(only)}
+        ${
+          only === undefined
+            ? html`<span class="count" aria-label=${`${String(group.chats.length)} Chats`}>${String(group.chats.length)}</span>`
+            : this.renderCloseButton(only)
+        }
       </div>`;
   }
 
   /** `tintFrom`: the Workstream whose colour tints the tab, when its Chats stand alone in the first row. */
   private renderChatTab(chat: WindowChat, tintFrom?: string) {
     const status = this.status(chat);
-    const open = () => { this.select(chat.sessionId); };
+    const open = () => {
+      this.select(chat.sessionId);
+    };
     const move = this.moveHandlers([chat.sessionId], chat.title);
     return html`
       <div role="tab" tabindex="0" class=${tintFrom === undefined ? "chat-tab" : "chat-tab tinted"} style=${workstreamStyle(tintFrom)} data-session=${chat.sessionId} data-status=${status} ?data-unaligned=${this.isUnaligned(chat)} aria-selected=${String(chat.sessionId === this.selected)} title=${chat.workstream === undefined ? chat.title : `Workstream: ${chat.workstream.title} · ${chat.title}`} draggable="true"
         @click=${open} @keydown=${onActivationKey(open)} @contextmenu=${move.contextmenu} @dragstart=${move.dragstart} @dragend=${move.dragend}
-        @auxclick=${(event: MouseEvent) => { if (event.button === 1) this.close([chat.sessionId]); }}
-        @dblclick=${() => { this.rename({ sessionId: chat.sessionId }, chat.shortName ?? ""); }}>
+        @auxclick=${(event: MouseEvent) => {
+          if (event.button === 1) this.close([chat.sessionId]);
+        }}
+        @dblclick=${() => {
+          this.rename({ sessionId: chat.sessionId }, chat.shortName ?? "");
+        }}>
         ${this.renderChatMarker(chat)}
         <span class="title">${chat.shortName ?? chat.title}</span>
         ${this.renderAttention(chat)}${this.renderUnaligned(chat)}
@@ -351,7 +469,9 @@ export class WorkbenchWindowTabs extends LitElement {
   /** The status dot, or the open-question count in its place. */
   private renderChatMarker(chat: WindowChat) {
     const questions = this.questionCounts[chat.sessionId] ?? 0;
-    return questions === 0 ? renderChatStatusDot(this.status(chat)) : html`<span class="questions" role="img" aria-label=${`${String(questions)} open ${questions === 1 ? "question" : "questions"}`}>${String(questions)}</span>`;
+    return questions === 0
+      ? renderChatStatusDot(this.status(chat))
+      : html`<span class="questions" role="img" aria-label=${`${String(questions)} open ${questions === 1 ? "question" : "questions"}`}>${String(questions)}</span>`;
   }
 
   /** The Chat's Attention icon, as the composer shows it, unless it is Default. */
@@ -371,10 +491,17 @@ export class WorkbenchWindowTabs extends LitElement {
   }
 
   private renderCloseButton(chat: WindowChat) {
-    return html`<button class="close" title="Close" aria-label=${`Close ${chat.title}`} @click=${(event: Event) => { event.stopPropagation(); this.close([chat.sessionId]); }} @keydown=${(event: KeyboardEvent) => { event.stopPropagation(); }}>${renderBuiltinTabIcon("x")}</button>`;
+    return html`<button class="close" title="Close" aria-label=${`Close ${chat.title}`} @click=${(event: Event) => {
+      event.stopPropagation();
+      this.close([chat.sessionId]);
+    }} @keydown=${(event: KeyboardEvent) => {
+      event.stopPropagation();
+    }}>${renderBuiltinTabIcon("x")}</button>`;
   }
 
-  static override styles = [chatStatusDotStyles, css`
+  static override styles = [
+    chatStatusDotStyles,
+    css`
     /* Positioned above the stage, so the slotted Chat menu opens over the Chat. */
     :host { position: relative; z-index: 6; display: block; flex: 0 0 auto; min-width: 0; background: var(--pi-surface); color: var(--pi-text); font: 13px system-ui, sans-serif; user-select: none; }
     button { font: inherit; color: inherit; cursor: pointer; }
@@ -447,5 +574,6 @@ export class WorkbenchWindowTabs extends LitElement {
     .pager button:hover:not(:disabled) { background: var(--pi-surface-hover); }
     .pager button:disabled { opacity: .35; cursor: default; }
     .pager svg { width: 14px; height: 14px; }
-  `];
+  `,
+  ];
 }

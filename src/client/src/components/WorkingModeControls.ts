@@ -1,12 +1,20 @@
 import { LitElement, css, html, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionStatus } from "../api";
-import { parseWorkingModeSnapshot, WORKING_MODE_AXES, WORKING_MODE_AXIS_NAMES, WORKING_MODE_STATUS_KEY, workingModePending, type WorkingModeAxis, type WorkingModeState } from "../extensionStatusSnapshots";
+import {
+  parseWorkingModeSnapshot,
+  WORKING_MODE_AXES,
+  WORKING_MODE_AXIS_NAMES,
+  WORKING_MODE_STATUS_KEY,
+  workingModePending,
+  type WorkingModeAxis,
+  type WorkingModeState,
+} from "../extensionStatusSnapshots";
 
 const LABELS: Record<WorkingModeAxis, string> = { alignment: "Alignment", attention: "Attention", checking: "Checking", orchestration: "Orchestration" };
 
 // Lucide icons (https://lucide.dev, ISC), path data copied from lucide-static 1.48.0; one per value.
-const ICONS: { [A in WorkingModeAxis]: Record<typeof WORKING_MODE_AXES[A][number], TemplateResult> } = {
+const ICONS: { [A in WorkingModeAxis]: Record<(typeof WORKING_MODE_AXES)[A][number], TemplateResult> } = {
   alignment: {
     Default: svg`<circle cx="12" cy="12" r="10"></circle><line x1="22" x2="18" y1="12" y2="12"></line><line x1="6" x2="2" y1="12" y2="12"></line><line x1="12" x2="12" y1="6" y2="2"></line><line x1="12" x2="12" y1="22" y2="18"></line>`, // crosshair
     Align: svg`<path d="m11 17 2 2a1 1 0 1 0 3-3"></path><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"></path><path d="m21 3 1 11h-2"></path><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"></path><path d="M3 4h8"></path>`, // handshake
@@ -83,42 +91,70 @@ export class WorkingModeControls extends LitElement {
     const aligned = gated && snapshot?.aligned === true;
     const waiting = gated && !aligned && selected.attention === "AFK";
     const alignmentNote = aligned ? " (aligned)" : waiting ? " (not aligned)" : "";
-    const summary = WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}${axis === "alignment" ? alignmentNote : ""}`).join(", ") + (pending ? `. ${PENDING_LABEL}` : "");
+    const summary =
+      WORKING_MODE_AXIS_NAMES.map((axis) => `${LABELS[axis]}: ${selected?.[axis] ?? "unavailable"}${axis === "alignment" ? alignmentNote : ""}`).join(", ")
+      + (pending ? `. ${PENDING_LABEL}` : "");
     return html`
-      <button class="trigger" type="button" title=${summary} aria-label=${`Working Mode — ${summary}`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} ?disabled=${selected === undefined} @click=${() => { this.setOpen(!this.open); }}>
+      <button class="trigger" type="button" title=${summary} aria-label=${`Working Mode — ${summary}`} aria-haspopup="dialog" aria-expanded=${this.open ? "true" : "false"} ?disabled=${selected === undefined} @click=${() => {
+        this.setOpen(!this.open);
+      }}>
         ${WORKING_MODE_AXIS_NAMES.map((axis) => {
           const value = selected?.[axis];
           const changed = value !== undefined && value !== WORKING_MODE_AXES[axis][0];
-          return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>${axis === "alignment" && aligned
-            // Lucide circle-check
-            ? html`<span class="aligned-chip alignment" title=${ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg><span class="value">Aligned</span></span>`
-            : axis === "alignment" && waiting
-              // Lucide circle-dashed
-              ? html`<span class="aligned-chip waiting" title=${NOT_ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.1 2.182a10 10 0 0 1 3.8 0"></path><path d="M13.9 21.818a10 10 0 0 1-3.8 0"></path><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7"></path><path d="M2.182 13.9a10 10 0 0 1 0-3.8"></path><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69"></path><path d="M21.818 10.1a10 10 0 0 1 0 3.8"></path><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69"></path><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7"></path></svg><span class="value">Not aligned</span></span>`
-              : null}`;
+          return html`<span class=${`axis ${axis}${changed ? " changed" : ""}`} data-axis=${axis}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon(axis, value)}</svg>${changed ? html`<span class="value">${value}</span>` : null}</span>${
+            axis === "alignment" && aligned
+              ? // Lucide circle-check
+                html`<span class="aligned-chip alignment" title=${ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg><span class="value">Aligned</span></span>`
+              : axis === "alignment" && waiting
+                ? // Lucide circle-dashed
+                  html`<span class="aligned-chip waiting" title=${NOT_ALIGNED_LABEL}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.1 2.182a10 10 0 0 1 3.8 0"></path><path d="M13.9 21.818a10 10 0 0 1-3.8 0"></path><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7"></path><path d="M2.182 13.9a10 10 0 0 1 0-3.8"></path><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69"></path><path d="M21.818 10.1a10 10 0 0 1 0 3.8"></path><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69"></path><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7"></path></svg><span class="value">Not aligned</span></span>`
+                : null
+          }`;
         })}
         ${pending ? html`<span class="pending-dot" title=${PENDING_LABEL}></span>` : null}
       </button>
-      ${this.open && selected !== undefined ? html`
-        <div class="pane" role="dialog" aria-label="Working Mode" @keydown=${(event: KeyboardEvent) => { this.handlePaneKey(event); }} @focusout=${(event: FocusEvent) => { this.handleFocusOut(event); }}>
-          ${WORKING_MODE_AXIS_NAMES.map((axis) => html`
+      ${
+        this.open && selected !== undefined
+          ? html`
+        <div class="pane" role="dialog" aria-label="Working Mode" @keydown=${(event: KeyboardEvent) => {
+          this.handlePaneKey(event);
+        }} @focusout=${(event: FocusEvent) => {
+          this.handleFocusOut(event);
+        }}>
+          ${WORKING_MODE_AXIS_NAMES.map(
+            (axis) => html`
             <span class="axis-name" id=${`axis-${axis}`}>${LABELS[axis]}</span>
             <div class=${`values ${axis}`} role="radiogroup" aria-labelledby=${`axis-${axis}`}>
               ${WORKING_MODE_AXES[axis].map((value: string) => {
                 const checked = value === selected[axis];
                 // The axis default (Default, or Main) is icon-only; its name stays in the accessible label and tooltip.
                 const iconOnly = value === WORKING_MODE_AXES[axis][0];
-                return html`<button class=${iconOnly ? "icon-only" : ""} type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} aria-label=${iconOnly ? value : nothing} title=${iconOnly ? value : nothing} @click=${() => { this.choose(axis, value); }} @keydown=${(event: KeyboardEvent) => { this.handleRadioKey(event, axis); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon(axis, value)}</svg>${iconOnly ? null : value}</button>`;
+                return html`<button class=${iconOnly ? "icon-only" : ""} type="button" role="radio" aria-checked=${checked ? "true" : "false"} tabindex=${checked ? "0" : "-1"} data-value=${value} aria-label=${iconOnly ? value : nothing} title=${iconOnly ? value : nothing} @click=${() => {
+                  this.choose(axis, value);
+                }} @keydown=${(event: KeyboardEvent) => {
+                  this.handleRadioKey(event, axis);
+                }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${workingModeIcon(axis, value)}</svg>${iconOnly ? null : value}</button>`;
               })}
             </div>
-          `)}
+          `,
+          )}
           <div class="actions">
-            ${aligned ? html`<button class="unalign" type="button" title="Withdraw the confirmed alignment and tell the agent now" @click=${() => { this.unalign(); }}>Reset alignment</button>` : null}
+            ${
+              aligned
+                ? html`<button class="unalign" type="button" title="Withdraw the confirmed alignment and tell the agent now" @click=${() => {
+                    this.unalign();
+                  }}>Reset alignment</button>`
+                : null
+            }
             <!-- Lucide send -->
-            <button class="send" type="button" ?disabled=${!pending} title=${pending ? "Send the Working Mode change now" : "No Working Mode change to send"} @click=${() => { this.send(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>Send</button>
+            <button class="send" type="button" ?disabled=${!pending} title=${pending ? "Send the Working Mode change now" : "No Working Mode change to send"} @click=${() => {
+              this.send();
+            }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"></path><path d="m21.854 2.147-10.94 10.939"></path></svg>Send</button>
           </div>
         </div>
-      ` : null}
+      `
+          : null
+      }
     `;
   }
 
@@ -127,10 +163,15 @@ export class WorkingModeControls extends LitElement {
     this.open = open;
     if (open) {
       document.addEventListener("pointerdown", this.closeOnOutsidePointer, true);
-      void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLButtonElement>('.pane [aria-checked="true"]')?.focus(); });
+      void this.updateComplete.then(() => {
+        this.renderRoot.querySelector<HTMLButtonElement>('.pane [aria-checked="true"]')?.focus();
+      });
     } else {
       document.removeEventListener("pointerdown", this.closeOnOutsidePointer, true);
-      if (restoreFocus) void this.updateComplete.then(() => { this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus(); });
+      if (restoreFocus)
+        void this.updateComplete.then(() => {
+          this.renderRoot.querySelector<HTMLButtonElement>(".trigger")?.focus();
+        });
     }
   }
 
@@ -173,7 +214,8 @@ export class WorkingModeControls extends LitElement {
     if (value === undefined) return;
     event.preventDefault();
     // Move the roving tab stop now so Tab leaves the row even before the extension confirms the choice.
-    for (const radio of this.renderRoot.querySelectorAll<HTMLButtonElement>(`.values.${axis} [role="radio"]`)) radio.tabIndex = radio.dataset["value"] === value ? 0 : -1;
+    for (const radio of this.renderRoot.querySelectorAll<HTMLButtonElement>(`.values.${axis} [role="radio"]`))
+      radio.tabIndex = radio.dataset["value"] === value ? 0 : -1;
     this.renderRoot.querySelector<HTMLButtonElement>(`.values.${axis} [data-value="${value}"]`)?.focus();
     this.choose(axis, value);
   }

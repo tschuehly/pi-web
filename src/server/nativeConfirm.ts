@@ -8,7 +8,11 @@ export type NativeConfirm = (text: string) => Promise<boolean>;
  * request, but only the owner can click Allow. Deny, the 60 s give-up, a killed dialog or any error is no.
  */
 function macosConfirm(text: string, title = "PI WEB"): Promise<boolean> {
-  const script = ["on run argv", `display dialog (item 1 of argv) with title (item 2 of argv) buttons {"Deny", "Allow"} default button "Deny" cancel button "Deny" with icon caution giving up after 60`, "end run"];
+  const script = [
+    "on run argv",
+    `display dialog (item 1 of argv) with title (item 2 of argv) buttons {"Deny", "Allow"} default button "Deny" cancel button "Deny" with icon caution giving up after 60`,
+    "end run",
+  ];
   return new Promise((resolve) => {
     execFile("/usr/bin/osascript", [...script.flatMap((line) => ["-e", line]), text, title], { encoding: "utf8", timeout: 70_000 }, (error, stdout) => {
       resolve(error === null && stdout.includes("button returned:Allow") && !stdout.includes("gave up:true"));

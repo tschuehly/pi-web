@@ -17,7 +17,9 @@ export function createPluginStylesheetLoader(options: PluginStylesheetLoaderOpti
 
   return async (url, signal) => {
     const controller = new AbortController();
-    const abort = () => { controller.abort(signal.reason); };
+    const abort = () => {
+      controller.abort(signal.reason);
+    };
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
     const timer = setTimeout(() => {
@@ -80,7 +82,11 @@ async function readStylesheet(response: Response, maxBytes: number, signal: Abor
   }
 }
 
-interface Replacement { from: number; to: number; value: string }
+interface Replacement {
+  from: number;
+  to: number;
+  value: string;
+}
 
 /**
  * Tokenize rather than regex-rewrite: comments, escapes, strings, and nested functions

@@ -76,12 +76,14 @@ describe("buildApp project routes", () => {
       status: "folder",
       projectId: project.id,
       diagnostics: [],
-      workspaces: [expect.objectContaining({
-        projectId: project.id,
-        path: appTestContext.projectDir,
-        label: "Plain",
-        isMain: true,
-      })],
+      workspaces: [
+        expect.objectContaining({
+          projectId: project.id,
+          path: appTestContext.projectDir,
+          label: "Plain",
+          isMain: true,
+        }),
+      ],
     });
   });
 
@@ -98,12 +100,14 @@ describe("buildApp project routes", () => {
       projectId: project.id,
       ownerPluginId: "replacement",
       workspaces: current.workspaces,
-      diagnostics: [{
-        code: "list-failed",
-        message: "Replacement workspace listing failed",
-        tier: "primary",
-        pluginId: "replacement",
-      }],
+      diagnostics: [
+        {
+          code: "list-failed",
+          message: "Replacement workspace listing failed",
+          tier: "primary",
+          pluginId: "replacement",
+        },
+      ],
     });
 
     const response = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
@@ -113,16 +117,20 @@ describe("buildApp project routes", () => {
       status: "degraded",
       projectId: project.id,
       ownerPluginId: "replacement",
-      workspaces: [expect.objectContaining({
-        projectId: project.id,
-        effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
-      })],
-      diagnostics: [{
-        code: "list-failed",
-        message: "Replacement workspace listing failed",
-        tier: "primary",
-        pluginId: "replacement",
-      }],
+      workspaces: [
+        expect.objectContaining({
+          projectId: project.id,
+          effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
+        }),
+      ],
+      diagnostics: [
+        {
+          code: "list-failed",
+          message: "Replacement workspace listing failed",
+          tier: "primary",
+          pluginId: "replacement",
+        },
+      ],
     });
   });
 
@@ -156,10 +164,12 @@ describe("buildApp project routes", () => {
     expect(workspacesResponse.statusCode).toBe(200);
     expect(workspacesResponse.json<WorkspaceProviderResolution>()).toMatchObject({
       projectId: project.id,
-      workspaces: [expect.objectContaining({
-        projectId: project.id,
-        effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
-      })],
+      workspaces: [
+        expect.objectContaining({
+          projectId: project.id,
+          effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
+        }),
+      ],
     });
   });
 
@@ -172,17 +182,22 @@ describe("buildApp project routes", () => {
     });
     const project = addResponse.json<Project>();
     await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
-    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, uploads: { defaultFolder: "project-uploads" } }, null, 2)}\n`);
+    await writeFile(
+      join(appTestContext.projectDir, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, uploads: { defaultFolder: "project-uploads" } }, null, 2)}\n`,
+    );
 
     const workspacesResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
 
     expect(workspacesResponse.statusCode).toBe(200);
     expect(workspacesResponse.json<WorkspaceProviderResolution>()).toMatchObject({
       projectId: project.id,
-      workspaces: [expect.objectContaining({
-        projectId: project.id,
-        effectiveConfig: { uploads: { defaultFolder: "project-uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
-      })],
+      workspaces: [
+        expect.objectContaining({
+          projectId: project.id,
+          effectiveConfig: { uploads: { defaultFolder: "project-uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
+        }),
+      ],
     });
   });
 
@@ -199,10 +214,12 @@ describe("buildApp project routes", () => {
     expect(workspacesResponse.statusCode).toBe(200);
     expect(workspacesResponse.json<WorkspaceProviderResolution>()).toMatchObject({
       projectId: project.id,
-      workspaces: [expect.objectContaining({
-        projectId: project.id,
-        effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
-      })],
+      workspaces: [
+        expect.objectContaining({
+          projectId: project.id,
+          effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: ".pi-web/attachments" } },
+        }),
+      ],
     });
   });
 
@@ -215,17 +232,22 @@ describe("buildApp project routes", () => {
     });
     const project = addResponse.json<Project>();
     await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
-    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, attachments: { defaultFolder: "project-attachments" } }, null, 2)}\n`);
+    await writeFile(
+      join(appTestContext.projectDir, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, attachments: { defaultFolder: "project-attachments" } }, null, 2)}\n`,
+    );
 
     const workspacesResponse = await appTestContext.app.inject({ method: "GET", url: `/api/projects/${project.id}/workspaces` });
 
     expect(workspacesResponse.statusCode).toBe(200);
     expect(workspacesResponse.json<WorkspaceProviderResolution>()).toMatchObject({
       projectId: project.id,
-      workspaces: [expect.objectContaining({
-        projectId: project.id,
-        effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: "project-attachments" } },
-      })],
+      workspaces: [
+        expect.objectContaining({
+          projectId: project.id,
+          effectiveConfig: { uploads: { defaultFolder: ".pi-web/uploads" }, attachments: { defaultFolder: "project-attachments" } },
+        }),
+      ],
     });
   });
 
@@ -238,7 +260,10 @@ describe("buildApp project routes", () => {
     });
     const project = addResponse.json<Project>();
     await mkdir(join(appTestContext.projectDir, ".pi-web"), { recursive: true });
-    await writeFile(join(appTestContext.projectDir, ".pi-web", "config.json"), `${JSON.stringify({ version: 1, attachments: { defaultFolder: "project-attachments" } }, null, 2)}\n`);
+    await writeFile(
+      join(appTestContext.projectDir, ".pi-web", "config.json"),
+      `${JSON.stringify({ version: 1, attachments: { defaultFolder: "project-attachments" } }, null, 2)}\n`,
+    );
     // A linked worktree has no `.pi-web/config.json` of its own (the directory
     // is gitignored), so its only source of the project override is the
     // project-path-based effective config attached to the workspace listing.

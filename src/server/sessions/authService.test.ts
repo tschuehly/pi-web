@@ -47,7 +47,9 @@ describe("AuthService", () => {
 
   it("persists an API key and attempts every listener when failure logging throws", async () => {
     const loggingFailure = new Error("auth logger failed");
-    const error = vi.fn(() => { throw loggingFailure; });
+    const error = vi.fn(() => {
+      throw loggingFailure;
+    });
     const logger: AuthServiceLogger = { error };
     const { auth, credentials, changes } = await createAuthService({}, logger);
     const failure = new Error("session auth refresh failed");
@@ -64,29 +66,27 @@ describe("AuthService", () => {
     const state = await auth.startApiKeyLogin("anthropic");
     // Pi 0.84 queues credential operations, so the interactive prompt is
     // published asynchronously after the flow starts.
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).prompt).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).prompt).toBeDefined();
+    });
     const prompt = auth.oauthFlow(state.flowId).prompt;
     if (prompt === undefined) throw new Error("Expected Anthropic key prompt");
     auth.respondToOAuthFlow(state.flowId, prompt.requestId, "sk-test");
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).status).toBe("complete");
+    });
 
     await expect(credentials.read("anthropic")).resolves.toEqual({ type: "api_key", key: "sk-test" });
     expect(changes).toEqual([{}]);
     expect(attempts).toEqual(["throwing", "healthy"]);
-    expect(error).toHaveBeenCalledWith(
-      { err: failure, operation: "login", providerId: "anthropic", authType: "api_key" },
-      "auth-change listener failed",
-    );
+    expect(error).toHaveBeenCalledWith({ err: failure, operation: "login", providerId: "anthropic", authType: "api_key" }, "auth-change listener failed");
     auth.dispose();
   });
 
   it("removes a credential when auth-change propagation rejects", async () => {
     const error = vi.fn();
     const logger: AuthServiceLogger = { error };
-    const { auth, credentials, changes } = await createAuthService(
-      { anthropic: { type: "api_key", key: "sk-test" } },
-      logger,
-    );
+    const { auth, credentials, changes } = await createAuthService({ anthropic: { type: "api_key", key: "sk-test" } }, logger);
     const failure = new Error("session logout refresh failed");
     auth.subscribe(() => Promise.reject(failure));
 
@@ -94,10 +94,7 @@ describe("AuthService", () => {
 
     await expect(credentials.read("anthropic")).resolves.toBeUndefined();
     expect(changes).toEqual([{ removedProviderId: "anthropic" }]);
-    expect(error).toHaveBeenCalledWith(
-      { err: failure, operation: "logout", providerId: "anthropic" },
-      "auth-change listener failed",
-    );
+    expect(error).toHaveBeenCalledWith({ err: failure, operation: "logout", providerId: "anthropic" }, "auth-change listener failed");
     auth.dispose();
   });
 
@@ -126,7 +123,9 @@ describe("AuthService", () => {
     if (gatewayPrompt === undefined) throw new Error("Expected Cloudflare gateway prompt");
     auth.respondToOAuthFlow(state.flowId, gatewayPrompt.requestId, "gateway-1");
 
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).status).toBe("complete");
+    });
     await expect(credentials.read("cloudflare-ai-gateway")).resolves.toEqual({
       type: "api_key",
       key: "cf-secret",
@@ -143,7 +142,9 @@ describe("AuthService", () => {
     const { auth, credentials, changes } = await createAuthService();
 
     const state = await auth.startApiKeyLogin(providerId);
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).select).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).select).toBeDefined();
+    });
     const select = auth.oauthFlow(state.flowId).select;
     if (select === undefined) throw new Error("Expected auth method selection");
     auth.respondToOAuthFlow(state.flowId, select.requestId, selection);
@@ -155,7 +156,9 @@ describe("AuthService", () => {
     if (prompt === undefined) throw new Error("Expected provider secret prompt");
     auth.respondToOAuthFlow(state.flowId, prompt.requestId, "provider-secret");
 
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).status).toBe("complete");
+    });
     await expect(credentials.read(providerId)).resolves.toEqual({ type: "api_key", key: "provider-secret" });
     expect(changes).toEqual([{}]);
     auth.dispose();
@@ -170,13 +173,15 @@ describe("AuthService", () => {
 
     const response = await auth.authProviders("login", "api_key");
 
-    expect(response.providers).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: "cloudflare-ai-gateway",
-        loginFlow: "interactive",
-        status: { configured: false },
-      }),
-    ]));
+    expect(response.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "cloudflare-ai-gateway",
+          loginFlow: "interactive",
+          status: { configured: false },
+        }),
+      ]),
+    );
     auth.dispose();
   });
 
@@ -189,13 +194,15 @@ describe("AuthService", () => {
 
     const response = await auth.authProviders("login", "api_key");
 
-    expect(response.providers).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: "cloudflare-ai-gateway",
-        loginFlow: "interactive",
-        status: { configured: true, source: "stored" },
-      }),
-    ]));
+    expect(response.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "cloudflare-ai-gateway",
+          loginFlow: "interactive",
+          status: { configured: true, source: "stored" },
+        }),
+      ]),
+    );
     auth.dispose();
   });
 
@@ -203,9 +210,7 @@ describe("AuthService", () => {
     const { auth, runtime, credentials, changes } = await createAuthService();
     const login = vi.spyOn(runtime, "login");
 
-    await expect(auth.startApiKeyLogin("unknown-provider")).rejects.toThrow(
-      "API key provider not found: unknown-provider",
-    );
+    await expect(auth.startApiKeyLogin("unknown-provider")).rejects.toThrow("API key provider not found: unknown-provider");
 
     expect(login).not.toHaveBeenCalled();
     await expect(credentials.read("unknown-provider")).resolves.toBeUndefined();
@@ -229,9 +234,7 @@ describe("AuthService", () => {
     vi.spyOn(runtime, "getProviders").mockReturnValue([...providers, ambientProvider]);
     const login = vi.spyOn(runtime, "login");
 
-    await expect(auth.startApiKeyLogin("ambient-only")).rejects.toThrow(
-      "Ambient Only does not support interactive API-key setup",
-    );
+    await expect(auth.startApiKeyLogin("ambient-only")).rejects.toThrow("Ambient Only does not support interactive API-key setup");
 
     expect(login).not.toHaveBeenCalled();
     await expect(credentials.read("ambient-only")).resolves.toBeUndefined();
@@ -252,9 +255,7 @@ describe("AuthService", () => {
 
     await writeFile(modelsPath, radiusModelsConfig("First Radius"));
     const response = await auth.authProviders("login", "oauth");
-    expect(response.providers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "test-radius", name: "First Radius", authType: "oauth" }),
-    ]));
+    expect(response.providers).toEqual(expect.arrayContaining([expect.objectContaining({ id: "test-radius", name: "First Radius", authType: "oauth" })]));
 
     await writeFile(modelsPath, radiusModelsConfig("Updated Radius"));
     await expect(auth.startOAuthLogin("test-radius")).resolves.toMatchObject({
@@ -276,11 +277,15 @@ describe("AuthService", () => {
     const auth = await AuthService.create({ runtime });
 
     const state = await auth.startApiKeyLogin("anthropic");
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).prompt).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).prompt).toBeDefined();
+    });
     const prompt = auth.oauthFlow(state.flowId).prompt;
     if (prompt === undefined) throw new Error("Expected Anthropic key prompt");
     auth.respondToOAuthFlow(state.flowId, prompt.requestId, "sk-test");
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).status).toBe("complete");
+    });
 
     await expect(readFile(join(agentDir, "auth.json"), "utf8")).resolves.toContain("sk-test");
     auth.dispose();
@@ -353,7 +358,9 @@ describe("AuthService", () => {
     const authFlows = new CapturingOAuthLoginFlowService();
     const auth = await AuthService.create({ runtime, authFlows });
     const changes: AuthChange[] = [];
-    auth.subscribe((change) => { changes.push(change); });
+    auth.subscribe((change) => {
+      changes.push(change);
+    });
     const refresh = vi.spyOn(runtime, "refresh");
     const provider = runtime.getProviders().find((option) => option.id === "anthropic" && option.auth.oauth !== undefined);
     if (provider === undefined) throw new Error("Expected built-in OAuth provider");
@@ -379,7 +386,9 @@ describe("AuthService", () => {
 
   it("completes OAuth when an auth-change listener and failure logging throw", async () => {
     const loggingFailure = new Error("auth logger failed");
-    const error = vi.fn(() => { throw loggingFailure; });
+    const error = vi.fn(() => {
+      throw loggingFailure;
+    });
     const logger: AuthServiceLogger = { error };
     const { auth, runtime, changes } = await createAuthService({}, logger);
     const provider = runtime.getProviders().find((option) => option.id === "anthropic" && option.auth.oauth !== undefined);
@@ -394,13 +403,12 @@ describe("AuthService", () => {
     auth.subscribe(() => Promise.reject(failure));
 
     const state = await auth.startOAuthLogin(provider.id);
-    await vi.waitFor(() => { expect(auth.oauthFlow(state.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(auth.oauthFlow(state.flowId).status).toBe("complete");
+    });
 
     expect(changes).toEqual([{}]);
-    expect(error).toHaveBeenCalledWith(
-      { err: failure, operation: "login", providerId: provider.id, authType: "oauth" },
-      "auth-change listener failed",
-    );
+    expect(error).toHaveBeenCalledWith({ err: failure, operation: "login", providerId: provider.id, authType: "oauth" }, "auth-change listener failed");
     auth.dispose();
   });
 });
@@ -451,7 +459,9 @@ async function createAuthService(seed: Record<string, Credential> = {}, logger?:
   const runtime = await ModelRuntime.create({ credentials, modelsPath: null, allowModelNetwork: false });
   const auth = await AuthService.create({ runtime, ...(logger === undefined ? {} : { logger }) });
   const changes: AuthChange[] = [];
-  auth.subscribe((change) => { changes.push(change); });
+  auth.subscribe((change) => {
+    changes.push(change);
+  });
   return { auth, runtime, credentials, changes };
 }
 
@@ -462,7 +472,9 @@ async function createFileBackedAuthService(seed: Record<string, Credential>) {
   const runtime = await createModelRuntimeForAgentDir(agentDir);
   const auth = await AuthService.create({ runtime });
   const changes: AuthChange[] = [];
-  auth.subscribe((change) => { changes.push(change); });
+  auth.subscribe((change) => {
+    changes.push(change);
+  });
   return { auth, runtime, authPath, changes };
 }
 
@@ -495,8 +507,12 @@ function fakeOAuthProvider(id: string, login: OAuthAuth["login"]): Provider {
       },
     },
     getModels: () => [],
-    stream: () => { throw new Error("stream not implemented"); },
-    streamSimple: () => { throw new Error("streamSimple not implemented"); },
+    stream: () => {
+      throw new Error("stream not implemented");
+    },
+    streamSimple: () => {
+      throw new Error("streamSimple not implemented");
+    },
   };
 }
 

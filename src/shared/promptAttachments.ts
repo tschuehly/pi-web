@@ -6,7 +6,7 @@ import type { PromptAttachment, PromptFileAttachment, PromptImageAttachment } fr
  */
 export const SUPPORTED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 
-export type SupportedImageMimeType = typeof SUPPORTED_IMAGE_MIME_TYPES[number];
+export type SupportedImageMimeType = (typeof SUPPORTED_IMAGE_MIME_TYPES)[number];
 
 const supportedImageMimeTypes: ReadonlySet<string> = new Set(SUPPORTED_IMAGE_MIME_TYPES);
 
@@ -29,13 +29,11 @@ export function hasExplicitPromptImageReference(value: unknown): boolean {
 }
 
 export function removeImageReferenceTokensFromText(text: string, references: readonly string[]): string {
-  return references.reduce((current, reference) => current
-    .replaceAll(`${reference} `, "")
-    .replaceAll(` ${reference}`, "")
-    .replaceAll(reference, ""), text);
+  return references.reduce((current, reference) => current.replaceAll(`${reference} `, "").replaceAll(` ${reference}`, "").replaceAll(reference, ""), text);
 }
 
-const inlineImageReferenceMappingPattern = /(?:^|\n\n)Image blocks immediately following this text map in order as follows:\n(?:\d+\. \[PIC_[1-9]\d*\](?:\n|$))+$/;
+const inlineImageReferenceMappingPattern =
+  /(?:^|\n\n)Image blocks immediately following this text map in order as follows:\n(?:\d+\. \[PIC_[1-9]\d*\](?:\n|$))+$/;
 
 /** Remove only PI WEB's trailing provider legend, keeping the user's own references. */
 export function stripInlineImageReferenceMapping(text: string): string {
@@ -51,11 +49,16 @@ export function appendInlineImageReferenceMapping(text: string, references: read
 
 export function extensionForImageMimeType(mimeType: string): string {
   switch (mimeType) {
-    case "image/jpeg": return "jpg";
-    case "image/png": return "png";
-    case "image/gif": return "gif";
-    case "image/webp": return "webp";
-    default: return "bin";
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/gif":
+      return "gif";
+    case "image/webp":
+      return "webp";
+    default:
+      return "bin";
   }
 }
 
@@ -90,7 +93,7 @@ export function parsePromptAttachments(value: unknown, options: AttachmentValida
   const maxAttachments = options.maxAttachments ?? MAX_PROMPT_ATTACHMENTS;
   if (value.length > maxAttachments) throw new Error(`too many attachments (max ${String(maxAttachments)})`);
   const parsed = value.map((entry, index) => parsePromptAttachment(entry, index, options));
-  const explicitReferences = parsed.flatMap((attachment) => attachment.kind === "image" && attachment.reference !== undefined ? [attachment.reference] : []);
+  const explicitReferences = parsed.flatMap((attachment) => (attachment.kind === "image" && attachment.reference !== undefined ? [attachment.reference] : []));
   if (new Set(explicitReferences).size !== explicitReferences.length) throw new Error("image attachment references must be unique");
   const usedReferences = new Set(explicitReferences);
   let nextReference = 1;
@@ -128,7 +131,8 @@ function parseImageAttachment(record: Record<string, unknown>, index: number, op
     throw new Error(`attachment ${String(index)} exceeds the inline image size limit`);
   }
   const reference = record["reference"];
-  if (reference !== undefined && (typeof reference !== "string" || !imageReferencePattern.test(reference))) throw new Error(`attachment ${String(index)} has invalid image reference`);
+  if (reference !== undefined && (typeof reference !== "string" || !imageReferencePattern.test(reference)))
+    throw new Error(`attachment ${String(index)} has invalid image reference`);
   return {
     kind: "image",
     ...(typeof reference === "string" ? { reference } : {}),

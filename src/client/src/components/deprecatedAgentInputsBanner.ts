@@ -14,7 +14,10 @@ export interface DeprecatedAgentInputsWarning {
  * check failed or reported nothing contributes no warning, so the banner only
  * ever names machines with a live report of a deprecated input.
  */
-export function deprecatedAgentInputsWarnings(machines: readonly Machine[], machineRuntimes: Readonly<Record<string, MachineRuntime>>): DeprecatedAgentInputsWarning[] {
+export function deprecatedAgentInputsWarnings(
+  machines: readonly Machine[],
+  machineRuntimes: Readonly<Record<string, MachineRuntime>>,
+): DeprecatedAgentInputsWarning[] {
   const warnings: DeprecatedAgentInputsWarning[] = [];
   for (const machine of machines) {
     const inputs = machineRuntimes[machine.id]?.deprecatedAgentInputs;

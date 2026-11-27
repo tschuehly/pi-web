@@ -6,7 +6,11 @@ import type { PluginCatalogV1 } from "../../shared/pluginCatalogTypes.js";
 /** Read-only browser catalog uses the same authority and projections as backend plugins. */
 export function registerPluginCatalogRoutes(app: FastifyInstance, dependencies: CreateServerPluginCatalogCapabilityOptions): void {
   const factory = createServerPluginCatalogCapabilityFactory(dependencies);
-  interface Params { projectId: string; workspaceId: string; sessionId: string }
+  interface Params {
+    projectId: string;
+    workspaceId: string;
+    sessionId: string;
+  }
   function route(path: string, read: (catalog: PluginCatalogV1, params: Params) => Promise<unknown>): void {
     app.get<{ Params: Params }>(path, async (request, reply) => {
       const cancellation = requestCancellation(request, reply);

@@ -4,15 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Provider } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "../../piSdk.js";
-import {
-  bootstrapAndFreezeGlobalExtensionProviders,
-  type GlobalProviderBootstrapLogger,
-} from "./globalProviderPolicy.js";
-import {
-  createTestModelRuntime,
-  TEST_MODEL_ID,
-  TEST_MODEL_PROVIDER,
-} from "./piSessionService.testSupport.js";
+import { bootstrapAndFreezeGlobalExtensionProviders, type GlobalProviderBootstrapLogger } from "./globalProviderPolicy.js";
+import { createTestModelRuntime, TEST_MODEL_ID, TEST_MODEL_PROVIDER } from "./piSessionService.testSupport.js";
 
 interface LogEntry {
   level: "error" | "info" | "warn";
@@ -47,9 +40,15 @@ function capturingLogger(): { entries: LogEntry[]; logger: GlobalProviderBootstr
   return {
     entries,
     logger: {
-      error: (details, message) => { record("error", details, message); },
-      info: (details, message) => { record("info", details, message); },
-      warn: (details, message) => { record("warn", details, message); },
+      error: (details, message) => {
+        record("error", details, message);
+      },
+      info: (details, message) => {
+        record("info", details, message);
+      },
+      warn: (details, message) => {
+        record("warn", details, message);
+      },
     },
   };
 }
@@ -65,8 +64,12 @@ function nativeProvider(providerId: string, name = providerId): Provider {
       },
     },
     getModels: () => [],
-    stream: () => { throw new Error("stream should not be called in this test"); },
-    streamSimple: () => { throw new Error("streamSimple should not be called in this test"); },
+    stream: () => {
+      throw new Error("stream should not be called in this test");
+    },
+    streamSimple: () => {
+      throw new Error("streamSimple should not be called in this test");
+    },
   };
 }
 
@@ -122,15 +125,17 @@ function registerProjectConfigProvider(runtime: Awaited<ReturnType<typeof create
     baseUrl: "https://project-secret.example.com",
     apiKey: "project-secret-api-key",
     api: "openai-completions",
-    models: [{
-      id: "project-model",
-      name: "Project Model",
-      reasoning: false,
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 8_192,
-      maxTokens: 1_024,
-    }],
+    models: [
+      {
+        id: "project-model",
+        name: "Project Model",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8_192,
+        maxTokens: 1_024,
+      },
+    ],
   });
 }
 
@@ -165,11 +170,14 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
           provider: "router-secret-provider",
           id: "secret-id",
           name: "secret-name",
-          route() { throw new Error("secret-router-must-not-run"); },
+          route() {
+            throw new Error("secret-router-must-not-run");
+          },
         });
       }).toThrow("PI WEB does not support registerVirtualModel()");
-      expect(() => { runtime.unregisterVirtualModel("router-secret-provider", "secret-id"); })
-        .toThrow("PI WEB does not support unregisterVirtualModel()");
+      expect(() => {
+        runtime.unregisterVirtualModel("router-secret-provider", "secret-id");
+      }).toThrow("PI WEB does not support unregisterVirtualModel()");
     }
     await runtime.refresh({ allowNetwork: false });
     expect(runtime.getModel("router-secret-provider", "secret-id")).toBeUndefined();
@@ -275,7 +283,10 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, logger);
 
     const baselineRegisteredIds = [...runtime.getRegisteredProviderIds()].sort();
-    const baselineProviderIds = runtime.getProviders().map((provider) => provider.id).sort();
+    const baselineProviderIds = runtime
+      .getProviders()
+      .map((provider) => provider.id)
+      .sort();
     const baselineConfig = runtime.getRegisteredProviderConfig("global-config");
     const baselineNative = runtime.getRegisteredNativeProvider("global-native");
     expect(baselineRegisteredIds).toEqual(["global-config", "global-native"]);
@@ -291,7 +302,12 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     await runtime.refresh();
 
     expect([...runtime.getRegisteredProviderIds()].sort()).toEqual(baselineRegisteredIds);
-    expect(runtime.getProviders().map((provider) => provider.id).sort()).toEqual(baselineProviderIds);
+    expect(
+      runtime
+        .getProviders()
+        .map((provider) => provider.id)
+        .sort(),
+    ).toEqual(baselineProviderIds);
     expect(runtime.getRegisteredProviderConfig("global-config")).toBe(baselineConfig);
     expect(runtime.getRegisteredNativeProvider("global-native")).toBe(baselineNative);
     expect(runtime.getRegisteredProviderConfig("project-config")).toBeUndefined();
@@ -315,9 +331,15 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
 
     await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, throwingLogger);
 
-    expect(() => { registerProjectConfigProvider(runtime); }).not.toThrow();
-    expect(() => { runtime.registerNativeProvider(nativeProvider("project-native")); }).not.toThrow();
-    expect(() => { runtime.unregisterProvider("project-only"); }).not.toThrow();
+    expect(() => {
+      registerProjectConfigProvider(runtime);
+    }).not.toThrow();
+    expect(() => {
+      runtime.registerNativeProvider(nativeProvider("project-native"));
+    }).not.toThrow();
+    expect(() => {
+      runtime.unregisterProvider("project-only");
+    }).not.toThrow();
     expect(runtime.getRegisteredProviderIds()).toEqual([]);
   });
 
@@ -376,8 +398,7 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     }
 
     // Applied once; subsequent unchanged replays are completely silent.
-    expect(entries.filter((entry) => entry.message === "applied models-only provider update after global bootstrap"))
-      .toHaveLength(1);
+    expect(entries.filter((entry) => entry.message === "applied models-only provider update after global bootstrap")).toHaveLength(1);
     expect(entries.filter((entry) => entry.message === "ignored provider mutation after global bootstrap")).toEqual([]);
     expect(runtime.getModel("global-config", "refreshed-model")).toBeDefined();
   });
@@ -423,8 +444,9 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     });
 
     // `catalogModel` omits `api`/`baseUrl`, which this provider needs per model.
-    expect(() => { runtime.registerProvider("per-model-config", perModelConfig(catalogModel("broken-model"))); })
-      .toThrow(/no "api" specified/);
+    expect(() => {
+      runtime.registerProvider("per-model-config", perModelConfig(catalogModel("broken-model")));
+    }).toThrow(/no "api" specified/);
 
     expect(runtime.getRegisteredProviderConfig("per-model-config")).toBe(baselineConfig);
     expect(runtime.getModel("per-model-config", "first-model")).toBeDefined();
@@ -432,15 +454,17 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
 
     // The rejected attempt did not poison the baseline, so a valid refresh of
     // the same provider is still recognized as a models-only update.
-    runtime.registerProvider("per-model-config", perModelConfig({
-      ...catalogModel("second-model"),
-      api: "openai-completions",
-      baseUrl: "https://per-model.example.com",
-    }));
+    runtime.registerProvider(
+      "per-model-config",
+      perModelConfig({
+        ...catalogModel("second-model"),
+        api: "openai-completions",
+        baseUrl: "https://per-model.example.com",
+      }),
+    );
 
     expect(runtime.getModel("per-model-config", "second-model")).toBeDefined();
-    expect(entries.filter((entry) => entry.message === "applied models-only provider update after global bootstrap"))
-      .toHaveLength(1);
+    expect(entries.filter((entry) => entry.message === "applied models-only provider update after global bootstrap")).toHaveLength(1);
   });
 
   it("ignores registrations that change any field other than the model catalog", async () => {
@@ -466,7 +490,9 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
       },
       streamSimple: {
         ...globalConfigWithModels(["changed-model"]),
-        streamSimple: () => { throw new Error("streamSimple should not be called in this test"); },
+        streamSimple: () => {
+          throw new Error("streamSimple should not be called in this test");
+        },
       },
       oauth: {
         ...globalConfigWithModels(["changed-model"]),
@@ -485,8 +511,7 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     expect(runtime.getRegisteredProviderConfig("global-config")).toBe(baselineConfig);
     expect(runtime.getModel("global-config", "changed-model")).toBeUndefined();
     expect(runtime.getRegisteredProviderIds()).toEqual(["global-config"]);
-    expect(entries.filter((entry) => entry.message === "applied models-only provider update after global bootstrap"))
-      .toEqual([]);
+    expect(entries.filter((entry) => entry.message === "applied models-only provider update after global bootstrap")).toEqual([]);
     // Repeated definite configuration changes stay de-duplicated.
     const ignoredDetails = entries
       .filter((entry) => entry.message === "ignored provider mutation after global bootstrap")
@@ -500,9 +525,10 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
   });
 
   it("keeps callback replays informational without suppressing later configuration warnings or leaking secrets", async () => {
-    const agentDir = await agentDirWithExtension(GLOBAL_PROVIDER_SOURCE.replace(
-      'api: "openai-completions",',
-      `api: "openai-completions",
+    const agentDir = await agentDirWithExtension(
+      GLOBAL_PROVIDER_SOURCE.replace(
+        'api: "openai-completions",',
+        `api: "openai-completions",
        streamSimple() { throw new Error("startup-stream-secret"); },
        oauth: {
          name: "Global OAuth",
@@ -510,7 +536,8 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
          async refreshToken() { throw new Error("startup-refresh-secret"); },
          getApiKey() { return "startup-oauth-secret"; }
        },`,
-    ));
+      ),
+    );
     const runtime = await createTestModelRuntime();
     const { entries, logger } = capturingLogger();
     await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, logger);
@@ -518,12 +545,16 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     if (!baseline?.oauth) throw new Error("Missing startup OAuth fixture");
     const freshCallbacks = {
       ...baseline,
-      streamSimple() { throw new Error("replacement-stream-secret"); },
+      streamSimple() {
+        throw new Error("replacement-stream-secret");
+      },
       oauth: {
         ...baseline.oauth,
         login: () => Promise.reject(new Error("replacement-login-secret")),
         refreshToken: () => Promise.reject(new Error("replacement-refresh-secret")),
-        getApiKey() { return "replacement-oauth-secret"; },
+        getApiKey() {
+          return "replacement-oauth-secret";
+        },
       },
     } satisfies ProviderConfigInput;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -556,9 +587,10 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
   });
 
   it("keeps callback replays with cyclic config metadata as non-fatal informational no-ops", async () => {
-    const agentDir = await agentDirWithExtension(GLOBAL_PROVIDER_SOURCE.replace(
-      'api: "openai-completions",',
-      `api: "openai-completions",
+    const agentDir = await agentDirWithExtension(
+      GLOBAL_PROVIDER_SOURCE.replace(
+        'api: "openai-completions",',
+        `api: "openai-completions",
        oauth: (() => {
          const oauth = {
            name: "Cyclic OAuth",
@@ -569,7 +601,8 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
          oauth.self = oauth;
          return oauth;
        })(),`,
-    ));
+      ),
+    );
     const runtime = await createTestModelRuntime();
     const { entries, logger } = capturingLogger();
     await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, logger);
@@ -577,9 +610,12 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     if (!baseline?.oauth) throw new Error("Missing cyclic OAuth fixture");
     const oauth = { ...baseline.oauth, login: () => Promise.reject(new Error("unused replacement login")) };
     Object.assign(oauth, { self: oauth });
-    expect(() => { runtime.registerProvider("global-config", { ...baseline, oauth }); }).not.toThrow();
-    expect(entries.filter((entry) => entry.message === "ignored provider mutation after global bootstrap"))
-      .toMatchObject([{ level: "info", details: { reason: "implementation-unverified" } }]);
+    expect(() => {
+      runtime.registerProvider("global-config", { ...baseline, oauth });
+    }).not.toThrow();
+    expect(entries.filter((entry) => entry.message === "ignored provider mutation after global bootstrap")).toMatchObject([
+      { level: "info", details: { reason: "implementation-unverified" } },
+    ]);
     expect(runtime.getRegisteredProviderConfig("global-config")).toBe(baseline);
   });
 
@@ -590,7 +626,9 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     await bootstrapAndFreezeGlobalExtensionProviders(runtime, agentDir, logger);
     runtime.registerProvider("global-config", {
       api: "openai-completions",
-      streamSimple() { throw new Error("new-stream-secret"); },
+      streamSimple() {
+        throw new Error("new-stream-secret");
+      },
     });
     expect(entries.find((entry) => entry.level === "warn")).toMatchObject({
       details: { code: "PROVIDER_MUTATION_IGNORED", reason: "configuration-change" },
@@ -612,9 +650,11 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     expect(runtime.getRegisteredProviderConfig("global-config")).toBe(baselineConfig);
     expect(runtime.getRegisteredNativeProvider("global-config")).toBeUndefined();
     expect(runtime.getModel("global-config", "global-model")).toBeDefined();
-    expect(entries
-      .filter((entry) => entry.message === "ignored provider mutation after global bootstrap")
-      .map(({ details }) => ({ context: details["context"], operation: details["operation"], providerId: details["providerId"] }))).toEqual([
+    expect(
+      entries
+        .filter((entry) => entry.message === "ignored provider mutation after global bootstrap")
+        .map(({ details }) => ({ context: details["context"], operation: details["operation"], providerId: details["providerId"] })),
+    ).toEqual([
       { context: "global-provider-bootstrap", operation: "registerNativeProvider", providerId: "global-config" },
       { context: "global-provider-bootstrap", operation: "unregisterProvider", providerId: "global-config" },
     ]);
@@ -635,8 +675,7 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     expect(diagnosticEntry?.level).toBe("error");
     expect(diagnosticEntry?.details["context"]).toBe("global-provider-bootstrap");
     expect(diagnosticEntry?.message).toBe("global extension provider bootstrap diagnostic");
-    expect(diagnosticEntry?.details["diagnostic"])
-      .toEqual(expect.stringContaining('"api" is required when registering streamSimple'));
+    expect(diagnosticEntry?.details["diagnostic"]).toEqual(expect.stringContaining('"api" is required when registering streamSimple'));
 
     runtime.registerProvider("after-diagnostic", {});
     expect(runtime.getRegisteredProviderIds()).toEqual([]);
@@ -658,7 +697,9 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
     await mkdir(join(agentDir, "extensions"), { recursive: true });
     const pidFile = join(agentDir, "child.pid");
     const stoppedFile = join(agentDir, "stopped");
-    await writeFile(join(agentDir, "extensions", "provider.js"), `
+    await writeFile(
+      join(agentDir, "extensions", "provider.js"),
+      `
       import { spawn } from "node:child_process";
       import { writeFileSync } from "node:fs";
       export default function (pi) {
@@ -671,7 +712,8 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
           pi.unregisterProvider("global-config");
         });
       }
-    `);
+    `,
+    );
     const runtime = await createTestModelRuntime();
     const { logger } = capturingLogger();
     let childPid: number | undefined;
@@ -684,7 +726,11 @@ describe("bootstrapAndFreezeGlobalExtensionProviders", () => {
       expect(runtime.getRegisteredProviderConfig("global-config")).toMatchObject(globalConfigWithModels(["global-model"]));
     } finally {
       if (childPid !== undefined) {
-        try { process.kill(childPid); } catch { /* already exited */ }
+        try {
+          process.kill(childPid);
+        } catch {
+          /* already exited */
+        }
       }
     }
   });

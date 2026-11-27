@@ -10,8 +10,13 @@ const removed = project("removed", "/srv/removed");
 const kept = project("kept", "/srv/kept");
 const MINUTE = 60_000;
 
-beforeEach(() => { vi.useFakeTimers(); });
-afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
 
 describe("eventual project unread cleanup", () => {
   it("does no discovery for an empty catalog, including project add/remove", async () => {
@@ -68,10 +73,13 @@ describe("eventual project unread cleanup", () => {
   });
 
   it("removes registration immediately, then collects unread while preserving shared external worktrees", async () => {
-    const fixture = lifecycle([removed, kept], new Map([
-      [removed.id, [removed.path, "/external/shared"]],
-      [kept.id, [kept.path, "/external/shared"]],
-    ]));
+    const fixture = lifecycle(
+      [removed, kept],
+      new Map([
+        [removed.id, [removed.path, "/external/shared"]],
+        [kept.id, [kept.path, "/external/shared"]],
+      ]),
+    );
     complete(fixture.unread, removed.path);
     complete(fixture.unread, "/external/shared");
     await fixture.service.close(removed.id);
@@ -134,10 +142,11 @@ describe("eventual project unread cleanup", () => {
     const before = fixture.unread.catalogSnapshot();
     if (failure === "provider") fixture.workspaces.resolve.mockRejectedValueOnce(new Error("lookup failed"));
     if (failure === "degraded") fixture.workspaces.resolve.mockResolvedValueOnce({ ...resolution(root, [root.path]), status: "degraded" });
-    if (failure === "diagnostics") fixture.workspaces.resolve.mockResolvedValueOnce({
-      ...resolution(root, [root.path]),
-      diagnostics: [{ code: "probe-failed", message: "provider unavailable", tier: "primary", pluginId: "unavailable" }],
-    });
+    if (failure === "diagnostics")
+      fixture.workspaces.resolve.mockResolvedValueOnce({
+        ...resolution(root, [root.path]),
+        diagnostics: [{ code: "probe-failed", message: "provider unavailable", tier: "primary", pluginId: "unavailable" }],
+      });
     fixture.service.scheduleCleanup();
 
     await expect(fixture.service.add({ path: healthyPath })).resolves.toMatchObject({ path: healthyPath });
@@ -224,15 +233,21 @@ function lifecycle(initial: Project[], paths = new Map<string, string[]>()) {
   const logger = { warn: vi.fn() };
   const onProjectsChanged = vi.fn();
   const service = new ProjectLifecycleService({
-    projects, workspaces, reconcileUnreadWorkspaces: reconcile,
-    hasUnread: () => unread.hasUnread(), onProjectsChanged, logger,
+    projects,
+    workspaces,
+    reconcileUnreadWorkspaces: reconcile,
+    hasUnread: () => unread.hasUnread(),
+    onProjectsChanged,
+    logger,
   });
   return { service, projects, workspaces, unread, mutations, reconcile, logger, onProjectsChanged };
 }
 
 function resolution(owner: Project, paths: string[]): WorkspaceProviderAuthorityResolution {
   return {
-    projectId: owner.id, status: "folder", diagnostics: [],
+    projectId: owner.id,
+    status: "folder",
+    diagnostics: [],
     workspaces: paths.map((path) => ({ id: path, projectId: owner.id, path, isMain: path === owner.path, label: path })),
   };
 }

@@ -47,9 +47,7 @@ export class PluginBackendChannelProxyConnectionError extends Error {
  * Routes provide attribution and an upstream connector, but cannot split setup
  * timeout ownership from the active bridge lifetime.
  */
-export async function coordinatePluginBackendChannelProxy(
-  options: PluginBackendChannelProxyCoordinatorOptions,
-): Promise<void> {
+export async function coordinatePluginBackendChannelProxy(options: PluginBackendChannelProxyCoordinatorOptions): Promise<void> {
   let reservation: PluginBackendChannelProxyReservation;
   try {
     reservation = options.admissions.admit(options.scope);
@@ -57,12 +55,9 @@ export async function coordinatePluginBackendChannelProxy(
     if (error instanceof PluginBackendChannelProxyAdmissionError) {
       await rejectPluginBackendChannelProxyAdmission(options.downstream, error);
     } else {
-      await closePluginBackendChannelWebSocket(
-        options.downstream,
-        1011,
-        `Plugin backend channel admission failed: ${errorMessage(error)}`,
-        { terminateImmediately: true },
-      );
+      await closePluginBackendChannelWebSocket(options.downstream, 1011, `Plugin backend channel admission failed: ${errorMessage(error)}`, {
+        terminateImmediately: true,
+      });
     }
     return;
   }
@@ -79,7 +74,9 @@ class ManagedPluginBackendChannelProxy {
   private transportConnectDeadline: ReturnType<typeof setTimeout> | undefined;
   private readonly connectionAbort = new AbortController();
   private resolveCompletion: () => void = () => undefined;
-  private readonly completion = new Promise<void>((resolve) => { this.resolveCompletion = resolve; });
+  private readonly completion = new Promise<void>((resolve) => {
+    this.resolveCompletion = resolve;
+  });
 
   private readonly onUpstreamOpen = (): void => {
     this.beginBridge();
@@ -100,14 +97,10 @@ class ManagedPluginBackendChannelProxy {
 
   start(): Promise<void> {
     try {
-      setPluginBackendChannelSocketPayloadLimit(
-        this.options.downstream,
-        PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES,
-      );
-      this.prelude = new PluginBackendChannelPrelude(
-        this.options.downstream,
-        (code, reason) => { this.beginClosing(code, reason); },
-      );
+      setPluginBackendChannelSocketPayloadLimit(this.options.downstream, PLUGIN_BACKEND_CHANNEL_OPEN_FRAME_MAX_BYTES);
+      this.prelude = new PluginBackendChannelPrelude(this.options.downstream, (code, reason) => {
+        this.beginClosing(code, reason);
+      });
     } catch (error) {
       this.beginClosing(1011, `Plugin backend channel proxy setup failed: ${errorMessage(error)}`);
       return this.completion;
@@ -115,10 +108,7 @@ class ManagedPluginBackendChannelProxy {
 
     const timeoutMs = this.reservation.transportConnectTimeoutMs;
     this.transportConnectDeadline = setTimeout(() => {
-      this.beginClosing(
-        1011,
-        `Plugin backend channel transport connection timed out after ${String(timeoutMs)}ms`,
-      );
+      this.beginClosing(1011, `Plugin backend channel transport connection timed out after ${String(timeoutMs)}ms`);
     }, timeoutMs);
     this.transportConnectDeadline.unref();
     this.phase = "resolving";
@@ -131,19 +121,18 @@ class ManagedPluginBackendChannelProxy {
       return this.completion;
     }
     void Promise.resolve(connection)
-      .then((upstream) => { this.attachUpstream(upstream); })
-      .catch((error: unknown) => { this.handleConnectionFailure(error); });
+      .then((upstream) => {
+        this.attachUpstream(upstream);
+      })
+      .catch((error: unknown) => {
+        this.handleConnectionFailure(error);
+      });
     return this.completion;
   }
 
   private attachUpstream(upstream: WebSocket): void {
     if (this.phase !== "resolving") {
-      void closePluginBackendChannelWebSocket(
-        upstream,
-        1001,
-        "Plugin backend channel proxy setup was cancelled",
-        { terminateImmediately: true },
-      );
+      void closePluginBackendChannelWebSocket(upstream, 1001, "Plugin backend channel proxy setup was cancelled", { terminateImmediately: true });
       return;
     }
 
@@ -179,17 +168,15 @@ class ManagedPluginBackendChannelProxy {
 
     let bridgeCompletion: Promise<void>;
     try {
-      bridgeCompletion = bridgePluginBackendChannelSockets(
-        this.options.downstream,
-        upstream,
-        { initialClientFrames },
-      );
+      bridgeCompletion = bridgePluginBackendChannelSockets(this.options.downstream, upstream, { initialClientFrames });
     } catch (error) {
       this.beginClosing(1011, `Plugin backend channel bridge setup failed: ${errorMessage(error)}`);
       return;
     }
     void bridgeCompletion
-      .then(() => { this.finishBridge(); })
+      .then(() => {
+        this.finishBridge();
+      })
       .catch((error: unknown) => {
         this.beginClosing(1011, `Plugin backend channel bridge failed: ${errorMessage(error)}`);
       });
@@ -218,12 +205,14 @@ class ManagedPluginBackendChannelProxy {
     this.prelude?.dispose();
     this.prelude = undefined;
     this.detachUpstreamSetupListeners();
-    const sockets = this.upstream === undefined
-      ? [this.options.downstream]
-      : [this.options.downstream, this.upstream];
+    const sockets = this.upstream === undefined ? [this.options.downstream] : [this.options.downstream, this.upstream];
     void Promise.allSettled(
-      sockets.map(async (socket) => { await closePluginBackendChannelWebSocket(socket, code, reason); }),
-    ).then(() => { this.finishClosed(); });
+      sockets.map(async (socket) => {
+        await closePluginBackendChannelWebSocket(socket, code, reason);
+      }),
+    ).then(() => {
+      this.finishClosed();
+    });
   }
 
   private finishClosed(): void {
@@ -266,24 +255,17 @@ class PluginBackendChannelPrelude {
         firstFrame ? "Plugin backend channel first client frame" : "Plugin backend channel client frame",
       );
       if (firstFrame) {
-        setPluginBackendChannelSocketPayloadLimit(
-          this.downstream,
-          PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES,
-        );
+        setPluginBackendChannelSocketPayloadLimit(this.downstream, PLUGIN_BACKEND_CHANNEL_DATA_FRAME_MAX_BYTES);
       }
       const frameBytes = utf8ByteLength(text);
-      if (this.frames.length >= PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES
-        || this.bytes + frameBytes > PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_BYTES) {
+      if (this.frames.length >= PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_FRAMES || this.bytes + frameBytes > PLUGIN_BACKEND_CHANNEL_QUEUE_MAX_BYTES) {
         this.onFailure(1013, "Plugin backend channel proxy prelude queue limit was exceeded");
         return;
       }
       this.frames.push(text);
       this.bytes += frameBytes;
     } catch (error) {
-      this.onFailure(
-        error instanceof PluginBackendChannelTransportFrameError ? error.closeCode : 1011,
-        errorMessage(error),
-      );
+      this.onFailure(error instanceof PluginBackendChannelTransportFrameError ? error.closeCode : 1011, errorMessage(error));
     }
   };
 

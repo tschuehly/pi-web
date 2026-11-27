@@ -187,8 +187,16 @@ describe("machine-scoped session proxy routes", () => {
     expect(daemon.requests).toEqual([
       { method: "GET", path: "/sessions/notifications", body: undefined },
       { method: "GET", path: "/sessions/session-1/notifications?cwd=%2Frepo", body: undefined },
-      { method: "POST", path: "/sessions/session-1/notifications/dismiss", body: { cwd: "/repo", daemonInstanceId: "daemon-test", notificationId: "notice-1" } },
-      { method: "POST", path: "/sessions/session-1/notifications/dismiss-all", body: { cwd: "/repo", daemonInstanceId: "daemon-test", throughOrder: 7, throughOverflowWatermark: 2 } },
+      {
+        method: "POST",
+        path: "/sessions/session-1/notifications/dismiss",
+        body: { cwd: "/repo", daemonInstanceId: "daemon-test", notificationId: "notice-1" },
+      },
+      {
+        method: "POST",
+        path: "/sessions/session-1/notifications/dismiss-all",
+        body: { cwd: "/repo", daemonInstanceId: "daemon-test", throughOrder: 7, throughOverflowWatermark: 2 },
+      },
     ]);
   });
 
@@ -246,15 +254,27 @@ describe("machine-scoped session proxy routes", () => {
     await app.listen({ host: "127.0.0.1", port: 0 });
     const socket = new WebSocket(`${serverUrl(app)}/api/machines/local/events`);
     const frames: { text: string; binary: boolean }[] = [];
-    socket.on("message", (data, binary) => { frames.push({ text: new TextDecoder().decode(data instanceof ArrayBuffer ? new Uint8Array(data) : Array.isArray(data) ? Buffer.concat(data) : data), binary }); });
+    socket.on("message", (data, binary) => {
+      frames.push({
+        text: new TextDecoder().decode(data instanceof ArrayBuffer ? new Uint8Array(data) : Array.isArray(data) ? Buffer.concat(data) : data),
+        binary,
+      });
+    });
     try {
       await waitForOpen(socket);
-      await vi.waitFor(() => { expect(daemon.connectedSockets().length).toBe(1); });
+      await vi.waitFor(() => {
+        expect(daemon.connectedSockets().length).toBe(1);
+      });
       const upstream = daemon.connectedSockets().at(0);
       if (!upstream) throw new Error("Daemon WebSocket did not connect");
       upstream.send("text");
       upstream.send(Buffer.from("binary"));
-      await vi.waitFor(() => { expect(frames).toEqual([{ text: "text", binary: false }, { text: "binary", binary: true }]); });
+      await vi.waitFor(() => {
+        expect(frames).toEqual([
+          { text: "text", binary: false },
+          { text: "binary", binary: true },
+        ]);
+      });
     } finally {
       socket.close();
     }
@@ -288,7 +308,9 @@ class FakeSessionDaemon {
   private constructor(private readonly upstream: WebSocketServer) {
     this.upstream.on("connection", (socket) => {
       this.sockets.add(socket);
-      socket.on("close", () => { this.sockets.delete(socket); });
+      socket.on("close", () => {
+        this.sockets.delete(socket);
+      });
     });
   }
 
@@ -324,7 +346,9 @@ class FakeSessionDaemon {
     return response ?? { statusCode: 200, headers: { "content-type": "application/json" }, body: JSON.stringify({ ok: true }) };
   }
 
-  connectedSockets(): WebSocket[] { return [...this.sockets]; }
+  connectedSockets(): WebSocket[] {
+    return [...this.sockets];
+  }
 
   connectWebSocket(path: string): WebSocket {
     this.websocketPaths.push(path);
@@ -351,7 +375,9 @@ function webSocketServerUrl(server: WebSocketServer): string {
 
 function waitForListening(server: WebSocketServer): Promise<void> {
   return new Promise((resolve) => {
-    server.once("listening", () => { resolve(); });
+    server.once("listening", () => {
+      resolve();
+    });
   });
 }
 
@@ -367,8 +393,12 @@ function closeWebSocketServer(server: WebSocketServer): Promise<void> {
 function waitForOpen(socket: WebSocket): Promise<void> {
   if (socket.readyState === WebSocket.OPEN) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    socket.once("open", () => { resolve(); });
+    socket.once("open", () => {
+      resolve();
+    });
     socket.once("error", reject);
-    socket.once("close", () => { reject(new Error("WebSocket closed before opening")); });
+    socket.once("close", () => {
+      reject(new Error("WebSocket closed before opening"));
+    });
   });
 }

@@ -14,7 +14,5 @@ export function isPiWebBundledPluginId(value: string): boolean {
 }
 
 export function isReservedPiWebPluginId(value: string): boolean {
-  return reservedPiWebPluginIds.has(value)
-    || value.startsWith(machinePluginIdPrefix)
-    || isPiWebBundledPluginId(value);
+  return reservedPiWebPluginIds.has(value) || value.startsWith(machinePluginIdPrefix) || isPiWebBundledPluginId(value);
 }

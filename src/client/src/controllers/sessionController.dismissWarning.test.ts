@@ -37,7 +37,9 @@ describe("SessionController warning dismissal", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },
@@ -63,7 +65,9 @@ describe("SessionController warning dismissal", () => {
     const api: typeof defaultApi = { ...defaultApi, dismissWarning: () => Promise.reject(new Error("dismiss failed")) };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket: new FakeSocket() },

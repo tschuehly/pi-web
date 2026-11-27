@@ -8,14 +8,8 @@ import type {
 } from "../../server-plugin-api.js";
 import type { Project } from "../types.js";
 import { WorkspaceProviderRegistry } from "../workspaces/workspaceProviderRegistry.js";
-import type {
-  ServerPluginPairedBackendContribution,
-  ServerPluginProviderContribution,
-} from "./serverPluginRuntime.js";
-import {
-  eligiblePluginBackendContributions,
-  PluginBackendRegistry,
-} from "./pluginBackendRegistry.js";
+import type { ServerPluginPairedBackendContribution, ServerPluginProviderContribution } from "./serverPluginRuntime.js";
+import { eligiblePluginBackendContributions, PluginBackendRegistry } from "./pluginBackendRegistry.js";
 
 const project: Project = {
   id: "project-1",
@@ -31,11 +25,16 @@ afterEach(() => {
 describe("PluginBackendRegistry", () => {
   it("dispatches v5 machine and project scopes without workspace resolution and rejects v3 scoped calls", async () => {
     const resolve = vi.fn(() => Promise.reject(new Error("Workspace resolution must not run")));
-    const contribution = backendContribution("notes", ({ scope }) => scope.kind === "project" ? { kind: scope.kind, project: { ...scope.project } } : { kind: scope.kind });
+    const contribution = backendContribution("notes", ({ scope }) =>
+      scope.kind === "project" ? { kind: scope.kind, project: { ...scope.project } } : { kind: scope.kind },
+    );
     const registry = new PluginBackendRegistry({ contributions: [contribution], workspaces: { resolve } });
     const base = { pluginId: "notes", moduleRevision: "notes-r1", operation: "notes.list", input: null };
     await expect(registry.request({ ...base, scope: "machine" })).resolves.toEqual({ kind: "machine" });
-    await expect(registry.request({ ...base, scope: "project", project })).resolves.toEqual({ kind: "project", project: { id: project.id, name: project.name, path: project.path } });
+    await expect(registry.request({ ...base, scope: "project", project })).resolves.toEqual({
+      kind: "project",
+      project: { id: project.id, name: project.name, path: project.path },
+    });
     await expect(registry.request({ ...base, scope: "machine", project })).rejects.toMatchObject({ code: "invalid-scope" });
     await expect(registry.request({ ...base, scope: "project", project, workspaceId: "spoof" })).rejects.toMatchObject({ code: "invalid-scope" });
     await expect(registry.request({ ...base, scope: "machine", moduleRevision: "stale" })).rejects.toMatchObject({ code: "stale-plugin-revision" });
@@ -53,7 +52,12 @@ describe("PluginBackendRegistry", () => {
     const contribution = channelContribution("notes", ({ scope }) => {
       expect(["machine", "project"]).toContain(scope.kind);
       expect(Object.isFrozen(scope)).toBe(true);
-      return { receive() { /* no incoming frames */ }, close };
+      return {
+        receive() {
+          /* no incoming frames */
+        },
+        close,
+      };
     });
     const registry = new PluginBackendRegistry({ contributions: [contribution], workspaces: { resolve }, channelMaxPerPluginWorkspace: 1 });
     const base = { pluginId: "notes", moduleRevision: "notes-r1", operation: "notes.watch", input: null };
@@ -71,41 +75,50 @@ describe("PluginBackendRegistry", () => {
   });
   it("dispatches a non-provider plugin against a host-resolved provider workspace", async () => {
     let observed: ServerPluginPeerRequestContext | undefined;
-    const workspaces = providerRegistry([providerContribution("git", {
-      fallback: true,
-      probe: () => Promise.resolve("claim"),
-      list: () => Promise.resolve([{
-        key: "worktree",
-        path: join(project.path, "worktree"),
-        label: "feature/paired",
-        isMain: true,
-        data: { privateHead: "secret" },
-        publicMetadata: { branch: "feature/paired" },
-      }]),
-    })]);
+    const workspaces = providerRegistry([
+      providerContribution("git", {
+        fallback: true,
+        probe: () => Promise.resolve("claim"),
+        list: () =>
+          Promise.resolve([
+            {
+              key: "worktree",
+              path: join(project.path, "worktree"),
+              label: "feature/paired",
+              isMain: true,
+              data: { privateHead: "secret" },
+              publicMetadata: { branch: "feature/paired" },
+            },
+          ]),
+      }),
+    ]);
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected provider workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [backendContribution("terminal", (context) => {
-        observed = context;
-        if (context.scope.kind !== "workspace") throw new Error("Expected workspace scope");
-        return {
-          workspaceId: context.scope.workspace.id,
-          owner: context.scope.workspace.provider?.pluginId ?? null,
-          input: context.input,
-        };
-      })],
+      contributions: [
+        backendContribution("terminal", (context) => {
+          observed = context;
+          if (context.scope.kind !== "workspace") throw new Error("Expected workspace scope");
+          return {
+            workspaceId: context.scope.workspace.id,
+            owner: context.scope.workspace.provider?.pluginId ?? null,
+            input: context.input,
+          };
+        }),
+      ],
       workspaces,
     });
 
-    await expect(registry.request({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.list",
-      input: { includeExited: false },
-    })).resolves.toEqual({
+    await expect(
+      registry.request({
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.list",
+        input: { includeExited: false },
+      }),
+    ).resolves.toEqual({
       workspaceId,
       owner: "git",
       input: { includeExited: false },
@@ -139,21 +152,25 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [backendContribution("notes", ({ scope }) => {
-        if (scope.kind !== "workspace") throw new Error("Expected workspace scope");
-        return { path: scope.workspace.path, provider: scope.workspace.provider?.pluginId ?? null };
-      })],
+      contributions: [
+        backendContribution("notes", ({ scope }) => {
+          if (scope.kind !== "workspace") throw new Error("Expected workspace scope");
+          return { path: scope.workspace.path, provider: scope.workspace.provider?.pluginId ?? null };
+        }),
+      ],
       workspaces,
     });
 
-    await expect(registry.request({
-      pluginId: "notes",
-      moduleRevision: "notes-r1",
-      project,
-      workspaceId,
-      operation: "notes.summary",
-      input: null,
-    })).resolves.toEqual({ path: project.path, provider: null });
+    await expect(
+      registry.request({
+        pluginId: "notes",
+        moduleRevision: "notes-r1",
+        project,
+        workspaceId,
+        operation: "notes.summary",
+        input: null,
+      }),
+    ).resolves.toEqual({ path: project.path, provider: null });
   });
 
   it("attributes stale revisions, missing workspaces, and invalid JSON boundaries", async () => {
@@ -161,22 +178,32 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [backendContribution("notes", ({ operation }) => {
-        if (operation === "notes.fail") throw new Error("backend exploded");
-        return operation === "notes.invalid-result" ? Number.NaN : null;
-      })],
+      contributions: [
+        backendContribution("notes", ({ operation }) => {
+          if (operation === "notes.fail") throw new Error("backend exploded");
+          return operation === "notes.invalid-result" ? Number.NaN : null;
+        }),
+      ],
       workspaces,
     });
     const base = { pluginId: "notes", moduleRevision: "notes-r1", project, workspaceId };
 
-    await expect(registry.request({ ...base, moduleRevision: "old", operation: "notes.list", input: null }))
-      .rejects.toMatchObject({ code: "stale-plugin-revision", statusCode: 409 });
-    await expect(registry.request({ ...base, workspaceId: "missing", operation: "notes.list", input: null }))
-      .rejects.toMatchObject({ code: "workspace-not-found", statusCode: 404 });
-    await expect(registry.request({ ...base, operation: "notes.list", input: { invalid: Number.NaN } }))
-      .rejects.toMatchObject({ code: "invalid-input", statusCode: 400 });
-    await expect(registry.request({ ...base, operation: "notes.invalid-result", input: null }))
-      .rejects.toMatchObject({ code: "invalid-result", statusCode: 502 });
+    await expect(registry.request({ ...base, moduleRevision: "old", operation: "notes.list", input: null })).rejects.toMatchObject({
+      code: "stale-plugin-revision",
+      statusCode: 409,
+    });
+    await expect(registry.request({ ...base, workspaceId: "missing", operation: "notes.list", input: null })).rejects.toMatchObject({
+      code: "workspace-not-found",
+      statusCode: 404,
+    });
+    await expect(registry.request({ ...base, operation: "notes.list", input: { invalid: Number.NaN } })).rejects.toMatchObject({
+      code: "invalid-input",
+      statusCode: 400,
+    });
+    await expect(registry.request({ ...base, operation: "notes.invalid-result", input: null })).rejects.toMatchObject({
+      code: "invalid-result",
+      statusCode: 502,
+    });
     const failed = await registry.request({ ...base, operation: "notes.fail", input: null }).catch((error: unknown) => error);
     expect(failed).toMatchObject({ code: "request-failed", statusCode: 502 });
     expect(failed).toBeInstanceOf(Error);
@@ -186,22 +213,24 @@ describe("PluginBackendRegistry", () => {
     const invalidScope = new PluginBackendRegistry({
       contributions: [backendContribution("notes", () => null)],
       workspaces: {
-        resolve: () => Promise.resolve({
-          status: "folder",
-          projectId: project.id,
-          workspaces: [{
-            id: workspaceId,
-            projectId: "another-project",
-            path: project.path,
-            label: "Project",
-            isMain: true,
-          }],
-          diagnostics: [],
-        }),
+        resolve: () =>
+          Promise.resolve({
+            status: "folder",
+            projectId: project.id,
+            workspaces: [
+              {
+                id: workspaceId,
+                projectId: "another-project",
+                path: project.path,
+                label: "Project",
+                isMain: true,
+              },
+            ],
+            diagnostics: [],
+          }),
       },
     });
-    await expect(invalidScope.request({ ...base, operation: "notes.list", input: null }))
-      .rejects.toMatchObject({ code: "invalid-scope", statusCode: 502 });
+    await expect(invalidScope.request({ ...base, operation: "notes.list", input: null })).rejects.toMatchObject({ code: "invalid-scope", statusCode: 502 });
   });
 
   it("bounds direct callbacks and aborts their operation signal", async () => {
@@ -211,13 +240,23 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [backendContribution("notes", ({ signal }) => new Promise((_resolve, rejectPromise) => {
-        observedSignal = signal;
-        signal.addEventListener("abort", () => {
-          const reason: unknown = signal.reason;
-          rejectPromise(reason instanceof Error ? reason : new Error("fixture aborted", { cause: reason }));
-        }, { once: true });
-      }))],
+      contributions: [
+        backendContribution(
+          "notes",
+          ({ signal }) =>
+            new Promise((_resolve, rejectPromise) => {
+              observedSignal = signal;
+              signal.addEventListener(
+                "abort",
+                () => {
+                  const reason: unknown = signal.reason;
+                  rejectPromise(reason instanceof Error ? reason : new Error("fixture aborted", { cause: reason }));
+                },
+                { once: true },
+              );
+            }),
+        ),
+      ],
       workspaces,
       callbackTimeoutMs: 50,
       dispatchTimeoutMs: 100,
@@ -240,30 +279,45 @@ describe("PluginBackendRegistry", () => {
   it("propagates caller cancellation into the direct callback with attribution", async () => {
     const controller = new AbortController();
     let resolveStarted: (() => void) | undefined;
-    const started = new Promise<void>((resolvePromise) => { resolveStarted = resolvePromise; });
+    const started = new Promise<void>((resolvePromise) => {
+      resolveStarted = resolvePromise;
+    });
     let observedSignal: AbortSignal | undefined;
     const workspaces = providerRegistry([]);
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [backendContribution("notes", ({ signal }) => new Promise((_resolve, rejectPromise) => {
-        observedSignal = signal;
-        resolveStarted?.();
-        signal.addEventListener("abort", () => {
-          const reason: unknown = signal.reason;
-          rejectPromise(reason instanceof Error ? reason : new Error("fixture aborted", { cause: reason }));
-        }, { once: true });
-      }))],
+      contributions: [
+        backendContribution(
+          "notes",
+          ({ signal }) =>
+            new Promise((_resolve, rejectPromise) => {
+              observedSignal = signal;
+              resolveStarted?.();
+              signal.addEventListener(
+                "abort",
+                () => {
+                  const reason: unknown = signal.reason;
+                  rejectPromise(reason instanceof Error ? reason : new Error("fixture aborted", { cause: reason }));
+                },
+                { once: true },
+              );
+            }),
+        ),
+      ],
       workspaces,
     });
-    const pending = registry.request({
-      pluginId: "notes",
-      moduleRevision: "notes-r1",
-      project,
-      workspaceId,
-      operation: "notes.wait",
-      input: null,
-    }, controller.signal);
+    const pending = registry.request(
+      {
+        pluginId: "notes",
+        moduleRevision: "notes-r1",
+        project,
+        workspaceId,
+        operation: "notes.wait",
+        input: null,
+      },
+      controller.signal,
+    );
 
     await started;
     controller.abort(new DOMException("Browser disconnected", "AbortError"));
@@ -282,17 +336,25 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [backendContribution("notes", async ({ signal }) => {
-        observedSignal = signal;
-        callbackStarted.resolve();
-        await new Promise<void>((resolveAbort) => {
-          signal.addEventListener("abort", () => { resolveAbort(); }, { once: true });
-        });
-        callbackAborted.resolve();
-        await releaseCallback.promise;
-        callbackFinished = true;
-        return null;
-      })],
+      contributions: [
+        backendContribution("notes", async ({ signal }) => {
+          observedSignal = signal;
+          callbackStarted.resolve();
+          await new Promise<void>((resolveAbort) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                resolveAbort();
+              },
+              { once: true },
+            );
+          });
+          callbackAborted.resolve();
+          await releaseCallback.promise;
+          callbackFinished = true;
+          return null;
+        }),
+      ],
       workspaces,
     });
     const request = {
@@ -309,8 +371,12 @@ describe("PluginBackendRegistry", () => {
     let closeFinished = false;
     const closing = registry.closeAll("test shutdown");
     void closing.then(
-      () => { closeFinished = true; },
-      () => { closeFinished = true; },
+      () => {
+        closeFinished = true;
+      },
+      () => {
+        closeFinished = true;
+      },
     );
 
     await expect(pending).rejects.toMatchObject({ code: "shutdown", statusCode: 503 });
@@ -329,32 +395,44 @@ describe("PluginBackendRegistry", () => {
   it("cancels workspace authority resolution before a direct callback starts", async () => {
     const controller = new AbortController();
     let resolveStarted: (() => void) | undefined;
-    const started = new Promise<void>((resolvePromise) => { resolveStarted = resolvePromise; });
+    const started = new Promise<void>((resolvePromise) => {
+      resolveStarted = resolvePromise;
+    });
     let probeSignal: AbortSignal | undefined;
-    const workspaces = providerRegistry([providerContribution("git", {
-      probe: (_project, signal) => new Promise((_resolve, rejectPromise) => {
-        probeSignal = signal;
-        resolveStarted?.();
-        signal.addEventListener("abort", () => {
-          const reason: unknown = signal.reason;
-          rejectPromise(reason instanceof Error ? reason : new Error("probe aborted", { cause: reason }));
-        }, { once: true });
+    const workspaces = providerRegistry([
+      providerContribution("git", {
+        probe: (_project, signal) =>
+          new Promise((_resolve, rejectPromise) => {
+            probeSignal = signal;
+            resolveStarted?.();
+            signal.addEventListener(
+              "abort",
+              () => {
+                const reason: unknown = signal.reason;
+                rejectPromise(reason instanceof Error ? reason : new Error("probe aborted", { cause: reason }));
+              },
+              { once: true },
+            );
+          }),
+        list: () => Promise.resolve([]),
       }),
-      list: () => Promise.resolve([]),
-    })]);
+    ]);
     const request = vi.fn(() => null);
     const registry = new PluginBackendRegistry({
       contributions: [backendContribution("notes", request)],
       workspaces,
     });
-    const pending = registry.request({
-      pluginId: "notes",
-      moduleRevision: "notes-r1",
-      project,
-      workspaceId: "unresolved",
-      operation: "notes.wait",
-      input: null,
-    }, controller.signal);
+    const pending = registry.request(
+      {
+        pluginId: "notes",
+        moduleRevision: "notes-r1",
+        project,
+        workspaceId: "unresolved",
+        operation: "notes.wait",
+        input: null,
+      },
+      controller.signal,
+    );
 
     await started;
     controller.abort(new DOMException("Browser disconnected", "AbortError"));
@@ -379,25 +457,34 @@ describe("PluginBackendRegistry", () => {
     });
     const transport = channelTransport();
     const registry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", (context) => {
-        openContext = context;
-        context.send({ type: "output", value: "ready" });
-        return { receive, close };
-      })],
+      contributions: [
+        channelContribution("terminal", (context) => {
+          openContext = context;
+          context.send({ type: "output", value: "ready" });
+          return { receive, close };
+        }),
+      ],
       workspaces,
     });
 
-    const session = await registry.openChannel({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.attach",
-      input: { terminalId: "t1" },
-    }, transport.value);
+    const session = await registry.openChannel(
+      {
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.attach",
+        input: { terminalId: "t1" },
+      },
+      transport.value,
+    );
 
     if (openContext === undefined) throw new Error("Expected channel context");
-    expect(openContext.scope.kind === "workspace" ? openContext.scope.workspace : undefined).toMatchObject({ id: workspaceId, projectId: project.id, path: project.path });
+    expect(openContext.scope.kind === "workspace" ? openContext.scope.workspace : undefined).toMatchObject({
+      id: workspaceId,
+      projectId: project.id,
+      path: project.path,
+    });
     expect(Object.isFrozen(openContext)).toBe(true);
     expect(Object.isFrozen(openContext.input)).toBe(true);
     expect(openContext.signal.aborted).toBe(false);
@@ -426,36 +513,51 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", () => ({
-        receive: async (_data, signal) => {
-          receiveStarted.resolve();
-          await new Promise<void>((resolveAbort) => {
-            signal.addEventListener("abort", () => { resolveAbort(); }, { once: true });
-          });
-          receiveAborted.resolve();
-          await releaseReceive.promise;
-          receiveFinished = true;
-        },
-        close,
-      }))],
+      contributions: [
+        channelContribution("terminal", () => ({
+          receive: async (_data, signal) => {
+            receiveStarted.resolve();
+            await new Promise<void>((resolveAbort) => {
+              signal.addEventListener(
+                "abort",
+                () => {
+                  resolveAbort();
+                },
+                { once: true },
+              );
+            });
+            receiveAborted.resolve();
+            await releaseReceive.promise;
+            receiveFinished = true;
+          },
+          close,
+        })),
+      ],
       workspaces,
     });
-    const session = await registry.openChannel({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.attach",
-      input: null,
-    }, channelTransport().value);
+    const session = await registry.openChannel(
+      {
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.attach",
+        input: null,
+      },
+      channelTransport().value,
+    );
     const receiving = session.receive({ type: "input" });
     await receiveStarted.promise;
 
     let closeFinished = false;
     const closing = registry.closeAll("test shutdown");
     void closing.then(
-      () => { closeFinished = true; },
-      () => { closeFinished = true; },
+      () => {
+        closeFinished = true;
+      },
+      () => {
+        closeFinished = true;
+      },
     );
 
     await expect(receiving).rejects.toMatchObject({ code: "channel-closed", closeCode: 1008 });
@@ -476,7 +578,9 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     let complete: (() => void) | undefined;
-    const closed = new Promise<void>((resolve) => { complete = resolve; });
+    const closed = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
     const close = vi.fn();
     const transport = channelTransport();
     const registry = new PluginBackendRegistry({
@@ -484,19 +588,24 @@ describe("PluginBackendRegistry", () => {
       workspaces,
     });
 
-    await registry.openChannel({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.attach",
-      input: null,
-    }, transport.value);
+    await registry.openChannel(
+      {
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.attach",
+        input: null,
+      },
+      transport.value,
+    );
     expect(registry.activeChannelCount()).toBe(1);
 
     complete?.();
 
-    await vi.waitFor(() => { expect(registry.activeChannelCount()).toBe(0); });
+    await vi.waitFor(() => {
+      expect(registry.activeChannelCount()).toBe(0);
+    });
     expect(close).toHaveBeenCalledOnce();
     expect(transport.errors).toEqual([]);
     expect(transport.closes).toEqual([{ code: 1000, reason: "Plugin completed channel" }]);
@@ -522,25 +631,25 @@ describe("PluginBackendRegistry", () => {
       input: null,
     };
 
-    await expect(registry.openChannel({ ...request, moduleRevision: "old" }, channelTransport().value))
-      .rejects.toMatchObject({ code: "stale-plugin-revision", closeCode: 1008 });
-    await expect(registry.openChannel({ ...request, workspaceId: "missing" }, channelTransport().value))
-      .rejects.toMatchObject({ code: "workspace-not-found", closeCode: 1008 });
+    await expect(registry.openChannel({ ...request, moduleRevision: "old" }, channelTransport().value)).rejects.toMatchObject({
+      code: "stale-plugin-revision",
+      closeCode: 1008,
+    });
+    await expect(registry.openChannel({ ...request, workspaceId: "missing" }, channelTransport().value)).rejects.toMatchObject({
+      code: "workspace-not-found",
+      closeCode: 1008,
+    });
 
     const routeAdmission = registry.reserveChannel({ pluginId: "terminal", projectId: project.id, workspaceId });
-    await expect(registry.openChannel(
-      { ...request, project: { ...project, id: "other-project" } },
-      channelTransport().value,
-      undefined,
-      routeAdmission,
-    )).rejects.toMatchObject({ code: "admission-denied", closeCode: 1013 });
+    await expect(
+      registry.openChannel({ ...request, project: { ...project, id: "other-project" } }, channelTransport().value, undefined, routeAdmission),
+    ).rejects.toMatchObject({ code: "admission-denied", closeCode: 1013 });
     expect(registry.activeChannelCount()).toBe(1);
     routeAdmission.release();
     expect(registry.activeChannelCount()).toBe(0);
 
     const first = await registry.openChannel(request, channelTransport().value);
-    await expect(registry.openChannel(request, channelTransport().value))
-      .rejects.toMatchObject({ code: "admission-denied", closeCode: 1013 });
+    await expect(registry.openChannel(request, channelTransport().value)).rejects.toMatchObject({ code: "admission-denied", closeCode: 1013 });
     await first.close();
     const replacement = await registry.openChannel(request, channelTransport().value);
     expect(registry.activeChannelCount()).toBe(1);
@@ -556,26 +665,36 @@ describe("PluginBackendRegistry", () => {
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     let receiveSignal: AbortSignal | undefined;
     const receiveRegistry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", () => ({
-        receive: (_data, signal) => new Promise((_resolve, rejectPromise) => {
-          receiveSignal = signal;
-          signal.addEventListener("abort", () => {
-            const reason: unknown = signal.reason;
-            rejectPromise(reason instanceof Error ? reason : new Error("Receive aborted", { cause: reason }));
-          }, { once: true });
-        }),
-      }))],
+      contributions: [
+        channelContribution("terminal", () => ({
+          receive: (_data, signal) =>
+            new Promise((_resolve, rejectPromise) => {
+              receiveSignal = signal;
+              signal.addEventListener(
+                "abort",
+                () => {
+                  const reason: unknown = signal.reason;
+                  rejectPromise(reason instanceof Error ? reason : new Error("Receive aborted", { cause: reason }));
+                },
+                { once: true },
+              );
+            }),
+        })),
+      ],
       workspaces,
       channelCallbackTimeoutMs: 50,
     });
-    const receiveSession = await receiveRegistry.openChannel({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.attach",
-      input: null,
-    }, channelTransport().value);
+    const receiveSession = await receiveRegistry.openChannel(
+      {
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.attach",
+        input: null,
+      },
+      channelTransport().value,
+    );
     const receiving = receiveSession.receive({ type: "input" });
     const receiveAssertion = expect(receiving).rejects.toMatchObject({ code: "receive-timeout", closeCode: 1011 });
     await vi.advanceTimersByTimeAsync(50);
@@ -585,24 +704,35 @@ describe("PluginBackendRegistry", () => {
 
     let resolveOpen: ((channel: { receive(): void; close(): void }) => void) | undefined;
     let resolveStarted: (() => void) | undefined;
-    const started = new Promise<void>((resolvePromise) => { resolveStarted = resolvePromise; });
+    const started = new Promise<void>((resolvePromise) => {
+      resolveStarted = resolvePromise;
+    });
     const lateClose = vi.fn();
     const openRegistry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", () => new Promise((resolvePromise) => {
-        resolveOpen = resolvePromise;
-        resolveStarted?.();
-      }))],
+      contributions: [
+        channelContribution(
+          "terminal",
+          () =>
+            new Promise((resolvePromise) => {
+              resolveOpen = resolvePromise;
+              resolveStarted?.();
+            }),
+        ),
+      ],
       workspaces,
       channelOpenTimeoutMs: 50,
     });
-    const opening = openRegistry.openChannel({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.attach",
-      input: null,
-    }, channelTransport().value);
+    const opening = openRegistry.openChannel(
+      {
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.attach",
+        input: null,
+      },
+      channelTransport().value,
+    );
     await started;
     const openAssertion = expect(opening).rejects.toMatchObject({ code: "open-timeout", closeCode: 1011 });
     await vi.advanceTimersByTimeAsync(50);
@@ -621,15 +751,23 @@ describe("PluginBackendRegistry", () => {
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const lateClose = vi.fn();
     const registry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", async ({ signal }) => {
-        openStarted.resolve();
-        await new Promise<void>((resolveAbort) => {
-          signal.addEventListener("abort", () => { resolveAbort(); }, { once: true });
-        });
-        openAborted.resolve();
-        await releaseOpen.promise;
-        return { receive: () => undefined, close: lateClose };
-      })],
+      contributions: [
+        channelContribution("terminal", async ({ signal }) => {
+          openStarted.resolve();
+          await new Promise<void>((resolveAbort) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                resolveAbort();
+              },
+              { once: true },
+            );
+          });
+          openAborted.resolve();
+          await releaseOpen.promise;
+          return { receive: () => undefined, close: lateClose };
+        }),
+      ],
       workspaces,
     });
     const request = {
@@ -646,8 +784,12 @@ describe("PluginBackendRegistry", () => {
     let closeFinished = false;
     const shuttingDown = registry.closeAll();
     void shuttingDown.then(
-      () => { closeFinished = true; },
-      () => { closeFinished = true; },
+      () => {
+        closeFinished = true;
+      },
+      () => {
+        closeFinished = true;
+      },
     );
     await expect(opening).rejects.toMatchObject({ code: "shutdown", closeCode: 1012 });
     await openAborted.promise;
@@ -674,26 +816,42 @@ describe("PluginBackendRegistry", () => {
     const workspaceId = (await workspaces.resolve(project)).workspaces[0]?.id;
     if (workspaceId === undefined) throw new Error("Expected folder workspace");
     const registry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", async ({ signal }) => {
-        openStarted.resolve();
-        await new Promise<void>((resolveAbort) => {
-          signal.addEventListener("abort", () => { resolveAbort(); }, { once: true });
-        });
-        openAborted.resolve();
-        await releaseOpen.promise;
-        return {
-          receive: () => undefined,
-          close: async ({ signal: closeSignal }) => {
-            closeStarted.resolve();
-            await new Promise<void>((resolveAbort) => {
-              closeSignal.addEventListener("abort", () => { resolveAbort(); }, { once: true });
-            });
-            closeAborted.resolve();
-            await new Promise<void>((resolveSettled) => { setTimeout(resolveSettled, 10); });
-            closeFinished = true;
-          },
-        };
-      })],
+      contributions: [
+        channelContribution("terminal", async ({ signal }) => {
+          openStarted.resolve();
+          await new Promise<void>((resolveAbort) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                resolveAbort();
+              },
+              { once: true },
+            );
+          });
+          openAborted.resolve();
+          await releaseOpen.promise;
+          return {
+            receive: () => undefined,
+            close: async ({ signal: closeSignal }) => {
+              closeStarted.resolve();
+              await new Promise<void>((resolveAbort) => {
+                closeSignal.addEventListener(
+                  "abort",
+                  () => {
+                    resolveAbort();
+                  },
+                  { once: true },
+                );
+              });
+              closeAborted.resolve();
+              await new Promise<void>((resolveSettled) => {
+                setTimeout(resolveSettled, 10);
+              });
+              closeFinished = true;
+            },
+          };
+        }),
+      ],
       workspaces,
       channelOpenTimeoutMs: 50,
       channelCallbackTimeoutMs: 50,
@@ -743,10 +901,16 @@ describe("PluginBackendRegistry", () => {
     let resolveOpen: ((channel: { receive(): void; close(): void }) => void) | undefined;
     const lateClose = vi.fn();
     const registry = new PluginBackendRegistry({
-      contributions: [channelContribution("terminal", () => new Promise((resolvePromise) => {
-        resolveOpen = resolvePromise;
-        openStarted.resolve();
-      }))],
+      contributions: [
+        channelContribution(
+          "terminal",
+          () =>
+            new Promise((resolvePromise) => {
+              resolveOpen = resolvePromise;
+              openStarted.resolve();
+            }),
+        ),
+      ],
       workspaces,
       channelOpenTimeoutMs: 50,
       channelCallbackTimeoutMs: 50,
@@ -786,17 +950,22 @@ describe("PluginBackendRegistry", () => {
       workspaces,
       channelLifetimeMs: 50,
     });
-    await registry.openChannel({
-      pluginId: "terminal",
-      moduleRevision: "terminal-r1",
-      project,
-      workspaceId,
-      operation: "terminal.attach",
-      input: null,
-    }, transport.value);
+    await registry.openChannel(
+      {
+        pluginId: "terminal",
+        moduleRevision: "terminal-r1",
+        project,
+        workspaceId,
+        operation: "terminal.attach",
+        input: null,
+      },
+      transport.value,
+    );
 
     await vi.advanceTimersByTimeAsync(50);
-    await vi.waitFor(() => { expect(registry.activeChannelCount()).toBe(0); });
+    await vi.waitFor(() => {
+      expect(registry.activeChannelCount()).toBe(0);
+    });
     expect(close).toHaveBeenCalledOnce();
     expect(transport.errors).toEqual([expect.objectContaining({ code: "lifetime-expired" })]);
     expect(transport.closes).toEqual([expect.objectContaining({ code: 1001 })]);
@@ -809,11 +978,13 @@ describe("PluginBackendRegistry", () => {
       backendContribution("unhealthy", () => null),
     ];
 
-    expect(eligiblePluginBackendContributions(contributions, [
-      { pluginId: "degraded", health: { status: "degraded" } },
-      { pluginId: "healthy", health: { status: "healthy" } },
-      { pluginId: "unhealthy", health: { status: "unhealthy" } },
-    ]).map(({ pluginId }) => pluginId)).toEqual(["degraded", "healthy"]);
+    expect(
+      eligiblePluginBackendContributions(contributions, [
+        { pluginId: "degraded", health: { status: "degraded" } },
+        { pluginId: "healthy", health: { status: "healthy" } },
+        { pluginId: "unhealthy", health: { status: "unhealthy" } },
+      ]).map(({ pluginId }) => pluginId),
+    ).toEqual(["degraded", "healthy"]);
   });
 });
 
@@ -871,7 +1042,9 @@ function channelContribution(
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolveDeferred!: () => void;
-  const promise = new Promise<void>((resolvePromise) => { resolveDeferred = resolvePromise; });
+  const promise = new Promise<void>((resolvePromise) => {
+    resolveDeferred = resolvePromise;
+  });
   return { promise, resolve: resolveDeferred };
 }
 
@@ -884,9 +1057,15 @@ function channelTransport() {
     errors,
     closes,
     value: {
-      send: (data: JsonValue) => { sent.push(data); },
-      sendError: (code: string, message: string) => { errors.push({ code, message }); },
-      close: (code: number, reason: string) => { closes.push({ code, reason }); },
+      send: (data: JsonValue) => {
+        sent.push(data);
+      },
+      sendError: (code: string, message: string) => {
+        errors.push({ code, message });
+      },
+      close: (code: number, reason: string) => {
+        closes.push({ code, reason });
+      },
     },
   };
 }

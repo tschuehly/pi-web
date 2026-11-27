@@ -40,20 +40,29 @@ function setState(app: PiWebApp, patch: Partial<AppState>): AppState {
   return next;
 }
 
-type ReportWorkspaceRemovalFailure = (workspace: Workspace, machineId: string, scope: ReturnType<typeof workspaceBrowserErrorScope>, error: unknown) => Promise<void>;
+type ReportWorkspaceRemovalFailure = (
+  workspace: Workspace,
+  machineId: string,
+  scope: ReturnType<typeof workspaceBrowserErrorScope>,
+  error: unknown,
+) => Promise<void>;
 type SetRemoteRouteRestoreMessage = (route: ParsedAppRoute, options?: { exhausted?: boolean }) => void;
 type RunAction = (action: AppAction) => void;
 
 function setRemoteRouteRestoreMessage(app: PiWebApp): SetRemoteRouteRestoreMessage {
   const method: unknown = Reflect.get(app, "setRemoteRouteRestoreMessage");
   if (!isSetRemoteRouteRestoreMessage(method)) throw new Error("Remote route restore message boundary was unavailable");
-  return (route, options) => { method.call(app, route, options); };
+  return (route, options) => {
+    method.call(app, route, options);
+  };
 }
 
 function privateRunAction(app: PiWebApp): RunAction {
   const method: unknown = Reflect.get(app, "runAction");
   if (!isRunAction(method)) throw new Error("Action error boundary was unavailable");
-  return (action) => { method.call(app, action); };
+  return (action) => {
+    method.call(app, action);
+  };
 }
 
 function reportWorkspaceRemovalFailure(app: PiWebApp): ReportWorkspaceRemovalFailure {
@@ -95,7 +104,14 @@ describe("PiWebApp browser error boundaries", () => {
     };
     setState(app, { machines: [remote], selectedMachine: remote, error: "A legacy failure" });
 
-    setRemoteRouteRestoreMessage(app)({ machineId: remote.id, projectId: "project-1", workspaceId: undefined, sessionId: undefined, tool: undefined, view: undefined });
+    setRemoteRouteRestoreMessage(app)({
+      machineId: remote.id,
+      projectId: "project-1",
+      workspaceId: undefined,
+      sessionId: undefined,
+      tool: undefined,
+      view: undefined,
+    });
 
     expect(appState(app).error).toBe("A legacy failure");
     expect(appState(app).browserErrors[browserErrorScopeKey(machineBrowserErrorScope(remote.id))]?.message).toBe("Remote is unavailable; reconnecting…");
@@ -170,7 +186,9 @@ describe("PiWebApp workspace removal browser error boundary", () => {
 
     await reportWorkspaceRemovalFailure(app)(workspace, "local", scope, new HttpRequestError("Session daemon unavailable: connection refused", 502));
 
-    expect(appState(app).browserErrors[browserErrorScopeKey(scope)]?.message).toBe("Failed to start workspace removal: Session daemon unavailable: connection refused");
+    expect(appState(app).browserErrors[browserErrorScopeKey(scope)]?.message).toBe(
+      "Failed to start workspace removal: Session daemon unavailable: connection refused",
+    );
     expect(hasNotice).not.toHaveBeenCalled();
   });
 });

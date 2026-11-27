@@ -28,10 +28,14 @@ test("AC-P022: two known Codex usage completions are counted once and retained a
   await create(page);
   await chooseModel(page, MOCK_CODEX_MODEL);
   // The Anthropic mock hardcodes input/cache to zero in message_start; Codex emits the scripted usage.
-  await mock.script({ provider: "openai-codex", match: "usage-check", turns: [
-    { steps: [{ text: "Usage one." }], usage: { input: 1200, output: 40, cacheRead: 100 } },
-    { steps: [{ text: "Usage two." }], usage: { input: 1400, output: 60, cacheRead: 200 } },
-  ] });
+  await mock.script({
+    provider: "openai-codex",
+    match: "usage-check",
+    turns: [
+      { steps: [{ text: "Usage one." }], usage: { input: 1200, output: 40, cacheRead: 100 } },
+      { steps: [{ text: "Usage two." }], usage: { input: 1400, output: 60, cacheRead: 200 } },
+    ],
+  });
   await send(page, "usage-check");
   await answer(page, "Usage one.");
   await send(page, "again");

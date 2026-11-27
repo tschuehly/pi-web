@@ -32,7 +32,10 @@ export async function loadGatewaySettingsData(loaders: GatewaySettingsLoaders): 
   return result;
 }
 
-export async function loadPiPackagesData(target: PiPackageTargetContext, loadPackages: (targetId: string) => Promise<PiPackagesResponse>): Promise<PiPackagesLoadResult> {
+export async function loadPiPackagesData(
+  target: PiPackageTargetContext,
+  loadPackages: (targetId: string) => Promise<PiPackagesResponse>,
+): Promise<PiPackagesLoadResult> {
   try {
     return { packagesResponse: await loadPackages(target.id), error: "" };
   } catch (error) {

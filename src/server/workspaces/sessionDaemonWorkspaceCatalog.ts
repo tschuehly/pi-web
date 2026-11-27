@@ -65,22 +65,14 @@ export class SessionDaemonWorkspaceCatalog implements WorkspaceCatalog {
     try {
       response = await this.daemon.request("GET", path);
     } catch (error) {
-      throw new WorkspaceCatalogUnavailableError(
-        `Session daemon workspace authority unavailable: ${errorMessage(error)}`,
-        { cause: error },
-      );
+      throw new WorkspaceCatalogUnavailableError(`Session daemon workspace authority unavailable: ${errorMessage(error)}`, { cause: error });
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       if (isUnknownWorkspaceCatalogRoute(response.statusCode, response.body)) {
-        throw new WorkspaceCatalogProtocolError(
-          "Session daemon does not support workspace authority operations; restart or upgrade the session daemon",
-        );
+        throw new WorkspaceCatalogProtocolError("Session daemon does not support workspace authority operations; restart or upgrade the session daemon");
       }
-      throw new WorkspaceCatalogRequestError(
-        workspaceCatalogRequestMessage(response.statusCode, response.body),
-        response.statusCode,
-      );
+      throw new WorkspaceCatalogRequestError(workspaceCatalogRequestMessage(response.statusCode, response.body), response.statusCode);
     }
 
     try {
@@ -107,11 +99,7 @@ function parseWorkspaceProviderResolution(value: unknown, expectedProjectId: str
   }
 
   const workspaces = parseWorkspaceList(value["workspaces"], projectId);
-  const diagnostics = parseArray(
-    value["diagnostics"],
-    "workspace provider diagnostics",
-    parseWorkspaceProviderDiagnostic,
-  );
+  const diagnostics = parseArray(value["diagnostics"], "workspace provider diagnostics", parseWorkspaceProviderDiagnostic);
   return Object.freeze({
     status,
     projectId,
@@ -132,9 +120,7 @@ function parseWorkspaceProviderDiagnostic(value: unknown, index: number): Worksp
   const code = parseWorkspaceProviderDiagnosticCode(value["code"], label);
   const tier = parseWorkspaceProviderTier(value["tier"], label);
   const pluginId = optionalPluginId(value, "pluginId", label);
-  const pluginIds = value["pluginIds"] === undefined
-    ? undefined
-    : parsePluginIds(value["pluginIds"], `${label} pluginIds`);
+  const pluginIds = value["pluginIds"] === undefined ? undefined : parsePluginIds(value["pluginIds"], `${label} pluginIds`);
   return Object.freeze({
     code,
     message: requireString(value, "message", label),
@@ -348,9 +334,7 @@ function parseArray<T>(value: unknown, label: string, parse: (item: unknown, ind
 
 function parseJsonObject(value: unknown, label: string): JsonObject {
   if (!isRecord(value)) throw protocolError(`${label} must be a JSON object`);
-  const output = Object.fromEntries(
-    Object.entries(value).map(([key, child]): [string, JsonValue] => [key, parseJsonValue(child, label)]),
-  );
+  const output = Object.fromEntries(Object.entries(value).map(([key, child]): [string, JsonValue] => [key, parseJsonValue(child, label)]));
   Object.freeze(output);
   return output;
 }

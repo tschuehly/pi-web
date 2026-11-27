@@ -72,10 +72,9 @@ export function installSelectedNotificationSnapshot(
   target: SessionNotificationTarget,
   snapshot: SessionNotificationInboxSnapshot,
 ): SelectedSessionNotificationInbox {
-  if (snapshot.summary.sessionId !== target.sessionId || snapshot.summary.cwd !== target.cwd) throw new Error("Notification inbox snapshot does not match the selected session");
-  const sameDaemon = current !== undefined
-    && notificationTargetsEqual(current, target)
-    && current.daemonInstanceId === snapshot.daemonInstanceId;
+  if (snapshot.summary.sessionId !== target.sessionId || snapshot.summary.cwd !== target.cwd)
+    throw new Error("Notification inbox snapshot does not match the selected session");
+  const sameDaemon = current !== undefined && notificationTargetsEqual(current, target) && current.daemonInstanceId === snapshot.daemonInstanceId;
   return {
     ...target,
     status: "fresh",
@@ -145,14 +144,14 @@ export function applySelectedNotificationEvent(
   }
 
   const newestOrder = notifications[0]?.order ?? 0;
-  if (!notificationListMatchesSummary(notifications, event.summary)
+  if (
+    !notificationListMatchesSummary(notifications, event.summary)
     || event.dismissThrough.order !== newestOrder
-    || event.dismissThrough.overflowWatermark < event.summary.discardedCount) {
+    || event.dismissThrough.overflowWatermark < event.summary.discardedCount
+  ) {
     return { value: { ...current, status: "stale" }, needsRefresh: true, changed: true };
   }
-  const announcements = announcement === undefined
-    ? current.announcements
-    : [...current.announcements, announcement].slice(-SESSION_NOTIFICATION_LIMIT);
+  const announcements = announcement === undefined ? current.announcements : [...current.announcements, announcement].slice(-SESSION_NOTIFICATION_LIMIT);
   return {
     value: {
       ...current,
@@ -173,7 +172,9 @@ export function selectedNotificationView(inbox: SelectedSessionNotificationInbox
   if (inbox?.status !== "fresh" || inbox.daemonInstanceId === undefined || inbox.summary === undefined) return undefined;
   const pendingDismissedIds = new Set(inbox.optimisticDismissedIds);
   const through = inbox.optimisticDismissAllThrough;
-  const notifications = inbox.notifications.filter((notification) => !pendingDismissedIds.has(notification.id) && (through === undefined || notification.order > through.order));
+  const notifications = inbox.notifications.filter(
+    (notification) => !pendingDismissedIds.has(notification.id) && (through === undefined || notification.order > through.order),
+  );
   let discardedCount = effectiveDiscardedCount(inbox.summary.discardedCount, inbox.dismissThrough.overflowWatermark, through?.overflowWatermark);
   if (notifications.length === 0 && pendingDismissedIds.size > 0) discardedCount = 0;
   return {
@@ -215,7 +216,13 @@ export function notificationDismissLabel(notification: Pick<SessionNotification,
   if (message === "") return `Dismiss ${notificationSeverityLabel(notification.severity).toLowerCase()} notification`;
   const maxCharacters = 80;
   const characters = Array.from(message);
-  const summary = characters.length <= maxCharacters ? message : `${characters.slice(0, maxCharacters - 1).join("").trimEnd()}…`;
+  const summary =
+    characters.length <= maxCharacters
+      ? message
+      : `${characters
+          .slice(0, maxCharacters - 1)
+          .join("")
+          .trimEnd()}…`;
   return `Dismiss notification: ${summary}`;
 }
 
@@ -238,7 +245,11 @@ export function notificationTrayIsCollapsed(collapsedTargetKeys: ReadonlySet<str
   return collapsedTargetKeys.has(notificationTargetKey(target));
 }
 
-export function setNotificationTrayCollapsed(collapsedTargetKeys: ReadonlySet<string>, target: SessionNotificationTarget, collapsed: boolean): ReadonlySet<string> {
+export function setNotificationTrayCollapsed(
+  collapsedTargetKeys: ReadonlySet<string>,
+  target: SessionNotificationTarget,
+  collapsed: boolean,
+): ReadonlySet<string> {
   const next = new Set(collapsedTargetKeys);
   const key = notificationTargetKey(target);
   if (collapsed) next.add(key);

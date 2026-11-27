@@ -11,14 +11,30 @@ function branch(name: string, count: number) {
 function fixture(windowSizes = new Map<string, number>()) {
   const host = { rows: branch("old", 800), seq: 0, generation: "test-host" };
   const messages = vi.fn<typeof defaultApi.messages>((_, page) => Promise.resolve(pageMessagesAtSafeBoundary(host.rows, page)));
-  const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>((_, page) => Promise.resolve({
-    page: pageMessagesAtSafeBoundary(host.rows, page), status: status(oldSession.id), partial: null, seq: host.seq, generation: host.generation,
-  }));
+  const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>((_, page) =>
+    Promise.resolve({
+      page: pageMessagesAtSafeBoundary(host.rows, page),
+      status: status(oldSession.id),
+      partial: null,
+      seq: host.seq,
+      generation: host.generation,
+    }),
+  );
   let state = initialAppState();
   const socket = new EmitSocket();
-  const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, {
-    socket, windowSizes, api: { ...defaultApi, messages, transcriptSnapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) },
-  });
+  const controller = new SessionController(
+    () => state,
+    (patch) => {
+      state = { ...state, ...patch };
+    },
+    () => undefined,
+    undefined,
+    {
+      socket,
+      windowSizes,
+      api: { ...defaultApi, messages, transcriptSnapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) },
+    },
+  );
   return { controller, socket, host, messages, transcriptSnapshot, state: () => state };
 }
 
@@ -37,7 +53,9 @@ describe("selected transcript window", () => {
       await loading;
       expect(f.transcriptSnapshot).toHaveBeenLastCalledWith(oldSession, { limit: 120 }, "local");
       expect(f.state().messages.map((m) => m.parts)).toEqual(f.host.rows.slice(-120).map((m) => [{ type: "text", text: m.content }]));
-    } finally { f.controller.dispose(); }
+    } finally {
+      f.controller.dispose();
+    }
   });
 
   it("refocus retains all 141 raw messages including live appends, and the window can grow past 500", async () => {
@@ -59,7 +77,9 @@ describe("selected transcript window", () => {
         Object.assign(rejoined.host, f.host);
         await rejoined.controller.selectSession(oldSession);
         expect(rejoined.state().messages).toEqual(shown);
-      } finally { rejoined.controller.dispose(); }
+      } finally {
+        rejoined.controller.dispose();
+      }
       await f.controller.refreshSelectedSession();
       expect(f.transcriptSnapshot).toHaveBeenLastCalledWith(oldSession, { limit: 141 }, "local");
       expect(f.state().messages).toEqual(shown);
@@ -67,7 +87,9 @@ describe("selected transcript window", () => {
       f.socket.reconnect();
       await f.controller.refreshSelectedSession();
       expect(f.state().messages).toHaveLength(541);
-    } finally { f.controller.dispose(); }
+    } finally {
+      f.controller.dispose();
+    }
   });
 
   it("does not rewind an accepted sequence when a fetch returns an older snapshot of the same host", async () => {
@@ -80,7 +102,9 @@ describe("selected transcript window", () => {
       await f.controller.refreshSelectedSession();
       expect(f.transcriptSnapshot).toHaveBeenCalledTimes(3);
       expect(f.state().messages).toHaveLength(20);
-    } finally { f.controller.dispose(); }
+    } finally {
+      f.controller.dispose();
+    }
   });
 
   it.each(["restart", "gap", "unstamped"])("refetches instead of appending a doubtful frame (%s)", async (cause) => {
@@ -90,14 +114,31 @@ describe("selected transcript window", () => {
       const response = deferred<SessionTranscriptSnapshot>();
       f.transcriptSnapshot.mockReturnValueOnce(response.promise);
       const before = f.state().messages;
-      f.socket.emit({ type: "assistant.delta", text: "not for this transcript", streamId: "durable-1",
-        generation: cause === "restart" ? "next-host" : cause === "unstamped" ? "" : f.host.generation, seq: cause === "gap" ? 3 : 1 });
+      f.socket.emit({
+        type: "assistant.delta",
+        text: "not for this transcript",
+        streamId: "durable-1",
+        generation: cause === "restart" ? "next-host" : cause === "unstamped" ? "" : f.host.generation,
+        seq: cause === "gap" ? 3 : 1,
+      });
       expect(f.state().messages).toBe(before);
-      await vi.waitFor(() => { expect(f.transcriptSnapshot).toHaveBeenCalledTimes(2); });
-      response.resolve({ generation: "next-host", seq: 1, partial: null, status: status(oldSession.id), page: { messages: branch("fresh", 1), start: 0, total: 1 } });
-      await vi.waitFor(() => { expect(f.state().messages).toHaveLength(1); });
+      await vi.waitFor(() => {
+        expect(f.transcriptSnapshot).toHaveBeenCalledTimes(2);
+      });
+      response.resolve({
+        generation: "next-host",
+        seq: 1,
+        partial: null,
+        status: status(oldSession.id),
+        page: { messages: branch("fresh", 1), start: 0, total: 1 },
+      });
+      await vi.waitFor(() => {
+        expect(f.state().messages).toHaveLength(1);
+      });
       f.socket.emit({ type: "message.append", generation: "next-host", seq: 2, message: { role: "user", content: "verified" } });
       expect(f.state().messages.at(-1)?.parts).toEqual([{ type: "text", text: "verified" }]);
-    } finally { f.controller.dispose(); }
+    } finally {
+      f.controller.dispose();
+    }
   });
 });

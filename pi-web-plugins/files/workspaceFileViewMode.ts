@@ -68,11 +68,15 @@ export function createWorkspaceFileViewModeStore(
 ): WorkspaceFileViewModeStore {
   const route: WorkspaceFileViewModeRoute = {
     read: () => firstQueryString(navigation?.query[WORKSPACE_FILE_VIEW_MODE_QUERY_KEY]),
-    write: (mode) => { navigation?.set(WORKSPACE_FILE_VIEW_MODE_QUERY_KEY, mode, { replace: true }); },
+    write: (mode) => {
+      navigation?.set(WORKSPACE_FILE_VIEW_MODE_QUERY_KEY, mode, { replace: true });
+    },
   };
   return {
     adopt: () => adoptWorkspaceFileViewMode(route, storage),
-    publish: (mode) => { publishWorkspaceFileViewMode(mode, route, storage); },
+    publish: (mode) => {
+      publishWorkspaceFileViewMode(mode, route, storage);
+    },
   };
 }
 

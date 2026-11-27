@@ -99,7 +99,9 @@ describe("TranscriptBranchCache", () => {
     expect(cache.get("/sessions/s0.jsonl", "sig")).toBeUndefined();
     expect(cache.get("/sessions/s4.jsonl", "sig")).toBeUndefined();
     expect(cache.get("/sessions/s5.jsonl", "sig")?.branch).toEqual([5]);
-    expect(cache.get(`/sessions/s${String(DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT + 4)}.jsonl`, "sig")?.branch).toEqual([DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT + 4]);
+    expect(cache.get(`/sessions/s${String(DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT + 4)}.jsonl`, "sig")?.branch).toEqual([
+      DEFAULT_TRANSCRIPT_BRANCH_CACHE_LIMIT + 4,
+    ]);
   });
 });
 

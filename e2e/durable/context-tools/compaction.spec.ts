@@ -13,7 +13,9 @@ async function seed(page: Parameters<typeof createChat>[0], id: string) {
 
 for (const durable of [false, true]) {
   test(`AC-P053 focus summary reaches next context (${durable ? "Durable" : "legacy"})`, async ({ page }) => {
-    await mock.script({ turns: ["Phase one complete.", "Phase two complete.", [{ barrier: "summary" }, { text: summary }], ...(!durable ? [summary] : []), "After compaction."] });
+    await mock.script({
+      turns: ["Phase one complete.", "Phase two complete.", [{ barrier: "summary" }, { text: summary }], ...(!durable ? [summary] : []), "After compaction."],
+    });
     const id = await createChat(page, durable);
     await seed(page, id);
     await send(page, "/compact Preserve acceptance test names");
@@ -38,7 +40,13 @@ for (const durable of [false, true]) {
 
 for (const outcome of ["cancel", "fail"] as const) {
   test(`AC-P053 compaction ${outcome} clears progress without a success summary`, async ({ page }) => {
-    await mock.script({ turns: ["Phase one complete.", "Phase two complete.", outcome === "cancel" ? [{ barrier: "summary" }, { text: summary }] : [{ error: "invalid_request" }]] });
+    await mock.script({
+      turns: [
+        "Phase one complete.",
+        "Phase two complete.",
+        outcome === "cancel" ? [{ barrier: "summary" }, { text: summary }] : [{ error: "invalid_request" }],
+      ],
+    });
     const id = await createChat(page);
     await seed(page, id);
     await send(page, "/compact Keep names");
@@ -61,9 +69,18 @@ for (const window of ["none", "summarizing", "continuation"] as const) {
     const tool = [{ toolCall: { name: "compact_and_continue", args: { summaryFocus: "Keep acceptance names", nextPhase: "verify the acceptance files" } } }];
     const summaryTurn = window === "summarizing" ? [{ barrier: "summary" }, { text: "interrupted summary" }] : summary;
     const continuation = window === "continuation" ? [{ barrier: "continuation" }, { text: "interrupted continuation" }] : "Next phase complete.";
-    await mock.script({ turns: ["Phase one complete.", "Phase two complete.", tool, summaryTurn,
-      ...(window === "summarizing" ? [summary] : []), continuation,
-      ...(window === "continuation" ? ["Next phase complete."] : []), "Recovery prompt complete."] });
+    await mock.script({
+      turns: [
+        "Phase one complete.",
+        "Phase two complete.",
+        tool,
+        summaryTurn,
+        ...(window === "summarizing" ? [summary] : []),
+        continuation,
+        ...(window === "continuation" ? ["Next phase complete."] : []),
+        "Recovery prompt complete.",
+      ],
+    });
     const id = await createChat(page);
     await command(page, id, "/mode attention focused");
     await seed(page, id);
@@ -98,7 +115,16 @@ for (const window of ["none", "summarizing", "continuation"] as const) {
 }
 
 test("AC-P053 manual summary killed before placement resumes once without read-triggered work", async ({ page }) => {
-  await mock.script({ turns: ["Phase one complete.", "Phase two complete.", [{ barrier: "manual-summary" }, { text: "interrupted" }], summary, "Manual recovery complete.", "After manual recovery."] });
+  await mock.script({
+    turns: [
+      "Phase one complete.",
+      "Phase two complete.",
+      [{ barrier: "manual-summary" }, { text: "interrupted" }],
+      summary,
+      "Manual recovery complete.",
+      "After manual recovery.",
+    ],
+  });
   const id = await createChat(page);
   await seed(page, id);
   await send(page, "/compact Keep acceptance names after recovery");
@@ -121,7 +147,14 @@ test("AC-P053 manual summary killed before placement resumes once without read-t
 });
 
 test("AC-P082 cancelling checkpoint summary admits no continuation even after host kill", async ({ page }) => {
-  await mock.script({ turns: ["Phase one complete.", "Phase two complete.", [{ toolCall: { name: "compact_and_continue", args: { summaryFocus: "Keep names", nextPhase: "CANCELLED_NEXT_PHASE" } } }], [{ barrier: "cancel-checkpoint" }, { text: summary }]] });
+  await mock.script({
+    turns: [
+      "Phase one complete.",
+      "Phase two complete.",
+      [{ toolCall: { name: "compact_and_continue", args: { summaryFocus: "Keep names", nextPhase: "CANCELLED_NEXT_PHASE" } } }],
+      [{ barrier: "cancel-checkpoint" }, { text: summary }],
+    ],
+  });
   const id = await createChat(page);
   await seed(page, id);
   await send(page, "checkpoint cancel");
@@ -140,7 +173,15 @@ test("AC-P082 cancelling checkpoint summary admits no continuation even after ho
 for (const invalid of ["batch", "empty", "oversized"] as const) {
   test(`AC-P082 rejects ${invalid} checkpoint directives without continuation`, async ({ page }) => {
     const args = { summaryFocus: invalid === "oversized" ? "x".repeat(1201) : "Keep names", nextPhase: invalid === "empty" ? "" : "next" };
-    await mock.script({ turns: [[{ toolCall: { name: "compact_and_continue", args } }, ...(invalid === "batch" ? [{ toolCall: { name: "read", args: { path: "docs/notes.md" } } }] : [])], "Rejection observed."] });
+    await mock.script({
+      turns: [
+        [
+          { toolCall: { name: "compact_and_continue", args } },
+          ...(invalid === "batch" ? [{ toolCall: { name: "read", args: { path: "docs/notes.md" } } }] : []),
+        ],
+        "Rejection observed.",
+      ],
+    });
     const id = await createChat(page);
     await answer(page, id, "invalid checkpoint", "Rejection observed.");
     expect(await summaries(page, id)).toHaveLength(0);
@@ -154,7 +195,15 @@ for (const invalid of ["batch", "empty", "oversized"] as const) {
 
 // Lead decision: legacy continue-once is correct — a failed summary continues exactly once, carrying the diagnostic.
 test("AC-P082 failed summarizer continues once with the diagnostic", async ({ page }) => {
-  await mock.script({ turns: ["Phase one complete.", "Phase two complete.", [{ toolCall: { name: "compact_and_continue", args: { summaryFocus: "Keep names", nextPhase: "MUST NOT START" } } }], [{ error: "invalid_request" }], "Unexpected continuation."] });
+  await mock.script({
+    turns: [
+      "Phase one complete.",
+      "Phase two complete.",
+      [{ toolCall: { name: "compact_and_continue", args: { summaryFocus: "Keep names", nextPhase: "MUST NOT START" } } }],
+      [{ error: "invalid_request" }],
+      "Unexpected continuation.",
+    ],
+  });
   const id = await createChat(page);
   await seed(page, id);
   await send(page, "checkpoint fail");
@@ -166,37 +215,48 @@ test("AC-P082 failed summarizer continues once with the diagnostic", async ({ pa
   expect(continued[0]!.lastUserText).toContain("Context checkpoint failed:");
 });
 
-for (const crash of [false, true]) test(`AC-P083 usage crosses threshold, queues input, and compacts before continuing; kill ${crash}`, async ({ page }) => {
-  await settings({ compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 1 } });
-  // Anthropic mock input/cache usage is currently ignored; explicit output usage drives the same context policy.
-  await mock.script({ turns: ["Phase one complete.", { steps: [{ text: "Phase two complete." }], usage: { output: 995000 } }, [{ barrier: "auto-summary" }, { text: summary }], ...(crash ? [summary] : []), "Automatic prompt complete.", "Held human complete.", ...(crash ? ["Auto recovery complete."] : [])] });
-  const id = await createChat(page);
-  await command(page, id, "/mode attention focused");
-  await seed(page, id);
-  await send(page, "trigger automatic compaction");
-  await mock.waitForBarrier("auto-summary");
-  expect((await status(page, id)).isCompacting).toBe(true);
-  await expect(page.getByRole("button", { name: "Stop current work" })).toBeEnabled();
-  await send(page, "held human input");
-  if (crash) {
+for (const crash of [false, true])
+  test(`AC-P083 usage crosses threshold, queues input, and compacts before continuing; kill ${crash}`, async ({ page }) => {
+    await settings({ compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 1 } });
+    // Anthropic mock input/cache usage is currently ignored; explicit output usage drives the same context policy.
+    await mock.script({
+      turns: [
+        "Phase one complete.",
+        { steps: [{ text: "Phase two complete." }], usage: { output: 995000 } },
+        [{ barrier: "auto-summary" }, { text: summary }],
+        ...(crash ? [summary] : []),
+        "Automatic prompt complete.",
+        "Held human complete.",
+        ...(crash ? ["Auto recovery complete."] : []),
+      ],
+    });
+    const id = await createChat(page);
+    await command(page, id, "/mode attention focused");
+    await seed(page, id);
+    await send(page, "trigger automatic compaction");
+    await mock.waitForBarrier("auto-summary");
+    expect((await status(page, id)).isCompacting).toBe(true);
+    await expect(page.getByRole("button", { name: "Stop current work" })).toBeEnabled();
+    await send(page, "held human input");
+    if (crash) {
+      await killHost(page, id);
+      await messages(page, id);
+      expect(await mock.journal({ kind: "chat" })).toHaveLength(3);
+    }
+    await mock.release("auto-summary");
+    if (crash) await send(page, "resume automatic compaction");
+    await expect(chat(page).getByText("Held human complete.", { exact: true })).toBeVisible();
+    if (crash) await expect(chat(page).getByText("Auto recovery complete.", { exact: true })).toBeVisible();
+    await idle(page, id);
+    expect(await summaries(page, id)).toHaveLength(1);
+    const requests = await mock.journal({ kind: "chat" });
+    expect(requests).toHaveLength(crash ? 7 : 5);
+    const first = crash ? 4 : 3;
+    expect(requests[first]?.lastUserText).toContain("trigger automatic compaction");
+    expect(requests[first + 1]?.lastUserText).toContain("held human input");
+    expect(JSON.stringify(requests[first]?.body)).toContain(summary);
+    expect.soft(JSON.stringify(requests[first]?.body)).toContain("<working-mode>");
     await killHost(page, id);
-    await messages(page, id);
-    expect(await mock.journal({ kind: "chat" })).toHaveLength(3);
-  }
-  await mock.release("auto-summary");
-  if (crash) await send(page, "resume automatic compaction");
-  await expect(chat(page).getByText("Held human complete.", { exact: true })).toBeVisible();
-  if (crash) await expect(chat(page).getByText("Auto recovery complete.", { exact: true })).toBeVisible();
-  await idle(page, id);
-  expect(await summaries(page, id)).toHaveLength(1);
-  const requests = await mock.journal({ kind: "chat" });
-  expect(requests).toHaveLength(crash ? 7 : 5);
-  const first = crash ? 4 : 3;
-  expect(requests[first]?.lastUserText).toContain("trigger automatic compaction");
-  expect(requests[first + 1]?.lastUserText).toContain("held human input");
-  expect(JSON.stringify(requests[first]?.body)).toContain(summary);
-  expect.soft(JSON.stringify(requests[first]?.body)).toContain("<working-mode>");
-  await killHost(page, id);
-  expect(await summaries(page, id)).toHaveLength(1);
-  expect(await mock.journal({ kind: "chat" })).toHaveLength(crash ? 7 : 5);
-});
+    expect(await summaries(page, id)).toHaveLength(1);
+    expect(await mock.journal({ kind: "chat" })).toHaveLength(crash ? 7 : 5);
+  });

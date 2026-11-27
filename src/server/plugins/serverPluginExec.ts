@@ -1,8 +1,5 @@
 import { spawn } from "node:child_process";
-import type {
-  ServerPluginExecFileRequest,
-  ServerPluginExecFileResult,
-} from "../../server-plugin-api.js";
+import type { ServerPluginExecFileRequest, ServerPluginExecFileResult } from "../../server-plugin-api.js";
 
 const DEFAULT_EXEC_TIMEOUT_MS = 30_000;
 // Git changes historically bounded command stdout at 2 MiB; keep that ceiling
@@ -33,10 +30,7 @@ interface ResolvedExecOptions {
   maxOutputBytes: number;
 }
 
-function runExecFile(
-  request: ServerPluginExecFileRequest,
-  options: ResolvedExecOptions,
-): Promise<ServerPluginExecFileResult> {
+function runExecFile(request: ServerPluginExecFileRequest, options: ResolvedExecOptions): Promise<ServerPluginExecFileResult> {
   validateRequest(request);
   if (request.signal.aborted) return Promise.reject(abortReason(request.signal));
 
@@ -88,9 +82,15 @@ function runExecFile(
     };
 
     request.signal.addEventListener("abort", onAbort, { once: true });
-    child.stdout.on("data", (chunk: unknown) => { stdout.append(chunk); });
-    child.stderr.on("data", (chunk: unknown) => { stderr.append(chunk); });
-    child.once("error", (error) => { reject(error); });
+    child.stdout.on("data", (chunk: unknown) => {
+      stdout.append(chunk);
+    });
+    child.stderr.on("data", (chunk: unknown) => {
+      stderr.append(chunk);
+    });
+    child.once("error", (error) => {
+      reject(error);
+    });
     child.once("close", (exitCode, signal) => {
       resolve({
         exitCode,
@@ -190,18 +190,18 @@ function killChildTree(child: KillableChild, signal: NodeJS.Signals): void {
 }
 
 function isAbortSignal(value: unknown): value is AbortSignal {
-  return typeof value === "object"
+  return (
+    typeof value === "object"
     && value !== null
     && typeof Reflect.get(value, "aborted") === "boolean"
     && typeof Reflect.get(value, "addEventListener") === "function"
-    && typeof Reflect.get(value, "removeEventListener") === "function";
+    && typeof Reflect.get(value, "removeEventListener") === "function"
+  );
 }
 
 function abortReason(signal: AbortSignal): Error {
   const reason: unknown = signal.reason;
-  return reason instanceof Error
-    ? reason
-    : new Error("The operation was aborted", { cause: reason });
+  return reason instanceof Error ? reason : new Error("The operation was aborted", { cause: reason });
 }
 
 function asError(error: unknown): Error {

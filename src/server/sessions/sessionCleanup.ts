@@ -1,4 +1,9 @@
-import type { SessionCleanupExecuteResponse, SessionCleanupPreviewResponse, SessionCleanupProjectSummary, SessionCleanupThresholds } from "../../shared/apiTypes.js";
+import type {
+  SessionCleanupExecuteResponse,
+  SessionCleanupPreviewResponse,
+  SessionCleanupProjectSummary,
+  SessionCleanupThresholds,
+} from "../../shared/apiTypes.js";
 import type { PiSessionListEntry } from "./piSessionService.js";
 import type { ArchivedSessionRecord, ArchiveSessionInput } from "./sessionArchiveStore.js";
 
@@ -84,7 +89,13 @@ export function planSessionCleanup(input: PlanSessionCleanupInput): SessionClean
   }
 
   return {
-    ...summarizeSessionCleanupTargets({ archiveInputs, deleteRecords, thresholds, generatedAt: input.now.toISOString(), skippedBusySessionIds: [...skippedBusy] }),
+    ...summarizeSessionCleanupTargets({
+      archiveInputs,
+      deleteRecords,
+      thresholds,
+      generatedAt: input.now.toISOString(),
+      skippedBusySessionIds: [...skippedBusy],
+    }),
     archiveInputs,
     deleteRecords,
     skippedBusySessionIds: [...skippedBusy].sort(),

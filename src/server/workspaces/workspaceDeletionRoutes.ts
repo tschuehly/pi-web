@@ -1,18 +1,11 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import {
-  parseWorkspaceRemovalRequest,
-  WORKSPACE_REMOVAL_REQUEST_BODY_MAX_BYTES,
-} from "../../shared/workspaceRemovalProtocol.js";
+import { parseWorkspaceRemovalRequest, WORKSPACE_REMOVAL_REQUEST_BODY_MAX_BYTES } from "../../shared/workspaceRemovalProtocol.js";
 import { SessionDaemonClient } from "../../sessiond/sessionDaemonClient.js";
 import { requestCancellation } from "../requestCancellation.js";
 import type { SessionProxyDaemon } from "../sessiond/sessionProxyRoutes.js";
 
 /** Browser-facing adapter; sessiond owns all workspace removal decisions and effects. */
-export function registerWorkspaceDeletionRoutes(
-  app: FastifyInstance,
-  daemon: SessionProxyDaemon = new SessionDaemonClient(),
-  prefix = "/api",
-): void {
+export function registerWorkspaceDeletionRoutes(app: FastifyInstance, daemon: SessionProxyDaemon = new SessionDaemonClient(), prefix = "/api"): void {
   app.delete<{ Params: { projectId: string; workspaceId: string }; Body: unknown }>(
     `${prefix}/projects/:projectId/workspaces/:workspaceId`,
     { bodyLimit: WORKSPACE_REMOVAL_REQUEST_BODY_MAX_BYTES },
@@ -44,10 +37,7 @@ export function registerWorkspaceDeletionRoutes(
   );
 }
 
-function proxyJsonResponse(
-  reply: FastifyReply,
-  upstream: { statusCode: number; headers: Record<string, string>; body: string },
-): unknown {
+function proxyJsonResponse(reply: FastifyReply, upstream: { statusCode: number; headers: Record<string, string>; body: string }): unknown {
   reply.code(upstream.statusCode);
   const contentType = upstream.headers["content-type"];
   if (contentType !== undefined && contentType !== "") reply.header("content-type", contentType);

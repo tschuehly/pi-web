@@ -1,8 +1,23 @@
 // @vitest-environment happy-dom
 
-import type { StylesheetIntegrationCapabilityV1, FileContentResponse, FileTreeResponse, WorkspaceFilesCapabilityV1, WorkspacePanelContext, WorkspacePanelNavigationV1, WriteWorkspaceFileResponse } from "@jmfederico/pi-web/plugin-api";
+import type {
+  StylesheetIntegrationCapabilityV1,
+  FileContentResponse,
+  FileTreeResponse,
+  WorkspaceFilesCapabilityV1,
+  WorkspacePanelContext,
+  WorkspacePanelNavigationV1,
+  WriteWorkspaceFileResponse,
+} from "@jmfederico/pi-web/plugin-api";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceFilesPanel, startDirectWorkspaceUpload, uploadBatchProgressValue, uploadBatchStatusLabel, workspaceUploadReviewDefaults, workspaceUploadReviewError } from "./FilesPanel";
+import {
+  WorkspaceFilesPanel,
+  startDirectWorkspaceUpload,
+  uploadBatchProgressValue,
+  uploadBatchStatusLabel,
+  workspaceUploadReviewDefaults,
+  workspaceUploadReviewError,
+} from "./FilesPanel";
 import { FilesRuntime, type WorkspaceUploadBatchState } from "./FilesRuntime";
 import { defineFilesCustomElements } from "./pi-web-plugin";
 
@@ -24,14 +39,18 @@ describe("Files panel component boundary", () => {
     const roots = new Set<ShadowRoot>();
     const registerRoot = vi.fn<StylesheetIntegrationCapabilityV1["registerRoot"]>((root) => {
       roots.add(root);
-      return () => { roots.delete(root); };
+      return () => {
+        roots.delete(root);
+      };
     });
     panel.stylesheetIntegration = {
       registerRoot,
       createController: vi.fn(),
       subscribe: vi.fn(() => vi.fn()),
     };
-    await vi.waitFor(() => { expect(roots.size).toBe(3); });
+    await vi.waitFor(() => {
+      expect(roots.size).toBe(3);
+    });
     const viewer = requiredElement(panel.shadowRoot?.querySelector("pi-web-files-viewer"), "viewer");
     const code = requiredElement(viewer.shadowRoot?.querySelector("pi-web-files-code-viewer"), "raw code");
     expect(roots).toEqual(new Set([panel.shadowRoot, viewer.shadowRoot, code.shadowRoot]));
@@ -41,14 +60,20 @@ describe("Files panel component boundary", () => {
     panel.remove();
     expect(roots.size).toBe(0);
     document.body.append(panel);
-    await vi.waitFor(() => { expect(roots.size).toBe(3); });
+    await vi.waitFor(() => {
+      expect(roots.size).toBe(3);
+    });
     expect(registerRoot).toHaveBeenCalledTimes(6);
   });
 
   it("releases replaced stylesheet integration without replacing file rows", async () => {
-    const context = createContext({ files: createFiles({ listFiles: () => Promise.resolve(treeResponse("", [{ name: "README.md", path: "README.md", type: "file" }])) }) });
+    const context = createContext({
+      files: createFiles({ listFiles: () => Promise.resolve(treeResponse("", [{ name: "README.md", path: "README.md", type: "file" }])) }),
+    });
     const panel = await mountPanel(context);
-    await vi.waitFor(() => { expect(panel.shadowRoot?.querySelector(".ui-file-row")).not.toBeNull(); });
+    await vi.waitFor(() => {
+      expect(panel.shadowRoot?.querySelector(".ui-file-row")).not.toBeNull();
+    });
     const row = panel.shadowRoot?.querySelector(".ui-file-row");
     const release = vi.fn();
     const integration = { registerRoot: vi.fn(() => release), createController: vi.fn(), subscribe: vi.fn(() => vi.fn()) };
@@ -62,22 +87,36 @@ describe("Files panel component boundary", () => {
   });
 
   it("loads and renders the tree, wires expansion/selection, and passes content to the viewer", async () => {
-    const listFiles = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>((path) => Promise.resolve(path === ""
-      ? treeResponse("", [{ name: "src", path: "src", type: "directory" }, { name: "README.md", path: "README.md", type: "file" }])
-      : treeResponse(path, [{ name: "main.ts", path: "src/main.ts", type: "file" }])));
+    const listFiles = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>((path) =>
+      Promise.resolve(
+        path === ""
+          ? treeResponse("", [
+              { name: "src", path: "src", type: "directory" },
+              { name: "README.md", path: "README.md", type: "file" },
+            ])
+          : treeResponse(path, [{ name: "main.ts", path: "src/main.ts", type: "file" }]),
+      ),
+    );
     const readFile = vi.fn<WorkspaceFilesCapabilityV1["readFile"]>((path) => Promise.resolve(fileResponse(path)));
     const context = createContext({ files: createFiles({ listFiles, readFile }) });
     const panel = await mountPanel(context);
 
-    await vi.waitFor(() => { expect(panel.shadowRoot?.textContent).toContain("README.md"); });
+    await vi.waitFor(() => {
+      expect(panel.shadowRoot?.textContent).toContain("README.md");
+    });
     expect(buttonWithText(panel.shadowRoot, "src").getAttribute("aria-expanded")).toBe("false");
     buttonWithText(panel.shadowRoot, "src").click();
-    await vi.waitFor(() => { expect(buttonWithText(panel.shadowRoot, "main.ts")).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(buttonWithText(panel.shadowRoot, "main.ts")).toBeDefined();
+    });
     expect(buttonWithText(panel.shadowRoot, "src").getAttribute("aria-expanded")).toBe("true");
     buttonWithText(panel.shadowRoot, "README.md").click();
     await vi.waitFor(() => {
       expect(buttonWithText(panel.shadowRoot, "README.md").getAttribute("aria-current")).toBe("page");
-      const viewer = requiredElement(panel.shadowRoot?.querySelector<HTMLElement & { selectedPath?: string; file?: FileContentResponse }>("pi-web-files-viewer"), "Files viewer");
+      const viewer = requiredElement(
+        panel.shadowRoot?.querySelector<HTMLElement & { selectedPath?: string; file?: FileContentResponse }>("pi-web-files-viewer"),
+        "Files viewer",
+      );
       expect(viewer.selectedPath).toBe("README.md");
       expect(viewer.file?.content).toBe("contents:README.md");
     });
@@ -118,24 +157,38 @@ describe("Files panel component boundary", () => {
       signals.push(signal);
       if (readCount > 1) return Promise.resolve(fileResponse(path));
       return new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => { reject(new DOMException("cancelled", "AbortError")); }, { once: true });
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("cancelled", "AbortError"));
+          },
+          { once: true },
+        );
       });
     });
-    const context = createContext({ files: createFiles({
-      readFile,
-      listFiles: () => Promise.resolve(treeResponse("", [{ name: "README.md", path: "README.md", type: "file" }])),
-    }) });
+    const context = createContext({
+      files: createFiles({
+        readFile,
+        listFiles: () => Promise.resolve(treeResponse("", [{ name: "README.md", path: "README.md", type: "file" }])),
+      }),
+    });
     const panel = await mountPanel(context);
-    await vi.waitFor(() => { expect(panel.shadowRoot?.textContent).toContain("README.md"); });
+    await vi.waitFor(() => {
+      expect(panel.shadowRoot?.textContent).toContain("README.md");
+    });
     buttonWithText(panel.shadowRoot, "README.md").click();
-    await vi.waitFor(() => { expect(readFile).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(readFile).toHaveBeenCalledOnce();
+    });
 
     panel.remove();
     expect(signals[0]?.aborted).toBe(true);
     panel.context = { ...context, navigation: { ...createNavigation(), query: { file: "README.md" } } };
     document.body.append(panel);
 
-    await vi.waitFor(() => { expect(readFile).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(readFile).toHaveBeenCalledTimes(2);
+    });
     await vi.waitFor(() => {
       const viewer = requiredElement(panel.shadowRoot?.querySelector<HTMLElement & { file?: FileContentResponse }>("pi-web-files-viewer"), "Files viewer");
       expect(viewer.file?.content).toBe("contents:README.md");
@@ -151,19 +204,31 @@ describe("Files panel component boundary", () => {
       signals.push(signal);
       if (listCount > 1) return Promise.resolve(treeResponse(path, [{ name: "README.md", path: "README.md", type: "file" }]));
       return new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => { reject(new DOMException("cancelled", "AbortError")); }, { once: true });
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("cancelled", "AbortError"));
+          },
+          { once: true },
+        );
       });
     });
     const context = createContext({ files: createFiles({ listFiles }) });
     const panel = await mountPanel(context);
-    await vi.waitFor(() => { expect(listFiles).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(listFiles).toHaveBeenCalledOnce();
+    });
 
     panel.remove();
     expect(signals[0]?.aborted).toBe(true);
     document.body.append(panel);
 
-    await vi.waitFor(() => { expect(listFiles).toHaveBeenCalledTimes(2); });
-    await vi.waitFor(() => { expect(panel.shadowRoot?.textContent).toContain("README.md"); });
+    await vi.waitFor(() => {
+      expect(listFiles).toHaveBeenCalledTimes(2);
+    });
+    await vi.waitFor(() => {
+      expect(panel.shadowRoot?.textContent).toContain("README.md");
+    });
     expect(signals[1]?.aborted).toBe(false);
   });
 
@@ -261,7 +326,9 @@ describe("Files panel component boundary", () => {
     let resolveUpload: (response: WriteWorkspaceFileResponse) => void = () => undefined;
     const uploadFile = vi.fn<WorkspaceFilesCapabilityV1["uploadFile"]>((file, options) => ({
       path: `${options?.destinationFolder ?? ""}/${file.name}`,
-      completed: new Promise((resolve) => { resolveUpload = resolve; }),
+      completed: new Promise((resolve) => {
+        resolveUpload = resolve;
+      }),
       cancel: vi.fn(),
     }));
     const context = createContext({ files: createFiles({ uploadFile }) });
@@ -273,15 +340,22 @@ describe("Files panel component boundary", () => {
     await panel.updateComplete;
 
     requiredElement(panel.shadowRoot?.querySelector<HTMLButtonElement>("dialog button[type='submit']"), "upload submit button").click();
-    await vi.waitFor(() => { expect(uploadFile).toHaveBeenCalledOnce(); });
-    expect(uploadFile).toHaveBeenCalledWith(expect.objectContaining({ name: "hello.txt" }), expect.objectContaining({
-      destinationFolder: ".pi-web/uploads",
-      createDirs: true,
-      overwrite: false,
-    }));
+    await vi.waitFor(() => {
+      expect(uploadFile).toHaveBeenCalledOnce();
+    });
+    expect(uploadFile).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "hello.txt" }),
+      expect.objectContaining({
+        destinationFolder: ".pi-web/uploads",
+        createDirs: true,
+        overwrite: false,
+      }),
+    );
 
     resolveUpload(writeResponse(".pi-web/uploads/hello.txt"));
-    await vi.waitFor(() => { expect(panel.shadowRoot?.textContent).toContain("Uploaded 1 file"); });
+    await vi.waitFor(() => {
+      expect(panel.shadowRoot?.textContent).toContain("Uploaded 1 file");
+    });
     expect(panel.shadowRoot?.textContent).toContain("Done");
   });
 
@@ -317,7 +391,10 @@ describe("Files upload helpers", () => {
   });
 });
 
-async function mountPanel(context: WorkspacePanelContext, runtime = new FilesRuntime({ createUploadBatchId: () => "batch-1", now: () => "now" })): Promise<WorkspaceFilesPanel> {
+async function mountPanel(
+  context: WorkspacePanelContext,
+  runtime = new FilesRuntime({ createUploadBatchId: () => "batch-1", now: () => "now" }),
+): Promise<WorkspaceFilesPanel> {
   const panel = new WorkspaceFilesPanel();
   panel.context = context;
   panel.runtime = runtime;

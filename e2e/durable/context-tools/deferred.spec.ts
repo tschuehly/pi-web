@@ -7,4 +7,5 @@ for (const [id, description] of [
   ["AC-P052", "untraced /session stats command"],
   ["AC-P059", "MCP status and auth"],
   ["AC-P060", "MCP tools"],
-]) test.skip(`${id} skipped: deferred — ${description}`, () => {});
+])
+  test.skip(`${id} skipped: deferred — ${description}`, () => {});

@@ -81,7 +81,9 @@ describe("session daemon paired plugin backend routes", () => {
       url: `/paired-plugin-backends/board/projects/${encodeURIComponent(project.id)}/workspaces/${workspaceId}/cards.summary`,
       payload: { revision: "server-r1", input: null },
     });
-    await vi.waitFor(() => { expect(projects.requireProject).toHaveBeenCalledOnce(); });
+    await vi.waitFor(() => {
+      expect(projects.requireProject).toHaveBeenCalledOnce();
+    });
 
     quiescing = true;
     await backends.closeAll("test quiesce");
@@ -167,16 +169,16 @@ describe("session daemon paired plugin backend routes", () => {
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
   if (resolvePromise === undefined) throw new Error("Deferred promise was not initialized");
   return { promise, resolve: resolvePromise };
 }
 
 function projectReader() {
   return {
-    requireProject: (projectId: string) => projectId === project.id
-      ? Promise.resolve(project)
-      : Promise.reject(new Error("Project not found")),
+    requireProject: (projectId: string) => (projectId === project.id ? Promise.resolve(project) : Promise.reject(new Error("Project not found"))),
   };
 }
 
@@ -186,19 +188,19 @@ async function folderWorkspaceId(): Promise<string> {
   return workspaceId;
 }
 
-function registryFor(
-  request: NonNullable<ServerPluginPairedBackendContribution["backend"]["request"]>,
-): PluginBackendRegistry {
+function registryFor(request: NonNullable<ServerPluginPairedBackendContribution["backend"]["request"]>): PluginBackendRegistry {
   return new PluginBackendRegistry({
-    contributions: [{
-      pluginId: "board",
-      pluginName: "Board",
-      packageRoot: "/plugins/board",
-      source: "test fixture",
-      scope: "local",
-      moduleRevision: "server-r1",
-      backend: { request },
-    }],
+    contributions: [
+      {
+        pluginId: "board",
+        pluginName: "Board",
+        packageRoot: "/plugins/board",
+        source: "test fixture",
+        scope: "local",
+        moduleRevision: "server-r1",
+        backend: { request },
+      },
+    ],
     workspaces: workspaceRegistry(),
   });
 }

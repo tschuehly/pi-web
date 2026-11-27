@@ -15,9 +15,12 @@ describe("AutocompleteMenu", () => {
     const editor = document.createElement("div");
     const input = document.createElement("textarea");
     const menu = new AutocompleteMenu();
-    const close = vi.fn(); menu.onClose = close;
-    const pick = vi.fn(); menu.onPick = pick;
-    editor.append(input, menu); document.body.append(editor);
+    const close = vi.fn();
+    menu.onClose = close;
+    const pick = vi.fn();
+    menu.onPick = pick;
+    editor.append(input, menu);
+    document.body.append(editor);
     input.focus();
     menu.items = [{ kind: "command", replaceFrom: 0, replaceTo: 1, insertText: "/tree", detail: "command" }];
     await menu.updateComplete;
@@ -28,7 +31,8 @@ describe("AutocompleteMenu", () => {
     expect(event.defaultPrevented).toBe(true);
     expect(pick).toHaveBeenCalledOnce();
     expect(document.activeElement).toBe(input);
-    panel?.hidePopover(); await menu.updateComplete;
+    panel?.hidePopover();
+    await menu.updateComplete;
     expect(close).toHaveBeenCalledOnce();
     expect(menu.shadowRoot?.querySelector("[popover]")).toBeNull();
     expect(document.activeElement).toBe(input);
@@ -40,16 +44,24 @@ describe("AutocompleteMenu", () => {
     const scroll = vi.spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(() => undefined);
     const menu = new AutocompleteMenu();
     menu.items = Array.from({ length: 40 }, (_, index) => ({
-      kind: "command", replaceFrom: 0, replaceTo: 7, insertText: `/skill:example-${String(index + 1)}`, detail: "skill",
+      kind: "command",
+      replaceFrom: 0,
+      replaceTo: 7,
+      insertText: `/skill:example-${String(index + 1)}`,
+      detail: "skill",
     }));
     document.body.append(menu);
     await menu.updateComplete;
-    frames.splice(0).forEach((callback) => { callback(0); });
+    frames.splice(0).forEach((callback) => {
+      callback(0);
+    });
     scroll.mockClear();
 
     menu.selectedIndex = 39;
     await menu.updateComplete;
-    frames.splice(0).forEach((callback) => { callback(0); });
+    frames.splice(0).forEach((callback) => {
+      callback(0);
+    });
 
     expect(menu.shadowRoot?.querySelectorAll("button")).toHaveLength(40);
     const selected = menu.shadowRoot?.querySelector("button.selected");
@@ -65,7 +77,9 @@ describe("AutocompleteMenu", () => {
 
   it("renders the argument hint next to the command name, before the description", async () => {
     const menu = new AutocompleteMenu();
-    menu.items = [{ kind: "command", replaceFrom: 0, replaceTo: 1, insertText: "/pr", detail: "prompt", description: "Review PRs from URLs", argumentHint: "<PR-URL>" }];
+    menu.items = [
+      { kind: "command", replaceFrom: 0, replaceTo: 1, insertText: "/pr", detail: "prompt", description: "Review PRs from URLs", argumentHint: "<PR-URL>" },
+    ];
     document.body.append(menu);
     await menu.updateComplete;
 

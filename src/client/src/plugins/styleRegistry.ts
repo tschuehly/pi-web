@@ -29,12 +29,17 @@ export class PluginStyleRegistry {
   private sheets: readonly CSSStyleSheet[] = [];
   private revision = 0;
 
-  constructor(private readonly load: PluginStylesheetLoader, private readonly createSharedUiSheet?: () => CSSStyleSheet) {}
+  constructor(
+    private readonly load: PluginStylesheetLoader,
+    private readonly createSharedUiSheet?: () => CSSStyleSheet,
+  ) {}
 
   /** Subscribe to active sheet changes, after adoption in all registered roots. */
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   /** Supply even a closed root by its retained reference. Release it on disconnection. */
@@ -105,26 +110,28 @@ export class PluginStyleRegistry {
     };
     publishLoadedSheets();
 
-    const loaded = await Promise.allSettled(ordered.map(async (contribution) => {
-      let file = this.files.get(contribution.url);
-      if (file === undefined) {
-        const controller = new AbortController();
-        // Defer to a promise so a synchronous loader failure has the same cleanup path.
-        const loaded = Promise.resolve().then(() => this.load(contribution.url, controller.signal));
-        file = { controller, loaded };
-        this.files.set(contribution.url, file);
-      }
-      const requestedFile = file;
-      try {
-        const sheet = await requestedFile.loaded;
-        requestedFile.sheet = sheet;
-        publishLoadedSheets();
-        return sheet;
-      } catch (cause) {
-        if (this.files.get(contribution.url) === requestedFile) this.files.delete(contribution.url);
-        throw new Error(`Failed to load stylesheet ${contribution.id} (${contribution.url})`, { cause });
-      }
-    }));
+    const loaded = await Promise.allSettled(
+      ordered.map(async (contribution) => {
+        let file = this.files.get(contribution.url);
+        if (file === undefined) {
+          const controller = new AbortController();
+          // Defer to a promise so a synchronous loader failure has the same cleanup path.
+          const loaded = Promise.resolve().then(() => this.load(contribution.url, controller.signal));
+          file = { controller, loaded };
+          this.files.set(contribution.url, file);
+        }
+        const requestedFile = file;
+        try {
+          const sheet = await requestedFile.loaded;
+          requestedFile.sheet = sheet;
+          publishLoadedSheets();
+          return sheet;
+        } catch (cause) {
+          if (this.files.get(contribution.url) === requestedFile) this.files.delete(contribution.url);
+          throw new Error(`Failed to load stylesheet ${contribution.id} (${contribution.url})`, { cause });
+        }
+      }),
+    );
     if (revision !== this.revision) return;
     const errors: unknown[] = [];
     for (const result of loaded) {
@@ -160,7 +167,12 @@ export class PluginStyleRegistry {
     }
   }
 
-  private apply(root: StyleRoot, previous: readonly CSSStyleSheet[], next: readonly CSSStyleSheet[], sharedUi = (this.roots.get(root)?.sharedUiReferences ?? 0) > 0): void {
+  private apply(
+    root: StyleRoot,
+    previous: readonly CSSStyleSheet[],
+    next: readonly CSSStyleSheet[],
+    sharedUi = (this.roots.get(root)?.sharedUiReferences ?? 0) > 0,
+  ): void {
     const owned = new Set([...previous, ...next, ...(this.sharedUiSheet === undefined ? [] : [this.sharedUiSheet])]);
     const shared = sharedUi && this.sharedUiSheet !== undefined ? [this.sharedUiSheet] : [];
     root.adoptedStyleSheets = [...root.adoptedStyleSheets.filter((sheet) => !owned.has(sheet)), ...shared, ...next];
@@ -177,16 +189,18 @@ type StyleControllerHost = ReactiveControllerHost & { readonly renderRoot?: HTML
 export class PluginStylesController implements ReactiveController {
   private release: (() => void) | undefined;
 
-  constructor(private readonly host: StyleControllerHost, private readonly styles: PluginStyleRegistry, private readonly options: StylesheetRootOptions = {}) {
+  constructor(
+    private readonly host: StyleControllerHost,
+    private readonly styles: PluginStyleRegistry,
+    private readonly options: StylesheetRootOptions = {},
+  ) {
     host.addController(this);
   }
 
   hostConnected(): void {
     this.release?.();
     const root = this.host.renderRoot;
-    this.release = root instanceof ShadowRoot
-      ? this.styles.registerRoot(root, this.options)
-      : undefined;
+    this.release = root instanceof ShadowRoot ? this.styles.registerRoot(root, this.options) : undefined;
   }
 
   hostDisconnected(): void {

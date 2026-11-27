@@ -7,11 +7,18 @@ import { conversationLayoutStyles } from "../theme/base/conversationLayoutStyles
 /** Activity belongs to the conversation boundary, not the transcript scroller. */
 export function conversationActivityText(status: SessionStatus | undefined, activity: SessionActivity | undefined, sending: boolean): string | undefined {
   if (sending) return "Sending your message…";
-  const state = status === undefined ? activity?.label
-    : status.isCompacting ? "compacting"
-    : status.isBashRunning ? "bash"
-    : status.isStreaming ? "running"
-    : status.pendingMessageCount > 0 ? "queued" : "idle";
+  const state =
+    status === undefined
+      ? activity?.label
+      : status.isCompacting
+        ? "compacting"
+        : status.isBashRunning
+          ? "bash"
+          : status.isStreaming
+            ? "running"
+            : status.pendingMessageCount > 0
+              ? "queued"
+              : "idle";
   if (state === undefined || (state === "idle" && activity?.phase !== "active")) return undefined;
   // Without a status, an idle activity report (e.g. "tool complete") is history, not work in progress.
   if (status === undefined && activity?.phase === "idle") return undefined;
@@ -38,9 +45,13 @@ export class ConversationLayout extends LitElement {
       <div class="transcript" part="transcript"><slot></slot></div>
       <div class="composer-boundary" part="composer-boundary">
         <slot name="composer"></slot>
-        <div class=${this.visualEffects ? "activity-region" : "activity-region plain"} aria-live="polite">${activity === undefined ? nothing : html`
+        <div class=${this.visualEffects ? "activity-region" : "activity-region plain"} aria-live="polite">${
+          activity === undefined
+            ? nothing
+            : html`
           <div class="activity-dock"><span class="dot"></span><span class="activity-text">${activity}</span></div>
-        `}</div>
+        `
+        }</div>
       </div>
       <slot name="status"></slot>
     `;

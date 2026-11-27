@@ -4,8 +4,7 @@ import { join } from "node:path";
 
 export type WorkstreamLaunchRecord =
   /** A Durable launch names the Chat ID it reserved, so a retry or reconcile finds that Chat instead of orphaning it. */
-  | { token: string; cwd: string; status: "pending"; sessionId?: string }
-  | { token: string; cwd: string; status: "created"; sessionId: string };
+  { token: string; cwd: string; status: "pending"; sessionId?: string } | { token: string; cwd: string; status: "created"; sessionId: string };
 
 export function isWorkstreamLaunchToken(token: string): boolean {
   return token.startsWith("pi-web:") || token.startsWith("workbench-web:") || token.startsWith("launch-");
@@ -53,24 +52,45 @@ export class WorkstreamLaunchStore {
       await writeFile(temp, JSON.stringify({ token, cwd, sessionId, status: "created" }), { flag: "wx", mode: 0o600 });
       await rename(temp, path);
     } finally {
-      await unlink(temp).catch((error: unknown) => { if (!isNodeError(error, "ENOENT")) throw error; });
+      await unlink(temp).catch((error: unknown) => {
+        if (!isNodeError(error, "ENOENT")) throw error;
+      });
     }
   }
 
   async lookup(token: string): Promise<WorkstreamLaunchRecord | undefined> {
     const path = this.path(token);
     let content: string;
-    try { content = await readFile(path, "utf8"); }
-    catch (error) { if (isNodeError(error, "ENOENT")) return undefined; throw error; }
+    try {
+      content = await readFile(path, "utf8");
+    } catch (error) {
+      if (isNodeError(error, "ENOENT")) return undefined;
+      throw error;
+    }
     if (content.length > 4096) throw new Error("Invalid Workstream launch record");
     let value: unknown;
-    try { value = JSON.parse(content); } catch { throw new Error("Invalid Workstream launch record"); }
-    if (typeof value !== "object" || value === null || !("token" in value) || value.token !== token || !("cwd" in value) || typeof value.cwd !== "string" || value.cwd === "" || !("status" in value)) throw new Error("Invalid Workstream launch record");
+    try {
+      value = JSON.parse(content);
+    } catch {
+      throw new Error("Invalid Workstream launch record");
+    }
+    if (
+      typeof value !== "object"
+      || value === null
+      || !("token" in value)
+      || value.token !== token
+      || !("cwd" in value)
+      || typeof value.cwd !== "string"
+      || value.cwd === ""
+      || !("status" in value)
+    )
+      throw new Error("Invalid Workstream launch record");
     if (value.status === "pending") {
       if (!("sessionId" in value)) return { token, cwd: value.cwd, status: "pending" };
       if (typeof value.sessionId === "string" && value.sessionId !== "") return { token, cwd: value.cwd, status: "pending", sessionId: value.sessionId };
     }
-    if (value.status === "created" && "sessionId" in value && typeof value.sessionId === "string" && value.sessionId !== "") return { token, cwd: value.cwd, sessionId: value.sessionId, status: "created" };
+    if (value.status === "created" && "sessionId" in value && typeof value.sessionId === "string" && value.sessionId !== "")
+      return { token, cwd: value.cwd, sessionId: value.sessionId, status: "created" };
     throw new Error("Invalid Workstream launch record");
   }
 }

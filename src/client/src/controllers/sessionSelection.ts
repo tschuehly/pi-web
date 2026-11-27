@@ -45,12 +45,16 @@ export class SessionStorageSessionSelectionMemory implements SessionSelectionMem
   }
 }
 
-export function selectPreferredSession(sessions: SessionInfo[], options?: { targetSessionId?: string | undefined; latestSessionId?: string | undefined }): SessionInfo | undefined {
+export function selectPreferredSession(
+  sessions: SessionInfo[],
+  options?: { targetSessionId?: string | undefined; latestSessionId?: string | undefined },
+): SessionInfo | undefined {
   const targetSessionId = options?.targetSessionId;
   if (targetSessionId !== undefined && targetSessionId !== "") return sessions.find((session) => session.id === targetSessionId);
 
   const latestSessionId = options?.latestSessionId;
-  if (latestSessionId !== undefined && latestSessionId !== "") return sessions.find((session) => session.id === latestSessionId) ?? sessions.find((session) => session.archived !== true);
+  if (latestSessionId !== undefined && latestSessionId !== "")
+    return sessions.find((session) => session.id === latestSessionId) ?? sessions.find((session) => session.archived !== true);
 
   return sessions.find((session) => session.archived !== true);
 }
@@ -60,10 +64,7 @@ export function shouldDeselectAfterArchivedCollapse(sessions: SessionInfo[], sel
   return !sessions.some((session) => session.archived !== true);
 }
 
-export type ArchiveSelectionChange =
-  | { type: "unchanged" }
-  | { type: "select"; session: SessionInfo }
-  | { type: "clear" };
+export type ArchiveSelectionChange = { type: "unchanged" } | { type: "select"; session: SessionInfo } | { type: "clear" };
 
 export function markSessionArchived(sessions: SessionInfo[], sessionId: string, archivedAt: string): SessionInfo[] {
   return markSessionsArchived(sessions, [sessionId], archivedAt);
@@ -71,14 +72,22 @@ export function markSessionArchived(sessions: SessionInfo[], sessionId: string, 
 
 export function markSessionsArchived(sessions: SessionInfo[], sessionIds: readonly string[], archivedAt: string): SessionInfo[] {
   const archivedIds = new Set(sessionIds);
-  return sessions.map((session) => archivedIds.has(session.id) ? { ...session, archived: true, archivedAt } : session);
+  return sessions.map((session) => (archivedIds.has(session.id) ? { ...session, archived: true, archivedAt } : session));
 }
 
-export function selectionAfterArchivingSession(sessions: SessionInfo[], selectedSessionId: string | undefined, archivedSessionId: string): ArchiveSelectionChange {
+export function selectionAfterArchivingSession(
+  sessions: SessionInfo[],
+  selectedSessionId: string | undefined,
+  archivedSessionId: string,
+): ArchiveSelectionChange {
   return selectionAfterArchivingSessions(sessions, selectedSessionId, [archivedSessionId]);
 }
 
-export function selectionAfterArchivingSessions(sessions: SessionInfo[], selectedSessionId: string | undefined, archivedSessionIds: readonly string[]): ArchiveSelectionChange {
+export function selectionAfterArchivingSessions(
+  sessions: SessionInfo[],
+  selectedSessionId: string | undefined,
+  archivedSessionIds: readonly string[],
+): ArchiveSelectionChange {
   if (selectedSessionId === undefined || !archivedSessionIds.includes(selectedSessionId)) return { type: "unchanged" };
 
   const archivedIds = new Set(archivedSessionIds);

@@ -17,8 +17,14 @@ describe("selectable row activation", () => {
   it("activates rows from Enter and Space", () => {
     const enterAction = vi.fn();
     const spaceAction = vi.fn();
-    const enter = keyboardEventWithPath("Enter", matchTarget(() => false));
-    const space = keyboardEventWithPath(" ", matchTarget(() => false));
+    const enter = keyboardEventWithPath(
+      "Enter",
+      matchTarget(() => false),
+    );
+    const space = keyboardEventWithPath(
+      " ",
+      matchTarget(() => false),
+    );
 
     expect(handleSelectableRowKeyboard(enter, { activate: enterAction })).toBe(true);
     expect(handleSelectableRowKeyboard(space, { activate: spaceAction })).toBe(true);
@@ -31,7 +37,10 @@ describe("selectable row activation", () => {
 
   it("does not activate rows from keyboard events inside interactive elements", () => {
     const action = vi.fn();
-    const event = keyboardEventWithPath("Enter", matchTarget((selector: string) => selector.includes("button")));
+    const event = keyboardEventWithPath(
+      "Enter",
+      matchTarget((selector: string) => selector.includes("button")),
+    );
 
     expect(handleSelectableRowKeyboard(event, { activate: action })).toBe(false);
 
@@ -41,7 +50,10 @@ describe("selectable row activation", () => {
 
   it("routes row keyboard navigation to adjacent section callbacks", () => {
     const nextSection = vi.fn();
-    const event = keyboardEventWithPath("ArrowRight", matchTarget(() => false));
+    const event = keyboardEventWithPath(
+      "ArrowRight",
+      matchTarget(() => false),
+    );
 
     expect(handleSelectableRowKeyboard(event, { activate: vi.fn(), nextSection })).toBe(true);
 
@@ -52,7 +64,10 @@ describe("selectable row activation", () => {
 
   it("routes Escape row keyboard navigation to cancel", () => {
     const cancel = vi.fn();
-    const event = keyboardEventWithPath("Escape", matchTarget(() => false));
+    const event = keyboardEventWithPath(
+      "Escape",
+      matchTarget(() => false),
+    );
 
     expect(handleSelectableRowKeyboard(event, { activate: vi.fn(), cancel })).toBe(true);
 

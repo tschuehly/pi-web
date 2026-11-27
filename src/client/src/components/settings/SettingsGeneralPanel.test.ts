@@ -42,7 +42,11 @@ describe("General settings", () => {
   it("shows scope and environment priority without hiding saved values", async () => {
     const panel = await mountPanel();
     panel.targetLabel = "Lab Mac (remote machine)";
-    panel.configResponse = { ...configResponse({ host: "saved.local" }), effectiveConfig: { host: "env.local" }, envOverrides: { ...configResponse({}).envOverrides, host: true } };
+    panel.configResponse = {
+      ...configResponse({ host: "saved.local" }),
+      effectiveConfig: { host: "env.local" },
+      envOverrides: { ...configResponse({}).envOverrides, host: true },
+    };
     await settle(panel);
     expect(panel.shadowRoot?.textContent).toContain("Save file access and upload defaults on Lab Mac (remote machine)");
     expect(panel.shadowRoot?.textContent).toContain("Environment overrides take priority.");
@@ -71,7 +75,9 @@ describe("General settings", () => {
     const panel = await mountPanel();
     edit(panel, "input", " saved.local ");
     edit(panel, machineInput, "dirty/uploads");
-    panel.onSave = (config) => { panel.configResponse = configResponse(config); };
+    panel.onSave = (config) => {
+      panel.configResponse = configResponse(config);
+    };
     submit(panel, 0);
     await settle(panel);
     expect(input(panel, "input").value).toBe("saved.local");
@@ -98,16 +104,22 @@ describe("General settings", () => {
   it("preserves edits made during save and after failed saves", async () => {
     const panel = await mountPanel();
     let acknowledge: (() => void) | undefined;
-    panel.onSave = (config) => new Promise<void>((resolve) => {
-      acknowledge = () => { panel.configResponse = configResponse(config); resolve(); };
-    });
+    panel.onSave = (config) =>
+      new Promise<void>((resolve) => {
+        acknowledge = () => {
+          panel.configResponse = configResponse(config);
+          resolve();
+        };
+      });
     edit(panel, "input", "submitted.local");
     submit(panel, 0);
     edit(panel, "input", "newer.local");
     required(acknowledge)();
     await settle(panel);
     expect(input(panel, "input").value).toBe("newer.local");
-    panel.onSave = () => { throw new Error("Save failed"); };
+    panel.onSave = () => {
+      throw new Error("Save failed");
+    };
     submit(panel, 0);
     await settle(panel);
     panel.configResponse = configResponse({ host: "server.local" });

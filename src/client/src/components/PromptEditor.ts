@@ -8,7 +8,16 @@ import { LitElement, html, nothing, type PropertyValues, type TemplateResult } f
 import { customElement, property, query, state } from "lit/decorators.js";
 import { api, DEFAULT_WORKSPACE_ATTACHMENTS_FOLDER, type PromptAttachment, type SessionModel, type SessionStatus, type SlashCommand } from "../api";
 import { chatSupports, type PromptAttachmentDelivery } from "../../../shared/apiTypes";
-import { capturePromptAttachments, dataTransferHasFiles, effectivePromptAttachmentDelivery, filesFromDataTransfer, isInlinePromptAttachment, promptAttachmentsCanUseInlineDelivery, READ_FAILURE_MESSAGE, readFileAsBase64 } from "../promptAttachmentCapture";
+import {
+  capturePromptAttachments,
+  dataTransferHasFiles,
+  effectivePromptAttachmentDelivery,
+  filesFromDataTransfer,
+  isInlinePromptAttachment,
+  promptAttachmentsCanUseInlineDelivery,
+  READ_FAILURE_MESSAGE,
+  readFileAsBase64,
+} from "../promptAttachmentCapture";
 import { isSupportedImageMimeType, removeImageReferenceTokensFromText } from "../../../shared/promptAttachments";
 import { inputModeForDraft, inputModesEqual, type InputMode } from "../inputModes";
 import { machineSessionKey } from "../machineKeys";
@@ -18,14 +27,31 @@ import { editOutsideReplyQuotes, replyQuoteFolding, replyQuoteInsertion, type Re
 import { detectPromptCompletionTrigger, type PromptCompletionTrigger } from "../promptCompletions";
 import { promptArgumentHintExtension, setPromptArgumentHint } from "../promptArgumentHint";
 import { clearDraft, loadDraft, saveDraft, type DraftStorage } from "../promptDraftStorage";
-import { clearStagedAttachments, emptyStagedAttachmentDraft, loadStagedAttachmentDraft, resolveStagedAttachmentKey, saveStagedAttachments, type PendingAttachment } from "../promptAttachmentStaging";
+import {
+  clearStagedAttachments,
+  emptyStagedAttachmentDraft,
+  loadStagedAttachmentDraft,
+  resolveStagedAttachmentKey,
+  saveStagedAttachments,
+  type PendingAttachment,
+} from "../promptAttachmentStaging";
 import { loadAttachmentDelivery, saveAttachmentDelivery } from "../attachmentPreferences";
 import { createMobilePromptEnterMedia, promptStreamingBehaviorForEnter, shouldUsePromptEnterShiftShortcut } from "../promptEnterBehavior";
 import { composerKeyboardSubmissionEnabled, composerSendShortcut, matchesComposerSend } from "../composerShortcuts";
 import type { ShortcutPreferenceConfig } from "../keyboardShortcuts";
 import { promptEditorStyles, type CompletionItem } from "./shared";
 import { AnchoredPopupController, cssZoom } from "./anchoredPopup";
-import { renderActivityIcon, renderAttachIcon, renderCameraIcon, renderPhotosIcon, renderRemoveIcon, renderSendIcon, renderQueueIcon, renderSteerIcon, renderStopIcon } from "./promptEditorIcons";
+import {
+  renderActivityIcon,
+  renderAttachIcon,
+  renderCameraIcon,
+  renderPhotosIcon,
+  renderRemoveIcon,
+  renderSendIcon,
+  renderQueueIcon,
+  renderSteerIcon,
+  renderStopIcon,
+} from "./promptEditorIcons";
 import "./FullAccessToggle";
 import "./WorkingModeControls";
 import "./ModelEffortPicker";
@@ -54,7 +80,7 @@ export function promptEditorMaximumHeight(viewportHeight: number, interfaceScale
 
 export function promptEditorDragHeight(startHeight: number, startY: number, currentY: number, interfaceScale: number, maximumHeight: number): number {
   const scale = Number.isFinite(interfaceScale) && interfaceScale > 0 ? interfaceScale : 1;
-  return clampNumber(startHeight + ((startY - currentY) / scale), PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
+  return clampNumber(startHeight + (startY - currentY) / scale, PROMPT_EDITOR_MIN_HEIGHT, maximumHeight);
 }
 
 // Image inputs let mobile browsers offer photo-library sources; capture is a
@@ -79,7 +105,9 @@ function createPromptPlaceholder(text: string): HTMLElement {
 // Dense: the icons overlay the input's bottom-right corner; this empty box at the document's end keeps the last line
 // clear of them, wrapping to a line of its own only when the last line has no room. CSS sizes it; non-dense hides it.
 class TrailingIconSpace extends WidgetType {
-  override eq(): boolean { return true; }
+  override eq(): boolean {
+    return true;
+  }
   override toDOM(): HTMLElement {
     const space = document.createElement("span");
     space.className = "cm-dense-trailing-space";
@@ -87,9 +115,18 @@ class TrailingIconSpace extends WidgetType {
     return space;
   }
 }
-const trailingIconSpace = EditorView.decorations.compute(["doc"], (state) => (state.doc.length === 0 ? Decoration.none : Decoration.set(Decoration.widget({ widget: new TrailingIconSpace(), side: 1 }).range(state.doc.length))));
+const trailingIconSpace = EditorView.decorations.compute(["doc"], (state) =>
+  state.doc.length === 0 ? Decoration.none : Decoration.set(Decoration.widget({ widget: new TrailingIconSpace(), side: 1 }).range(state.doc.length)),
+);
 
-type PromptSendArgs = [text: string, streamingBehavior?: "steer" | "followUp", attachments?: PromptAttachment[], delivery?: PromptAttachmentDelivery, folder?: string, chips?: readonly StagedPromptChip[]];
+type PromptSendArgs = [
+  text: string,
+  streamingBehavior?: "steer" | "followUp",
+  attachments?: PromptAttachment[],
+  delivery?: PromptAttachmentDelivery,
+  folder?: string,
+  chips?: readonly StagedPromptChip[],
+];
 // Existing composer consumers may still send fire-and-forget; only a boolean
 // promise confirms the new chip-bearing submission path.
 type PromptSendHandler = ((...args: PromptSendArgs) => void | Promise<void>) | ((...args: PromptSendArgs) => Promise<boolean>);
@@ -173,7 +210,9 @@ export class PromptEditor extends LitElement {
     return {
       anchor: this.attachButton,
       panel: this.attachSourcePanel,
-      onClose: () => { this.attachSourceOpen = false; },
+      onClose: () => {
+        this.attachSourceOpen = false;
+      },
       options: { minWidth: 210 },
     };
   });
@@ -200,7 +239,9 @@ export class PromptEditor extends LitElement {
   private trailingIconsHeight = 0;
   private resizePointer: { id: number; startY: number; startHeight: number; scale: number; restoreEditorFocus: boolean } | undefined;
   private lastTouchTapAt: number | undefined;
-  private readonly onResizeViewport = (): void => { this.reconcileEditorHeight(); };
+  private readonly onResizeViewport = (): void => {
+    this.reconcileEditorHeight();
+  };
 
   protected override willUpdate(changed: PropertyValues<this>) {
     if (this.busy || changed.has("sessionId") || changed.has("machineId")) this.attachSourceOpen = false;
@@ -213,7 +254,11 @@ export class PromptEditor extends LitElement {
     this.nextImageReference = staged.nextImageReference;
     this.pendingImageReferences = staged.pendingImageReferences;
     this.draftGeneration = staged.generation;
-    this.draft = sanitizeDraftImageReferences(currentKey !== undefined ? loadDraft(currentKey, this.draftStorage) : "", this.attachments, this.pendingImageReferences);
+    this.draft = sanitizeDraftImageReferences(
+      currentKey !== undefined ? loadDraft(currentKey, this.draftStorage) : "",
+      this.attachments,
+      this.pendingImageReferences,
+    );
     this.attachmentError = undefined;
     this.knownCommandNames.clear();
     this.commandCatalogRequest = undefined;
@@ -239,7 +284,9 @@ export class PromptEditor extends LitElement {
     super.connectedCallback();
     window.addEventListener("resize", this.onResizeViewport);
     window.visualViewport?.addEventListener("resize", this.onResizeViewport);
-    void this.updateComplete.then(() => { if (this.isConnected) this.createEditor(); });
+    void this.updateComplete.then(() => {
+      if (this.isConnected) this.createEditor();
+    });
   }
 
   override firstUpdated(): void {
@@ -299,39 +346,87 @@ export class PromptEditor extends LitElement {
           aria-valuetext=${`${String(Math.round(currentHeight))} pixels, ${this.manualEditorHeight === undefined ? "automatic" : "manual"} height`}
           title="Temporary size lasts until Chat closes or reloads. Drag or use arrows; Enter resets."
           tabindex="0"
-          @pointerdown=${(event: PointerEvent) => { this.startEditorResize(event); }}
-          @pointermove=${(event: PointerEvent) => { this.moveEditorResize(event); }}
-          @pointerup=${(event: PointerEvent) => { this.finishEditorResize(event); }}
-          @pointercancel=${(event: PointerEvent) => { this.cancelEditorResize(event); }}
-          @dblclick=${() => { this.resetEditorHeight(); }}
-          @keydown=${(event: KeyboardEvent) => { this.handleEditorResizeKey(event); }}
+          @pointerdown=${(event: PointerEvent) => {
+            this.startEditorResize(event);
+          }}
+          @pointermove=${(event: PointerEvent) => {
+            this.moveEditorResize(event);
+          }}
+          @pointerup=${(event: PointerEvent) => {
+            this.finishEditorResize(event);
+          }}
+          @pointercancel=${(event: PointerEvent) => {
+            this.cancelEditorResize(event);
+          }}
+          @dblclick=${() => {
+            this.resetEditorHeight();
+          }}
+          @keydown=${(event: KeyboardEvent) => {
+            this.handleEditorResizeKey(event);
+          }}
         ></div>
       `;
     const editor = html`
         <div class="editor-wrap">
           <div class=${`markdown-editor${this.disabled ? " markdown-editor-disabled" : ""}${this.manualEditorHeight === undefined ? "" : " markdown-editor-manual-height"}`} style=${editorHeightStyle} aria-label="Message pi" aria-disabled=${this.disabled ? "true" : "false"}></div>
           ${this.chatNavigation === undefined || this.dense ? null : html`<div class="editor-chat-navigation">${this.chatNavigation}</div>`}
-          <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
-          <input class="attachment-image-input" type="file" multiple accept="image/*" hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
-          <input class="attachment-camera-input" type="file" accept="image/*" capture="environment" hidden @change=${(event: Event) => { void this.handleFileInput(event); }} />
+          <input class="attachment-input" type="file" multiple hidden @change=${(event: Event) => {
+            void this.handleFileInput(event);
+          }} />
+          <input class="attachment-image-input" type="file" multiple accept="image/*" hidden @change=${(event: Event) => {
+            void this.handleFileInput(event);
+          }} />
+          <input class="attachment-camera-input" type="file" accept="image/*" capture="environment" hidden @change=${(event: Event) => {
+            void this.handleFileInput(event);
+          }} />
           <div id="attach-source-panel" class="attach-source-panel ui-menu" popover="auto" role="group" aria-label="Attachment source">
-            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Choose from your photo library" @click=${() => { this.openAttachmentPicker(this.attachmentImageInput); }}><span class="attach-source-icon" aria-hidden="true">${renderPhotosIcon()}</span><span class="attach-source-label">Photos</span></button>
-            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Take a new photo" @click=${() => { this.openAttachmentPicker(this.attachmentCameraInput); }}><span class="attach-source-icon" aria-hidden="true">${renderCameraIcon()}</span><span class="attach-source-label">Camera</span></button>
-            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Browse documents and other files" @click=${() => { this.openAttachmentPicker(this.attachmentInput); }}><span class="attach-source-icon" aria-hidden="true">${renderAttachIcon()}</span><span class="attach-source-label">Files</span></button>
+            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Choose from your photo library" @click=${() => {
+              this.openAttachmentPicker(this.attachmentImageInput);
+            }}><span class="attach-source-icon" aria-hidden="true">${renderPhotosIcon()}</span><span class="attach-source-label">Photos</span></button>
+            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Take a new photo" @click=${() => {
+              this.openAttachmentPicker(this.attachmentCameraInput);
+            }}><span class="attach-source-icon" aria-hidden="true">${renderCameraIcon()}</span><span class="attach-source-label">Camera</span></button>
+            <button type="button" class="ui-button ui-menu-item" ?disabled=${busy} title="Browse documents and other files" @click=${() => {
+              this.openAttachmentPicker(this.attachmentInput);
+            }}><span class="attach-source-icon" aria-hidden="true">${renderAttachIcon()}</span><span class="attach-source-label">Files</span></button>
           </div>
           ${shellBlocked ? html`<div class="mode-hint">Shell commands are not available in this Chat yet</div>` : shellMode ? html`<div class="mode-hint">Shell command${shellInputMode.excludeFromContext ? " · excluded from context" : ""}</div>` : null}
           ${this.isCompacting && !shellMode ? html`<div class="mode-hint">Compacting history · message will be queued</div>` : null}
           ${this.renderPromptChips()}
           ${this.dense ? null : this.renderAttachments()}
-          <autocomplete-menu .onClose=${() => { this.closeCompletions(); }} .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => { this.pick(item); }}></autocomplete-menu>
+          <autocomplete-menu .onClose=${() => {
+            this.closeCompletions();
+          }} .items=${this.currentCompletions()} .selectedIndex=${this.selectedIndex} .onPick=${(item: CompletionItem) => {
+            this.pick(item);
+          }}></autocomplete-menu>
         </div>
       `;
     const composerActions = html`
           <div class="composer-actions">
-            ${attachable ? html`<button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" aria-controls=${sourceMenu ? "attach-source-panel" : nothing} aria-expanded=${sourceMenu ? String(this.attachSourceOpen) : nothing} @click=${() => { this.handleAttachClick(); }}>${renderAttachIcon()}</button>` : null}
-            <button type="button" class="icon-button send-button" ?disabled=${busy || shellBlocked} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => { this.send(steersInput ? "steer" : "followUp"); }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
-            ${alternate === "followUp" ? html`<button type="button" class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => { this.send("followUp"); }}>${renderQueueIcon()}</button>` : null}
-            ${alternate === "steer" ? html`<button type="button" class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => { this.send("steer"); }}>${renderSteerIcon()}</button>` : null}
+            ${
+              attachable
+                ? html`<button type="button" class="icon-button attach-button" ?disabled=${busy} title="Attach files" aria-label="Attach files" aria-controls=${sourceMenu ? "attach-source-panel" : nothing} aria-expanded=${sourceMenu ? String(this.attachSourceOpen) : nothing} @click=${() => {
+                    this.handleAttachClick();
+                  }}>${renderAttachIcon()}</button>`
+                : null
+            }
+            <button type="button" class="icon-button send-button" ?disabled=${busy || shellBlocked} title=${steersInput ? "Steer at the next available boundary" : queuesInput ? "Queue until the current activity finishes" : "Send message"} aria-label=${steersInput ? "Steer current response" : queuesInput ? "Queue message" : "Send message"} @click=${() => {
+              this.send(steersInput ? "steer" : "followUp");
+            }}>${steersInput ? renderSteerIcon() : queuesInput ? renderQueueIcon() : renderSendIcon()}</button>
+            ${
+              alternate === "followUp"
+                ? html`<button type="button" class="icon-button queue-button" ?disabled=${busy} title="Queue until the current response finishes" aria-label="Queue follow-up" @click=${() => {
+                    this.send("followUp");
+                  }}>${renderQueueIcon()}</button>`
+                : null
+            }
+            ${
+              alternate === "steer"
+                ? html`<button type="button" class="icon-button steer-button" ?disabled=${busy} title="Steer the current response before the next model call" aria-label="Steer current response" @click=${() => {
+                    this.send("steer");
+                  }}>${renderSteerIcon()}</button>`
+                : null
+            }
             ${this.dense && !this.canStop ? null : html`<button type="button" class="icon-button stop-button" ?disabled=${this.disabled || !this.canStop} title=${this.canStop ? "Stop current work" : "Nothing running"} aria-label="Stop current work" @click=${() => this.onStop?.()}>${renderStopIcon()}</button>`}
           </div>
       `;
@@ -342,7 +437,13 @@ export class PromptEditor extends LitElement {
           <full-access-toggle ?compact=${this.dense} .status=${this.status} .onRunCommand=${this.onRunCommand}></full-access-toggle>
       `;
     return html`
-      <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => { void this.handlePaste(event); }} @dragover=${(event: DragEvent) => { this.handleDragOver(event); }} @drop=${(event: DragEvent) => { void this.handleDrop(event); }}>
+      <footer class=${shellMode ? "shell-mode" : ""} @paste=${(event: ClipboardEvent) => {
+        void this.handlePaste(event);
+      }} @dragover=${(event: DragEvent) => {
+        this.handleDragOver(event);
+      }} @drop=${(event: DragEvent) => {
+        void this.handleDrop(event);
+      }}>
         ${resizeHandle}
         <div class="input-row">${this.dense ? this.renderDenseAttachments() : null}${editor}${this.dense ? html`<div class="dense-meta">${meta}</div>${this.renderActivityBadge()}${composerActions}` : null}</div>
         ${this.dense ? null : html`<div class="actions">${meta}${composerActions}</div>`}
@@ -408,20 +509,26 @@ export class PromptEditor extends LitElement {
     if (status === undefined) return null;
     const context = status.contextUsage;
     const exactContextPercent = context?.percent === null || context?.percent === undefined ? undefined : String(context.percent);
-    const percent = context === undefined ? undefined : context.percent ?? (context.tokens === null || context.contextWindow <= 0 ? undefined : (context.tokens / context.contextWindow) * 100);
-    const contextText = context === undefined
-      ? "Context unknown"
-      : `${context.tokens === null ? "?" : formatTokenCount(context.tokens)}${this.dense ? "/" : " / "}${formatTokenCount(context.contextWindow)}`;
-    const contextLabel = context === undefined
-      ? "Context usage unavailable"
-      : context.tokens === null
-        ? `Context used tokens unavailable; window: ${String(context.contextWindow)} tokens`
-        : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${exactContextPercent === undefined ? "" : ` (${exactContextPercent}%)`}`;
+    const percent =
+      context === undefined
+        ? undefined
+        : (context.percent ?? (context.tokens === null || context.contextWindow <= 0 ? undefined : (context.tokens / context.contextWindow) * 100));
+    const contextText =
+      context === undefined
+        ? "Context unknown"
+        : `${context.tokens === null ? "?" : formatTokenCount(context.tokens)}${this.dense ? "/" : " / "}${formatTokenCount(context.contextWindow)}`;
+    const contextLabel =
+      context === undefined
+        ? "Context usage unavailable"
+        : context.tokens === null
+          ? `Context used tokens unavailable; window: ${String(context.contextWindow)} tokens`
+          : `Context: ${String(context.tokens)} of ${String(context.contextWindow)} tokens used${exactContextPercent === undefined ? "" : ` (${exactContextPercent}%)`}`;
     const inputLabel = `Input tokens: ${String(status.tokens.input)}`;
     const outputLabel = `Output tokens: ${String(status.tokens.output)}`;
     const costLabel = `Session cost: $${String(status.cost)}`;
     const level = percent === undefined ? "" : percent >= 90 ? " context-danger" : percent >= 70 ? " context-warning" : "";
-    const metric = (name: string, visible: unknown, exact: string, title = exact) => html`<li data-usage=${name} title=${title}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
+    const metric = (name: string, visible: unknown, exact: string, title = exact) =>
+      html`<li data-usage=${name} title=${title}><span aria-hidden="true">${visible}</span><span class="visually-hidden">${exact}</span></li>`;
     // Input and output are cumulative session counters with little per-turn decision value: they stay
     // exact in the context meter's tooltip and in screen-reader text instead of taking row width.
     return html`
@@ -440,12 +547,14 @@ export class PromptEditor extends LitElement {
     if (this.promptChips.length === 0 && this.chipError === undefined) return null;
     return html`
       <div class="prompt-chips" aria-label="Pending context">
-        ${this.promptChips.map((chip) => html`
+        ${this.promptChips.map(
+          (chip) => html`
           <div class="prompt-chip" title=${chip.text}>
             <span>${chip.label}</span>
             <button type="button" aria-label=${`Remove ${chip.label}`} ?disabled=${this.disabled} @click=${() => this.onRemoveChip?.(chip)}>${renderRemoveIcon()}</button>
           </div>
-        `)}
+        `,
+        )}
         ${this.chipError === undefined ? null : html`<div class="chip-error" role="alert">${this.chipError}</div>`}
       </div>
     `;
@@ -457,12 +566,16 @@ export class PromptEditor extends LitElement {
     const delivery = this.effectiveAttachmentDelivery();
     return html`
       <div class="attachments" aria-label="Pending attachments">
-        ${this.attachments.map((attachment) => html`
+        ${this.attachments.map(
+          (attachment) => html`
           <div class=${`attachment-chip ${isInlinePromptAttachment(attachment) ? "attachment-chip-image" : "attachment-chip-file"}`} title=${attachment.kind === "image" ? `${attachment.reference} ${attachment.name}` : attachment.name}>
             ${this.renderAttachmentPreview(attachment)}
-            <button type="button" class="attachment-remove" title=${attachment.kind === "image" ? `Remove ${attachment.reference} image` : "Remove attachment"} aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>×</button>
+            <button type="button" class="attachment-remove" title=${attachment.kind === "image" ? `Remove ${attachment.reference} image` : "Remove attachment"} aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => {
+              this.removeAttachment(attachment.id);
+            }}>×</button>
           </div>
-        `)}
+        `,
+        )}
         ${this.attachments.length > 0 ? this.renderDeliverySelect(canUseInlineDelivery, delivery) : null}
         ${this.attachmentError !== undefined ? html`<div class="attachment-error">${this.attachmentError}</div>` : null}
       </div>
@@ -472,7 +585,9 @@ export class PromptEditor extends LitElement {
   private renderDeliverySelect(canUseInlineDelivery: boolean, delivery: PromptAttachmentDelivery) {
     return html`
       <label class="attachment-delivery" title=${canUseInlineDelivery ? "How attachments are delivered to the agent" : "General files are saved and mentioned from the workspace"}>
-        <select .value=${delivery} @change=${(event: Event) => { this.changeDelivery(event); }}>
+        <select .value=${delivery} @change=${(event: Event) => {
+          this.changeDelivery(event);
+        }}>
           <option value="inline" ?disabled=${!canUseInlineDelivery}>Attach to message${canUseInlineDelivery ? "" : " (images only)"}</option>
           <option value="folder">${attachmentFolderDeliveryLabel(this.attachmentsFolder)}</option>
         </select>
@@ -485,17 +600,30 @@ export class PromptEditor extends LitElement {
     if (this.attachments.length === 0 && this.attachmentError === undefined) return null;
     const open = this.attachmentMenuOpen && this.attachments.length > 0;
     return html`
-      <div class="attachments" aria-label="Pending attachments" @keydown=${(event: KeyboardEvent) => { if (event.key === "Escape" && open) { event.stopPropagation(); this.attachmentMenuOpen = false; } }}>
-        ${this.attachments.map((attachment) => html`
+      <div class="attachments" aria-label="Pending attachments" @keydown=${(event: KeyboardEvent) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          this.attachmentMenuOpen = false;
+        }
+      }}>
+        ${this.attachments.map(
+          (attachment) => html`
           <span class="attachment-chip">
-            <button type="button" class="attachment-open" aria-haspopup="true" aria-expanded=${String(open)} title=${`${attachment.kind === "image" ? `${attachment.reference} ` : ""}${attachment.name} · delivery options`} @click=${() => { this.attachmentMenuOpen = !this.attachmentMenuOpen; }}>
-              ${attachment.kind === "image" && isInlinePromptAttachment(attachment)
-                ? html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${`${attachment.reference} image ${attachment.name}`} />`
-                : html`<span class="attachment-file-preview">${fileExtensionLabel(attachment.name)}</span>`}
+            <button type="button" class="attachment-open" aria-haspopup="true" aria-expanded=${String(open)} title=${`${attachment.kind === "image" ? `${attachment.reference} ` : ""}${attachment.name} · delivery options`} @click=${() => {
+              this.attachmentMenuOpen = !this.attachmentMenuOpen;
+            }}>
+              ${
+                attachment.kind === "image" && isInlinePromptAttachment(attachment)
+                  ? html`<img src=${`data:${attachment.mimeType};base64,${attachment.data}`} alt=${`${attachment.reference} image ${attachment.name}`} />`
+                  : html`<span class="attachment-file-preview">${fileExtensionLabel(attachment.name)}</span>`
+              }
             </button>
-            <button type="button" class="attachment-remove" title="Remove attachment" aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => { this.removeAttachment(attachment.id); }}>${renderBuiltinTabIcon("x")}</button>
+            <button type="button" class="attachment-remove" title="Remove attachment" aria-label=${attachment.kind === "image" ? `Remove ${attachment.reference} image ${attachment.name}` : `Remove ${attachment.name}`} @click=${() => {
+              this.removeAttachment(attachment.id);
+            }}>${renderBuiltinTabIcon("x")}</button>
           </span>
-        `)}
+        `,
+        )}
         ${open ? html`<div class="attachment-menu" role="group" aria-label="Attachment delivery">${this.renderDeliverySelect(promptAttachmentsCanUseInlineDelivery(this.attachments), this.effectiveAttachmentDelivery())}</div>` : null}
         ${this.attachmentError !== undefined ? html`<div class="attachment-error" role="alert" title=${this.attachmentError}>!</div>` : null}
       </div>
@@ -585,7 +713,7 @@ export class PromptEditor extends LitElement {
       id: `attachment-${String(++this.attachmentSeq)}`,
       ...(isSupportedImageFile(file) ? { reference: `[PIC_${String(this.nextImageReference++)}]` } : {}),
     }));
-    const references = reserved.flatMap((entry) => entry.reference === undefined ? [] : [entry.reference]);
+    const references = reserved.flatMap((entry) => (entry.reference === undefined ? [] : [entry.reference]));
     this.pendingImageReferences = [...this.pendingImageReferences, ...references];
     this.saveCurrentStaging();
     const capturedPromise = Promise.all(reserved.map(async (entry) => ({ entry, result: await capturePromptAttachments([entry.file], readFileAsBase64) })));
@@ -593,7 +721,10 @@ export class PromptEditor extends LitElement {
     // expansion. Unknown slash-leading prose (for example /Users/...) still gets
     // a visible token; all images retain their internal reference and preview.
     const suppressTokens = isLeadingKnownCommandDraft(draftAtInvocation, this.knownCommandNames);
-    if (generation !== this.draftGeneration) { await capturedPromise; return; }
+    if (generation !== this.draftGeneration) {
+      await capturedPromise;
+      return;
+    }
     const insertionPosition = position === draftAtInvocation.length ? this.draft.length : position;
     if (references.length > 0 && !suppressTokens) this.insertImageReferenceTokens(references, insertionPosition);
 
@@ -609,7 +740,9 @@ export class PromptEditor extends LitElement {
       if (attachment.kind === "image" && entry.reference !== undefined) additions.push({ ...attachment, id: entry.id, reference: entry.reference });
       else if (attachment.kind === "file") additions.push({ ...attachment, id: entry.id });
     }
-    const failedReferences = reserved.flatMap((entry) => additions.some((attachment) => attachment.id === entry.id) || entry.reference === undefined ? [] : [entry.reference]);
+    const failedReferences = reserved.flatMap((entry) =>
+      additions.some((attachment) => attachment.id === entry.id) || entry.reference === undefined ? [] : [entry.reference],
+    );
     const targetKey = sourceKey === undefined ? undefined : resolveStagedAttachmentKey(sourceKey);
     if (targetKey !== undefined && targetKey !== draftStorageKey(this.machineId, this.sessionId)) {
       const staged = loadStagedAttachmentDraft(targetKey);
@@ -617,7 +750,8 @@ export class PromptEditor extends LitElement {
       const attachments = [...staged.attachments, ...additions].sort((a, b) => attachmentIdSequence(a.id) - attachmentIdSequence(b.id));
       const pendingImageReferences = staged.pendingImageReferences.filter((reference) => !references.includes(reference));
       saveStagedAttachments(targetKey, { ...staged, attachments, pendingImageReferences });
-      if (failedReferences.length > 0) saveDraft(targetKey, removeUnquotedImageReferenceTokens(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
+      if (failedReferences.length > 0)
+        saveDraft(targetKey, removeUnquotedImageReferenceTokens(loadDraft(targetKey, this.draftStorage), failedReferences), this.draftStorage);
       return;
     }
     if (generation !== this.draftGeneration) return;
@@ -716,22 +850,26 @@ export class PromptEditor extends LitElement {
           }),
           // Above the Markdown language's own Prec.high keymap, so Enter on a list line sends or accepts a completion; after
           // replyQuoteFolding, so Enter at a collapsed quote's edge still expands it.
-          Prec.highest(keymap.of([
-            { any: (view, event) => this.handleEditorKeyDown(event, view) },
-            { key: "ArrowDown", run: () => this.moveCompletion(1) },
-            { key: "ArrowUp", run: () => this.moveCompletion(-1) },
-            { key: "Escape", run: () => this.closeCompletions() },
-            { key: "Tab", run: (view) => this.handleEditorTab(view) },
-            { key: "Shift-Tab", run: (view) => indentWithTab.shift?.(view) ?? false },
-            { key: "Backspace", run: (view) => deleteMarkupBackward(view) },
-            ...historyKeymap,
-            ...defaultKeymap,
-          ])),
+          Prec.highest(
+            keymap.of([
+              { any: (view, event) => this.handleEditorKeyDown(event, view) },
+              { key: "ArrowDown", run: () => this.moveCompletion(1) },
+              { key: "ArrowUp", run: () => this.moveCompletion(-1) },
+              { key: "Escape", run: () => this.closeCompletions() },
+              { key: "Tab", run: (view) => this.handleEditorTab(view) },
+              { key: "Shift-Tab", run: (view) => indentWithTab.shift?.(view) ?? false },
+              { key: "Backspace", run: (view) => deleteMarkupBackward(view) },
+              ...historyKeymap,
+              ...defaultKeymap,
+            ]),
+          ),
         ],
       }),
     });
     if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => { this.reconcileEditorHeight(); });
+      const observer = new ResizeObserver(() => {
+        this.reconcileEditorHeight();
+      });
       observer.observe(this.editor.dom);
       if (this.footer instanceof Element) observer.observe(this.footer);
       this.editorHeightObserver = observer;
@@ -745,7 +883,11 @@ export class PromptEditor extends LitElement {
     const row = this.renderRoot.querySelector<HTMLElement>(".input-row");
     if (row === null) return;
     const icons = [...row.querySelectorAll<HTMLElement>(":scope > .editor-wrap ~ *")];
-    if (!this.dense || icons.length === 0) { row.style.removeProperty("--dense-trailing-width"); this.trailingIconsHeight = 0; return; }
+    if (!this.dense || icons.length === 0) {
+      row.style.removeProperty("--dense-trailing-width");
+      this.trailingIconsHeight = 0;
+      return;
+    }
     const measure = (): void => {
       const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
       const first = icons[0]?.getBoundingClientRect().left ?? 0;
@@ -778,12 +920,13 @@ export class PromptEditor extends LitElement {
   }
 
   private maximumEditorHeight(): number {
-    const viewportHeight = typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : window.visualViewport?.height ?? window.innerHeight;
+    const viewportHeight = typeof window === "undefined" ? PROMPT_EDITOR_MAX_HEIGHT * 2 : (window.visualViewport?.height ?? window.innerHeight);
     return promptEditorMaximumHeight(viewportHeight, this.interfaceScale(), this.nonEditorChromeHeight());
   }
 
   private reconcileEditorHeight(): void {
-    if (this.manualEditorHeight !== undefined) this.manualEditorHeight = clampNumber(this.manualEditorHeight, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
+    if (this.manualEditorHeight !== undefined)
+      this.manualEditorHeight = clampNumber(this.manualEditorHeight, PROMPT_EDITOR_MIN_HEIGHT, this.maximumEditorHeight());
     this.applyEditorHeight();
   }
 
@@ -801,7 +944,10 @@ export class PromptEditor extends LitElement {
     else this.editorHost?.style.setProperty("--prompt-editor-manual-height", `${String(manual)}px`);
     this.editorResizeHandle?.setAttribute("aria-valuemax", String(Math.round(maximumHeight)));
     this.editorResizeHandle?.setAttribute("aria-valuenow", String(Math.round(currentHeight)));
-    this.editorResizeHandle?.setAttribute("aria-valuetext", `${String(Math.round(currentHeight))} pixels, ${manual === undefined ? "automatic" : "manual"} height`);
+    this.editorResizeHandle?.setAttribute(
+      "aria-valuetext",
+      `${String(Math.round(currentHeight))} pixels, ${manual === undefined ? "automatic" : "manual"} height`,
+    );
   }
 
   private setManualEditorHeight(height: number): void {
@@ -823,7 +969,13 @@ export class PromptEditor extends LitElement {
     handle.setPointerCapture(event.pointerId);
     const restoreEditorFocus = event.pointerType !== "touch" && (this.editor?.hasFocus ?? false);
     if (event.pointerType !== "touch") handle.focus({ preventScroll: true });
-    this.resizePointer = { id: event.pointerId, startY: event.clientY, startHeight: this.currentEditorHeight(), scale: this.interfaceScale(), restoreEditorFocus };
+    this.resizePointer = {
+      id: event.pointerId,
+      startY: event.clientY,
+      startHeight: this.currentEditorHeight(),
+      scale: this.interfaceScale(),
+      restoreEditorFocus,
+    };
   }
 
   private moveEditorResize(event: PointerEvent): void {
@@ -841,7 +993,10 @@ export class PromptEditor extends LitElement {
     this.resizePointer = undefined;
     if (resize.restoreEditorFocus) this.editor?.focus();
     if (event.pointerType !== "touch") return;
-    if (Math.abs(event.clientY - resize.startY) > 8) { this.lastTouchTapAt = undefined; return; }
+    if (Math.abs(event.clientY - resize.startY) > 8) {
+      this.lastTouchTapAt = undefined;
+      return;
+    }
     const now = event.timeStamp;
     if (this.lastTouchTapAt !== undefined && now - this.lastTouchTapAt <= 300) {
       this.lastTouchTapAt = undefined;
@@ -864,7 +1019,10 @@ export class PromptEditor extends LitElement {
     if (!EDITOR_RESIZE_KEYS.has(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.key === "Enter") { this.resetEditorHeight(); return; }
+    if (event.key === "Enter") {
+      this.resetEditorHeight();
+      return;
+    }
     const maximumHeight = this.maximumEditorHeight();
     let height: number;
     if (event.key === "ArrowUp") height = this.currentEditorHeight(maximumHeight) + (event.shiftKey ? 72 : 24);
@@ -921,18 +1079,26 @@ export class PromptEditor extends LitElement {
       // Past the start only skills apply; a bare `/name` matches and shows the skill name.
       const bareSkill = trigger.from !== 0 && !trigger.query.startsWith("skill:");
       const query = trigger.query.toLowerCase();
-      this.setCompletions(version, triggerKey, commands
-        .filter((command) => trigger.from === 0 ? command.name.toLowerCase().includes(query) : command.source === "skill" && (bareSkill ? command.name.slice(6) : command.name).toLowerCase().includes(query))
-        .map((command) => ({
-          kind: "command",
-          replaceFrom: trigger.from,
-          replaceTo: trigger.to,
-          insertText: `/${command.name}`,
-          ...(bareSkill ? { label: command.name.slice(6) } : {}),
-          detail: command.source,
-          ...(command.description === undefined ? {} : { description: command.description }),
-          ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
-        })));
+      this.setCompletions(
+        version,
+        triggerKey,
+        commands
+          .filter((command) =>
+            trigger.from === 0
+              ? command.name.toLowerCase().includes(query)
+              : command.source === "skill" && (bareSkill ? command.name.slice(6) : command.name).toLowerCase().includes(query),
+          )
+          .map((command) => ({
+            kind: "command",
+            replaceFrom: trigger.from,
+            replaceTo: trigger.to,
+            insertText: `/${command.name}`,
+            ...(bareSkill ? { label: command.name.slice(6) } : {}),
+            detail: command.source,
+            ...(command.description === undefined ? {} : { description: command.description }),
+            ...(command.argumentHint === undefined ? {} : { argumentHint: command.argumentHint }),
+          })),
+      );
       return;
     }
     this.setCompletions(version, triggerKey, []);
@@ -976,17 +1142,22 @@ export class PromptEditor extends LitElement {
     if (EDITOR_RESIZE_KEYS.has(event.key) && this.editorResizeHandle !== undefined && event.composedPath().includes(this.editorResizeHandle)) return true;
     if (this.editor === undefined || !event.composedPath().includes(this.editor.contentDOM)) return false;
     // Keep Enter/newline handling and IME composition inside the editor, too.
-    return event.isComposing || this.editor.composing
+    return (
+      event.isComposing
+      || this.editor.composing
       || (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey)
       || (isPrimaryModifierEnter(event) && composerKeyboardSubmissionEnabled(this.shortcuts, this.mobilePromptEnterMedia))
-      || this.matchesSendShortcut(event);
+      || this.matchesSendShortcut(event)
+    );
   }
 
   private matchesSendShortcut(event: KeyboardEvent): boolean {
-    const shiftKey = event.key === "Enter"
-      ? shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia)
-      : event.shiftKey;
-    return matchesComposerSend({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey, isComposing: event.isComposing, target: event.target }, composerSendShortcut(this.shortcuts, this.mobilePromptEnterMedia));
+    const shiftKey =
+      event.key === "Enter" ? shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia) : event.shiftKey;
+    return matchesComposerSend(
+      { key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey, isComposing: event.isComposing, target: event.target },
+      composerSendShortcut(this.shortcuts, this.mobilePromptEnterMedia),
+    );
   }
 
   private handleEditorKeyDown(event: KeyboardEvent, view: EditorView): boolean {
@@ -998,7 +1169,11 @@ export class PromptEditor extends LitElement {
     if (event.defaultPrevented || event.isComposing || view.composing) return false;
     const primaryModifierEnter = isPrimaryModifierEnter(event);
     const send = this.matchesSendShortcut(event);
-    const plainEnter = event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey
+    const plainEnter =
+      event.key === "Enter"
+      && !event.ctrlKey
+      && !event.metaKey
+      && !event.altKey
       && !shouldUsePromptEnterShiftShortcut(event.shiftKey, this.explicitShiftKeyActive, this.mobilePromptEnterMedia);
     const completion = this.selectedCompletion();
     // A bare mid-prompt `/` is usually prose; Enter accepts only after typing or arrowing.
@@ -1032,7 +1207,6 @@ export class PromptEditor extends LitElement {
     return false;
   }
 
-
   private handleEditorTab(view: EditorView): boolean {
     const completion = this.selectedCompletion();
     if (completion !== undefined) {
@@ -1051,14 +1225,14 @@ export class PromptEditor extends LitElement {
   }
 
   private completionsAreCurrent(): boolean {
-    return this.completionResultVersion === this.requestVersion
-      && this.completionResultTrigger === completionTriggerKey(this.currentTrigger());
+    return this.completionResultVersion === this.requestVersion && this.completionResultTrigger === completionTriggerKey(this.currentTrigger());
   }
 
   private pick(item: CompletionItem) {
     const editor = this.editor;
     if (!editor || !this.completionsAreCurrent() || !this.completions.includes(item)) return;
-    const suffix = /\s/.test(this.draft[item.replaceTo] ?? "") || item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "") ? "" : " ";
+    const suffix =
+      /\s/.test(this.draft[item.replaceTo] ?? "") || (item.insertText.startsWith("/skill:") && /[,.!?;:]/.test(this.draft[item.replaceTo] ?? "")) ? "" : " ";
     const cursor = item.replaceFrom + item.insertText.length + suffix.length;
     editor.dispatch({
       changes: { from: item.replaceFrom, to: item.replaceTo, insert: `${item.insertText}${suffix}` },
@@ -1176,7 +1350,14 @@ export class PromptEditor extends LitElement {
     return machineSessionKey(this.machineId, this.sessionId ?? "");
   }
 
-  private async sendWithChips(text: string, behavior: "steer" | "followUp" | undefined, attachments: PromptAttachment[] | undefined, delivery: PromptAttachmentDelivery | undefined, folder: string | undefined, chips: readonly StagedPromptChip[]): Promise<void> {
+  private async sendWithChips(
+    text: string,
+    behavior: "steer" | "followUp" | undefined,
+    attachments: PromptAttachment[] | undefined,
+    delivery: PromptAttachmentDelivery | undefined,
+    folder: string | undefined,
+    chips: readonly StagedPromptChip[],
+  ): Promise<void> {
     const key = this.composerKey();
     const draft = this.draft;
     const pending = this.attachments;
@@ -1227,19 +1408,25 @@ export class PromptEditor extends LitElement {
 function sessionStatusRenderEqual(a: SessionStatus | undefined, b: SessionStatus | undefined, showUsage: boolean, showsActivity: boolean): boolean {
   if (a === b) return true;
   if (a === undefined || b === undefined) return false;
-  if (a.model?.id !== b.model?.id
+  if (
+    a.model?.id !== b.model?.id
     || a.model?.provider !== b.model?.provider
     || a.thinkingLevel !== b.thinkingLevel
     || a.extensionStatuses?.[WORKING_MODE_STATUS_KEY] !== b.extensionStatuses?.[WORKING_MODE_STATUS_KEY]
     || a.capabilities?.join() !== b.capabilities?.join()
-    || (showsActivity && activitySummary(a).label !== activitySummary(b).label)) return false;
-  return !showUsage || (a.tokens.input === b.tokens.input
-    && a.tokens.output === b.tokens.output
-    && a.contextUsage?.tokens === b.contextUsage?.tokens
-    && a.contextUsage?.contextWindow === b.contextUsage?.contextWindow
-    && a.contextUsage?.percent === b.contextUsage?.percent
-    && a.cost === b.cost
-    && a.pendingMessageCount === b.pendingMessageCount);
+    || (showsActivity && activitySummary(a).label !== activitySummary(b).label)
+  )
+    return false;
+  return (
+    !showUsage
+    || (a.tokens.input === b.tokens.input
+      && a.tokens.output === b.tokens.output
+      && a.contextUsage?.tokens === b.contextUsage?.tokens
+      && a.contextUsage?.contextWindow === b.contextUsage?.contextWindow
+      && a.contextUsage?.percent === b.contextUsage?.percent
+      && a.cost === b.cost
+      && a.pendingMessageCount === b.pendingMessageCount)
+  );
 }
 
 function completionTriggerKey(trigger: PromptCompletionTrigger | undefined): string | undefined {
@@ -1260,8 +1447,12 @@ function emptySlashCommands(): SlashCommand[] {
   return [];
 }
 
-export function sanitizeDraftImageReferences(text: string, attachments: readonly { kind: string; reference?: string }[], pendingReferences: readonly string[] = []): string {
-  const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => attachment.kind === "image" ? [attachment.reference] : [])]);
+export function sanitizeDraftImageReferences(
+  text: string,
+  attachments: readonly { kind: string; reference?: string }[],
+  pendingReferences: readonly string[] = [],
+): string {
+  const references = new Set([...pendingReferences, ...attachments.flatMap((attachment) => (attachment.kind === "image" ? [attachment.reference] : []))]);
   const dangling = Array.from(text.matchAll(/\[PIC_[1-9]\d*\]/g), (match) => match[0]).filter((reference) => !references.has(reference));
   return removeUnquotedImageReferenceTokens(text, dangling);
 }
@@ -1346,4 +1537,3 @@ function inputAssistanceContentAttributes(draftBeforeCursor: string): Record<str
   // CodeMirror is optimized for code and disables these by default, but the chat prompt is usually prose.
   return inputModeForDraft(draftBeforeCursor).kind === "normal" ? proseInputAssistanceAttributes : codeLikeInputAssistanceAttributes;
 }
-

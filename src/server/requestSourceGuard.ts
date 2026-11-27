@@ -53,7 +53,10 @@ function isListedHostname(hostname: string, policy: RequestSourcePolicy): boolea
   });
 }
 
-interface ParsedHost { hostname: string; port: string }
+interface ParsedHost {
+  hostname: string;
+  port: string;
+}
 
 function parseHost(hostHeader: string): ParsedHost | undefined {
   try {

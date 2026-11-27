@@ -37,12 +37,7 @@ export type TemplateEventHandler<E extends Event = Event> = (event: E) => void;
 
 /** True when `value` is a Lit `TemplateResult` (guarded by its private shape). */
 export function isTemplateResult(value: unknown): value is TemplateResult {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    isStringArray(Reflect.get(value, "strings")) &&
-    Array.isArray(Reflect.get(value, "values"))
-  );
+  return typeof value === "object" && value !== null && isStringArray(Reflect.get(value, "strings")) && Array.isArray(Reflect.get(value, "values"));
 }
 
 /** The static string chunks of a single `TemplateResult`, or throw. */
@@ -126,7 +121,10 @@ export function templateEventHandlerNearMarker<E extends Event = Event>(template
 }
 
 /** Optional variant of {@link templateEventHandlerNearMarker}. */
-export function findOptionalTemplateEventHandlerNearMarker<E extends Event = Event>(template: TemplateResult, marker: string): TemplateEventHandler<E> | undefined {
+export function findOptionalTemplateEventHandlerNearMarker<E extends Event = Event>(
+  template: TemplateResult,
+  marker: string,
+): TemplateEventHandler<E> | undefined {
   return visit(template);
 
   function visit(value: unknown): TemplateEventHandler<E> | undefined {
@@ -165,7 +163,10 @@ export function templateEventHandlerAfterMarker<E extends Event = Event>(templat
 }
 
 /** Optional variant of {@link templateEventHandlerAfterMarker}. */
-export function findOptionalTemplateEventHandlerAfterMarker<E extends Event = Event>(template: TemplateResult, marker: string): TemplateEventHandler<E> | undefined {
+export function findOptionalTemplateEventHandlerAfterMarker<E extends Event = Event>(
+  template: TemplateResult,
+  marker: string,
+): TemplateEventHandler<E> | undefined {
   const strings = templateStrings(template);
   const values = templateValues(template);
   for (let index = 0; index < values.length; index += 1) {
@@ -200,14 +201,22 @@ export function findOptionalTemplateEventHandlerAfterMarker<E extends Event = Ev
  * and then locates the handler tagged by `marker` (e.g. `@click=`) that follows
  * it, so the wiring is tied to user-facing content rather than handler order.
  */
-export function templateEventHandlerAfterValue<E extends Event = Event>(template: TemplateResult, expectedValue: unknown, marker: string): TemplateEventHandler<E> {
+export function templateEventHandlerAfterValue<E extends Event = Event>(
+  template: TemplateResult,
+  expectedValue: unknown,
+  marker: string,
+): TemplateEventHandler<E> {
   const handler = findOptionalTemplateEventHandlerAfterValue<E>(template, expectedValue, marker);
   if (handler === undefined) throw new Error(`Expected template event handler after value ${String(expectedValue)}`);
   return handler;
 }
 
 /** Optional variant of {@link templateEventHandlerAfterValue}. */
-export function findOptionalTemplateEventHandlerAfterValue<E extends Event = Event>(template: TemplateResult, expectedValue: unknown, marker: string): TemplateEventHandler<E> | undefined {
+export function findOptionalTemplateEventHandlerAfterValue<E extends Event = Event>(
+  template: TemplateResult,
+  expectedValue: unknown,
+  marker: string,
+): TemplateEventHandler<E> | undefined {
   const strings = templateStrings(template);
   const values = templateValues(template);
   for (let index = 0; index < values.length; index += 1) {
@@ -250,7 +259,11 @@ export function templateClickHandlerForText<E extends Event = Event>(template: T
 }
 
 /** Optional variant of {@link templateClickHandlerForText}. */
-export function findOptionalTemplateClickHandlerForText<E extends Event = Event>(value: unknown, text: string, clickMarker = "@click"): TemplateEventHandler<E> | undefined {
+export function findOptionalTemplateClickHandlerForText<E extends Event = Event>(
+  value: unknown,
+  text: string,
+  clickMarker = "@click",
+): TemplateEventHandler<E> | undefined {
   if (Array.isArray(value)) {
     for (const item of value) {
       const nested = findOptionalTemplateClickHandlerForText<E>(item, text, clickMarker);

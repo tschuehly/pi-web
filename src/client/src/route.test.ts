@@ -43,7 +43,9 @@ function resolveWorkspacePanel(value: string): AppRoute["tool"] {
 
 describe("route helpers", () => {
   it("reads only supported route fields from the current URL", () => {
-    installWindow("http://localhost/app?machine=remote&project=p1&workspace=w1&session=s1&tool=git%3Aworkspace.git&view=workspace&core.workspace.files--file=src%2Fmain.ts&git.workspace.git--diff=README.md");
+    installWindow(
+      "http://localhost/app?machine=remote&project=p1&workspace=w1&session=s1&tool=git%3Aworkspace.git&view=workspace&core.workspace.files--file=src%2Fmain.ts&git.workspace.git--diff=README.md",
+    );
 
     expect(resolveAppRoute(readRoute(), resolveWorkspacePanel)).toEqual({
       machineId: "remote",
@@ -98,34 +100,37 @@ describe("route helpers", () => {
     }
   });
 
-  it.each(["files", "git", "core:workspace.git", "git:workspace.git", "retryable:workspace.panel", "settings", "", "Workspace"])("rejects invalid view %j without changing the tool", (view) => {
-    installWindow(`http://localhost/app?tool=files%3Aworkspace.files&view=${encodeURIComponent(view)}`);
-    // Raw values survive parsing for warnings; only resolved state is structural.
-    expect(readRoute().view).toBe(view === "" ? undefined : view);
-    expect(resolveAppRoute(readRoute(), resolveWorkspacePanel)).toMatchObject({
-      tool: "files:workspace.files",
-      view: undefined,
-    });
-    expect(parseMainView(view)).toBeUndefined();
-  });
+  it.each(["files", "git", "core:workspace.git", "git:workspace.git", "retryable:workspace.panel", "settings", "", "Workspace"])(
+    "rejects invalid view %j without changing the tool",
+    (view) => {
+      installWindow(`http://localhost/app?tool=files%3Aworkspace.files&view=${encodeURIComponent(view)}`);
+      // Raw values survive parsing for warnings; only resolved state is structural.
+      expect(readRoute().view).toBe(view === "" ? undefined : view);
+      expect(resolveAppRoute(readRoute(), resolveWorkspacePanel)).toMatchObject({
+        tool: "files:workspace.files",
+        view: undefined,
+      });
+      expect(parseMainView(view)).toBeUndefined();
+    },
+  );
 
   it.each([undefined, null, 1, {}, []])("rejects non-string view %j", (view) => {
     expect(parseMainView(view)).toBeUndefined();
   });
 
   it("matches contribution navigation to the exact machine, project, and workspace route", () => {
-    expect(routeMatchesWorkspaceIdentity(
-      { machineId: undefined, projectId: "p1", workspaceId: "w1" },
-      { machineId: "local", projectId: "p1", workspaceId: "w1" },
-    )).toBe(true);
-    expect(routeMatchesWorkspaceIdentity(
-      { machineId: "remote", projectId: "p1", workspaceId: "w1" },
-      { machineId: "local", projectId: "p1", workspaceId: "w1" },
-    )).toBe(false);
-    expect(routeMatchesWorkspaceIdentity(
-      { machineId: "remote", projectId: "p1", workspaceId: "other" },
-      { machineId: "remote", projectId: "p1", workspaceId: "w1" },
-    )).toBe(false);
+    expect(
+      routeMatchesWorkspaceIdentity({ machineId: undefined, projectId: "p1", workspaceId: "w1" }, { machineId: "local", projectId: "p1", workspaceId: "w1" }),
+    ).toBe(true);
+    expect(
+      routeMatchesWorkspaceIdentity({ machineId: "remote", projectId: "p1", workspaceId: "w1" }, { machineId: "local", projectId: "p1", workspaceId: "w1" }),
+    ).toBe(false);
+    expect(
+      routeMatchesWorkspaceIdentity(
+        { machineId: "remote", projectId: "p1", workspaceId: "other" },
+        { machineId: "remote", projectId: "p1", workspaceId: "w1" },
+      ),
+    ).toBe(false);
   });
 
   it("writes compact URLs with push history and preserves path/hash", () => {
@@ -141,7 +146,9 @@ describe("route helpers", () => {
 
     writeRoute(route);
 
-    expect(pushed).toEqual(["http://localhost/app?old=1&machine=remote&project=project%2Fid&workspace=workspace+id&tool=core%3Aworkspace.files&view=chat#section"]);
+    expect(pushed).toEqual([
+      "http://localhost/app?old=1&machine=remote&project=project%2Fid&workspace=workspace+id&tool=core%3Aworkspace.files&view=chat#section",
+    ]);
     expect(replaced).toEqual([]);
   });
 

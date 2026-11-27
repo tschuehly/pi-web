@@ -22,7 +22,9 @@ export interface ControlledFixtureServerOptions {
   appDependencies?: Omit<AppDependencies, "clientDist">;
 }
 
-export async function buildControlledFixtureServer(options: ControlledFixtureServerOptions): Promise<{ app: FastifyInstance; fixture: ControlledSessionFixture }> {
+export async function buildControlledFixtureServer(
+  options: ControlledFixtureServerOptions,
+): Promise<{ app: FastifyInstance; fixture: ControlledSessionFixture }> {
   const fixture = await buildControlledSessionFixture(options);
   assertOwnedManifest(options.root, options.manifestFile);
   await mkdir(dirname(options.manifestFile), { recursive: true });
@@ -38,7 +40,12 @@ export async function buildControlledFixtureServer(options: ControlledFixtureSer
 }
 
 function controlledWorkspaceCatalog(fixture: ControlledSessionFixture): WorkspaceCatalog {
-  const byProject = new Map(fixture.anchors.map((anchor) => [anchor.projectId, { id: anchor.workspaceId, projectId: anchor.projectId, path: anchor.cwd, label: "main", isMain: true } satisfies WorkspaceListing]));
+  const byProject = new Map(
+    fixture.anchors.map((anchor) => [
+      anchor.projectId,
+      { id: anchor.workspaceId, projectId: anchor.projectId, path: anchor.cwd, label: "main", isMain: true } satisfies WorkspaceListing,
+    ]),
+  );
   const list = (projectId: string): WorkspaceListing[] => {
     const workspace = byProject.get(projectId);
     return workspace === undefined ? [] : [workspace];
@@ -48,7 +55,9 @@ function controlledWorkspaceCatalog(fixture: ControlledSessionFixture): Workspac
     list: (projectId) => Promise.resolve(list(projectId)),
     resolve: (projectId, workspaceId) => {
       const workspace = byProject.get(projectId);
-      return workspace?.id === workspaceId ? Promise.resolve(workspace) : Promise.reject(new Error(`Unknown controlled workspace: ${projectId}/${workspaceId}`));
+      return workspace?.id === workspaceId
+        ? Promise.resolve(workspace)
+        : Promise.reject(new Error(`Unknown controlled workspace: ${projectId}/${workspaceId}`));
     },
   };
 }

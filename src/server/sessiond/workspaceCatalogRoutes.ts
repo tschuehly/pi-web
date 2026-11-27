@@ -19,11 +19,7 @@ export interface WorkspaceCatalogRouteDependencies {
 }
 
 /** Internal sessiond protocol; browser-facing routes consume it through a typed client. */
-export function registerWorkspaceCatalogRoutes(
-  app: FastifyInstance,
-  dependencies: WorkspaceCatalogRouteDependencies,
-  prefix = "/workspace-catalog",
-): void {
+export function registerWorkspaceCatalogRoutes(app: FastifyInstance, dependencies: WorkspaceCatalogRouteDependencies, prefix = "/workspace-catalog"): void {
   app.get(`${prefix}/provider-runtime`, () => dependencies.providerRuntime);
 
   app.get<{ Params: { projectId: string } }>(`${prefix}/projects/:projectId/workspaces`, async (request, reply) => {

@@ -66,10 +66,18 @@ describe("inline reply quotes", () => {
     expect(first?.textContent.trim()).toBe("Use the cache");
     expect(second?.textContent.trim()).toBe("Run the tests then ship");
     expect(view(editor).contentDOM.textContent).not.toContain("[msg m2]");
-    const atoms = view(editor).state.facet(EditorView.atomicRanges).map((source) => source(view(editor)));
+    const atoms = view(editor)
+      .state.facet(EditorView.atomicRanges)
+      .map((source) => source(view(editor)));
     const spans: [number, number][] = [];
-    for (const set of atoms) set.between(0, view(editor).state.doc.length, (from, to) => { spans.push([from, to]); });
-    expect(spans).toEqual([[0, Q1.length], [Q1.length + 2, Q1.length + 2 + Q2.length]]);
+    for (const set of atoms)
+      set.between(0, view(editor).state.doc.length, (from, to) => {
+        spans.push([from, to]);
+      });
+    expect(spans).toEqual([
+      [0, Q1.length],
+      [Q1.length + 2, Q1.length + 2 + Q2.length],
+    ]);
 
     second?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
     expect(view(editor).contentDOM.textContent).toContain("[msg m2](#entry:m2) Run the tests");
@@ -104,7 +112,11 @@ describe("inline reply quotes", () => {
     view(editor).dispatch({ selection: EditorSelection.cursor(quote.length) });
 
     view(editor).dispatch({ changes: { from: quote.length, insert: "W" }, selection: EditorSelection.cursor(quote.length + 1), userEvent: "input.type" });
-    view(editor).dispatch({ changes: { from: view(editor).state.selection.main.head, insert: "hy?" }, selection: EditorSelection.cursor(view(editor).state.selection.main.head + 3), userEvent: "input.type" });
+    view(editor).dispatch({
+      changes: { from: view(editor).state.selection.main.head, insert: "hy?" },
+      selection: EditorSelection.cursor(view(editor).state.selection.main.head + 3),
+      userEvent: "input.type",
+    });
 
     expect(view(editor).state.doc.toString()).toBe(`${quote}\n\nWhy?\n\n`);
     expect(view(editor).state.selection.main.head).toBe(quote.length + 6);
@@ -185,4 +197,3 @@ describe("inline reply quotes", () => {
     expect(toggles(reloaded).map((toggle) => toggle.getAttribute("aria-expanded"))).toEqual(["false"]);
   });
 });
-

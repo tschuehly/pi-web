@@ -30,12 +30,7 @@ describe("SessionNotificationStore", () => {
     const third = store.addNotification(generation, "same", "error").notification;
     const unknown = store.addNotification(generation, "unknown severity", "fatal").notification;
 
-    expect([first?.id, second?.id, third?.id, unknown?.id]).toEqual([
-      "daemon-test:1",
-      "daemon-test:2",
-      "daemon-test:3",
-      "daemon-test:4",
-    ]);
+    expect([first?.id, second?.id, third?.id, unknown?.id]).toEqual(["daemon-test:1", "daemon-test:2", "daemon-test:3", "daemon-test:4"]);
     expect(store.inboxSnapshot(identity.sessionId, identity.cwd)).toMatchObject({
       summary: { retainedCount: 4, discardedCount: 0, highestSeverity: "error", inboxRevision: 4 },
       notifications: [

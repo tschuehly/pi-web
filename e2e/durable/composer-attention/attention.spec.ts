@@ -3,7 +3,32 @@
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { test, expect, mock, setup, create, send, answer, idle, status, messages, asks, scriptAsk, ASK, get, post, id, chat, killHost, project, root, url, base, query, fixtureFile } from "./support";
+import {
+  test,
+  expect,
+  mock,
+  setup,
+  create,
+  send,
+  answer,
+  idle,
+  status,
+  messages,
+  asks,
+  scriptAsk,
+  ASK,
+  get,
+  post,
+  id,
+  chat,
+  killHost,
+  project,
+  root,
+  url,
+  base,
+  query,
+  fixtureFile,
+} from "./support";
 setup();
 // One question bar above the composer counts every open question ("2 open questions"); it opens the drawer.
 const questionBar = (page: import("@playwright/test").Page) => page.locator("workbench-question-chips .bar");
@@ -11,7 +36,7 @@ const questionBar = (page: import("@playwright/test").Page) => page.locator("wor
 test("AC-P001: create Durable and legacy neighbors; capability removal hides creation", async ({ page }) => {
   const durable = await create(page);
   const legacy = await create(page, "legacy");
-  const listing = await (await page.request.get(`${base()}api/sessions?${query()}`)).json() as { id: string; path: string }[];
+  const listing = (await (await page.request.get(`${base()}api/sessions?${query()}`)).json()) as { id: string; path: string }[];
   expect(listing.filter((s) => s.id === durable)).toHaveLength(1);
   expect(listing.find((s) => s.id === durable)?.path).toBe(`durable:${durable}`);
   expect(listing.filter((s) => s.id === legacy)).toHaveLength(1);
@@ -33,16 +58,22 @@ test("AC-P002: catalogs contain each Chat once; recent sorted; exact link locate
   await answer(page, "echo: catalog-first");
   const otherWorkspace = join(root(), "catalog-workspace");
   await mkdir(otherWorkspace, { recursive: true });
-  const second = (await (await page.request.post(`${base()}api/sessions`, { data: { cwd: otherWorkspace, runtime: "durable" } })).json() as { id: string }).id;
+  const second = ((await (await page.request.post(`${base()}api/sessions`, { data: { cwd: otherWorkspace, runtime: "durable" } })).json()) as { id: string })
+    .id;
   const legacy = await create(page, "legacy");
   await send(page, "catalog-legacy");
   await answer(page, "echo: catalog-legacy");
-  const listing = await (await page.request.get(`${base()}api/sessions/recent?limit=100`)).json() as { id: string; modified: string }[];
+  const listing = (await (await page.request.get(`${base()}api/sessions/recent?limit=100`)).json()) as { id: string; modified: string }[];
   for (const session of [first, second, legacy]) expect(listing.filter((s) => s.id === session)).toHaveLength(1);
-  expect(listing.map((s) => s.modified)).toEqual(listing.map((s) => s.modified).sort().reverse());
+  expect(listing.map((s) => s.modified)).toEqual(
+    listing
+      .map((s) => s.modified)
+      .sort()
+      .reverse(),
+  );
   await page.goto(`${base()}?session=${second}&view=chat`);
   await expect(chat(page)).toBeVisible();
-  const located = await (await page.request.get(`${base()}api/sessions/locate/${second}`)).json() as { cwd: string };
+  const located = (await (await page.request.get(`${base()}api/sessions/locate/${second}`)).json()) as { cwd: string };
   expect(located.cwd).toBe(otherWorkspace);
   expect(id(page)).toBe(second);
   expect(await mock.journal({ kind: "chat" })).toHaveLength(2);
@@ -59,32 +90,54 @@ for (const runtime of ["durable", "legacy"] as const) {
     // Local stub occupies a supported package slot; it emits actual non-command ExtensionUI notifications.
     const fixture = join(root(), "notification-fixture");
     const receipts = join(fixture, "receipts.jsonl");
-    await fixtureFile("notification-fixture/package.json", JSON.stringify({ name: "pi-process-monitor", version: "0.0.0", type: "module", pi: { extensions: ["./index.mjs"] } }));
-    await fixtureFile("notification-fixture/index.mjs", `import { appendFileSync } from 'node:fs';
+    await fixtureFile(
+      "notification-fixture/package.json",
+      JSON.stringify({ name: "pi-process-monitor", version: "0.0.0", type: "module", pi: { extensions: ["./index.mjs"] } }),
+    );
+    await fixtureFile(
+      "notification-fixture/index.mjs",
+      `import { appendFileSync } from 'node:fs';
 export default function(pi) {
   const notify = (ctx, text) => { ctx.ui.notify(text, 'warning'); appendFileSync(${JSON.stringify(receipts)}, text + '\\n'); };
   pi.on('session_start', (_e, ctx) => { notify(ctx, 'fleet-notice-A'); notify(ctx, 'fleet-notice-B'); });
   pi.on('before_agent_start', (_e, ctx) => { notify(ctx, 'fleet-notice-C'); });
-}`);
+}`,
+    );
     const settingsPath = join(root(), runtime === "durable" ? "durable-agent/settings.json" : "agent/settings.json");
     const original = await readFile(settingsPath, "utf8");
     const settings = JSON.parse(original) as { packages?: string[]; extensions?: string[] };
-    await writeFile(settingsPath, JSON.stringify(runtime === "durable"
-      ? { ...settings, packages: [...settings.packages ?? [], fixture] }
-      : { ...settings, extensions: [...settings.extensions ?? [], join(fixture, "index.mjs")] }));
+    await writeFile(
+      settingsPath,
+      JSON.stringify(
+        runtime === "durable"
+          ? { ...settings, packages: [...(settings.packages ?? []), fixture] }
+          : { ...settings, extensions: [...(settings.extensions ?? []), join(fixture, "index.mjs")] },
+      ),
+    );
     try {
       const session = await create(page, runtime);
       expect(await readFile(receipts, "utf8")).toContain("fleet-notice-B");
-      const inbox = async () => (await (await get(page, session, "notifications")).json()) as { daemonInstanceId: string; notifications: { id: string; message: string }[]; dismissThrough: { order: number; overflowWatermark: number } };
+      const inbox = async () =>
+        (await (await get(page, session, "notifications")).json()) as {
+          daemonInstanceId: string;
+          notifications: { id: string; message: string }[];
+          dismissThrough: { order: number; overflowWatermark: number };
+        };
       const observed = await inbox();
       expect(observed.notifications).toHaveLength(2);
       await send(page, "notification-check");
       await answer(page, "echo: notification-check");
       await expect.poll(async () => (await inbox()).notifications.length).toBe(3);
       await post(page, session, "notifications/dismiss", { daemonInstanceId: observed.daemonInstanceId, notificationId: observed.notifications[0]!.id });
-      await post(page, session, "notifications/dismiss-all", { daemonInstanceId: observed.daemonInstanceId, throughOrder: observed.dismissThrough.order, throughOverflowWatermark: observed.dismissThrough.overflowWatermark });
+      await post(page, session, "notifications/dismiss-all", {
+        daemonInstanceId: observed.daemonInstanceId,
+        throughOrder: observed.dismissThrough.order,
+        throughOverflowWatermark: observed.dismissThrough.overflowWatermark,
+      });
       expect((await inbox()).notifications.map((n) => n.message)).toEqual(["fleet-notice-C"]);
-    } finally { await writeFile(settingsPath, original); }
+    } finally {
+      await writeFile(settingsPath, original);
+    }
   });
 }
 
@@ -93,7 +146,11 @@ for (const runtime of ["durable", "legacy"] as const) {
     const session = await create(page, runtime);
     await mock.script({ match: session, turns: ["First unseen.", "Second unseen."] });
     await page.goto(url());
-    const catalog = async () => (await (await page.request.get(`${base()}api/sessions/unread`)).json()) as { catalogId: string; sessions: { sessionId: string; completionOrder: number }[] };
+    const catalog = async () =>
+      (await (await page.request.get(`${base()}api/sessions/unread`)).json()) as {
+        catalogId: string;
+        sessions: { sessionId: string; completionOrder: number }[];
+      };
     await post(page, session, "prompt", { text: session });
     await expect.poll(async () => (await catalog()).sessions.find((s) => s.sessionId === session)?.completionOrder ?? 0).toBeGreaterThan(0);
     const old = await catalog();
@@ -104,7 +161,10 @@ for (const runtime of ["durable", "legacy"] as const) {
     const fresh = await catalog();
     const stale = await post(page, session, "unread/acknowledge", { catalogId: old.catalogId, throughCompletionOrder: oldOrder });
     expect(((await stale.json()) as typeof old).sessions.some((s) => s.sessionId === session)).toBe(true);
-    const cleared = await post(page, session, "unread/acknowledge", { catalogId: fresh.catalogId, throughCompletionOrder: fresh.sessions.find((s) => s.sessionId === session)!.completionOrder });
+    const cleared = await post(page, session, "unread/acknowledge", {
+      catalogId: fresh.catalogId,
+      throughCompletionOrder: fresh.sessions.find((s) => s.sessionId === session)!.completionOrder,
+    });
     expect(((await cleared.json()) as typeof old).sessions.some((s) => s.sessionId === session)).toBe(false);
     expect(await mock.journal({ kind: "chat", contains: session })).toHaveLength(2);
   });
@@ -144,14 +204,17 @@ test("AC-P037: revision rejects stale answers; cancel delivers once; withdraw de
   await send(page, session);
   await answer(page, "Question posted.");
   const original = (await asks(page)).pendingAsks[0]!;
-  await mock.script({ match: session, turns: [[{ toolCall: { name: "ask_user", args: { update: original.askId, context: "Revised context" } } }], "Revised."] });
+  await mock.script({
+    match: session,
+    turns: [[{ toolCall: { name: "ask_user", args: { update: original.askId, context: "Revised context" } } }], "Revised."],
+  });
   await send(page, "revise");
   await answer(page, "Revised.");
   const updated = (await asks(page)).pendingAsks[0]!;
   expect(updated.askId).toBe(original.askId);
   expect(updated.revision).not.toBe(original.revision);
   const stale = await post(page, session, "ask/submit", { askId: original.askId, revision: original.revision, answers: [] });
-  expect((await stale.json() as { result: string }).result).toBe("stale");
+  expect(((await stale.json()) as { result: string }).result).toBe("stale");
   await mock.script({ match: session, turns: ["Cancellation received."] });
   expect((await post(page, session, "ask/cancel", { askId: original.askId, operationId: `cancel-${session}` })).ok()).toBe(true);
   await answer(page, "Cancellation received.");
@@ -172,9 +235,26 @@ test("AC-P029 P038: background attention has exact IDs; stale ack and host kills
   const session = await create(page);
   // Observe global events at the actual browser WebSocket boundary (not a fabricated notification store).
   const events: { type: string; sessionId?: string; kind?: string; id?: string }[] = [];
-  page.on("websocket", (socket) => socket.on("framereceived", ({ payload }) => { try { events.push(JSON.parse(String(payload))); } catch { /* non-JSON frames */ } }));
+  page.on("websocket", (socket) =>
+    socket.on("framereceived", ({ payload }) => {
+      try {
+        events.push(JSON.parse(String(payload)));
+      } catch {
+        /* non-JSON frames */
+      }
+    }),
+  );
   await page.goto(url());
-  await mock.script({ match: session, turns: ["Ordinary done.", [{ toolCall: { name: "request_attention", args: { reason: "Review A" } } }], "A posted.", [{ toolCall: { name: "request_attention", args: { reason: "Review B" } } }], "B posted."] });
+  await mock.script({
+    match: session,
+    turns: [
+      "Ordinary done.",
+      [{ toolCall: { name: "request_attention", args: { reason: "Review A" } } }],
+      "A posted.",
+      [{ toolCall: { name: "request_attention", args: { reason: "Review B" } } }],
+      "B posted.",
+    ],
+  });
   await post(page, session, "prompt", { text: session });
   await expect.poll(async () => (await mock.journal({ kind: "chat", contains: session })).length).toBe(1);
   await idle(page, session);
@@ -190,9 +270,9 @@ test("AC-P029 P038: background attention has exact IDs; stale ack and host kills
   expect(a.id).not.toBe(b.id);
   await killHost(page, session);
   expect((await asks(page, session)).attentionRequest?.id).toBe(b.id);
-  expect((await (await post(page, session, "attention/acknowledge", { requestId: a.id })).json() as { acknowledged: boolean }).acknowledged).toBe(false);
+  expect(((await (await post(page, session, "attention/acknowledge", { requestId: a.id })).json()) as { acknowledged: boolean }).acknowledged).toBe(false);
   expect((await asks(page, session)).attentionRequest?.id).toBe(b.id);
-  expect((await (await post(page, session, "attention/acknowledge", { requestId: b.id })).json() as { acknowledged: boolean }).acknowledged).toBe(true);
+  expect(((await (await post(page, session, "attention/acknowledge", { requestId: b.id })).json()) as { acknowledged: boolean }).acknowledged).toBe(true);
   await killHost(page, session);
   expect((await asks(page, session)).attentionRequest).toBeUndefined();
   await expect.poll(() => events.filter((e) => e.type === "session.attention" && e.sessionId === session).length).toBe(2);
@@ -212,7 +292,15 @@ test("AC-P029 P038: background attention has exact IDs; stale ack and host kills
 
 test("AC-P039: each prompt gets one reminder per open set, none after closure, including host reopen", async ({ page }) => {
   const session = await create(page);
-  await mock.script({ match: session, turns: [[{ toolCall: { name: "ask_user", args: ASK } }, { toolCall: { name: "ask_user", args: { ...ASK, context: "Second set" } } }], "Two sets posted.", "Unrelated answered.", "After kill answered."] });
+  await mock.script({
+    match: session,
+    turns: [
+      [{ toolCall: { name: "ask_user", args: ASK } }, { toolCall: { name: "ask_user", args: { ...ASK, context: "Second set" } } }],
+      "Two sets posted.",
+      "Unrelated answered.",
+      "After kill answered.",
+    ],
+  });
   await send(page, session);
   await answer(page, "Two sets posted.");
   const open = (await asks(page)).pendingAsks;
@@ -227,7 +315,10 @@ test("AC-P039: each prompt gets one reminder per open set, none after closure, i
     for (const ask of open) expect(entry.lastUserText.split(ask.askId).length - 1).toBe(1);
   }
   expect((await messages(page)).messages.filter((m) => m.role === "user")).toHaveLength(3);
-  await mock.script({ match: session, turns: [[...open.map((ask) => ({ toolCall: { name: "ask_user", args: { withdraw: ask.askId } } }))], "Closed.", "No reminders."] });
+  await mock.script({
+    match: session,
+    turns: [[...open.map((ask) => ({ toolCall: { name: "ask_user", args: { withdraw: ask.askId } } }))], "Closed.", "No reminders."],
+  });
   await send(page, "close sets");
   await answer(page, "Closed.");
   await send(page, "no questions");
@@ -237,7 +328,13 @@ test("AC-P039: each prompt gets one reminder per open set, none after closure, i
 
 test("AC-P040: chips count individual questions, stale begins at six turns, confirmation resets age", async ({ page }) => {
   const session = await create(page);
-  await mock.script({ match: session, turns: [[{ toolCall: { name: "ask_user", args: ASK } }, { toolCall: { name: "ask_user", args: { ...ASK, context: "Second ordered set" } } }], "Question posted."] });
+  await mock.script({
+    match: session,
+    turns: [
+      [{ toolCall: { name: "ask_user", args: ASK } }, { toolCall: { name: "ask_user", args: { ...ASK, context: "Second ordered set" } } }],
+      "Question posted.",
+    ],
+  });
   await send(page, session);
   await answer(page, "Question posted.");
   await expect(questionBar(page)).toContainText("4 open questions");
@@ -293,7 +390,7 @@ test("AC-P031: manual /name survives later prompts and host kill", async ({ page
 test("AC-P032: checkpoint title command is recognized without model admission", async ({ page }) => {
   await create(page);
   const response = await post(page, id(page), "commands/run", { text: "/workstream-checkpoint-title Checkpoint fixture" });
-  const result = await response.json() as { type: string; message?: string };
+  const result = (await response.json()) as { type: string; message?: string };
   expect(result.type, result.message).toBe("done");
   expect(await mock.journal({ kind: "chat" })).toHaveLength(0);
 });
@@ -303,7 +400,7 @@ test("AC-P033: Durable launch token resolves the same Chat without a duplicate",
   const token = `pi-web:fleet-${id(page)}`;
   const response = await page.request.post(`${base()}api/sessions`, { data: { cwd: project(), runtime: "durable", startupToken: token } });
   expect(response.ok()).toBe(true);
-  const created = await response.json() as { id: string };
+  const created = (await response.json()) as { id: string };
   const lookup = await page.request.get(`${base()}api/sessions/workstream-launch/${encodeURIComponent(token)}?${query()}`);
   expect(await lookup.json()).toEqual(expect.objectContaining({ sessionId: created.id }));
 });
@@ -311,9 +408,20 @@ test("AC-P033: Durable launch token resolves the same Chat without a duplicate",
 test("AC-P030: activity distinguishes streaming, tool and idle", async ({ page }) => {
   const session = await create(page);
   const events: { type: string; activity?: { label: string } }[] = [];
-  page.on("websocket", (socket) => socket.on("framereceived", ({ payload }) => { try { events.push(JSON.parse(String(payload))); } catch { /* non-JSON */ } }));
+  page.on("websocket", (socket) =>
+    socket.on("framereceived", ({ payload }) => {
+      try {
+        events.push(JSON.parse(String(payload)));
+      } catch {
+        /* non-JSON */
+      }
+    }),
+  );
   await page.reload();
-  await mock.script({ match: session, turns: [[{ text: "Thinking now" }, { barrier: session }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], "Done reading."] });
+  await mock.script({
+    match: session,
+    turns: [[{ text: "Thinking now" }, { barrier: session }, { toolCall: { name: "read", args: { path: "docs/notes.md" } } }], "Done reading."],
+  });
   await send(page, session);
   await mock.waitForBarrier(session);
   expect((await status(page)).isStreaming).toBe(true);
@@ -322,7 +430,10 @@ test("AC-P030: activity distinguishes streaming, tool and idle", async ({ page }
   const labels = events.filter((e) => e.type === "activity.update").map((e) => e.activity?.label);
   expect(labels).toContain("agent running");
   expect(labels).toContain("idle");
-  expect(labels.some((label) => label?.toLowerCase().includes("read")), "activity needs a per-tool label, not only agent running/idle").toBe(true);
+  expect(
+    labels.some((label) => label?.toLowerCase().includes("read")),
+    "activity needs a per-tool label, not only agent running/idle",
+  ).toBe(true);
 });
 
 test("AC-P050: unsupported fork/archive hidden and API rejects without mutation", async ({ page }) => {
@@ -334,7 +445,7 @@ test("AC-P050: unsupported fork/archive hidden and API rejects without mutation"
     // Disable the supported attachment capability at the API boundary; the ordinary control assertion must fail.
     await page.route(/\/sessions\/[^/]+\/(status|transcript-snapshot)\?/, async (route) => {
       const response = await route.fetch();
-      const body = await response.json() as { capabilities?: string[]; status?: { capabilities: string[] } };
+      const body = (await response.json()) as { capabilities?: string[]; status?: { capabilities: string[] } };
       const projected = body.status ?? body;
       projected.capabilities = (projected.capabilities ?? []).filter((capability) => capability !== "attachments");
       await route.fulfill({ response, json: body });

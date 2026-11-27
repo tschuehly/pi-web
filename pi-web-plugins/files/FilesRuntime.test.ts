@@ -12,10 +12,17 @@ import { FilesRuntime } from "./FilesRuntime";
 
 describe("FilesRuntime tree and selection", () => {
   it("refreshes root and expanded directories, then collapses locally", async () => {
-    const listFiles = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>((path) => Promise.resolve(treeResponse(path, {
-      "": [directoryEntry("src"), fileEntry("README.md")],
-      src: [fileEntry("src/index.ts")],
-    }[path] ?? [])));
+    const listFiles = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>((path) =>
+      Promise.resolve(
+        treeResponse(
+          path,
+          {
+            "": [directoryEntry("src"), fileEntry("README.md")],
+            src: [fileEntry("src/index.ts")],
+          }[path] ?? [],
+        ),
+      ),
+    );
     const context = createContext({ files: createFiles({ listFiles }) });
     const runtime = new FilesRuntime();
     const scope = runtime.snapshot(context);
@@ -82,12 +89,15 @@ describe("FilesRuntime tree and selection", () => {
     runtime.subscribe(context, vi.fn());
     const scope = runtime.prepare(context);
     trees.request(2).resolve(treeResponse("", [fileEntry("README.md")]));
-    await vi.waitFor(() => { expect(scope.fileTree).toEqual([fileEntry("README.md")]); });
+    await vi.waitFor(() => {
+      expect(scope.fileTree).toEqual([fileEntry("README.md")]);
+    });
     expect(trees.request(2).signal.aborted).toBe(false);
   });
 
   it("keeps expected failures visible and clears its tree error after recovery", async () => {
-    const listFiles = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>()
+    const listFiles = vi
+      .fn<WorkspaceFilesCapabilityV1["listFiles"]>()
       .mockRejectedValueOnce(new Error("tree unavailable"))
       .mockResolvedValue(treeResponse("", [fileEntry("README.md")]));
     const context = createContext({ files: createFiles({ listFiles }) });
@@ -152,17 +162,25 @@ describe("FilesRuntime tree and selection", () => {
     const runtime = new FilesRuntime();
     const first = createContext({ files, navigation: createNavigation({ file: "a.txt" }) });
     const scope = runtime.prepare(first);
-    await vi.waitFor(() => { expect(scope.selectedFileContent?.content).toBe("loaded:a.txt"); });
+    await vi.waitFor(() => {
+      expect(scope.selectedFileContent?.content).toBe("loaded:a.txt");
+    });
     const contexts: WorkspacePanelContext[] = [];
-    runtime.subscribe(first, (_snapshot, context) => { contexts.push(context); });
+    runtime.subscribe(first, (_snapshot, context) => {
+      contexts.push(context);
+    });
 
     const second = { ...first, navigation: createNavigation({ file: "b.txt", mode: "raw" }) };
     await runtime.invalidate(second);
-    await vi.waitFor(() => { expect(scope.selectedFileContent?.content).toBe("loaded:b.txt"); });
+    await vi.waitFor(() => {
+      expect(scope.selectedFileContent?.content).toBe("loaded:b.txt");
+    });
 
     const back = { ...first, navigation: createNavigation({ file: "a.txt", mode: "preview" }) };
     await runtime.invalidate(back);
-    await vi.waitFor(() => { expect(scope.selectedFileContent?.content).toBe("loaded:a.txt"); });
+    await vi.waitFor(() => {
+      expect(scope.selectedFileContent?.content).toBe("loaded:a.txt");
+    });
     expect(contexts).toContain(second);
     expect(contexts.at(-1)).toBe(back);
     expect(readFile.mock.calls.map(([path]) => path)).toEqual(["a.txt", "b.txt", "a.txt"]);
@@ -175,7 +193,9 @@ describe("FilesRuntime tree and selection", () => {
     const runtime = new FilesRuntime();
 
     const scope = runtime.prepare(context);
-    await vi.waitFor(() => { expect(scope.selectedFileContent?.content).toBe("restored"); });
+    await vi.waitFor(() => {
+      expect(scope.selectedFileContent?.content).toBe("restored");
+    });
     expect(readFile.mock.calls[0]?.[0]).toBe("src/main.ts");
     expect(readFile.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
 
@@ -209,7 +229,9 @@ describe("FilesRuntime uploads", () => {
     expect(runtime.snapshot(context).uploadBatches["batch-1"]).toMatchObject({ loaded: 1, total: 5, percent: 0.2 });
 
     uploads.resolve(0, writeResponse("uploads/manual/a.txt", 2));
-    await vi.waitFor(() => { expect(uploads.fn).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(uploads.fn).toHaveBeenCalledTimes(2);
+    });
     uploads.resolve(1, writeResponse("uploads/manual/b.txt", 3));
     await run?.done;
 
@@ -228,16 +250,20 @@ describe("FilesRuntime uploads", () => {
 
   it("continues after one file fails and selects the first successful upload", async () => {
     const uploads = controllableUploads();
-    const context = createContext({ files: createFiles({
-      uploadFile: uploads.fn,
-      listFiles: () => Promise.resolve(treeResponse("")),
-      readFile: (path) => Promise.resolve(fileResponse(path)),
-    }) });
+    const context = createContext({
+      files: createFiles({
+        uploadFile: uploads.fn,
+        listFiles: () => Promise.resolve(treeResponse("")),
+        readFile: (path) => Promise.resolve(fileResponse(path)),
+      }),
+    });
     const runtime = new FilesRuntime({ createUploadBatchId: () => "batch-1", now: sequenceNow("start", "failed") });
     const run = runtime.startWorkspaceUpload(context, [new File(["a"], "a.txt"), new File(["b"], "b.txt")], { destinationFolder: "uploads" });
 
     uploads.reject(0, new Error("File already exists: uploads/a.txt"));
-    await vi.waitFor(() => { expect(uploads.fn).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(uploads.fn).toHaveBeenCalledTimes(2);
+    });
     uploads.resolve(1, writeResponse("uploads/b.txt", 1));
     await run?.done;
 
@@ -261,7 +287,9 @@ describe("FilesRuntime uploads", () => {
     const run = runtime.startWorkspaceUpload(context, [new File(["a"], "a.txt"), new File(["b"], "b.txt")], { destinationFolder: "uploads" });
 
     uploads.resolve(0, writeResponse("uploads/a.txt", 1));
-    await vi.waitFor(() => { expect(uploads.fn).toHaveBeenCalledTimes(2); });
+    await vi.waitFor(() => {
+      expect(uploads.fn).toHaveBeenCalledTimes(2);
+    });
     runtime.cancelWorkspaceUpload(context, "batch-1");
     await run?.done;
 
@@ -360,7 +388,9 @@ function createFiles(overrides: Partial<WorkspaceFilesCapabilityV1> = {}): Works
     moveFile: () => Promise.reject(new Error("not implemented")),
     previewUrl: (path) => `https://example.test/preview/${encodeURIComponent(path)}`,
     downloadUrl: (path) => `https://example.test/download/${encodeURIComponent(path)}`,
-    uploadFile: () => { throw new Error("not implemented"); },
+    uploadFile: () => {
+      throw new Error("not implemented");
+    },
     ...overrides,
   };
 }
@@ -388,11 +418,20 @@ function deferredTrees() {
     signal: AbortSignal;
     resolve: (value: FileTreeResponse) => void;
   }[] = [];
-  const fn = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>((path, options) => new Promise((resolve, reject) => {
-    const signal = options?.signal ?? new AbortController().signal;
-    requests.push({ path, signal, resolve });
-    signal.addEventListener("abort", () => { reject(new DOMException("cancelled", "AbortError")); }, { once: true });
-  }));
+  const fn = vi.fn<WorkspaceFilesCapabilityV1["listFiles"]>(
+    (path, options) =>
+      new Promise((resolve, reject) => {
+        const signal = options?.signal ?? new AbortController().signal;
+        requests.push({ path, signal, resolve });
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("cancelled", "AbortError"));
+          },
+          { once: true },
+        );
+      }),
+  );
   return {
     fn,
     request: (index: number) => {
@@ -410,9 +449,12 @@ function deferredReads() {
     resolve: (value: FileContentResponse) => void;
     reject: (error: unknown) => void;
   }[] = [];
-  const fn = vi.fn<WorkspaceFilesCapabilityV1["readFile"]>((path, options) => new Promise((resolve, reject) => {
-    requests.push({ path, signal: options?.signal ?? new AbortController().signal, resolve, reject });
-  }));
+  const fn = vi.fn<WorkspaceFilesCapabilityV1["readFile"]>(
+    (path, options) =>
+      new Promise((resolve, reject) => {
+        requests.push({ path, signal: options?.signal ?? new AbortController().signal, resolve, reject });
+      }),
+  );
   return {
     fn,
     request: (index: number) => {
@@ -451,9 +493,15 @@ function controllableUploads(options: { rejectOnCancel?: boolean } = {}) {
   return {
     fn,
     options: (index: number) => call(index).options,
-    progress: (index: number, progress: Parameters<NonNullable<NonNullable<Parameters<WorkspaceFilesCapabilityV1["uploadFile"]>[1]>["onProgress"]>>[0]) => { call(index).options?.onProgress?.(progress); },
-    resolve: (index: number, response: WriteWorkspaceFileResponse) => { call(index).resolve(response); },
-    reject: (index: number, error: unknown) => { call(index).reject(error); },
+    progress: (index: number, progress: Parameters<NonNullable<NonNullable<Parameters<WorkspaceFilesCapabilityV1["uploadFile"]>[1]>["onProgress"]>>[0]) => {
+      call(index).options?.onProgress?.(progress);
+    },
+    resolve: (index: number, response: WriteWorkspaceFileResponse) => {
+      call(index).resolve(response);
+    },
+    reject: (index: number, error: unknown) => {
+      call(index).reject(error);
+    },
     cancel: (index: number) => call(index).cancel,
   };
 }

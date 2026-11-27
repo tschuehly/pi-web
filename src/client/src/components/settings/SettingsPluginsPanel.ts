@@ -74,18 +74,20 @@ export class SettingsPluginsPanel extends LitElement {
       notices.push({
         type: "warning",
         title: "Server-plugin safe mode active",
-        content: runtime.safeStart === "bundled-only"
-          ? html`Only bundled server plugins were imported. Clear safe mode with <code>${runtime.recovery.clearSafeStart}</code>.`
-          : html`No server plugins were loaded. Terminal is unavailable; use the folder workspace to investigate. Clear safe mode with <code>${runtime.recovery.clearSafeStart}</code>.`,
+        content:
+          runtime.safeStart === "bundled-only"
+            ? html`Only bundled server plugins were imported. Clear safe mode with <code>${runtime.recovery.clearSafeStart}</code>.`
+            : html`No server plugins were loaded. Terminal is unavailable; use the folder workspace to investigate. Clear safe mode with <code>${runtime.recovery.clearSafeStart}</code>.`,
       });
     }
     if (runtime?.desiredSafeStart !== undefined && runtime.desiredSafeStart !== (runtime.safeStart ?? "off")) {
       notices.push({
         type: "warning",
         title: "Safe-mode restart pending",
-        content: runtime.desiredSafeStart === "off"
-          ? "Safe mode is turned off in saved settings, but remains active until the session daemon restarts."
-          : `Saved settings request ${runtime.desiredSafeStart} safe mode. It takes effect on the next session daemon restart.`,
+        content:
+          runtime.desiredSafeStart === "off"
+            ? "Safe mode is turned off in saved settings, but remains active until the session daemon restarts."
+            : `Saved settings request ${runtime.desiredSafeStart} safe mode. It takes effect on the next session daemon restart.`,
       });
     }
     if (runtime?.restartRequired === true) {
@@ -146,11 +148,16 @@ export class SettingsPluginsPanel extends LitElement {
 
   private renderPlugin(plugin: SettingsPluginRow): TemplateResult {
     const configured = this.configResponse?.config.plugins?.[plugin.id];
-    const configuredState = plugin.required === true
-      ? "Required · cannot be disabled here"
-      : !plugin.discovered && configured === undefined
-        ? "Package no longer available in saved settings"
-        : configured?.enabled === false ? "Saved: disabled" : configured?.enabled === true ? "Saved: enabled" : "Enabled by default";
+    const configuredState =
+      plugin.required === true
+        ? "Required · cannot be disabled here"
+        : !plugin.discovered && configured === undefined
+          ? "Package no longer available in saved settings"
+          : configured?.enabled === false
+            ? "Saved: disabled"
+            : configured?.enabled === true
+              ? "Saved: enabled"
+              : "Enabled by default";
     return html`
       <article class=${`plugin-card ui-settings-row${plugin.enabled ? "" : " disabled"}`}>
         <div class="plugin-main">
@@ -163,7 +170,11 @@ export class SettingsPluginsPanel extends LitElement {
           ${plugin.server === undefined || plugin.required === true ? nothing : html`<small class="command">Offline disable: <code>${plugin.server.disableCommand}</code></small>`}
         </div>
         <label class="toggle ui-checkbox-field">
-          <input type="checkbox" aria-label=${plugin.required === true ? `${plugin.id} is required` : `Enable ${plugin.id}`} .checked=${live(plugin.enabled)} ?disabled=${this.loading || this.saving || this.configResponse === undefined || !plugin.editable} @change=${(event: Event) => { void this.togglePlugin(plugin, event); }}>
+          <input type="checkbox" aria-label=${plugin.required === true ? `${plugin.id} is required` : `Enable ${plugin.id}`} .checked=${live(plugin.enabled)} ?disabled=${this.loading || this.saving || this.configResponse === undefined || !plugin.editable} @change=${(
+            event: Event,
+          ) => {
+            void this.togglePlugin(plugin, event);
+          }}>
           <span>${plugin.required === true ? "Required" : "Enable plugin"}</span>
         </label>
       </article>
@@ -206,7 +217,10 @@ export class SettingsPluginsPanel extends LitElement {
     await this.onTogglePlugin?.(plugin.id, enabled);
   }
 
-  static override styles = [uiFormStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiFormStyles,
+    uiSettingsStyles,
+    css`
     :host { display: block; }
     .loading-card, .plugin-note { color: var(--pi-muted); }
     code { color: var(--pi-text); font: 12px var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); overflow-wrap: anywhere; }
@@ -229,17 +243,15 @@ export class SettingsPluginsPanel extends LitElement {
     @media (max-width: 760px) {
       .plugin-main { flex-basis: 100%; }
     }
-  `];
+  `,
+  ];
 }
 
-export function settingsPluginRows(
-  response: PiWebPluginsResponse | undefined,
-  config: PiWebConfigResponse | undefined,
-): SettingsPluginRow[] {
+export function settingsPluginRows(response: PiWebPluginsResponse | undefined, config: PiWebConfigResponse | undefined): SettingsPluginRow[] {
   const configuredPlugins = config?.config.plugins ?? {};
   const rows = (response?.plugins ?? []).map((plugin): SettingsPluginRow => {
     const configured = configuredPlugins[plugin.id];
-    const enabled = plugin.required === true ? true : configured?.enabled ?? plugin.enabled;
+    const enabled = plugin.required === true ? true : (configured?.enabled ?? plugin.enabled);
     return {
       ...plugin,
       enabled,
@@ -269,31 +281,44 @@ export function settingsPluginRows(
 
 function serverStateLabel(state: NonNullable<PiWebPluginInfo["server"]>["state"]): string {
   switch (state) {
-    case "active": return "Active";
-    case "failed": return "Failed";
-    case "incompatible": return "Incompatible";
-    case "disabled": return "Disabled";
-    case "missing": return "Not active";
-    case "unknown": return "Active state unavailable";
+    case "active":
+      return "Active";
+    case "failed":
+      return "Failed";
+    case "incompatible":
+      return "Incompatible";
+    case "disabled":
+      return "Disabled";
+    case "missing":
+      return "Not active";
+    case "unknown":
+      return "Active state unavailable";
   }
 }
 
 function serverStateTone(state: NonNullable<PiWebPluginInfo["server"]>["state"]): "success" | "warning" | "error" | "neutral" {
   switch (state) {
-    case "active": return "success";
+    case "active":
+      return "success";
     case "disabled":
-    case "missing": return "warning";
+    case "missing":
+      return "warning";
     case "failed":
-    case "incompatible": return "error";
-    case "unknown": return "neutral";
+    case "incompatible":
+      return "error";
+    case "unknown":
+      return "neutral";
   }
 }
 
 function healthTone(status: NonNullable<NonNullable<PiWebPluginInfo["server"]>["health"]>["status"]): "success" | "warning" | "error" {
   switch (status) {
-    case "healthy": return "success";
-    case "degraded": return "warning";
-    case "unhealthy": return "error";
+    case "healthy":
+      return "success";
+    case "degraded":
+      return "warning";
+    case "unhealthy":
+      return "error";
   }
 }
 

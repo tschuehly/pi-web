@@ -15,7 +15,10 @@ const catalog: SessionModelCatalogEntry[] = [
 
 describe("filterModelOptions", () => {
   it("returns the options untouched in order for a blank query", () => {
-    const options: CommandOption[] = [{ value: "openai/gpt-5", label: "gpt-5" }, { value: "anthropic/claude", label: "claude", description: "anthropic" }];
+    const options: CommandOption[] = [
+      { value: "openai/gpt-5", label: "gpt-5" },
+      { value: "anthropic/claude", label: "claude", description: "anthropic" },
+    ];
 
     expect(filterModelOptions(options, "  ")).toEqual(options);
   });

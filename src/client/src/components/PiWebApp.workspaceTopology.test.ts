@@ -79,7 +79,9 @@ describe("PiWebApp workspace topology refresh wiring", () => {
     const unread: unknown = Reflect.get(app, "sessionUnread");
     if (typeof unread !== "object" || unread === null) throw new Error("Unread controller was unavailable");
     let finishUnread: (() => void) | undefined;
-    const pendingUnread = new Promise<void>((resolve) => { finishUnread = resolve; });
+    const pendingUnread = new Promise<void>((resolve) => {
+      finishUnread = resolve;
+    });
     Reflect.set(unread, "refreshAll", () => pendingUnread);
     const refreshSessions = spyOnWorkspaceSessionsRefresh(app);
     spyOnTopologyRefresh(app);
@@ -154,7 +156,9 @@ describe("PiWebApp realtime workspace invalidations", () => {
     vi.useFakeTimers();
     const app = createApp();
     setAppState(app, { selectedMachine: machine("machine-a"), selectedProject: project });
-    const loadWorkspaces = vi.spyOn(api, "workspaceResolution").mockResolvedValue({ projectId: project.id, status: "provider", ownerPluginId: "git", diagnostics: [], workspaces: [] });
+    const loadWorkspaces = vi
+      .spyOn(api, "workspaceResolution")
+      .mockResolvedValue({ projectId: project.id, status: "provider", ownerPluginId: "git", diagnostics: [], workspaces: [] });
     const [onEvent] = captureRealtimeConnection(app);
 
     onEvent({ type: "workspaces.changed", projectId: project.id });

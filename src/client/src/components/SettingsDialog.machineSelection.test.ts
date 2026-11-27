@@ -17,16 +17,29 @@ import type { SettingsShortcutsPanel } from "./settings/SettingsShortcutsPanel";
 import type { SettingsThemePanel } from "./settings/SettingsThemePanel";
 
 const gatewayMachine: Machine = {
-  id: "local", name: "Gateway", kind: "local",
-  createdAt: remoteMachine.createdAt, updatedAt: remoteMachine.updatedAt,
+  id: "local",
+  name: "Gateway",
+  kind: "local",
+  createdAt: remoteMachine.createdAt,
+  updatedAt: remoteMachine.updatedAt,
 };
 const gatewayConfig = { host: "gateway.local", port: 8504, shortcuts: { "core:chat": "mod+1" } };
 
 beforeEach(() => {
   vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => undefined);
-  vi.spyOn(configApi, "config").mockImplementation((id) => Promise.resolve(configResponse(id === undefined ? gatewayConfig : {
-    uploads: { defaultFolder: `${id}/uploads` }, spawnSessions: true, plugins: { info: { enabled: true } },
-  })));
+  vi.spyOn(configApi, "config").mockImplementation((id) =>
+    Promise.resolve(
+      configResponse(
+        id === undefined
+          ? gatewayConfig
+          : {
+              uploads: { defaultFolder: `${id}/uploads` },
+              spawnSessions: true,
+              plugins: { info: { enabled: true } },
+            },
+      ),
+    ),
+  );
   vi.spyOn(configApi, "namingModels").mockResolvedValue({ models: [] });
   vi.spyOn(configApi, "saveConfig").mockImplementation((config) => Promise.resolve(configResponse(config)));
   vi.spyOn(pluginsApi, "plugins").mockResolvedValue(pluginsResponse([pluginInfo("info", true)]));
@@ -55,8 +68,7 @@ function root(element: LitElement): ShadowRoot {
 }
 
 function button(element: LitElement, label: string): HTMLButtonElement {
-  const match = Array.from(root(element).querySelectorAll<HTMLButtonElement>("button"))
-    .find((candidate) => candidate.textContent.trim() === label);
+  const match = Array.from(root(element).querySelectorAll<HTMLButtonElement>("button")).find((candidate) => candidate.textContent.trim() === label);
   if (match === undefined) throw new Error(`Missing button ${label}`);
   return match;
 }
@@ -83,7 +95,9 @@ async function mount(): Promise<SettingsDialog> {
   const dialog = new SettingsDialog();
   dialog.machine = remoteMachine;
   dialog.machines = [gatewayMachine, remoteMachine, secondRemoteMachine];
-  dialog.onNavigate = (section) => { dialog.section = section; };
+  dialog.onNavigate = (section) => {
+    dialog.section = section;
+  };
   dialog.onRefreshMachineRuntime = vi.fn();
   document.body.append(dialog);
   await settle(dialog);
@@ -377,9 +391,11 @@ describe("settings-only machine selection DOM", () => {
     const config = deferred<PiWebConfigResponse>();
     const plugins = deferred<PiWebPluginsResponse>();
     const packages = deferred<PiPackagesResponse>();
-    vi.mocked(configApi.config).mockImplementation(async (id) => id === "remote-b" ? config.promise : configResponse({ uploads: { defaultFolder: "current/uploads" } }));
-    vi.mocked(pluginsApi.plugins).mockImplementation(async (id) => id === "remote-b" ? plugins.promise : pluginsResponse([pluginInfo("current", true)]));
-    vi.mocked(piPackagesApi.packages).mockImplementation(async (id) => id === "remote-b" ? packages.promise : { packages: [packageInfo("npm:current")] });
+    vi.mocked(configApi.config).mockImplementation(async (id) =>
+      id === "remote-b" ? config.promise : configResponse({ uploads: { defaultFolder: "current/uploads" } }),
+    );
+    vi.mocked(pluginsApi.plugins).mockImplementation(async (id) => (id === "remote-b" ? plugins.promise : pluginsResponse([pluginInfo("current", true)])));
+    vi.mocked(piPackagesApi.packages).mockImplementation(async (id) => (id === "remote-b" ? packages.promise : { packages: [packageInfo("npm:current")] }));
     await selectMachine(dialog, "remote-b");
     await selectMachine(dialog, "remote-a");
     config.resolve(configResponse({ uploads: { defaultFolder: "stale/uploads" } }));

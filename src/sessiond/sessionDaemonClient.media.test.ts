@@ -13,7 +13,12 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   for (const server of servers.splice(0)) {
     server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve(); }); });
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
   }
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
@@ -39,7 +44,9 @@ describe("session daemon binary transport", () => {
       const socketPath = process.platform === "win32" ? `\\\\.\\pipe\\pi-web-media-${randomUUID()}` : join(directory, "daemon.sock");
       vi.stubEnv("PI_WEB_SESSIOND_URL", "");
       vi.stubEnv("PI_WEB_SESSIOND_SOCKET", socketPath);
-      await new Promise<void>((resolve) => { server.listen(socketPath, resolve); });
+      await new Promise<void>((resolve) => {
+        server.listen(socketPath, resolve);
+      });
     } else {
       await listenTcp(server);
     }
@@ -58,9 +65,13 @@ describe("session daemon binary transport", () => {
 
   it("propagates cancellation after headers to a streaming response", async () => {
     let closeResponse: (() => void) | undefined;
-    const closed = new Promise<void>((resolve) => { closeResponse = resolve; });
+    const closed = new Promise<void>((resolve) => {
+      closeResponse = resolve;
+    });
     const server = http.createServer((_request, response) => {
-      response.on("close", () => { closeResponse?.(); });
+      response.on("close", () => {
+        closeResponse?.();
+      });
       response.writeHead(200, { "content-type": "image/png" });
       response.write(Buffer.from([0x89, 0x50]));
       // Deliberately leave the body open until the client cancels.
@@ -69,7 +80,9 @@ describe("session daemon binary transport", () => {
     await listenTcp(server);
     const controller = new AbortController();
     const result = await new SessionDaemonClient().requestStream("/sessions/s1/media/image", { signal: controller.signal });
-    result.body.on("error", () => { /* Expected abort of the unfinished image body. */ });
+    result.body.on("error", () => {
+      /* Expected abort of the unfinished image body. */
+    });
     controller.abort();
     await closed;
     expect(controller.signal.aborted).toBe(true);
@@ -77,7 +90,9 @@ describe("session daemon binary transport", () => {
 });
 
 async function listenTcp(server: http.Server): Promise<void> {
-  await new Promise<void>((resolve) => { server.listen(0, "127.0.0.1", resolve); });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Expected TCP listener");
   vi.stubEnv("PI_WEB_SESSIOND_URL", `http://127.0.0.1:${String(address.port)}`);

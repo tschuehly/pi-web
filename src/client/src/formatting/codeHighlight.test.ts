@@ -56,20 +56,37 @@ it("extends the one Highlighted renderer with plugin grammars and filename match
   const source = 'let x = "<script>";';
   const view = await mount(`\`\`\`nix\n${source}\n\`\`\``, async (registry) => {
     expect(registry.contentRendering.listRenderers({ machineId: "local", text: source, language: "nix" })).toEqual([]);
-    await registry.register({ id: "nix-grammar", plugin: {
-      apiVersion: 5, name: "Nix grammar", activate: () => ({ contributions: { syntaxHighlighters: [{
-        id: "nix", languages: ["nix"], fileExtensions: ["nix"], highlight: () => [{ from: 0, to: 3, kind: "keyword" }],
-      }] } }),
-    } });
-    expect(registry.contentRendering.listRenderers({ machineId: "local", text: source, filePath: "flake.nix" }))
-      .toEqual([{ id: "code-highlight:highlighted", label: "Highlighted", title: "Highlighted", renderMode: "automatic" }]);
+    await registry.register({
+      id: "nix-grammar",
+      plugin: {
+        apiVersion: 5,
+        name: "Nix grammar",
+        activate: () => ({
+          contributions: {
+            syntaxHighlighters: [
+              {
+                id: "nix",
+                languages: ["nix"],
+                fileExtensions: ["nix"],
+                highlight: () => [{ from: 0, to: 3, kind: "keyword" }],
+              },
+            ],
+          },
+        }),
+      },
+    });
+    expect(registry.contentRendering.listRenderers({ machineId: "local", text: source, filePath: "flake.nix" })).toEqual([
+      { id: "code-highlight:highlighted", label: "Highlighted", title: "Highlighted", renderMode: "automatic" },
+    ]);
   });
   const host = view.renderRoot.querySelector<ContentRendererHost>("pi-web-content-renderer");
   if (host === null) throw new Error("Expected Highlighted renderer");
   await settleDeferredContent(host);
   const preview = host.renderRoot.querySelector<TokenHighlightedCode>("pi-web-token-highlighted-code");
   if (preview === null) throw new Error("Expected grammar tokens in the bundled renderer");
-  await vi.waitFor(() => { expect(preview.renderRoot.querySelector(".hljs-keyword")?.textContent).toBe("let"); });
+  await vi.waitFor(() => {
+    expect(preview.renderRoot.querySelector(".hljs-keyword")?.textContent).toBe("let");
+  });
   expect(preview.renderRoot.querySelector("code")?.textContent).toBe(source);
   expect(preview.renderRoot.querySelector("script")).toBeNull();
   expect(host.renderRoot.querySelector("select")).toBeNull();
@@ -83,7 +100,10 @@ it("refreshes a mounted Highlighted preview after late grammar registration and 
   view.text = "```js\nconst x = 1;\n```";
   // Exercise the service/host boundary; the registry owns stable revision identity.
   const refresh = async (revision: object) => {
-    view.contentRendering = createContentRenderingService((request) => registry.matchContentRenderers(request), () => revision);
+    view.contentRendering = createContentRenderingService(
+      (request) => registry.matchContentRenderers(request),
+      () => revision,
+    );
     await settleDeferredContent(view);
   };
   document.body.append(view);
@@ -92,17 +112,32 @@ it("refreshes a mounted Highlighted preview after late grammar registration and 
   if (host === null) throw new Error("Expected Highlighted host");
   await settleDeferredContent(host);
   expect(host.renderRoot.querySelector("pi-web-highlighted-code")).not.toBeNull();
-  await registry.register({ id: "grammar", plugin: {
-    apiVersion: 5, name: "Grammar", activate: () => ({ contributions: { syntaxHighlighters: [{
-      id: "js", languages: ["js"], highlight: () => [{ from: 0, to: 5, kind: "type" }],
-    }] } }),
-  } });
+  await registry.register({
+    id: "grammar",
+    plugin: {
+      apiVersion: 5,
+      name: "Grammar",
+      activate: () => ({
+        contributions: {
+          syntaxHighlighters: [
+            {
+              id: "js",
+              languages: ["js"],
+              highlight: () => [{ from: 0, to: 5, kind: "type" }],
+            },
+          ],
+        },
+      }),
+    },
+  });
   await refresh({});
   await settleDeferredContent(host);
   expect(view.renderRoot.querySelector("pi-web-content-renderer")).toBe(host);
   const preview = host.renderRoot.querySelector<TokenHighlightedCode>("pi-web-token-highlighted-code");
   if (preview === null) throw new Error("Expected late grammar preview");
-  await vi.waitFor(() => { expect(preview.renderRoot.querySelector(".hljs-type")?.textContent).toBe("const"); });
+  await vi.waitFor(() => {
+    expect(preview.renderRoot.querySelector(".hljs-type")?.textContent).toBe("const");
+  });
   grammarEnabled = false;
   await refresh({});
   await settleDeferredContent(host);
@@ -117,18 +152,32 @@ it("refreshes a mounted Highlighted preview after late grammar registration and 
 
 it("offers two independent highlighting systems and defaults to the last discovered one", async () => {
   const view = await mount("```js\nconst x = 1;\n```", async (registry) => {
-    await registry.register({ id: "other-highlighter", plugin: {
-      apiVersion: 5, name: "Other highlighting", activate: () => ({ contributions: { contentRenderers: [{
-        id: "highlighted", title: "Other highlighting", languages: ["js"], renderMode: "automatic",
-        render: ({ text }) => html`<code class="other-highlight">${text}</code>`,
-      }] } }),
-    } });
+    await registry.register({
+      id: "other-highlighter",
+      plugin: {
+        apiVersion: 5,
+        name: "Other highlighting",
+        activate: () => ({
+          contributions: {
+            contentRenderers: [
+              {
+                id: "highlighted",
+                title: "Other highlighting",
+                languages: ["js"],
+                renderMode: "automatic",
+                render: ({ text }) => html`<code class="other-highlight">${text}</code>`,
+              },
+            ],
+          },
+        }),
+      },
+    });
   });
   const host = view.renderRoot.querySelector<ContentRendererHost>("pi-web-content-renderer");
   if (host === null) throw new Error("Expected renderer host");
   await settleDeferredContent(host);
   expect(host.renderRoot.querySelector("select")).toBeNull();
-  const views = [...host.renderRoot.querySelectorAll<HTMLButtonElement>('.views button')];
+  const views = [...host.renderRoot.querySelectorAll<HTMLButtonElement>(".views button")];
   expect(views.map((view) => view.textContent.trim())).toEqual(["Highlighted", "Other highlighting", "Raw"]);
   expect(views.map((view) => view.getAttribute("aria-pressed"))).toEqual(["false", "true", "false"]);
   expect(host.renderRoot.querySelector(".other-highlight")?.textContent).toBe("const x = 1;");
@@ -138,16 +187,14 @@ it("offers two independent highlighting systems and defaults to the last discove
   expect(host.renderRoot.querySelector("pi-web-highlighted-code")).not.toBeNull();
 });
 
-it.each([
-  "```unknown-language\nconst a = 1;\n```",
-  "```js\nconst a = 1;",
-  "```\nconst a = 1;\n```",
-  "```mermaid\ngraph TD; A-->B\n```",
-])("keeps unsupported, incomplete, unlabelled and Mermaid fences as source: %s", async (text) => {
-  const view = await mount(text);
-  expect(view.renderRoot.querySelector("pi-web-content-renderer")).toBeNull();
-  expect(view.renderRoot.querySelector("pre code")).not.toBeNull();
-});
+it.each(["```unknown-language\nconst a = 1;\n```", "```js\nconst a = 1;", "```\nconst a = 1;\n```", "```mermaid\ngraph TD; A-->B\n```"])(
+  "keeps unsupported, incomplete, unlabelled and Mermaid fences as source: %s",
+  async (text) => {
+    const view = await mount(text);
+    expect(view.renderRoot.querySelector("pi-web-content-renderer")).toBeNull();
+    expect(view.renderRoot.querySelector("pre code")).not.toBeNull();
+  },
+);
 
 it.each(["python", "ts", "bash", "json", "html", "css", "rust", "go", "sql", "diff"])("supports common language %s", async (language) => {
   const view = await mount(`\`\`\`${language}\nsample\n\`\`\``);

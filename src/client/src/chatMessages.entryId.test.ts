@@ -4,7 +4,11 @@ import { parseMessagePage } from "./api/parsers";
 
 describe("chat entry IDs", () => {
   it("preserves identity on every line produced by a skill invocation or assistant error", () => {
-    const skill = normalizeMessage({ role: "user", entryId: "skill-1", content: '<skill name="demo" location="/skills/demo">\nInstructions\n</skill>\n\nDo this' });
+    const skill = normalizeMessage({
+      role: "user",
+      entryId: "skill-1",
+      content: '<skill name="demo" location="/skills/demo">\nInstructions\n</skill>\n\nDo this',
+    });
     expect(skill).toHaveLength(2);
     expect(skill.map((line) => line.entryId)).toEqual(["skill-1", "skill-1"]);
     const error = normalizeMessage({ role: "assistant", entryId: "error-1", content: "partial", stopReason: "error", errorMessage: "failed" });
@@ -14,7 +18,14 @@ describe("chat entry IDs", () => {
 
   it("keeps the assistant entry ID when tool calls are split out and results coalesced", () => {
     const lines = normalizeMessages([
-      { role: "assistant", entryId: "assistant-1", content: [{ type: "text", text: "Checking" }, { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } }] },
+      {
+        role: "assistant",
+        entryId: "assistant-1",
+        content: [
+          { type: "text", text: "Checking" },
+          { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } },
+        ],
+      },
       { role: "toolResult", entryId: "result-1", toolCallId: "call-1", toolName: "bash", content: [{ type: "text", text: "/repo" }] },
     ]);
     expect(lines.map((line) => line.entryId)).toEqual(["assistant-1", "assistant-1"]);
@@ -30,7 +41,11 @@ describe("chat entry IDs", () => {
   });
 
   it("preserves opaque API payloads and rejects malformed entry IDs", () => {
-    const messages = [{ role: "user", entryId: "entry-1", content: "hi", extensionData: { custom: true } }, { role: "assistant", content: "legacy" }, "legacy opaque payload"];
+    const messages = [
+      { role: "user", entryId: "entry-1", content: "hi", extensionData: { custom: true } },
+      { role: "assistant", content: "legacy" },
+      "legacy opaque payload",
+    ];
     expect(parseMessagePage({ messages, start: 0, total: 3 }).messages).toEqual(messages);
     for (const entryId of [42, null, {}, []]) {
       expect(() => parseMessagePage({ messages: [{ entryId }], start: 0, total: 1 })).toThrow("Expected string field: entryId");

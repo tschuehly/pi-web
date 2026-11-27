@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { initialAppState } from "../appState";
 import { SessionController } from "./sessionController";
-import { transcriptSnapshotFixture, defaultApi, deferred, EmitSocket, oldSession, runPendingAnimationFrames, status, workspace, type AppState, type MessagePage, type SessionInfo, type SessionStatus, type SessionStreamSnapshot } from "./sessionController.testSupport";
+import {
+  transcriptSnapshotFixture,
+  defaultApi,
+  deferred,
+  EmitSocket,
+  oldSession,
+  runPendingAnimationFrames,
+  status,
+  workspace,
+  type AppState,
+  type MessagePage,
+  type SessionInfo,
+  type SessionStatus,
+  type SessionStreamSnapshot,
+} from "./sessionController.testSupport";
 
 function assistantPartial(text: string): SessionStreamSnapshot["partial"] {
   return { role: "assistant", content: [{ type: "text", text }] };
@@ -13,15 +27,18 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      transcriptSnapshot: () => transcriptSnapshotFixture(
-        { messages: [{ role: "user", content: "question" }], start: 0, total: 1 },
-        { ...status(oldSession.id), isStreaming: true },
-        { seq: 4, partial: assistantPartial("streaming answer") },
-      ),
+      transcriptSnapshot: () =>
+        transcriptSnapshotFixture(
+          { messages: [{ role: "user", content: "question" }], start: 0, total: 1 },
+          { ...status(oldSession.id), isStreaming: true },
+          { seq: 4, partial: assistantPartial("streaming answer") },
+        ),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -42,15 +59,18 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      transcriptSnapshot: () => transcriptSnapshotFixture(
-        { messages: [{ role: "user", content: "question" }], start: 0, total: 1 },
-        { ...status(oldSession.id), isStreaming: true },
-        { seq: 4, partial: assistantPartial("seed") },
-      ),
+      transcriptSnapshot: () =>
+        transcriptSnapshotFixture(
+          { messages: [{ role: "user", content: "question" }], start: 0, total: 1 },
+          { ...status(oldSession.id), isStreaming: true },
+          { seq: 4, partial: assistantPartial("seed") },
+        ),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -84,7 +104,9 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -112,21 +134,27 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      transcriptSnapshot: () => transcriptSnapshotFixture({
-        messages: [
-          { role: "user", content: "run it" },
-          { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "ls" } }] },
-        ],
-        start: 0,
-        total: 2,
-      }, { ...status(oldSession.id), isStreaming: true, isBashRunning: true },
-      // Mid tool execution the assistant-message stream has ended, so the
-      // snapshot carries no partial; the tool call is already in history.
-      { seq: 7, partial: null }),
+      transcriptSnapshot: () =>
+        transcriptSnapshotFixture(
+          {
+            messages: [
+              { role: "user", content: "run it" },
+              { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "ls" } }] },
+            ],
+            start: 0,
+            total: 2,
+          },
+          { ...status(oldSession.id), isStreaming: true, isBashRunning: true },
+          // Mid tool execution the assistant-message stream has ended, so the
+          // snapshot carries no partial; the tool call is already in history.
+          { seq: 7, partial: null },
+        ),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -161,7 +189,9 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },
@@ -171,7 +201,11 @@ describe("SessionController stream seed + watermark reconciliation", () => {
 
     // The failure surfaces instead of being swallowed as "no partial to seed":
     // no history is applied and no watermark is recorded.
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("Not Found");
+    expect(
+      Object.values(state.browserErrors)
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("Not Found");
     expect(state.messages).toEqual([]);
 
     socket.emit({ type: "assistant.delta", text: "unverified", seq: 1 });
@@ -184,13 +218,13 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
     const api: typeof defaultApi = {
       ...defaultApi,
-      transcriptSnapshot: () => transcriptSnapshotFixture(
-        { messages: [{ role: "user", content: "question" }], start: 0, total: 1 }, status(oldSession.id),
-      ),
+      transcriptSnapshot: () => transcriptSnapshotFixture({ messages: [{ role: "user", content: "question" }], start: 0, total: 1 }, status(oldSession.id)),
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { state = { ...state, ...patch }; },
+      (patch) => {
+        state = { ...state, ...patch };
+      },
       () => undefined,
       undefined,
       { api, socket },

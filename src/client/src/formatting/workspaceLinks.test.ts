@@ -33,7 +33,19 @@ describe("workspace Markdown path normalization", () => {
     expect(outsideChatFilePath("..", { ...workspace, root: "/work/sub" })).toBe("/work");
   });
 
-  it.each(["https://example.com/./file", "//example.com/./file", "mailto:a@example.com", "javascript:alert(1)", "#section", "?query", "/elsewhere/./file", "/work-other/file", "bad%ZZ", "dir%5Cfile", "file%00.txt"])("does not normalize excluded reference %s into a workspace file", (href) => {
+  it.each([
+    "https://example.com/./file",
+    "//example.com/./file",
+    "mailto:a@example.com",
+    "javascript:alert(1)",
+    "#section",
+    "?query",
+    "/elsewhere/./file",
+    "/work-other/file",
+    "bad%ZZ",
+    "dir%5Cfile",
+    "file%00.txt",
+  ])("does not normalize excluded reference %s into a workspace file", (href) => {
     expect(workspaceMarkdownFilePath(href, workspace)).toBeUndefined();
   });
 
@@ -97,7 +109,10 @@ describe("home and inline-code file paths", () => {
     expect(inlineCodeFileHref(text)).toBe(href);
   });
 
-  it.each(["origin/main", "a/b", "npm run dev", "https://example.com/a.md", "//host/a.md", "README.md", "1/2.5", "a/b.md#intro", "/", "~/"])("does not read inline code %s as a file path", (text) => {
-    expect(inlineCodeFileHref(text)).toBeUndefined();
-  });
+  it.each(["origin/main", "a/b", "npm run dev", "https://example.com/a.md", "//host/a.md", "README.md", "1/2.5", "a/b.md#intro", "/", "~/"])(
+    "does not read inline code %s as a file path",
+    (text) => {
+      expect(inlineCodeFileHref(text)).toBeUndefined();
+    },
+  );
 });

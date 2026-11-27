@@ -87,8 +87,12 @@ describe("OAuthLoginFlowService", () => {
   it("keeps a committed login complete when its completion callback and logger throw", async () => {
     const completionFailure = new Error("completion propagation failed");
     const loggingFailure = new Error("OAuth logger failed");
-    const error = vi.fn(() => { throw loggingFailure; });
-    const onComplete = vi.fn(() => { throw completionFailure; });
+    const error = vi.fn(() => {
+      throw loggingFailure;
+    });
+    const onComplete = vi.fn(() => {
+      throw completionFailure;
+    });
     const service = new OAuthLoginFlowService({ logger: { error } });
     const state = service.start({
       providerId: "test-provider",
@@ -97,14 +101,13 @@ describe("OAuthLoginFlowService", () => {
       onComplete,
     });
 
-    await vi.waitFor(() => { expect(service.get(state.flowId).status).toBe("complete"); });
+    await vi.waitFor(() => {
+      expect(service.get(state.flowId).status).toBe("complete");
+    });
 
     expect(service.get(state.flowId)).toMatchObject({ status: "complete", progress: ["Login complete"] });
     expect(onComplete).toHaveBeenCalledOnce();
-    expect(error).toHaveBeenCalledWith(
-      { err: completionFailure, flowId: state.flowId, providerId: "test-provider" },
-      "login completion callback failed",
-    );
+    expect(error).toHaveBeenCalledWith({ err: completionFailure, flowId: state.flowId, providerId: "test-provider" }, "login completion callback failed");
     service.dispose();
   });
 
@@ -152,7 +155,9 @@ describe("OAuthLoginFlowService", () => {
       placeholder: "token",
     });
     expect(prompt).not.toHaveProperty("allowEmpty");
-    expect(() => { service.respond(state.flowId, prompt.requestId, ""); }).toThrow("A value is required");
+    expect(() => {
+      service.respond(state.flowId, prompt.requestId, "");
+    }).toThrow("A value is required");
     service.dispose();
   });
 
@@ -217,14 +222,23 @@ describe("OAuthLoginFlowService", () => {
         selectedValue = await interaction.prompt({
           type: "select",
           message: "Choose account",
-          options: [{ id: "work", label: "Work", description: "Company account" }, { id: "personal", label: "Personal" }],
+          options: [
+            { id: "work", label: "Work", description: "Company account" },
+            { id: "personal", label: "Personal" },
+          ],
         });
       }),
     });
 
     const select = state.select;
     if (select === undefined) throw new Error("Expected select prompt");
-    expect(select).toMatchObject({ message: "Choose account", options: [{ value: "work", label: "Work", description: "Company account" }, { value: "personal", label: "Personal" }] });
+    expect(select).toMatchObject({
+      message: "Choose account",
+      options: [
+        { value: "work", label: "Work", description: "Company account" },
+        { value: "personal", label: "Personal" },
+      ],
+    });
 
     service.respond(state.flowId, select.requestId, "personal");
     await flushAsyncLogin();
@@ -250,7 +264,9 @@ describe("OAuthLoginFlowService", () => {
 
     const select = state.select;
     if (select === undefined) throw new Error("Expected select prompt");
-    expect(() => { service.respond(state.flowId, select.requestId, "personal"); }).toThrow("Invalid login selection");
+    expect(() => {
+      service.respond(state.flowId, select.requestId, "personal");
+    }).toThrow("Invalid login selection");
     expect(service.get(state.flowId).select).toEqual(select);
     service.dispose();
   });
@@ -361,7 +377,9 @@ describe("OAuthLoginFlowService", () => {
     service.dispose();
 
     await expect(promptRejected.promise).resolves.toMatchObject({ message: "Login cancelled" });
-    expect(() => { service.get(state.flowId); }).toThrow("Login flow not found");
+    expect(() => {
+      service.get(state.flowId);
+    }).toThrow("Login flow not found");
   });
 
   it("rejects stale or duplicate responses", () => {
@@ -378,7 +396,9 @@ describe("OAuthLoginFlowService", () => {
     if (prompt === undefined) throw new Error("Expected prompt");
 
     service.respond(state.flowId, prompt.requestId, "abc123");
-    expect(() => { service.respond(state.flowId, prompt.requestId, "abc123"); }).toThrow("Login request expired");
+    expect(() => {
+      service.respond(state.flowId, prompt.requestId, "abc123");
+    }).toThrow("Login request expired");
     service.dispose();
   });
 
@@ -406,7 +426,9 @@ describe("OAuthLoginFlowService", () => {
 
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(() => { service.get(state.flowId); }).toThrow("Login flow not found");
+    expect(() => {
+      service.get(state.flowId);
+    }).toThrow("Login flow not found");
     service.dispose();
   });
 });
@@ -415,9 +437,9 @@ function fakeRuntime(login: LoginHandler, authTypes?: AuthType[]): Pick<ModelRun
   return {
     login: (providerId, type, interaction) => {
       authTypes?.push(type);
-      return login(providerId, interaction).then(() => type === "api_key"
-        ? { type: "api_key", key: "test" }
-        : { type: "oauth", refresh: "r", access: "a", expires: 0 });
+      return login(providerId, interaction).then(() =>
+        type === "api_key" ? { type: "api_key", key: "test" } : { type: "oauth", refresh: "r", access: "a", expires: 0 },
+      );
     },
   };
 }

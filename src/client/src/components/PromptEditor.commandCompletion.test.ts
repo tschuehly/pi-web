@@ -35,44 +35,49 @@ describe("PromptEditor command completions", () => {
       name: `skill:example-${String(index + 1).padStart(2, "0")}`,
       source: "skill" as const,
     }));
-    vi.spyOn(api, "commands").mockResolvedValue([
-      { name: "tree", source: "builtin" },
-      ...skills,
-    ]);
+    vi.spyOn(api, "commands").mockResolvedValue([{ name: "tree", source: "builtin" }, ...skills]);
     const editor = new PromptEditor();
     editor.sessionId = "session-1";
     editor.cwd = "/repo";
 
     await refreshCompletions(editor, "/skill:");
 
-    expect(currentCompletions(editor)).toEqual(skills.map((skill) => ({
-      kind: "command", replaceFrom: 0, replaceTo: 7,
-      insertText: `/${skill.name}`, detail: "skill",
-    })));
+    expect(currentCompletions(editor)).toEqual(
+      skills.map((skill) => ({
+        kind: "command",
+        replaceFrom: 0,
+        replaceTo: 7,
+        insertText: `/${skill.name}`,
+        detail: "skill",
+      })),
+    );
 
     await refreshCompletions(editor, "/skill:example-40");
 
-    expect(currentCompletions(editor)).toEqual([
-      { kind: "command", replaceFrom: 0, replaceTo: 17, insertText: "/skill:example-40", detail: "skill" },
-    ]);
+    expect(currentCompletions(editor)).toEqual([{ kind: "command", replaceFrom: 0, replaceTo: 17, insertText: "/skill:example-40", detail: "skill" }]);
   });
 
   it("offers only skills after an earlier directive, and ignores late responses for a changed token", async () => {
     let resolve!: (commands: Awaited<ReturnType<typeof api.commands>>) => void;
-    vi.spyOn(api, "commands").mockReturnValue(new Promise((settle) => { resolve = settle; }));
+    vi.spyOn(api, "commands").mockReturnValue(
+      new Promise((settle) => {
+        resolve = settle;
+      }),
+    );
     const editor = new PromptEditor();
     editor.sessionId = "session-1";
     editor.cwd = "/repo";
     const pending = refreshCompletions(editor, "/template task /skill:re");
     await refreshCompletions(editor, "/template task done");
-    resolve([{ name: "review", source: "prompt" }, { name: "skill:review", source: "skill" }]);
+    resolve([
+      { name: "review", source: "prompt" },
+      { name: "skill:review", source: "skill" },
+    ]);
     await pending;
     expect(currentCompletions(editor)).toEqual([]);
 
     await refreshCompletions(editor, "/skill:a /skill:re");
-    expect(currentCompletions(editor)).toEqual([
-      { kind: "command", replaceFrom: 9, replaceTo: 18, insertText: "/skill:review", detail: "skill" },
-    ]);
+    expect(currentCompletions(editor)).toEqual([{ kind: "command", replaceFrom: 9, replaceTo: 18, insertText: "/skill:review", detail: "skill" }]);
   });
 
   it.each(["Tab", "Enter"])("keeps punctuation attached to the active skill with %s, including a mid-token cursor", async (key) => {
@@ -84,16 +89,22 @@ describe("PromptEditor command completions", () => {
     await editor.updateComplete;
     const draft = "ask /skill:old /skill:Re_V, now";
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.indexOf(",") + 1 } });
-    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(currentCompletions(editor)).toHaveLength(1);
+    });
     editor.view?.dispatch({ selection: { anchor: draft.indexOf("Re_V") + 2 } });
-    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(currentCompletions(editor)).toHaveLength(1);
+    });
     editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
     expect(editor.view?.state.doc.toString()).toBe("ask /skill:old /skill:Re_View, now");
   });
 
   it("retains legacy loaded mixed-case and underscore skill names, not other inline commands", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([
-      { name: "skill:Mixed_Case", source: "skill" }, { name: "template", source: "prompt" }, { name: "extension", source: "extension" },
+      { name: "skill:Mixed_Case", source: "skill" },
+      { name: "template", source: "prompt" },
+      { name: "extension", source: "extension" },
     ]);
     const editor = new PromptEditor();
     editor.sessionId = "session-1";
@@ -106,7 +117,9 @@ describe("PromptEditor command completions", () => {
 
   it("offers skills by name for a bare slash mid-prompt and inserts the skill directive", async () => {
     vi.spyOn(api, "commands").mockResolvedValue([
-      { name: "review", source: "prompt" }, { name: "skill:review", source: "skill", description: "Review code" }, { name: "skill:deploy", source: "skill" },
+      { name: "review", source: "prompt" },
+      { name: "skill:review", source: "skill", description: "Review code" },
+      { name: "skill:deploy", source: "skill" },
     ]);
     const editor = new PromptEditor();
     editor.sessionId = "session-1";
@@ -123,13 +136,18 @@ describe("PromptEditor command completions", () => {
     await editor.updateComplete;
     const draft = "please /vie now";
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.indexOf(" now") } });
-    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(currentCompletions(editor)).toHaveLength(1);
+    });
     editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     expect(editor.view?.state.doc.toString()).toBe("please /skill:review now");
   });
 
   it("does not accept a skill on Enter for a bare mid-prompt slash until the user types or arrows", async () => {
-    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }, { name: "skill:deploy", source: "skill" }]);
+    vi.spyOn(api, "commands").mockResolvedValue([
+      { name: "skill:review", source: "skill" },
+      { name: "skill:deploy", source: "skill" },
+    ]);
     const onSend = vi.fn();
     const editor = new PromptEditor();
     editor.sessionId = "session-1";
@@ -139,7 +157,9 @@ describe("PromptEditor command completions", () => {
     await editor.updateComplete;
     const type = async (draft: string) => {
       editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
-      await vi.waitFor(() => { expect(currentCompletions(editor)).not.toEqual([]); });
+      await vi.waitFor(() => {
+        expect(currentCompletions(editor)).not.toEqual([]);
+      });
     };
     const key = (name: string) => editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
 
@@ -163,7 +183,10 @@ describe("PromptEditor command completions", () => {
   });
 
   it("accepts a skill on Enter inside a list line under a reply quote, leaving the quote's directive literal", async () => {
-    vi.spyOn(api, "commands").mockResolvedValue([{ name: "skill:review", source: "skill" }, { name: "skill:deploy", source: "skill" }]);
+    vi.spyOn(api, "commands").mockResolvedValue([
+      { name: "skill:review", source: "skill" },
+      { name: "skill:deploy", source: "skill" },
+    ]);
     const onSend = vi.fn();
     const editor = new PromptEditor();
     editor.sessionId = "session-1";
@@ -174,7 +197,9 @@ describe("PromptEditor command completions", () => {
     const quote = "> [msg e1](#entry:e1) try /skill:de\n\n";
     const draft = `${quote}- use /re`;
     editor.view?.dispatch({ changes: { from: 0, to: editor.view.state.doc.length, insert: draft }, selection: { anchor: draft.length } });
-    await vi.waitFor(() => { expect(currentCompletions(editor)).toHaveLength(1); });
+    await vi.waitFor(() => {
+      expect(currentCompletions(editor)).toHaveLength(1);
+    });
     editor.view?.contentDOM.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
     expect(editor.view?.state.doc.toString()).toBe(`${quote}- use /skill:review `);
     expect(onSend).not.toHaveBeenCalled();
@@ -191,9 +216,7 @@ describe("PromptEditor command completions", () => {
 
     await refreshCompletions(editor, "/t");
 
-    expect(currentCompletions(editor)).toEqual([
-      { kind: "command", replaceFrom: 0, replaceTo: 2, insertText: "/tree", detail: "builtin" },
-    ]);
+    expect(currentCompletions(editor)).toEqual([{ kind: "command", replaceFrom: 0, replaceTo: 2, insertText: "/tree", detail: "builtin" }]);
   });
 });
 

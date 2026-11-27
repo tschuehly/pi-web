@@ -63,7 +63,10 @@ export class SettingsSessiondPanel extends LitElement {
         .onAction=${this.onReload}
       >
         <section class="ui-settings-section">
-        ${config === undefined ? this.renderUnavailableConfigState() : html`
+        ${
+          config === undefined
+            ? this.renderUnavailableConfigState()
+            : html`
           <div class="config-path-card ui-settings-path">
             <span>Config file</span>
             <code>${config.path}</code>
@@ -76,7 +79,9 @@ export class SettingsSessiondPanel extends LitElement {
                 aria-describedby="spawn-sessions-help"
                 .checked=${live(effectiveSpawn)}
                 ?disabled=${this.loading || this.saving || spawnOverridden}
-                @change=${(event: Event) => { void this.toggleSpawnSessions(event); }}
+                @change=${(event: Event) => {
+                  void this.toggleSpawnSessions(event);
+                }}
               >
               <span>Allow agents to start sessions</span>
             </label>
@@ -93,7 +98,9 @@ export class SettingsSessiondPanel extends LitElement {
                 aria-describedby="subsessions-help"
                 .checked=${live(effectiveSubsessions)}
                 ?disabled=${this.loading || this.saving || subsessionsOverridden || !effectiveSpawn}
-                @change=${(event: Event) => { void this.toggleSubsessions(event); }}
+                @change=${(event: Event) => {
+                  void this.toggleSubsessions(event);
+                }}
               >
               <span>Allow agents to track child sessions</span>
             </label>
@@ -111,7 +118,9 @@ export class SettingsSessiondPanel extends LitElement {
                 aria-describedby="ask-user-help"
                 .checked=${live(effectiveAskUser)}
                 ?disabled=${this.loading || this.saving || askUserOverridden}
-                @change=${(event: Event) => { void this.toggleAskUser(event); }}
+                @change=${(event: Event) => {
+                  void this.toggleAskUser(event);
+                }}
               >
               <span>Allow agents to ask you questions</span>
             </label>
@@ -136,7 +145,9 @@ export class SettingsSessiondPanel extends LitElement {
               type="button" aria-labelledby="session-naming-model-label session-naming-model-value"
               aria-describedby="session-naming-model-help" aria-haspopup="dialog"
               ?disabled=${this.loading || this.saving || this.namingModelsLoading}
-              @click=${() => { this.namingPickerOpen = true; }}>
+              @click=${() => {
+                this.namingPickerOpen = true;
+              }}>
               <span id="session-naming-model-value">${config.config.sessionNaming?.model ?? "Use session model"}</span>
               <span aria-hidden="true">▾</span>
             </button>
@@ -200,17 +211,22 @@ export class SettingsSessiondPanel extends LitElement {
               <div><dt>Naming thinking level</dt><dd>${config.effectiveConfig.sessionNaming?.thinkingLevel ?? "minimal"}</dd></div>
             </dl>
           </section>
-        `}
+        `
+        }
         </section>
       </settings-panel-frame>
-      ${this.namingPickerOpen ? html`
+      ${
+        this.namingPickerOpen
+          ? html`
         <command-picker title="Select naming model" searchable
           .options=${[
             { value: "", label: "Use session model", description: "Use the conversation’s model for naming." },
             ...(this.namingModelsLoading || this.namingModelsError ? [] : namingOptions),
           ]}
           .selectedValue=${config?.config.sessionNaming?.model ?? ""}
-          .onCancel=${() => { this.namingPickerOpen = false; }}
+          .onCancel=${() => {
+            this.namingPickerOpen = false;
+          }}
           .onPick=${(value: string) => {
             if (this.loading || this.saving) return;
             if (value !== "" && (this.namingModelsLoading || this.namingModelsError || !namingOptions.some((option) => option.value === value))) return;
@@ -218,7 +234,9 @@ export class SettingsSessiondPanel extends LitElement {
             void this.saveNamingField("model", value === "" ? undefined : value);
           }}
         ></command-picker>
-      ` : null}
+      `
+          : null
+      }
     `;
   }
 
@@ -234,7 +252,8 @@ export class SettingsSessiondPanel extends LitElement {
   }
 
   private async saveNamingField<K extends keyof NonNullable<PiWebConfigValues["sessionNaming"]>>(
-    key: K, value: NonNullable<PiWebConfigValues["sessionNaming"]>[K],
+    key: K,
+    value: NonNullable<PiWebConfigValues["sessionNaming"]>[K],
   ): Promise<void> {
     const current = { ...this.configResponse?.config.sessionNaming, [key]: value };
     const sessionNaming = {
@@ -261,7 +280,11 @@ export class SettingsSessiondPanel extends LitElement {
     await this.onSave?.(askUserConfigPatch(enabled));
   }
 
-  static override styles = [uiButtonStyles, uiFormStyles, uiSettingsStyles, css`
+  static override styles = [
+    uiButtonStyles,
+    uiFormStyles,
+    uiSettingsStyles,
+    css`
     :host { display: block; }
     h3 { margin: 0; font-size: 13px; line-height: 1.3; }
     .loading-card { color: var(--pi-muted); }
@@ -278,7 +301,8 @@ export class SettingsSessiondPanel extends LitElement {
     @media (max-width: 760px) {
       .effective-card dl > div { grid-template-columns: minmax(0, 1fr); gap: 3px; }
     }
-  `];
+  `,
+  ];
 }
 
 export function sessiondDescription(targetLabel: string): string {

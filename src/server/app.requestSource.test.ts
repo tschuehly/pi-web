@@ -38,7 +38,13 @@ describe("request source guard", () => {
 
   it("rejects a cross-origin POST and accepts same-origin and Origin-less requests", async () => {
     const server = appTestContext.app;
-    const request = (headers: Record<string, string>) => server.inject({ method: "POST", url: "/api/projects", headers: { host: "127.0.0.1:8505", ...headers }, payload: { path: "/definitely/missing/pi-web-project" } });
+    const request = (headers: Record<string, string>) =>
+      server.inject({
+        method: "POST",
+        url: "/api/projects",
+        headers: { host: "127.0.0.1:8505", ...headers },
+        payload: { path: "/definitely/missing/pi-web-project" },
+      });
 
     const crossSite = await request({ origin: "https://evil.example" });
     expect(crossSite.statusCode).toBe(403);
@@ -51,7 +57,9 @@ describe("request source guard", () => {
 
   it("rejects cross-origin and foreign-host WebSocket upgrades", async () => {
     const server = appTestContext.app;
-    server.get("/api/test-socket", { websocket: true }, (socket) => { socket.close(); });
+    server.get("/api/test-socket", { websocket: true }, (socket) => {
+      socket.close();
+    });
     await server.listen({ host: "127.0.0.1", port: 0 });
     const address = server.server.address();
     if (address === null || typeof address === "string") throw new Error("Expected a TCP address");
@@ -68,8 +76,14 @@ describe("request source guard", () => {
 function upgradeStatus(url: string, headers: Record<string, string>): Promise<number> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url, { headers });
-    socket.on("upgrade", (response) => { resolve(response.statusCode ?? 0); socket.terminate(); });
-    socket.on("unexpected-response", (_request, response) => { resolve(response.statusCode ?? 0); socket.terminate(); });
+    socket.on("upgrade", (response) => {
+      resolve(response.statusCode ?? 0);
+      socket.terminate();
+    });
+    socket.on("unexpected-response", (_request, response) => {
+      resolve(response.statusCode ?? 0);
+      socket.terminate();
+    });
     socket.on("error", reject);
   });
 }

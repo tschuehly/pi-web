@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { PiSessionService } from "./piSessionService.js";
-import { CapturingSessionEventHub, emptyArchiveStore, fakeRuntime, fakeSessionManager, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  emptyArchiveStore,
+  fakeRuntime,
+  fakeSessionManager,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const TEST_AGENT_DIR = "/tmp/pi-web-test-agent";
 const streamIdMatcher: unknown = expect.any(String);
@@ -36,11 +46,13 @@ describe("PiSessionService", () => {
         fake.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "<think>" } });
         // message_end publication waits one microtask for its persisted entry id.
         await Promise.resolve();
-        expect(events.sessionEvents.map(({ event }) => event)).toEqual(expect.arrayContaining([
-          { type: "message.end", message: projected },
-          { type: "message.append", message: projected },
-          { type: "assistant.delta", text: "<think>" },
-        ]));
+        expect(events.sessionEvents.map(({ event }) => event)).toEqual(
+          expect.arrayContaining([
+            { type: "message.end", message: projected },
+            { type: "message.append", message: projected },
+            { type: "assistant.delta", text: "<think>" },
+          ]),
+        );
         expect((await service.streamSnapshot(sessionRef("session-1"))).partial).toEqual(message);
         expect(message.content[0]).toEqual({ type: "text", text: "<think></think>answer" });
         // Resolve the current runner chain each time, including after extension reload.
@@ -53,7 +65,10 @@ describe("PiSessionService", () => {
 
     it("keeps one browser identity across start, deltas, both snapshots and end without mutating runtime messages", async () => {
       const message = {
-        role: "assistant", provider: "openai", model: "model-1", timestamp: 123,
+        role: "assistant",
+        provider: "openai",
+        model: "model-1",
+        timestamp: 123,
         content: [{ type: "thinking", thinking: "working", thinkingSignature: "secret" }],
       };
       const original = structuredClone(message);
@@ -67,7 +82,10 @@ describe("PiSessionService", () => {
         expect(partial).toMatchObject({ streamId: streamIdMatcher });
         expect(start).toEqual({ type: "assistant.start", message: partial });
         expect(partial).toEqual({
-          ...message, content: [{ type: "thinking", thinking: "working" }], thinkingLevel: "high", streamId: streamIdMatcher,
+          ...message,
+          content: [{ type: "thinking", thinking: "working" }],
+          thinkingLevel: "high",
+          streamId: streamIdMatcher,
         });
         expect((await service.transcriptSnapshot(ref)).partial).toEqual(partial);
         if (typeof partial !== "object" || partial === null || !("streamId" in partial)) throw new Error("Missing stream identity");
@@ -81,10 +99,12 @@ describe("PiSessionService", () => {
         for (const type of ["thinking_delta", "text_delta"]) {
           fake.emit({ type: "message_update", message, assistantMessageEvent: { type, delta: "more" } });
         }
-        expect(events.sessionEvents.map(({ event }) => event)).toEqual(expect.arrayContaining([
-          { type: "assistant.thinking.delta", text: "more", streamId },
-          { type: "assistant.delta", text: "more", streamId },
-        ]));
+        expect(events.sessionEvents.map(({ event }) => event)).toEqual(
+          expect.arrayContaining([
+            { type: "assistant.thinking.delta", text: "more", streamId },
+            { type: "assistant.delta", text: "more", streamId },
+          ]),
+        );
         expect((await service.streamSnapshot(ref)).partial).toEqual(partial);
         expect((await service.transcriptSnapshot(ref)).partial).toEqual(partial);
         fake.emit({ type: "message_end", message });
@@ -92,7 +112,8 @@ describe("PiSessionService", () => {
         await Promise.resolve();
         // The capturing hub observes events before the real hub's browser projection.
         expect(events.sessionEvents.map(({ event }) => event)).toContainEqual({
-          type: "message.end", message: { ...message, thinkingLevel: "high", streamId },
+          type: "message.end",
+          message: { ...message, thinkingLevel: "high", streamId },
         });
         expect((await service.transcriptSnapshot(ref)).partial).toBeNull();
         // A fake may retain SDK state after end: it must not retain the ended identity.
@@ -108,7 +129,9 @@ describe("PiSessionService", () => {
         expect((await service.streamSnapshot(ref)).partial).not.toHaveProperty("streamId");
         expect((await service.transcriptSnapshot(ref)).partial).toBeNull();
         expect(message).toEqual(original);
-      } finally { await service.dispose(); }
+      } finally {
+        await service.dispose();
+      }
     });
 
     it("annotates paged assistant messages with the thinking level in effect from branch entries", async () => {
@@ -131,12 +154,12 @@ describe("PiSessionService", () => {
         start: 0,
         total: 6,
         messages: [
-        { role: "user", content: [{ type: "text", text: "hi" }] },
-        { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "before any entry" }] },
-        { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "first answer" }], thinkingLevel: "medium" },
-        { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "second answer" }], thinkingLevel: "max" },
-        { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "unthinking answer" }] },
-        { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "done" }] },
+          { role: "user", content: [{ type: "text", text: "hi" }] },
+          { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "before any entry" }] },
+          { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "first answer" }], thinkingLevel: "medium" },
+          { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "second answer" }], thinkingLevel: "max" },
+          { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "unthinking answer" }] },
+          { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "done" }] },
         ],
       });
       await service.dispose();
@@ -152,7 +175,10 @@ describe("PiSessionService", () => {
 
       const messageEnds = events.sessionEvents.map(({ event }) => event).filter((event) => event.type === "message.end");
       expect(messageEnds).toEqual([
-        { type: "message.end", message: { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }], thinkingLevel: "high" } },
+        {
+          type: "message.end",
+          message: { role: "assistant", provider: "openai", model: "gpt-4.1", content: [{ type: "text", text: "answer" }], thinkingLevel: "high" },
+        },
         { type: "message.end", message: { role: "user", content: [{ type: "text", text: "next" }] } },
       ]);
       await service.dispose();
@@ -166,7 +192,13 @@ describe("PiSessionService", () => {
         { role: "custom", customType: "goal-contract", content: "hidden goal context", display: false, details: { version: 2, goalId: "goal-1" } },
         { role: "custom", customType: "other.hidden", content: "hidden extension context", display: false, details: { source: "other" } },
         { role: "custom", customType: "other.default", content: "implicit extension context", details: { source: "other" } },
-        { role: "custom", customType: "pi-goal.lifecycle", content: "Goal resumed", display: true, details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" } },
+        {
+          role: "custom",
+          customType: "pi-goal.lifecycle",
+          content: "Goal resumed",
+          display: true,
+          details: { schemaVersion: 1, goalId: "goal-1", transition: "resume", state: "active", reason: "Owner approved" },
+        },
         { role: "custom", customType: "other.visible", content: "visible extension message", display: true, details: { source: "other" } },
       ];
       const original = structuredClone(messages);
@@ -174,7 +206,7 @@ describe("PiSessionService", () => {
       for (const message of messages) fake.emit({ type: "message_end", message });
       await Promise.resolve();
 
-      expect(events.sessionEvents.slice(eventStart).flatMap(({ event }) => event.type === "message.end" ? [event.message] : [])).toEqual([
+      expect(events.sessionEvents.slice(eventStart).flatMap(({ event }) => (event.type === "message.end" ? [event.message] : []))).toEqual([
         messages[2],
         messages[3],
         messages[4],
@@ -215,9 +247,13 @@ describe("PiSessionService", () => {
       branch.push({ type: "message", id: "later-entry", message: { role: "user", content: "next" } });
       await Promise.resolve();
 
-      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({ sessionId: "session-1", event: {
-        type: "message.end", message: { ...message, entryId: "answer-entry" },
-      } });
+      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({
+        sessionId: "session-1",
+        event: {
+          type: "message.end",
+          message: { ...message, entryId: "answer-entry" },
+        },
+      });
       expect((await service.messages(sessionRef("session-1"))).messages[0]).toEqual({ ...message, entryId: "answer-entry" });
       await service.dispose();
     });
@@ -236,10 +272,13 @@ describe("PiSessionService", () => {
       fake.emit({ type: "message_end", message });
       await Promise.resolve();
 
-      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({ sessionId: "session-1", event: {
-        type: "message.end",
-        message: { role: "assistant", content: [{ type: "text", text: "current" }] },
-      } });
+      expect(events.sessionEvents.slice(eventStart)[0]).toEqual({
+        sessionId: "session-1",
+        event: {
+          type: "message.end",
+          message: { role: "assistant", content: [{ type: "text", text: "current" }] },
+        },
+      });
       await service.dispose();
     });
 
@@ -259,12 +298,12 @@ describe("PiSessionService", () => {
 
     it("contains deferred publication failures", async () => {
       let failPublications = false;
-      const events = new class extends CapturingSessionEventHub {
+      const events = new (class extends CapturingSessionEventHub {
         override publish(sessionId: string, event: Parameters<CapturingSessionEventHub["publish"]>[1]): void {
           if (failPublications) throw new Error("publication failed");
           super.publish(sessionId, event);
         }
-      }();
+      })();
       const { fake, service } = messagesService([], {}, events);
       await service.status(sessionRef("session-1"));
       failPublications = true;
@@ -308,8 +347,17 @@ describe("PiSessionService", () => {
       agentDir: TEST_AGENT_DIR,
       modelRuntime: testModelRuntime,
       createAgentRuntime,
-      sessionManager: { ...sessionGateway([record]), readBranch: (path) => Promise.resolve(path === record.path ? disk : path === "/archive/old.jsonl" ? archived : undefined) },
-      archiveStore: { ...emptyArchiveStore(), get: (id) => Promise.resolve(id === "old" ? { sessionId: "old", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/old.jsonl" } : undefined) },
+      sessionManager: {
+        ...sessionGateway([record]),
+        readBranch: (path) => Promise.resolve(path === record.path ? disk : path === "/archive/old.jsonl" ? archived : undefined),
+      },
+      archiveStore: {
+        ...emptyArchiveStore(),
+        get: (id) =>
+          Promise.resolve(
+            id === "old" ? { sessionId: "old", cwd: "/workspace", archivedAt: "2026-01-02T00:00:00.000Z", archivePath: "/archive/old.jsonl" } : undefined,
+          ),
+      },
       heartbeatIntervalMs: 60_000,
     });
 

@@ -48,17 +48,19 @@ async function buildAll() {
   await rm(readyPath, { force: true });
   for (const target of buildTargets) {
     await rm(target.outDir, { recursive: true, force: true });
-    const excludedDirectories = target.rootDir === bundledPluginsSourceDir
-      ? new Set([
-          await realpath(filesPluginSourceDir),
-          await realpath(terminalPluginSourceDir),
-          await realpath(mermaidPluginSourceDir),
-          await realpath(codeHighlightSourceDir),
-        ])
-      : new Set();
-    const result = target.label === "package"
-      ? await buildPiPackages(target.rootDir, target.outDir)
-      : await buildDirectory(target.rootDir, target.outDir, new Set(), excludedDirectories);
+    const excludedDirectories =
+      target.rootDir === bundledPluginsSourceDir
+        ? new Set([
+            await realpath(filesPluginSourceDir),
+            await realpath(terminalPluginSourceDir),
+            await realpath(mermaidPluginSourceDir),
+            await realpath(codeHighlightSourceDir),
+          ])
+        : new Set();
+    const result =
+      target.label === "package"
+        ? await buildPiPackages(target.rootDir, target.outDir)
+        : await buildDirectory(target.rootDir, target.outDir, new Set(), excludedDirectories);
     if (target.rootDir === bundledPluginsSourceDir) {
       await buildFilesBrowserPackage(filesPluginSourceDir, filesPluginOutputDir);
       await buildTerminalPackage(terminalPluginSourceDir, terminalPluginOutputDir);
@@ -115,10 +117,7 @@ export async function buildPiPackages(sourceDir, targetDir) {
       if (!rootDir || !outDir) throw new Error(`${configPath} must declare rootDir and outDir`);
       const sourceRoot = packageSubdirectory(packageDir, rootDir);
       const outputRoot = packageSubdirectory(packageDir, outDir);
-      const copied = await buildDirectory(packageDir, outputDir, new Set(), new Set([
-        await realpath(rootDir),
-        await realpath(outDir).catch(() => outDir),
-      ]));
+      const copied = await buildDirectory(packageDir, outputDir, new Set(), new Set([await realpath(rootDir), await realpath(outDir).catch(() => outDir)]));
       const compiled = await buildDirectory(resolve(packageDir, sourceRoot), resolve(outputDir, outputRoot));
       built = { copied: copied.copied + compiled.copied, transpiled: copied.transpiled + compiled.transpiled };
     }
@@ -181,7 +180,7 @@ export async function buildDirectory(sourceDir, targetDir, visited = new Set(), 
       continue;
     }
 
-    if (entry.name.endsWith(".js") && await hasTypeScriptSource(sourcePath)) continue;
+    if (entry.name.endsWith(".js") && (await hasTypeScriptSource(sourcePath))) continue;
     await mkdir(dirname(targetPath), { recursive: true });
     await copyFile(sourcePath, targetPath);
     copied += 1;

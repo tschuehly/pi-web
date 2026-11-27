@@ -28,8 +28,7 @@ export class MarkdownImage extends LitElement {
   override willUpdate(changed: PropertyValues): void {
     if (changed.has("previewUrl")) this.dimensions = readMarkdownImageDimensions(this.previewUrl);
     if (changed.has("previewUrl") || changed.has("intentKey") || changed.has("outside")) {
-      this.approved = this.outside && this.intentKey !== undefined
-        && shownImageMemory.read(this.intentKey, this.previewUrl) === true;
+      this.approved = this.outside && this.intentKey !== undefined && shownImageMemory.read(this.intentKey, this.previewUrl) === true;
     }
   }
 
@@ -55,7 +54,9 @@ export class MarkdownImage extends LitElement {
       .requestDisabled=${this.loadingDisabled || !this.outside || this.previewUrl === ""}
       .pendingLabel=${this.loadingDisabled ? "Image loading disabled" : "Show image"}
       .description=${this.description} .label=${this.path}
-      @image-request=${() => { this.showImage(); }}
+      @image-request=${() => {
+        this.showImage();
+      }}
     ></pi-web-image-presentation>`;
   }
 

@@ -4,12 +4,19 @@ import { ChatView, chatImagePartSource, chatMessageAnchorKey, chatToolOutputLabe
 import { TranscriptImage } from "./TranscriptImage";
 import { settleImage } from "./imagePresentation.testSupport";
 
-afterEach(() => { document.body.replaceChildren(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("ChatView image content derivation", () => {
   it("derives the legacy image data URL and alt text", () => {
     expect(chatImagePartSource({ type: "image", mimeType: "image/png", data: "QUJD" })).toEqual({
-      src: "data:image/png;base64,QUJD", alt: "attached image",
+      src: "data:image/png;base64,QUJD",
+      alt: "attached image",
     });
   });
 
@@ -52,10 +59,14 @@ describe("ChatView image event wiring", () => {
   it("presents tool images as conversation while keeping their technical context in collapsed activity", async () => {
     const view = new ChatView();
     view.messages = [
-      { role: "tool", entryId: "tool-image", parts: [
-        { type: "toolResult", toolName: "read", text: "Read image file", isError: false },
-        { type: "image", mimeType: "image/png", data: "QUJD" },
-      ] },
+      {
+        role: "tool",
+        entryId: "tool-image",
+        parts: [
+          { type: "toolResult", toolName: "read", text: "Read image file", isError: false },
+          { type: "image", mimeType: "image/png", data: "QUJD" },
+        ],
+      },
       { role: "assistant", entryId: "reply", parts: [{ type: "text", text: "Here is the image." }] },
     ];
     document.body.append(view);

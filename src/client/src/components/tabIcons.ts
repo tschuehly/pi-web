@@ -4,7 +4,24 @@ export function renderNavigationMenuIcon(): TemplateResult {
   return svg`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
 }
 
-export type AppTabBuiltinIcon = "navigation" | "bell" | "chat" | "chat-plus" | "chevron" | "chevron-left" | "files" | "folder-plus" | "git" | "maximize" | "menu" | "minimize" | "panels-top-left" | "plus" | "settings" | "terminal" | "x";
+export type AppTabBuiltinIcon =
+  | "navigation"
+  | "bell"
+  | "chat"
+  | "chat-plus"
+  | "chevron"
+  | "chevron-left"
+  | "files"
+  | "folder-plus"
+  | "git"
+  | "maximize"
+  | "menu"
+  | "minimize"
+  | "panels-top-left"
+  | "plus"
+  | "settings"
+  | "terminal"
+  | "x";
 export type AppTabIcon = AppTabBuiltinIcon | TemplateResult;
 
 export function renderAppTabIcon(icon: AppTabIcon): TemplateResult {

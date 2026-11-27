@@ -110,16 +110,24 @@ export class TerminalPeerClient {
   }
 
   async runCommand(origin: string, input: WorkspaceTerminalCommandInput, signal?: AbortSignal): Promise<TerminalCommandRun> {
-    return parseTerminalCommandRun(await this.request("terminal.run", {
-      origin,
-      title: input.title,
-      command: input.command,
-      metadata: input.metadata ?? {},
-    }, signal === undefined ? undefined : { signal }));
+    return parseTerminalCommandRun(
+      await this.request(
+        "terminal.run",
+        {
+          origin,
+          title: input.title,
+          command: input.command,
+          metadata: input.metadata ?? {},
+        },
+        signal === undefined ? undefined : { signal },
+      ),
+    );
   }
 
   async listCommandRuns(filter: TerminalCommandRunFilter = {}, signal?: AbortSignal): Promise<TerminalCommandRun[]> {
-    return parseTerminalCommandRunArray(await this.request("terminal.list-runs", terminalCommandRunFilterInput(filter), signal === undefined ? undefined : { signal }));
+    return parseTerminalCommandRunArray(
+      await this.request("terminal.list-runs", terminalCommandRunFilterInput(filter), signal === undefined ? undefined : { signal }),
+    );
   }
 
   async getCommandRun(runId: string, signal?: AbortSignal): Promise<TerminalCommandRun | undefined> {
@@ -133,13 +141,19 @@ export class TerminalPeerClient {
 
   async attach(options: TerminalAttachOptions): Promise<PluginPeerChannel> {
     const openChannel = requirePeerChannel(this.peer);
-    return openChannel("terminal.attach", {
-      terminalId: options.terminalId,
-      ...(options.size ?? {}),
-    }, {
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-      onData: (data) => { options.onFrame(parseTerminalServerFrame(data)); },
-    });
+    return openChannel(
+      "terminal.attach",
+      {
+        terminalId: options.terminalId,
+        ...(options.size ?? {}),
+      },
+      {
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        onData: (data) => {
+          options.onFrame(parseTerminalServerFrame(data));
+        },
+      },
+    );
   }
 }
 
@@ -247,10 +261,12 @@ function parseTerminalCommandRunStatus(value: unknown): TerminalCommandRunStatus
 
 function parseStringRecord(value: unknown, label: string): Record<string, string> {
   const record = requireRecord(value, label);
-  return Object.fromEntries(Object.entries(record).map(([key, child]) => {
-    if (typeof child !== "string") throw new Error(`${label} ${key} must be a string`);
-    return [key, child];
-  }));
+  return Object.fromEntries(
+    Object.entries(record).map(([key, child]) => {
+      if (typeof child !== "string") throw new Error(`${label} ${key} must be a string`);
+      return [key, child];
+    }),
+  );
 }
 
 function optionalStringField(record: Record<string, unknown>, key: string, label: string): Record<string, string> {

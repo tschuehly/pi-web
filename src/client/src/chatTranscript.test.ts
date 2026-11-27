@@ -58,9 +58,10 @@ describe("assistant stream identity", () => {
     messages = applyTranscriptEvent(messages, toolStart) ?? messages;
     messages = applyTranscriptEvent(messages, { type, streamId: start.streamId, text: " second" }) ?? messages;
     expect(messages[0]?.parts).toEqual([{ type: type === "assistant.delta" ? "text" : "thinking", text: "first second" }]);
-    const final = { ...start, content: type === "assistant.delta"
-      ? [{ type: "text", text: "authoritative" }]
-      : [{ type: "thinking", thinking: "authoritative" }] };
+    const final = {
+      ...start,
+      content: type === "assistant.delta" ? [{ type: "text", text: "authoritative" }] : [{ type: "thinking", thinking: "authoritative" }],
+    };
     const tool = messages[1];
     messages = applyTranscriptEvent(messages, { type: "message.end", message: final }) ?? messages;
     expect(messages).toEqual([...normalizeMessages([final]), tool]);
@@ -79,10 +80,13 @@ describe("assistant stream identity", () => {
   });
 
   it("retains snapshot identity across tool-call projection, streaming, and finalization", () => {
-    const partial = { ...start, content: [
-      { type: "text", text: "before" },
-      { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } },
-    ] };
+    const partial = {
+      ...start,
+      content: [
+        { type: "text", text: "before" },
+        { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "pwd" } },
+      ],
+    };
     let messages = seedStreamingPartial([], partial);
     messages = applyTranscriptEvent(messages, { type: "assistant.delta", streamId: start.streamId, text: " after" }) ?? messages;
     expect(messages[0]?.parts).toEqual([{ type: "text", text: "before after" }]);
@@ -99,10 +103,16 @@ describe("assistant stream identity", () => {
     for (const seeded of [applyTranscriptEvent([], { type: "assistant.start", message: toolOnly }) ?? [], seedStreamingPartial([], toolOnly)]) {
       let messages = applyTranscriptEvent(seeded, { type: "message.end", message: toolOnly }) ?? seeded;
       messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "call-1", summary: "", args: call.arguments }) ?? messages;
-      expect(messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution")).toMatchObject([{ toolCallId: "call-1", status: "running" }]);
-      messages = applyTranscriptEvent(messages, { type: "tool.end", toolName: "read", toolCallId: "call-1", text: "x", isError: false, content: result.content }) ?? messages;
+      expect(messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution")).toMatchObject([
+        { toolCallId: "call-1", status: "running" },
+      ]);
+      messages =
+        applyTranscriptEvent(messages, { type: "tool.end", toolName: "read", toolCallId: "call-1", text: "x", isError: false, content: result.content })
+        ?? messages;
       messages = applyTranscriptEvent(messages, { type: "message.end", message: result }) ?? messages;
-      expect(messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution")).toMatchObject([{ toolCallId: "call-1", status: "success", resultText: "x" }]);
+      expect(messages.flatMap((line) => line.parts).filter((part) => part.type === "toolExecution")).toMatchObject([
+        { toolCallId: "call-1", status: "success", resultText: "x" },
+      ]);
     }
   });
 
@@ -128,12 +138,17 @@ describe("assistant stream identity", () => {
 
   it.each([true, false])("reconciles identified skill reads without duplicating the streamed skill row (thinking: %s)", (thinking) => {
     const parts = thinking ? [{ type: "thinking", thinking: "load skill" }] : [];
-    const final = { ...start, content: [...parts,
-      { type: "toolCall", id: "skill-1", name: "read", arguments: { path: "/skills/playwright/SKILL.md" } },
-    ] };
+    const final = { ...start, content: [...parts, { type: "toolCall", id: "skill-1", name: "read", arguments: { path: "/skills/playwright/SKILL.md" } }] };
     let messages = applyTranscriptEvent([], { type: "assistant.start", message: start }) ?? [];
     if (thinking) messages = applyTranscriptEvent(messages, { type: "assistant.thinking.delta", streamId: start.streamId, text: "load skill" }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "skill-1", summary: "read skill", args: { path: "/skills/playwright/SKILL.md" } }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "tool.start",
+        toolName: "read",
+        toolCallId: "skill-1",
+        summary: "read skill",
+        args: { path: "/skills/playwright/SKILL.md" },
+      }) ?? messages;
     messages = applyTranscriptEvent(messages, { type: "message.end", message: final }) ?? messages;
     expect(messages).toEqual(normalizeMessages([final]));
     expect(applyTranscriptEvent(messages, { type: "message.end", message: final })).toEqual(messages);
@@ -148,7 +163,12 @@ describe("assistant stream identity", () => {
 
 describe("applyTranscriptEvent", () => {
   it("keeps a live child completion in the same projection as loaded history", () => {
-    const notice = { role: "custom", customType: "pi-workbench:child-completion", content: "Collect once; then resume.", details: { attention: "terminal-results" } };
+    const notice = {
+      role: "custom",
+      customType: "pi-workbench:child-completion",
+      content: "Collect once; then resume.",
+      details: { attention: "terminal-results" },
+    };
     const history = normalizeMessages([notice]);
     expect(applyTranscriptEvent([], { type: "message.append", message: notice })).toEqual(history);
     expect(applyTranscriptEvent([], { type: "message.end", message: notice })).toEqual(history);
@@ -172,7 +192,13 @@ describe("applyTranscriptEvent", () => {
     messages = applyTranscriptEvent(messages, { type: "assistant.delta", text: "answer" }) ?? messages;
 
     expect(messages).toEqual([
-      { role: "assistant", parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "plan" },
+          { type: "text", text: "answer" },
+        ],
+      },
     ]);
   });
 
@@ -188,29 +214,55 @@ describe("applyTranscriptEvent", () => {
     const live = applyTranscriptEvent([], { type: "message.end", message: rawMessage });
 
     expect(live).toEqual(hydrated);
-    expect(live).toEqual([{
-      role: "system",
-      parts: [{ type: "askUserRecord", outcome: askUserOutcome }],
-      entryId: "response-entry",
-    }]);
+    expect(live).toEqual([
+      {
+        role: "system",
+        parts: [{ type: "askUserRecord", outcome: askUserOutcome }],
+        entryId: "response-entry",
+      },
+    ]);
     expect(applyTranscriptEvent(live ?? [], { type: "message.end", message: rawMessage })).toEqual(live);
 
     const nextOutcome = { ...askUserOutcome, askId: "ask-2" };
     const nextRawMessage = { ...rawMessage, entryId: "next-response-entry", details: nextOutcome };
-    expect(applyTranscriptEvent(live ?? [], { type: "message.end", message: nextRawMessage })).toEqual([
-      ...hydrated,
-      ...normalizeMessages([nextRawMessage]),
-    ]);
+    expect(applyTranscriptEvent(live ?? [], { type: "message.end", message: nextRawMessage })).toEqual([...hydrated, ...normalizeMessages([nextRawMessage])]);
   });
 
   it("takes a live whole-set record's earlier-send images from that send's entry already shown, as a reload does", () => {
     const [first, second] = askUserOutcome.questions;
     if (first === undefined || second === undefined) throw new Error("fixture has two questions");
-    const image = (id: string, revision?: string) => ({ target: { kind: "question" as const, id }, reference: "[PIC_1]", mimeType: "image/png", ...(revision === undefined ? {} : { revision }) });
-    const partial: AskUserOutcome = { ...askUserOutcome, questions: [first], answeredCount: 1, unansweredIds: [], summary: "Answered 1", partial: true, revision: "r2", images: [image(first.question.id)] };
-    const whole: AskUserOutcome = { ...askUserOutcome, questions: [{ ...first, revision: "r2" }, second], images: [image(first.question.id, "r2"), image(second.question.id)] };
-    const entry = (details: AskUserOutcome, data: string) => ({ role: "custom", customType: ASK_USER_ANSWERS_CUSTOM_TYPE, content: [{ type: "text", text: "answers" }, { type: "image", data, mimeType: "image/png" }], details });
-    const imagesOf = (lines: ChatLine[] | undefined) => lines?.flatMap((line) => line.parts.flatMap((part) => part.type === "askUserRecord" ? [part.images?.map((each) => each?.data)] : []));
+    const image = (id: string, revision?: string) => ({
+      target: { kind: "question" as const, id },
+      reference: "[PIC_1]",
+      mimeType: "image/png",
+      ...(revision === undefined ? {} : { revision }),
+    });
+    const partial: AskUserOutcome = {
+      ...askUserOutcome,
+      questions: [first],
+      answeredCount: 1,
+      unansweredIds: [],
+      summary: "Answered 1",
+      partial: true,
+      revision: "r2",
+      images: [image(first.question.id)],
+    };
+    const whole: AskUserOutcome = {
+      ...askUserOutcome,
+      questions: [{ ...first, revision: "r2" }, second],
+      images: [image(first.question.id, "r2"), image(second.question.id)],
+    };
+    const entry = (details: AskUserOutcome, data: string) => ({
+      role: "custom",
+      customType: ASK_USER_ANSWERS_CUSTOM_TYPE,
+      content: [
+        { type: "text", text: "answers" },
+        { type: "image", data, mimeType: "image/png" },
+      ],
+      details,
+    });
+    const imagesOf = (lines: ChatLine[] | undefined) =>
+      lines?.flatMap((line) => line.parts.flatMap((part) => (part.type === "askUserRecord" ? [part.images?.map((each) => each?.data)] : [])));
 
     const reload = normalizeMessages([entry(partial, "AAAA"), entry(whole, "BBBB")]);
     let live = applyTranscriptEvent([], { type: "message.end", message: entry(partial, "AAAA") }) ?? [];
@@ -239,15 +291,16 @@ describe("applyTranscriptEvent", () => {
     let live: ChatLine[] = [];
 
     live = applyTranscriptEvent(live, { type: "tool.start", toolName: "ask_user", toolCallId: "ask-call", summary: "", args }) ?? live;
-    live = applyTranscriptEvent(live, {
-      type: "tool.end",
-      toolName: "ask_user",
-      toolCallId: "ask-call",
-      text: "Posted a newer question set.",
-      content: finalResult.content,
-      details,
-      isError: false,
-    }) ?? live;
+    live =
+      applyTranscriptEvent(live, {
+        type: "tool.end",
+        toolName: "ask_user",
+        toolCallId: "ask-call",
+        text: "Posted a newer question set.",
+        content: finalResult.content,
+        details,
+        isError: false,
+      }) ?? live;
     live = applyTranscriptEvent(live, { type: "message.end", message: finalResult }) ?? live;
 
     expect(live).toEqual(hydrated);
@@ -262,46 +315,59 @@ describe("applyTranscriptEvent", () => {
     const live = applyTranscriptEvent([], { type: "message.end", message: rawCompaction });
 
     expect(live).toEqual(hydrated);
-    expect(groupChatMessages(live ?? [])).toEqual([{
-      kind: "group",
-      presentation: "history",
-      startIndex: 0,
-      endIndex: 0,
-      messages: hydrated.map((message) => ({ message, index: 0 })),
-    }]);
+    expect(groupChatMessages(live ?? [])).toEqual([
+      {
+        kind: "group",
+        presentation: "history",
+        startIndex: 0,
+        endIndex: 0,
+        messages: hydrated.map((message) => ({ message, index: 0 })),
+      },
+    ]);
     expect(hydrated[0]?.parts).toEqual([{ type: "text", text: rawCompaction.content }]);
   });
 
   it("replaces the streamed assistant message with the finalized history shape", () => {
     const streamed: ChatLine[] = [
       textMessage("user", "question"),
-      { role: "assistant", parts: [{ type: "thinking", text: "partial" }, { type: "text", text: "partial answer" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "partial" },
+          { type: "text", text: "partial answer" },
+        ],
+      },
     ];
 
     expect(applyTranscriptEvent(streamed, { type: "message.end", message: finalAssistant })).toEqual([
       textMessage("user", "question"),
       {
         role: "assistant",
-        parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }],
+        parts: [
+          { type: "thinking", text: "plan" },
+          { type: "text", text: "answer" },
+        ],
         meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } },
       },
     ]);
   });
 
   it("keeps a live finalized entry id when replacing the streamed assistant message", () => {
-    const streamed: ChatLine[] = [
-      textMessage("user", "question"),
-      textMessage("assistant", "partial"),
-    ];
+    const streamed: ChatLine[] = [textMessage("user", "question"), textMessage("assistant", "partial")];
 
-    expect(applyTranscriptEvent(streamed, {
-      type: "message.end",
-      message: { ...finalAssistant, entryId: "assistant-entry" },
-    })).toEqual([
+    expect(
+      applyTranscriptEvent(streamed, {
+        type: "message.end",
+        message: { ...finalAssistant, entryId: "assistant-entry" },
+      }),
+    ).toEqual([
       textMessage("user", "question"),
       {
         role: "assistant",
-        parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "answer" }],
+        parts: [
+          { type: "thinking", text: "plan" },
+          { type: "text", text: "answer" },
+        ],
         entryId: "assistant-entry",
         meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "test", id: "model" } },
       },
@@ -314,56 +380,73 @@ describe("applyTranscriptEvent", () => {
       { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "skill content", isError: false }] },
     ];
 
-    expect(applyTranscriptEvent(streamed, {
-      type: "message.end",
-      message: {
-        role: "assistant",
-        content: [{ type: "toolCall", name: "read", arguments: { path: "/skills/playwright/SKILL.md" } }],
-        timestamp: "2026-05-09T12:00:00.000Z",
+    expect(
+      applyTranscriptEvent(streamed, {
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [{ type: "toolCall", name: "read", arguments: { path: "/skills/playwright/SKILL.md" } }],
+          timestamp: "2026-05-09T12:00:00.000Z",
+        },
+      }),
+    ).toEqual([
+      {
+        role: "skill",
+        parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }],
+        meta: { timestamp: "2026-05-09T12:00:00.000Z" },
       },
-    })).toEqual([
-      { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }], meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
       { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "skill content", isError: false }] },
     ]);
   });
 
   it("appends finalized assistant errors that have no displayable content", () => {
-    expect(applyTranscriptEvent([textMessage("user", "question")], {
-      type: "message.end",
-      message: {
-        role: "assistant",
-        content: [],
-        stopReason: "error",
-        errorMessage: "provider returned 500",
-        timestamp: "2026-05-09T12:00:00.000Z",
-        provider: "anthropic",
-        model: "claude-sonnet",
-      },
-    })).toEqual([
+    expect(
+      applyTranscriptEvent([textMessage("user", "question")], {
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [],
+          stopReason: "error",
+          errorMessage: "provider returned 500",
+          timestamp: "2026-05-09T12:00:00.000Z",
+          provider: "anthropic",
+          model: "claude-sonnet",
+        },
+      }),
+    ).toEqual([
       textMessage("user", "question"),
-      { role: "system", parts: [{ type: "text", text: "Model response failed: provider returned 500" }], severity: "error", meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "anthropic", id: "claude-sonnet" } } },
+      {
+        role: "system",
+        parts: [{ type: "text", text: "Model response failed: provider returned 500" }],
+        severity: "error",
+        meta: { timestamp: "2026-05-09T12:00:00.000Z", model: { provider: "anthropic", id: "claude-sonnet" } },
+      },
     ]);
   });
 
   it("replaces streamed assistant text and keeps the finalized error line", () => {
-    const streamed: ChatLine[] = [
-      textMessage("user", "question"),
-      textMessage("assistant", "partial"),
-    ];
+    const streamed: ChatLine[] = [textMessage("user", "question"), textMessage("assistant", "partial")];
 
-    expect(applyTranscriptEvent(streamed, {
-      type: "message.end",
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "partial answer" }],
-        stopReason: "error",
-        errorMessage: "connection lost",
-        timestamp: "2026-05-09T12:00:00.000Z",
-      },
-    })).toEqual([
+    expect(
+      applyTranscriptEvent(streamed, {
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "partial answer" }],
+          stopReason: "error",
+          errorMessage: "connection lost",
+          timestamp: "2026-05-09T12:00:00.000Z",
+        },
+      }),
+    ).toEqual([
       textMessage("user", "question"),
       { ...textMessage("assistant", "partial answer"), meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
-      { role: "system", parts: [{ type: "text", text: "Model response failed: connection lost" }], severity: "error", meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
+      {
+        role: "system",
+        parts: [{ type: "text", text: "Model response failed: connection lost" }],
+        severity: "error",
+        meta: { timestamp: "2026-05-09T12:00:00.000Z" },
+      },
     ]);
   });
 
@@ -371,10 +454,16 @@ describe("applyTranscriptEvent", () => {
     const ended = { role: "assistant", content: [{ type: "text", text: "answer" }], stopReason: "stop", cacheMissNotice: "Cache miss: 51k tokens re-billed" };
     const notice: ChatLine = { ...textMessage("system", "Cache miss: 51k tokens re-billed"), severity: "warning" };
 
-    expect(applyTranscriptEvent([textMessage("user", "question"), textMessage("assistant", "ans")], { type: "message.end", message: ended }))
-      .toEqual([textMessage("user", "question"), textMessage("assistant", "answer"), notice]);
-    expect(normalizeMessages([{ role: "user", content: "question" }, ended]))
-      .toEqual([textMessage("user", "question"), textMessage("assistant", "answer"), notice]);
+    expect(applyTranscriptEvent([textMessage("user", "question"), textMessage("assistant", "ans")], { type: "message.end", message: ended })).toEqual([
+      textMessage("user", "question"),
+      textMessage("assistant", "answer"),
+      notice,
+    ]);
+    expect(normalizeMessages([{ role: "user", content: "question" }, ended])).toEqual([
+      textMessage("user", "question"),
+      textMessage("assistant", "answer"),
+      notice,
+    ]);
     expect(normalizeMessages([{ ...ended, cacheMissNotice: undefined }])).toEqual([textMessage("assistant", "answer")]);
   });
 
@@ -385,18 +474,27 @@ describe("applyTranscriptEvent", () => {
       { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "skill content", isError: false }] },
     ];
 
-    expect(applyTranscriptEvent(streamed, {
-      type: "message.end",
-      message: {
+    expect(
+      applyTranscriptEvent(streamed, {
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "load skill" },
+            { type: "toolCall", name: "read", arguments: { path: "/skills/playwright/SKILL.md" } },
+          ],
+          timestamp: "2026-05-09T12:00:00.000Z",
+        },
+      }),
+    ).toEqual([
+      {
         role: "assistant",
-        content: [
-          { type: "thinking", thinking: "load skill" },
-          { type: "toolCall", name: "read", arguments: { path: "/skills/playwright/SKILL.md" } },
+        parts: [
+          { type: "thinking", text: "load skill" },
+          { type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" },
         ],
-        timestamp: "2026-05-09T12:00:00.000Z",
+        meta: { timestamp: "2026-05-09T12:00:00.000Z" },
       },
-    })).toEqual([
-      { role: "assistant", parts: [{ type: "thinking", text: "load skill" }, { type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }], meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
       { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "skill content", isError: false }] },
     ]);
   });
@@ -407,41 +505,83 @@ describe("applyTranscriptEvent", () => {
       { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "skill content", isError: false }] },
     ];
 
-    expect(applyTranscriptEvent(streamed, {
-      type: "message.end",
-      message: {
-        role: "assistant",
-        content: [{ type: "toolCall", name: "read", arguments: { path: "/home/user/.agents/skills/playwright/SKILL.md" } }],
-        timestamp: "2026-05-09T12:00:00.000Z",
+    expect(
+      applyTranscriptEvent(streamed, {
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [{ type: "toolCall", name: "read", arguments: { path: "/home/user/.agents/skills/playwright/SKILL.md" } }],
+          timestamp: "2026-05-09T12:00:00.000Z",
+        },
+      }),
+    ).toEqual([
+      {
+        role: "skill",
+        parts: [{ type: "skillRead", name: "playwright", path: "/home/user/.agents/skills/playwright/SKILL.md" }],
+        meta: { timestamp: "2026-05-09T12:00:00.000Z" },
       },
-    })).toEqual([
-      { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/home/user/.agents/skills/playwright/SKILL.md" }], meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
       { role: "tool", parts: [{ type: "toolResult", toolName: "read", text: "skill content", isError: false }] },
     ]);
   });
 
   it("keeps edit tool preview and result updates on one execution card", () => {
     let messages: ChatLine[] = [];
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "edit", toolCallId: "edit-1", summary: "src/app.ts", args: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] } }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "tool.update", toolName: "edit", toolCallId: "edit-1", text: "Edit preview computed.", details: { preview: { diff: "-1 old\n+1 new", firstChangedLine: 1 } } }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "tool.end", toolName: "edit", toolCallId: "edit-1", text: "ok", isError: false, content: [{ type: "text", text: "ok" }], details: { diff: "-1 old\n+1 new", firstChangedLine: 1 } }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "message.end", message: { role: "toolResult", toolCallId: "edit-1", toolName: "edit", content: [{ type: "text", text: "ok" }], details: { diff: "-1 old\n+1 new", firstChangedLine: 1 }, isError: false } }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "tool.start",
+        toolName: "edit",
+        toolCallId: "edit-1",
+        summary: "src/app.ts",
+        args: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] },
+      }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "tool.update",
+        toolName: "edit",
+        toolCallId: "edit-1",
+        text: "Edit preview computed.",
+        details: { preview: { diff: "-1 old\n+1 new", firstChangedLine: 1 } },
+      }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "tool.end",
+        toolName: "edit",
+        toolCallId: "edit-1",
+        text: "ok",
+        isError: false,
+        content: [{ type: "text", text: "ok" }],
+        details: { diff: "-1 old\n+1 new", firstChangedLine: 1 },
+      }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "message.end",
+        message: {
+          role: "toolResult",
+          toolCallId: "edit-1",
+          toolName: "edit",
+          content: [{ type: "text", text: "ok" }],
+          details: { diff: "-1 old\n+1 new", firstChangedLine: 1 },
+          isError: false,
+        },
+      }) ?? messages;
 
     expect(messages).toEqual([
       {
         role: "tool",
-        parts: [{
-          type: "toolExecution",
-          toolCallId: "edit-1",
-          toolName: "edit",
-          summary: "src/app.ts",
-          args: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] },
-          status: "success",
-          resultText: "ok",
-          content: [{ type: "text", text: "ok" }],
-          details: { diff: "-1 old\n+1 new", firstChangedLine: 1 },
-          preview: { diff: "-1 old\n+1 new", firstChangedLine: 1 },
-        }],
+        parts: [
+          {
+            type: "toolExecution",
+            toolCallId: "edit-1",
+            toolName: "edit",
+            summary: "src/app.ts",
+            args: { path: "src/app.ts", edits: [{ oldText: "old", newText: "new" }] },
+            status: "success",
+            resultText: "ok",
+            content: [{ type: "text", text: "ok" }],
+            details: { diff: "-1 old\n+1 new", firstChangedLine: 1 },
+            preview: { diff: "-1 old\n+1 new", firstChangedLine: 1 },
+          },
+        ],
       },
     ]);
   });
@@ -453,51 +593,64 @@ describe("applyTranscriptEvent", () => {
     const timestamp = "2026-07-13T22:00:00.000Z";
     let messages: ChatLine[] = [];
 
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "read-image-1", summary: "image.png", args: { path: "image.png" } }) ?? messages;
-    messages = applyTranscriptEvent(messages, {
-      type: "tool.end",
-      toolName: "read",
-      toolCallId: "read-image-1",
-      text: "Read image file [image/png]\n[image]",
-      isError: false,
-      content: [{ type: "text", text: "Read image file [image/png]" }, provisionalImage],
-      details: { source: "tool.end" },
-    }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "read-image-1", summary: "image.png", args: { path: "image.png" } })
+      ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "tool.end",
+        toolName: "read",
+        toolCallId: "read-image-1",
+        text: "Read image file [image/png]\n[image]",
+        isError: false,
+        content: [{ type: "text", text: "Read image file [image/png]" }, provisionalImage],
+        details: { source: "tool.end" },
+      }) ?? messages;
 
     expect(messages[0]?.parts.filter((part) => part.type === "image")).toEqual([provisionalImage]);
 
-    messages = applyTranscriptEvent(messages, {
-      type: "message.end",
-      message: {
-        role: "toolResult",
-        toolCallId: "read-image-1",
-        toolName: "read",
-        content: finalContent,
-        details: { source: "message.end" },
-        isError: false,
-        timestamp,
-      },
-    }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "message.end",
+        message: {
+          role: "toolResult",
+          toolCallId: "read-image-1",
+          toolName: "read",
+          content: finalContent,
+          details: { source: "message.end" },
+          isError: false,
+          timestamp,
+        },
+      }) ?? messages;
     messages = applyTranscriptEvent(messages, { type: "assistant.delta", text: "done" }) ?? messages;
 
     const finalizedToolLine: ChatLine = {
       role: "tool",
-      parts: [{
-        type: "toolExecution",
-        toolCallId: "read-image-1",
-        toolName: "read",
-        summary: "image.png",
-        args: { path: "image.png" },
-        status: "success",
-        resultText: "Read image file [image/png]",
-        content: finalContent,
-        details: { source: "message.end" },
-      }, finalImage],
+      parts: [
+        {
+          type: "toolExecution",
+          toolCallId: "read-image-1",
+          toolName: "read",
+          summary: "image.png",
+          args: { path: "image.png" },
+          status: "success",
+          resultText: "Read image file [image/png]",
+          content: finalContent,
+          details: { source: "message.end" },
+        },
+        finalImage,
+      ],
       meta: { timestamp },
     };
     expect(messages).toEqual([finalizedToolLine, textMessage("assistant", "done")]);
     expect(groupChatMessages(messages)).toEqual([
-      { kind: "group", presentation: "activity", startIndex: 0, endIndex: 0, messages: [{ index: 0, message: { ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] } }] },
+      {
+        kind: "group",
+        presentation: "activity",
+        startIndex: 0,
+        endIndex: 0,
+        messages: [{ index: 0, message: { ...finalizedToolLine, parts: [finalizedToolLine.parts[0]] } }],
+      },
       { kind: "tool-image", index: 0, message: { ...finalizedToolLine, parts: [finalImage] }, toolName: "read" },
       { kind: "message", index: 1, message: textMessage("assistant", "done") },
     ]);
@@ -508,24 +661,32 @@ describe("applyTranscriptEvent", () => {
     let messages: ChatLine[] = [];
 
     messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "capture", toolCallId: "capture-1", summary: "screenshot" }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "tool.end", toolName: "capture", toolCallId: "capture-1", text: "[image]", isError: false, content: [image] }) ?? messages;
-    messages = applyTranscriptEvent(messages, {
-      type: "message.end",
-      message: { role: "toolResult", toolCallId: "capture-1", toolName: "capture", content: [image], isError: false },
-    }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, { type: "tool.end", toolName: "capture", toolCallId: "capture-1", text: "[image]", isError: false, content: [image] })
+      ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "message.end",
+        message: { role: "toolResult", toolCallId: "capture-1", toolName: "capture", content: [image], isError: false },
+      }) ?? messages;
 
-    expect(messages).toEqual([{
-      role: "tool",
-      parts: [{
-        type: "toolExecution",
-        toolCallId: "capture-1",
-        toolName: "capture",
-        summary: "screenshot",
-        status: "success",
-        resultText: "",
-        content: [image],
-      }, image],
-    }]);
+    expect(messages).toEqual([
+      {
+        role: "tool",
+        parts: [
+          {
+            type: "toolExecution",
+            toolCallId: "capture-1",
+            toolName: "capture",
+            summary: "screenshot",
+            status: "success",
+            resultText: "",
+            content: [image],
+          },
+          image,
+        ],
+      },
+    ]);
     expect(groupChatMessages(messages).map((group) => group.kind)).toEqual(["group", "tool-image"]);
   });
 
@@ -545,14 +706,15 @@ describe("applyTranscriptEvent", () => {
     let messages: ChatLine[] = [];
 
     messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "read-image-repeat", summary: "image.png" }) ?? messages;
-    messages = applyTranscriptEvent(messages, {
-      type: "tool.end",
-      toolName: "read",
-      toolCallId: "read-image-repeat",
-      text: "Read image file [image/png]\n[image]",
-      isError: false,
-      content: finalEvent.message.content,
-    }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, {
+        type: "tool.end",
+        toolName: "read",
+        toolCallId: "read-image-repeat",
+        text: "Read image file [image/png]\n[image]",
+        isError: false,
+        content: finalEvent.message.content,
+      }) ?? messages;
     messages = applyTranscriptEvent(messages, finalEvent) ?? messages;
     messages = applyTranscriptEvent(messages, finalEvent) ?? messages;
 
@@ -574,40 +736,44 @@ describe("applyTranscriptEvent", () => {
       isError: false,
       timestamp,
     };
-    const historyGroups = groupChatMessages(normalizeMessages([
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "read-history-parity", name: "read", arguments: { path: "image.png" } }],
-      },
-      finalResult,
-    ]));
+    const historyGroups = groupChatMessages(
+      normalizeMessages([
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "read-history-parity", name: "read", arguments: { path: "image.png" } }],
+        },
+        finalResult,
+      ]),
+    );
     let liveMessages: ChatLine[] = [];
 
-    liveMessages = applyTranscriptEvent(liveMessages, {
-      type: "tool.start",
-      toolName: "read",
-      toolCallId: "read-history-parity",
-      summary: "image.png",
-      args: { path: "image.png" },
-    }) ?? liveMessages;
-    liveMessages = applyTranscriptEvent(liveMessages, {
-      type: "tool.end",
-      toolName: "read",
-      toolCallId: "read-history-parity",
-      text: "Read image file [image/png]\n[image]",
-      isError: false,
-      content: finalResult.content,
-      details: finalResult.details,
-    }) ?? liveMessages;
+    liveMessages =
+      applyTranscriptEvent(liveMessages, {
+        type: "tool.start",
+        toolName: "read",
+        toolCallId: "read-history-parity",
+        summary: "image.png",
+        args: { path: "image.png" },
+      }) ?? liveMessages;
+    liveMessages =
+      applyTranscriptEvent(liveMessages, {
+        type: "tool.end",
+        toolName: "read",
+        toolCallId: "read-history-parity",
+        text: "Read image file [image/png]\n[image]",
+        isError: false,
+        content: finalResult.content,
+        details: finalResult.details,
+      }) ?? liveMessages;
     liveMessages = applyTranscriptEvent(liveMessages, { type: "message.end", message: finalResult }) ?? liveMessages;
 
     const liveGroups = groupChatMessages(liveMessages);
-    const technicalParts = (groups: ReturnType<typeof groupChatMessages>) => groups.flatMap((group) => group.kind === "group"
-      ? group.messages.flatMap(({ message }) => message.parts.filter((part) => part.type === "toolExecution"))
-      : []);
-    const visibleImages = (groups: ReturnType<typeof groupChatMessages>) => groups.flatMap((group) => group.kind !== "group"
-      ? group.message.parts.filter((part) => part.type === "image")
-      : []);
+    const technicalParts = (groups: ReturnType<typeof groupChatMessages>) =>
+      groups.flatMap((group) =>
+        group.kind === "group" ? group.messages.flatMap(({ message }) => message.parts.filter((part) => part.type === "toolExecution")) : [],
+      );
+    const visibleImages = (groups: ReturnType<typeof groupChatMessages>) =>
+      groups.flatMap((group) => (group.kind !== "group" ? group.message.parts.filter((part) => part.type === "image") : []));
     const visibleImageMeta = (groups: ReturnType<typeof groupChatMessages>) => {
       for (const group of groups) {
         if (group.kind !== "group" && group.message.parts.some((part) => part.type === "image")) return group.message.meta;
@@ -626,12 +792,18 @@ describe("applyTranscriptEvent", () => {
   it("folds a matching SKILL.md read result in live and history without losing thinking order", () => {
     const call = { type: "toolCall", id: "skill-1", name: "read", arguments: { path: "/skills/testing-guide/SKILL.md" } };
     const result = { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: "long skill body" }], isError: false };
-    const next = { role: "assistant", content: [{ type: "thinking", thinking: "after" }, { type: "text", text: "answer" }] };
-    const history = normalizeMessages([
-      { role: "assistant", content: [{ type: "thinking", thinking: "before" }, call] }, result, next,
-    ]);
+    const next = {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "after" },
+        { type: "text", text: "answer" },
+      ],
+    };
+    const history = normalizeMessages([{ role: "assistant", content: [{ type: "thinking", thinking: "before" }, call] }, result, next]);
     let live: ChatLine[] = [];
-    const apply = (event: Parameters<typeof applyTranscriptEvent>[1]) => { live = applyTranscriptEvent(live, event) ?? live; };
+    const apply = (event: Parameters<typeof applyTranscriptEvent>[1]) => {
+      live = applyTranscriptEvent(live, event) ?? live;
+    };
     apply({ type: "assistant.thinking.delta", text: "before" });
     apply({ type: "tool.start", toolCallId: "skill-1", toolName: "read", summary: "", args: call.arguments });
     apply({ type: "tool.end", toolCallId: "skill-1", toolName: "read", text: "long skill body", content: result.content, isError: false });
@@ -645,9 +817,15 @@ describe("applyTranscriptEvent", () => {
     expect(live).toEqual(history);
     expect(live).toEqual([
       { role: "assistant", parts: [{ type: "thinking", text: "before" }, skill] },
-      { role: "assistant", parts: [{ type: "thinking", text: "after" }, { type: "text", text: "answer" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "after" },
+          { type: "text", text: "answer" },
+        ],
+      },
     ]);
-    expect(groupChatMessages(live).map((group) => group.kind === "group" ? group.presentation : group.message.parts[0]?.type)).toEqual(["thinking", "text"]);
+    expect(groupChatMessages(live).map((group) => (group.kind === "group" ? group.presentation : group.message.parts[0]?.type))).toEqual(["thinking", "text"]);
   });
 
   it("does not drop unmatched, errored, or image-bearing skill read results", () => {
@@ -656,12 +834,26 @@ describe("applyTranscriptEvent", () => {
       { role: "toolResult", toolCallId: "other", toolName: "read", content: [{ type: "text", text: "other" }], isError: false },
       { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: "failed" }], isError: true },
       { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "image", mimeType: "image/png", data: "QUJD" }], isError: false },
-      { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: "changed" }], details: { diff: "+changed" }, isError: false },
+      {
+        role: "toolResult",
+        toolCallId: "skill-1",
+        toolName: "read",
+        content: [{ type: "text", text: "changed" }],
+        details: { diff: "+changed" },
+        isError: false,
+      },
     ];
     for (const result of results) {
       const history = normalizeMessages([skill, result]);
       let live: ChatLine[] = [];
-      live = applyTranscriptEvent(live, { type: "tool.start", toolCallId: "skill-1", toolName: "read", summary: "", args: { path: "/skills/testing-guide/SKILL.md" } }) ?? live;
+      live =
+        applyTranscriptEvent(live, {
+          type: "tool.start",
+          toolCallId: "skill-1",
+          toolName: "read",
+          summary: "",
+          args: { path: "/skills/testing-guide/SKILL.md" },
+        }) ?? live;
       live = applyTranscriptEvent(live, { type: "message.end", message: result }) ?? live;
       expect(history).toHaveLength(2);
       expect(live).toHaveLength(2);
@@ -671,8 +863,12 @@ describe("applyTranscriptEvent", () => {
 
   it("does not merge consecutive streamed skill reads", () => {
     let messages: ChatLine[] = [];
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "1", summary: "", args: { path: "/skills/playwright/SKILL.md" } }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "2", summary: "", args: { path: "/skills/sentry-cli/SKILL.md" } }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "1", summary: "", args: { path: "/skills/playwright/SKILL.md" } })
+      ?? messages;
+    messages =
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "2", summary: "", args: { path: "/skills/sentry-cli/SKILL.md" } })
+      ?? messages;
 
     expect(messages).toEqual([
       { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md", toolCallId: "1" }] },
@@ -682,20 +878,45 @@ describe("applyTranscriptEvent", () => {
 
   it("ignores duplicate streamed skill read starts", () => {
     let messages: ChatLine[] = [];
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "1", summary: "", args: { path: "/skills/playwright/SKILL.md" } }) ?? messages;
-    messages = applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "1", summary: "", args: { path: "/skills/playwright/SKILL.md" } }) ?? messages;
+    messages =
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "1", summary: "", args: { path: "/skills/playwright/SKILL.md" } })
+      ?? messages;
+    messages =
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "1", summary: "", args: { path: "/skills/playwright/SKILL.md" } })
+      ?? messages;
 
-    expect(messages).toEqual([
-      { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md", toolCallId: "1" }] },
-    ]);
+    expect(messages).toEqual([{ role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md", toolCallId: "1" }] }]);
   });
 
   it("replaces multiple streamed skill reads with the finalized grouped skill message", () => {
-    const firstTool: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolCallId: "read-1", toolName: "read", summary: "/skills/code-quality-architecture/SKILL.md", status: "success", resultText: "content" }] };
-    const secondTool: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolCallId: "read-2", toolName: "read", summary: "/skills/relay/SKILL.md", status: "success", resultText: "content" }] };
-    const thirdTool: ChatLine = { role: "tool", parts: [{ type: "toolExecution", toolCallId: "read-3", toolName: "read", summary: "/skills/skill-creator/SKILL.md", status: "success", resultText: "content" }] };
+    const firstTool: ChatLine = {
+      role: "tool",
+      parts: [
+        {
+          type: "toolExecution",
+          toolCallId: "read-1",
+          toolName: "read",
+          summary: "/skills/code-quality-architecture/SKILL.md",
+          status: "success",
+          resultText: "content",
+        },
+      ],
+    };
+    const secondTool: ChatLine = {
+      role: "tool",
+      parts: [{ type: "toolExecution", toolCallId: "read-2", toolName: "read", summary: "/skills/relay/SKILL.md", status: "success", resultText: "content" }],
+    };
+    const thirdTool: ChatLine = {
+      role: "tool",
+      parts: [
+        { type: "toolExecution", toolCallId: "read-3", toolName: "read", summary: "/skills/skill-creator/SKILL.md", status: "success", resultText: "content" },
+      ],
+    };
     const streamed: ChatLine[] = [
-      { role: "skill", parts: [{ type: "skillRead", name: "code-quality-architecture", path: "/skills/code-quality-architecture/SKILL.md", toolCallId: "read-1" }] },
+      {
+        role: "skill",
+        parts: [{ type: "skillRead", name: "code-quality-architecture", path: "/skills/code-quality-architecture/SKILL.md", toolCallId: "read-1" }],
+      },
       firstTool,
       { role: "skill", parts: [{ type: "skillRead", name: "relay", path: "/skills/relay/SKILL.md", toolCallId: "read-2" }] },
       secondTool,
@@ -703,18 +924,20 @@ describe("applyTranscriptEvent", () => {
       thirdTool,
     ];
 
-    expect(applyTranscriptEvent(streamed, {
-      type: "message.end",
-      message: {
-        role: "assistant",
-        content: [
-          { type: "toolCall", id: "read-1", name: "read", arguments: { path: "/skills/code-quality-architecture/SKILL.md" } },
-          { type: "toolCall", id: "read-2", name: "read", arguments: { path: "/skills/relay/SKILL.md" } },
-          { type: "toolCall", id: "read-3", name: "read", arguments: { path: "/skills/skill-creator/SKILL.md" } },
-        ],
-        timestamp: "2026-05-09T12:00:00.000Z",
-      },
-    })).toEqual([
+    expect(
+      applyTranscriptEvent(streamed, {
+        type: "message.end",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "toolCall", id: "read-1", name: "read", arguments: { path: "/skills/code-quality-architecture/SKILL.md" } },
+            { type: "toolCall", id: "read-2", name: "read", arguments: { path: "/skills/relay/SKILL.md" } },
+            { type: "toolCall", id: "read-3", name: "read", arguments: { path: "/skills/skill-creator/SKILL.md" } },
+          ],
+          timestamp: "2026-05-09T12:00:00.000Z",
+        },
+      }),
+    ).toEqual([
       {
         role: "skill",
         parts: [
@@ -740,10 +963,24 @@ describe("applyTranscriptEvent", () => {
         ],
         meta: { timestamp: "2026-05-09T12:00:00.000Z" },
       },
-      { role: "tool", parts: [{ type: "toolExecution", toolCallId: "read-1", toolName: "read", summary: "/skills/code-quality-architecture/SKILL.md", status: "success", resultText: "content" }] },
+      {
+        role: "tool",
+        parts: [
+          {
+            type: "toolExecution",
+            toolCallId: "read-1",
+            toolName: "read",
+            summary: "/skills/code-quality-architecture/SKILL.md",
+            status: "success",
+            resultText: "content",
+          },
+        ],
+      },
     ];
 
-    expect(applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "read-2", summary: "", args: { path: "/skills/relay/SKILL.md" } })).toEqual(messages);
+    expect(
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "read-2", summary: "", args: { path: "/skills/relay/SKILL.md" } }),
+    ).toEqual(messages);
   });
 
   it("allows the same skill read after a user boundary", () => {
@@ -752,10 +989,9 @@ describe("applyTranscriptEvent", () => {
       textMessage("user", "load it again"),
     ];
 
-    expect(applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "", summary: "", args: { path: "/skills/playwright/SKILL.md" } })).toEqual([
-      ...messages,
-      { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] },
-    ]);
+    expect(
+      applyTranscriptEvent(messages, { type: "tool.start", toolName: "read", toolCallId: "", summary: "", args: { path: "/skills/playwright/SKILL.md" } }),
+    ).toEqual([...messages, { role: "skill", parts: [{ type: "skillRead", name: "playwright", path: "/skills/playwright/SKILL.md" }] }]);
   });
 
   it("does not merge different finalized user messages", () => {
@@ -780,10 +1016,9 @@ describe("applyTranscriptEvent", () => {
     let messages: ChatLine[] = [textMessage("user", "stopped prompt")];
     messages = applyTranscriptEvent(messages, { type: "message.append", message: { role: "user", content: "new prompt" } }) ?? messages;
 
-    expect(applyTranscriptEvent(messages, { type: "message.end", message: { role: "user", content: "new prompt", timestamp: "2026-05-09T12:00:00.000Z" } })).toEqual([
-      textMessage("user", "stopped prompt"),
-      { ...textMessage("user", "new prompt"), meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
-    ]);
+    expect(
+      applyTranscriptEvent(messages, { type: "message.end", message: { role: "user", content: "new prompt", timestamp: "2026-05-09T12:00:00.000Z" } }),
+    ).toEqual([textMessage("user", "stopped prompt"), { ...textMessage("user", "new prompt"), meta: { timestamp: "2026-05-09T12:00:00.000Z" } }]);
   });
 
   it("seeds a null or undefined partial as a no-op", () => {
@@ -795,18 +1030,33 @@ describe("applyTranscriptEvent", () => {
   it("seeds an in-flight assistant partial with text and thinking so live deltas append onto it", () => {
     const seeded = seedStreamingPartial([textMessage("user", "question")], {
       role: "assistant",
-      content: [{ type: "thinking", thinking: "plan" }, { type: "text", text: "partial" }],
+      content: [
+        { type: "thinking", thinking: "plan" },
+        { type: "text", text: "partial" },
+      ],
     });
 
     expect(seeded).toEqual([
       textMessage("user", "question"),
-      { role: "assistant", parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "partial" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "plan" },
+          { type: "text", text: "partial" },
+        ],
+      },
     ]);
 
     // A live delta continues the seeded assistant message rather than starting a new one.
     expect(applyTranscriptEvent(seeded, { type: "assistant.delta", text: " answer" })).toEqual([
       textMessage("user", "question"),
-      { role: "assistant", parts: [{ type: "thinking", text: "plan" }, { type: "text", text: "partial answer" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "thinking", text: "plan" },
+          { type: "text", text: "partial answer" },
+        ],
+      },
     ]);
   });
 
@@ -825,8 +1075,8 @@ describe("applyTranscriptEvent", () => {
   it("replaces an optimistic user message when the finalized text matches", () => {
     const messages = [textMessage("user", "sent prompt")];
 
-    expect(applyTranscriptEvent(messages, { type: "message.end", message: { role: "user", content: "sent prompt", timestamp: "2026-05-09T12:00:00.000Z" } })).toEqual([
-      { ...textMessage("user", "sent prompt"), meta: { timestamp: "2026-05-09T12:00:00.000Z" } },
-    ]);
+    expect(
+      applyTranscriptEvent(messages, { type: "message.end", message: { role: "user", content: "sent prompt", timestamp: "2026-05-09T12:00:00.000Z" } }),
+    ).toEqual([{ ...textMessage("user", "sent prompt"), meta: { timestamp: "2026-05-09T12:00:00.000Z" } }]);
   });
 });

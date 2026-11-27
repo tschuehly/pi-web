@@ -59,11 +59,7 @@ describe("parseContainerMounts", () => {
   });
 
   it("unescapes octal sequences in mount targets and skips unparsable lines", () => {
-    const parsed = parseContainerMounts([
-      "1 0 8:9 / /host\\040paths rw,relatime - ext4 /dev/sda9 rw",
-      "not a mountinfo line",
-      "",
-    ].join("\n"));
+    const parsed = parseContainerMounts(["1 0 8:9 / /host\\040paths rw,relatime - ext4 /dev/sda9 rw", "not a mountinfo line", ""].join("\n"));
 
     expect(parsed).toEqual([{ target: "/host paths", fsType: "ext4", readOnly: false }]);
   });
@@ -112,9 +108,7 @@ describe("dockerEnvironmentFacts", () => {
   });
 
   it("points runtime deployments at their own image extension points", () => {
-    expect(factsFor(RUNTIME_ENV)).toContain(
-      "the build hooks in /home/user/.local/share/pi-web-docker/custom-image.d/*.sh",
-    );
+    expect(factsFor(RUNTIME_ENV)).toContain("the build hooks in /home/user/.local/share/pi-web-docker/custom-image.d/*.sh");
   });
 
   it("describes the dev checkout mount, its host path, and its nested volume", () => {
@@ -171,11 +165,13 @@ describe("dockerEnvironmentPromptSections", () => {
   });
 
   it("returns nothing when the operator switched the facts off", () => {
-    expect(dockerEnvironmentPromptSections({
-      env: RUNTIME_ENV,
-      enabled: false,
-      readMountInfo: () => MOUNT_INFO,
-    })).toEqual([]);
+    expect(
+      dockerEnvironmentPromptSections({
+        env: RUNTIME_ENV,
+        enabled: false,
+        readMountInfo: () => MOUNT_INFO,
+      }),
+    ).toEqual([]);
   });
 
   it("returns nothing outside a Docker deployment without reading the mount table", () => {
@@ -200,13 +196,17 @@ describe("dockerEnvironmentPromptSections", () => {
     const sections = dockerEnvironmentPromptSections({
       env: RUNTIME_ENV,
       enabled: true,
-      logger: { warn: (_details, message) => { warnings.push(message); } },
-      readMountInfo: () => { throw new Error("EACCES"); },
+      logger: {
+        warn: (_details, message) => {
+          warnings.push(message);
+        },
+      },
+      readMountInfo: () => {
+        throw new Error("EACCES");
+      },
     });
 
     expect(sections).toEqual([]);
-    expect(warnings).toEqual([
-      "could not read the container mount table; Docker environment facts are omitted from session system prompts",
-    ]);
+    expect(warnings).toEqual(["could not read the container mount table; Docker environment facts are omitted from session system prompts"]);
   });
 });

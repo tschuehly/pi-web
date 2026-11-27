@@ -24,11 +24,19 @@ export function publicPluginSelection(state: AppState): PluginSelectionSnapshot 
   return {
     ...(machine === undefined ? {} : { selectedMachine: { id: machine.id, name: machine.name, kind: machine.kind } }),
     ...(project === undefined ? {} : { selectedProject: { id: project.id, name: project.name, path: project.path } }),
-    ...(workspace === undefined ? {} : { selectedWorkspace: {
-      id: workspace.id, projectId: workspace.projectId, path: workspace.path, label: workspace.label, isMain: workspace.isMain,
-      ...(workspace.provider === undefined ? {} : { provider: workspace.provider }),
-      ...(workspace.removal === undefined ? {} : { removal: workspace.removal }),
-    } }),
+    ...(workspace === undefined
+      ? {}
+      : {
+          selectedWorkspace: {
+            id: workspace.id,
+            projectId: workspace.projectId,
+            path: workspace.path,
+            label: workspace.label,
+            isMain: workspace.isMain,
+            ...(workspace.provider === undefined ? {} : { provider: workspace.provider }),
+            ...(workspace.removal === undefined ? {} : { removal: workspace.removal }),
+          },
+        }),
     ...(session === undefined ? {} : { selectedSession: publicPluginSession(session) }),
   };
 }
@@ -61,36 +69,56 @@ export function adaptPublicPlugin(plugin: PiWebPlugin): PiWebPlugin {
         ...(activation.dispose === undefined ? {} : { dispose: activation.dispose.bind(activation) }),
         contributions: {
           ...activation.contributions,
-          ...(actions === undefined ? {} : { actions: actions.map(({ enabled, disabledReason, run, ...action }) => ({
-            ...action,
-            ...(enabled === undefined ? {} : { enabled: (context) => enabled(publicContext(context)) }),
-            ...(disabledReason === undefined ? {} : { disabledReason: (context) => disabledReason(publicContext(context)) }),
-            run: (context) => run(publicContext(context)),
-          })) }),
-          ...(applicationPanels === undefined ? {} : { applicationPanels: applicationPanels.map(({ visible, badge, render, ...panel }) => ({
-            ...panel,
-            ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
-            ...(badge === undefined ? {} : { badge: (context) => badge(publicContext(context)) }),
-            render: (context) => render(publicContext(context)),
-          })) }),
-          ...(workspacePanels === undefined ? {} : { workspacePanels: workspacePanels.map(({ visible, fileOpenQuery, badge, onInvalidate, render, ...panel }) => ({
-            ...panel,
-            ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
-            ...(fileOpenQuery === undefined ? {} : { fileOpenQuery: (context, path) => fileOpenQuery(publicContext(context), path) }),
-            ...(badge === undefined ? {} : { badge: (context) => badge(publicContext(context)) }),
-            ...(onInvalidate === undefined ? {} : { onInvalidate: (context, invalidation) => onInvalidate(publicContext(context), invalidation) }),
-            render: (context) => render(publicContext(context)),
-          })) }),
-          ...(workspaceLabels === undefined ? {} : { workspaceLabels: workspaceLabels.map(({ visible, items, ...label }) => ({
-            ...label,
-            ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
-            items: (context) => items(publicContext(context)),
-          })) }),
-          ...(sessionLabels === undefined ? {} : { sessionLabels: sessionLabels.map(({ visible, items, ...label }) => ({
-            ...label,
-            ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
-            items: (context) => items(publicContext(context)),
-          })) }),
+          ...(actions === undefined
+            ? {}
+            : {
+                actions: actions.map(({ enabled, disabledReason, run, ...action }) => ({
+                  ...action,
+                  ...(enabled === undefined ? {} : { enabled: (context) => enabled(publicContext(context)) }),
+                  ...(disabledReason === undefined ? {} : { disabledReason: (context) => disabledReason(publicContext(context)) }),
+                  run: (context) => run(publicContext(context)),
+                })),
+              }),
+          ...(applicationPanels === undefined
+            ? {}
+            : {
+                applicationPanels: applicationPanels.map(({ visible, badge, render, ...panel }) => ({
+                  ...panel,
+                  ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
+                  ...(badge === undefined ? {} : { badge: (context) => badge(publicContext(context)) }),
+                  render: (context) => render(publicContext(context)),
+                })),
+              }),
+          ...(workspacePanels === undefined
+            ? {}
+            : {
+                workspacePanels: workspacePanels.map(({ visible, fileOpenQuery, badge, onInvalidate, render, ...panel }) => ({
+                  ...panel,
+                  ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
+                  ...(fileOpenQuery === undefined ? {} : { fileOpenQuery: (context, path) => fileOpenQuery(publicContext(context), path) }),
+                  ...(badge === undefined ? {} : { badge: (context) => badge(publicContext(context)) }),
+                  ...(onInvalidate === undefined ? {} : { onInvalidate: (context, invalidation) => onInvalidate(publicContext(context), invalidation) }),
+                  render: (context) => render(publicContext(context)),
+                })),
+              }),
+          ...(workspaceLabels === undefined
+            ? {}
+            : {
+                workspaceLabels: workspaceLabels.map(({ visible, items, ...label }) => ({
+                  ...label,
+                  ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
+                  items: (context) => items(publicContext(context)),
+                })),
+              }),
+          ...(sessionLabels === undefined
+            ? {}
+            : {
+                sessionLabels: sessionLabels.map(({ visible, items, ...label }) => ({
+                  ...label,
+                  ...(visible === undefined ? {} : { visible: (context) => visible(publicContext(context)) }),
+                  items: (context) => items(publicContext(context)),
+                })),
+              }),
         },
       };
     },

@@ -5,7 +5,16 @@ installNativeDialogFake();
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppAction } from "../actions";
 import { ActionPalette, filterActionPaletteActions } from "./ActionPalette";
-import { deepActiveElement, dialogSection, dialogSurface, pressKey, pressNativeButtonEnter, requiredElement, settleRenderedDialog, surfaceBackdrop } from "./modalSurfaceTestSupport";
+import {
+  deepActiveElement,
+  dialogSection,
+  dialogSurface,
+  pressKey,
+  pressNativeButtonEnter,
+  requiredElement,
+  settleRenderedDialog,
+  surfaceBackdrop,
+} from "./modalSurfaceTestSupport";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -24,9 +33,7 @@ describe("filterActionPaletteActions", () => {
   });
 
   it("matches disabled reasons in search", () => {
-    const actions: AppAction[] = [
-      action("cleanup", "Clean Up Sessions", { enabled: false, disabledReason: "Selected server does not support cleanup." }),
-    ];
+    const actions: AppAction[] = [action("cleanup", "Clean Up Sessions", { enabled: false, disabledReason: "Selected server does not support cleanup." })];
 
     expect(filterActionPaletteActions(actions, "support cleanup").map((item) => item.id)).toEqual(["cleanup"]);
   });
@@ -54,9 +61,17 @@ describe("action-palette modal surface", () => {
 
   it("retains disabled explanations alongside description and group metadata", async () => {
     const onRun = vi.fn<(action: AppAction) => void>();
-    const palette = await mountPalette({ onRun, actions: [action("cleanup", "Clean Up Sessions", {
-      description: "Remove old sessions.", group: "Sessions", enabled: false, disabledReason: "Select a machine that supports cleanup.",
-    })] });
+    const palette = await mountPalette({
+      onRun,
+      actions: [
+        action("cleanup", "Clean Up Sessions", {
+          description: "Remove old sessions.",
+          group: "Sessions",
+          enabled: false,
+          disabledReason: "Select a machine that supports cleanup.",
+        }),
+      ],
+    });
     const button = requiredElement(actionButtons(palette)[0], "disabled action");
     expect(button.disabled).toBe(true);
     expect(button.textContent).toContain("Remove old sessions.");

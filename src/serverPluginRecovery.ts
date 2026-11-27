@@ -1,22 +1,9 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { piWebConfigPath } from "./config.js";
 import { isPiWebPluginId } from "./shared/pluginIds.js";
-import {
-  REQUIRED_TERMINAL_PLUGIN_ID,
-  REQUIRED_TERMINAL_RECOVERY_GUIDANCE,
-} from "./shared/requiredTerminalPlugin.js";
+import { REQUIRED_TERMINAL_PLUGIN_ID, REQUIRED_TERMINAL_RECOVERY_GUIDANCE } from "./shared/requiredTerminalPlugin.js";
 
 export type ServerPluginSafeStart = "bundled-only" | "none";
 
@@ -46,9 +33,7 @@ const SAFE_START_CONFIG_KEY = "safeStart";
  * Reads only host-owned recovery state. It neither discovers plugins nor needs
  * a running session daemon, so it is safe to use before any server import.
  */
-export function loadServerPluginRecoveryConfig(
-  options: ServerPluginRecoveryConfigOptions = {},
-): ServerPluginRecoveryConfig {
+export function loadServerPluginRecoveryConfig(options: ServerPluginRecoveryConfigOptions = {}): ServerPluginRecoveryConfig {
   const path = recoveryConfigPath(options);
   if (!existsSync(path)) return { path, exists: false };
   const root = readConfigObject(path);
@@ -60,10 +45,7 @@ export function loadServerPluginRecoveryConfig(
 }
 
 /** Offline recovery mutation that preserves settings and unrelated config. */
-export function disableServerPlugin(
-  pluginId: string,
-  options: ServerPluginRecoveryConfigOptions = {},
-): ServerPluginRecoveryConfig {
+export function disableServerPlugin(pluginId: string, options: ServerPluginRecoveryConfigOptions = {}): ServerPluginRecoveryConfig {
   if (!isPiWebPluginId(pluginId)) throw new Error(`Invalid PI WEB plugin id: ${pluginId}`);
   if (pluginId === REQUIRED_TERMINAL_PLUGIN_ID) {
     throw new Error(`Terminal is a required bundled plugin and cannot be disabled. ${REQUIRED_TERMINAL_RECOVERY_GUIDANCE}`);
@@ -117,9 +99,7 @@ export function setServerPluginSafeStart(
 
 function recoveryConfigPath(options: ServerPluginRecoveryConfigOptions): string {
   const cwd = options.cwd ?? process.cwd();
-  return options.configPath === undefined
-    ? piWebConfigPath(options.env ?? process.env, cwd)
-    : resolve(cwd, options.configPath);
+  return options.configPath === undefined ? piWebConfigPath(options.env ?? process.env, cwd) : resolve(cwd, options.configPath);
 }
 
 function mutateRecoveryConfig(

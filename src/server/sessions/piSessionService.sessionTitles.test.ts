@@ -6,7 +6,16 @@ import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PiSessionService, sessionNameSource } from "./piSessionService.js";
-import { CapturingSessionEventHub, fakeRuntime, runtimeCreator, sessionGateway, sessionRecord, sessionRef, testModel, testModelRuntime } from "./piSessionService.testSupport.js";
+import {
+  CapturingSessionEventHub,
+  fakeRuntime,
+  runtimeCreator,
+  sessionGateway,
+  sessionRecord,
+  sessionRef,
+  testModel,
+  testModelRuntime,
+} from "./piSessionService.testSupport.js";
 
 const SESSION_ID = "title-session";
 let sessionDir: string;
@@ -48,12 +57,17 @@ function titledSession(manager: SessionManager, titles: string[]) {
   };
   const fake = fakeRuntime(SESSION_ID, { model: testModel(), agent: { streamFunction: streamFn }, sessionManager: manager });
   Object.defineProperty(fake.session, "sessionName", { get: () => manager.getSessionName(), configurable: true });
-  fake.session.setSessionName = (name: string) => { manager.appendSessionInfo(name); };
+  fake.session.setSessionName = (name: string) => {
+    manager.appendSessionInfo(name);
+  };
   fake.session.prompt = (text: string) => {
     fake.calls.prompt.push({ text, options: undefined });
     // Pi expands /skill:<name> [args] into a skill block before persisting the user message.
     const skill = /^\/skill:(\S+)\s*([\s\S]*)$/.exec(text);
-    const content = skill === null ? text : `<skill name="${skill[1] ?? ""}" location="/skills/${skill[1] ?? ""}/SKILL.md">\nSkill body.\n</skill>${skill[2] === "" ? "" : `\n\n${skill[2] ?? ""}`}`;
+    const content =
+      skill === null
+        ? text
+        : `<skill name="${skill[1] ?? ""}" location="/skills/${skill[1] ?? ""}/SKILL.md">\nSkill body.\n</skill>${skill[2] === "" ? "" : `\n\n${skill[2] ?? ""}`}`;
     manager.appendMessage({ role: "user", content, timestamp: Date.now() });
     manager.appendMessage(assistant(`answer to ${text}`));
     return Promise.resolve();
@@ -68,7 +82,9 @@ function titledSession(manager: SessionManager, titles: string[]) {
   const send = async (text: string) => {
     const before = fake.calls.prompt.length;
     await service.prompt(sessionRef(SESSION_ID), text);
-    await vi.waitFor(() => { expect(fake.calls.prompt.length).toBe(before + 1); });
+    await vi.waitFor(() => {
+      expect(fake.calls.prompt.length).toBe(before + 1);
+    });
   };
   return { service, send, titleRequests, manager };
 }
@@ -78,12 +94,14 @@ describe("PiSessionService session titles", () => {
     const { service, send, titleRequests, manager } = titledSession(SessionManager.inMemory("/workspace"), ["Login redirect fix"]);
 
     await send("/skill:orient brief");
-    await send("<skill name=\"tdd\" location=\"/skills/tdd/SKILL.md\">\nbody\n</skill>");
+    await send('<skill name="tdd" location="/skills/tdd/SKILL.md">\nbody\n</skill>');
     expect(manager.getSessionName()).toBeUndefined();
     expect(titleRequests).toEqual([]);
 
     await send("Fix the login redirect loop");
-    await vi.waitFor(() => { expect(manager.getSessionName()).toBe("Login redirect fix"); });
+    await vi.waitFor(() => {
+      expect(manager.getSessionName()).toBe("Login redirect fix");
+    });
     expect(titleRequests).toEqual([expect.stringContaining("Fix the login redirect loop")]);
     expect(sessionNameSource(manager.getEntries())).toBe("auto");
     await service.dispose();
@@ -93,12 +111,16 @@ describe("PiSessionService session titles", () => {
     const { service, send, titleRequests, manager } = titledSession(SessionManager.inMemory("/workspace"), ["Login fix", "Auth session hardening"]);
 
     await send("Fix the login redirect loop");
-    await vi.waitFor(() => { expect(manager.getSessionName()).toBe("Login fix"); });
+    await vi.waitFor(() => {
+      expect(manager.getSessionName()).toBe("Login fix");
+    });
     for (const text of ["Also check cookie expiry", "/skill:tdd", "Add refresh token rotation"]) await send(text);
     expect(titleRequests).toHaveLength(1);
 
     await send("Now document the auth flow");
-    await vi.waitFor(() => { expect(manager.getSessionName()).toBe("Auth session hardening"); });
+    await vi.waitFor(() => {
+      expect(manager.getSessionName()).toBe("Auth session hardening");
+    });
     const goalRequest = titleRequests[1] ?? "";
     expect(goalRequest).toContain("goal of this chat session");
     expect(goalRequest).toContain("Prompt 4:\nNow document the auth flow");
@@ -116,7 +138,9 @@ describe("PiSessionService session titles", () => {
     const { service, send, titleRequests, manager } = titledSession(SessionManager.inMemory("/workspace"), ["Login fix", "Should not apply"]);
 
     await send("Fix the login redirect loop");
-    await vi.waitFor(() => { expect(manager.getSessionName()).toBe("Login fix"); });
+    await vi.waitFor(() => {
+      expect(manager.getSessionName()).toBe("Login fix");
+    });
     await service.runCommand(sessionRef(SESSION_ID), "/name My auth work");
     for (const text of ["two", "three", "four", "five", "six"]) await send(text);
     await service.runCommand(sessionRef(SESSION_ID), "/workstream-checkpoint-title Auth checkpoint");
@@ -131,7 +155,9 @@ describe("PiSessionService session titles", () => {
     const { service, send, titleRequests, manager } = titledSession(SessionManager.inMemory("/workspace"), ["Login fix", "Should not apply"]);
 
     await send("Fix the login redirect loop");
-    await vi.waitFor(() => { expect(manager.getSessionName()).toBe("Login fix"); });
+    await vi.waitFor(() => {
+      expect(manager.getSessionName()).toBe("Login fix");
+    });
     await service.runCommand(sessionRef(SESSION_ID), `/workstream-checkpoint-title ${"Auth checkpoint ".repeat(10)}`);
     const checkpointName = manager.getSessionName();
     expect(checkpointName).toMatch(/^Auth checkpoint/);
@@ -148,7 +174,9 @@ describe("PiSessionService session titles", () => {
     const created = SessionManager.create("/workspace", sessionDir);
     const first = titledSession(created, ["Login fix"]);
     await first.send("Fix the login redirect loop");
-    await vi.waitFor(() => { expect(created.getSessionName()).toBe("Login fix"); });
+    await vi.waitFor(() => {
+      expect(created.getSessionName()).toBe("Login fix");
+    });
     await first.service.dispose();
     const file = created.getSessionFile() ?? "";
 

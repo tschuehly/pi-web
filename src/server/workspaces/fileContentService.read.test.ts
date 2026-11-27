@@ -114,9 +114,15 @@ describe("readWorkspaceFile", () => {
     const displaced = `${root}-displaced`;
     await writeFile(join(root, "note.txt"), "inside");
     await writeFile(join(outside, "note.txt"), "outside");
-    race.afterResolve = async () => { await rename(root, displaced); await symlink(outside, root); };
-    try { await expect(readWorkspaceFile(root, "note.txt")).rejects.toThrow(); }
-    finally { await rm(displaced, { recursive: true, force: true }); }
+    race.afterResolve = async () => {
+      await rename(root, displaced);
+      await symlink(outside, root);
+    };
+    try {
+      await expect(readWorkspaceFile(root, "note.txt")).rejects.toThrow();
+    } finally {
+      await rm(displaced, { recursive: true, force: true });
+    }
   });
 
   it("rejects a FIFO swapped into place without waiting for a writer", async () => {
@@ -174,7 +180,7 @@ describe("readWorkspaceFile", () => {
     const root = await createTempWorkspace();
     const html = "<h1>hi</h1><script>window.top.location = '/stolen'</script>";
     const markdown = "# Notes\n\n<img src=x onerror=alert(1)>\n";
-    const svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"></svg>";
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>';
     await writeFile(join(root, "report.html"), html);
     await writeFile(join(root, "README.MD"), markdown);
     await writeFile(join(root, "diagram.SVG"), svg);
@@ -223,5 +229,4 @@ describe("readWorkspaceFile", () => {
     expect(file.version).toBeUndefined();
     expect(file.binary).toBe(false);
   });
-
 });

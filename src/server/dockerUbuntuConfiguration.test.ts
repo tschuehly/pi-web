@@ -37,7 +37,20 @@ describe.skipIf(process.platform === "win32")("Ubuntu Docker configuration", () 
     const assets = join(root, "assets");
     const install = join(root, "install");
     const data = join(root, "data");
-    for (const path of ["Dockerfile", "compose.yml", ".dockerignore", "install.sh", "pi-web-docker", "internal/bin/hostexec", "internal/image/install-ubuntu-base", "internal/bin/pi-web-service", "internal/bin/pi-web-image-doctor", "internal/bin/pi-web-reconcile-mise", "internal/image/write-manifest", "internal/host-profile.sh"]) {
+    for (const path of [
+      "Dockerfile",
+      "compose.yml",
+      ".dockerignore",
+      "install.sh",
+      "pi-web-docker",
+      "internal/bin/hostexec",
+      "internal/image/install-ubuntu-base",
+      "internal/bin/pi-web-service",
+      "internal/bin/pi-web-image-doctor",
+      "internal/bin/pi-web-reconcile-mise",
+      "internal/image/write-manifest",
+      "internal/host-profile.sh",
+    ]) {
       await mkdir(dirname(join(assets, path)), { recursive: true });
       if (path === "internal/host-profile.sh") {
         await copyFile(join(repoRoot, "docker", path), join(assets, path));
@@ -52,7 +65,23 @@ describe.skipIf(process.platform === "win32")("Ubuntu Docker configuration", () 
     await writeFile(join(install, "compose.local.yml"), "# user compose\n");
     await writeFile(join(data, "container.env"), "USER_SETTING=kept\n");
     const args = [join(repoRoot, "docker/install.sh"), "--install-dir", install, "--data-dir", data, "--asset-dir", assets, "--skip-compose"];
-    await exec("sh", [...args, "--ubuntu-image", "ubuntu:26.04@sha256:example", "--extra-apt-packages", "jq ripgrep", "--docker-cli-version", "29-cli@sha256:example", "--mise-version", "2026.10.12", "--git-version", "1:2.53.0-test"], { env });
+    await exec(
+      "sh",
+      [
+        ...args,
+        "--ubuntu-image",
+        "ubuntu:26.04@sha256:example",
+        "--extra-apt-packages",
+        "jq ripgrep",
+        "--docker-cli-version",
+        "29-cli@sha256:example",
+        "--mise-version",
+        "2026.10.12",
+        "--git-version",
+        "1:2.53.0-test",
+      ],
+      { env },
+    );
     // Rerunning without build flags retains the recorded inputs, not defaults.
     await exec("sh", args, { env });
     const effective = await readFile(join(install, ".env"), "utf8");
@@ -69,7 +98,11 @@ describe.skipIf(process.platform === "win32")("Ubuntu Docker configuration", () 
     expect(await readFile(join(install, "compose.local.yml"), "utf8")).toBe("# user compose\n");
     expect(await readFile(join(data, "container.env"), "utf8")).toBe("USER_SETTING=kept\n");
     // Every lifecycle operation stays inside the fake Docker boundary.
-    await exec("sh", args.filter((arg) => arg !== "--skip-compose"), { env });
+    await exec(
+      "sh",
+      args.filter((arg) => arg !== "--skip-compose"),
+      { env },
+    );
     const commands = await readFile(join(root, "commands"), "utf8");
     expect(commands).toContain("-f\ncompose.yml\n-f\ncompose.override.yml\n-f\ncompose.local.yml\nbuild\n");
     expect(commands).toContain("-f\ncompose.local.yml\nup\n");

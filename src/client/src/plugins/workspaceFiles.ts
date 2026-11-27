@@ -13,11 +13,7 @@ import {
   type Workspace,
 } from "../api";
 import { workspaceFilePreviewUrl as defaultWorkspaceFilePreviewUrl } from "../api/urls";
-import type {
-  WorkspaceFileRequestOptions,
-  WorkspaceFilesCapabilityV1,
-  WorkspaceInvalidation,
-} from "./types";
+import type { WorkspaceFileRequestOptions, WorkspaceFilesCapabilityV1, WorkspaceInvalidation } from "./types";
 
 /**
  * API surface the workspace files helper needs. Structurally satisfied by
@@ -26,9 +22,23 @@ import type {
 export interface WorkspaceFilesApi {
   workspaceFile(projectId: string, workspaceId: string, path: string, machineId?: string, options?: WorkspaceFileRequestOptions): Promise<FileContentResponse>;
   workspaceTree(projectId: string, workspaceId: string, path?: string, machineId?: string, options?: WorkspaceFileRequestOptions): Promise<FileTreeResponse>;
-  writeWorkspaceFile(projectId: string, workspaceId: string, path: string, content: string | Uint8Array, options?: WriteWorkspaceFileOptions, machineId?: string): Promise<WriteWorkspaceFileResponse>;
+  writeWorkspaceFile(
+    projectId: string,
+    workspaceId: string,
+    path: string,
+    content: string | Uint8Array,
+    options?: WriteWorkspaceFileOptions,
+    machineId?: string,
+  ): Promise<WriteWorkspaceFileResponse>;
   deleteWorkspaceFile(projectId: string, workspaceId: string, path: string, machineId?: string): Promise<DeleteWorkspaceFileResponse>;
-  moveWorkspaceFile(projectId: string, workspaceId: string, fromPath: string, toPath: string, options?: MoveWorkspaceFileOptions, machineId?: string): Promise<MoveWorkspaceFileResponse>;
+  moveWorkspaceFile(
+    projectId: string,
+    workspaceId: string,
+    fromPath: string,
+    toPath: string,
+    options?: MoveWorkspaceFileOptions,
+    machineId?: string,
+  ): Promise<MoveWorkspaceFileResponse>;
 }
 
 export interface CreateWorkspaceFilesOptions {
@@ -57,7 +67,9 @@ export function createWorkspaceFiles(
 ): WorkspaceFilesCapabilityV1 {
   const previewUrl = options.workspaceFilePreviewUrl ?? defaultWorkspaceFilePreviewUrl;
   const uploadFile = options.uploadWorkspaceFile ?? defaultUploadWorkspaceFile;
-  const publishMutation = () => { options.onInvalidate?.(workspaceFilesMutationInvalidation); };
+  const publishMutation = () => {
+    options.onInvalidate?.(workspaceFilesMutationInvalidation);
+  };
 
   return {
     capabilityVersion: 1,
@@ -80,31 +92,46 @@ export function createWorkspaceFiles(
       publishMutation();
       return result;
     },
-    previewUrl: (path, referenceOptions) => previewUrl(workspace.projectId, workspace.id, path, {
-      machineId,
-      ...(referenceOptions?.version === undefined ? {} : { modifiedAt: referenceOptions.version }),
-    }),
-    downloadUrl: (path, referenceOptions) => previewUrl(workspace.projectId, workspace.id, path, {
-      machineId,
-      download: true,
-      ...(referenceOptions?.version === undefined ? {} : { modifiedAt: referenceOptions.version }),
-    }),
+    previewUrl: (path, referenceOptions) =>
+      previewUrl(workspace.projectId, workspace.id, path, {
+        machineId,
+        ...(referenceOptions?.version === undefined ? {} : { modifiedAt: referenceOptions.version }),
+      }),
+    downloadUrl: (path, referenceOptions) =>
+      previewUrl(workspace.projectId, workspace.id, path, {
+        machineId,
+        download: true,
+        ...(referenceOptions?.version === undefined ? {} : { modifiedAt: referenceOptions.version }),
+      }),
     uploadFile: (file, uploadOptions) => {
       const path = workspaceUploadPath(uploadOptions?.destinationFolder ?? options.defaultUploadFolder, file.name);
-      const task = uploadFile(workspace.projectId, workspace.id, { path, file }, {
-        machineId,
-        createDirs: uploadOptions?.createDirs ?? true,
-        overwrite: uploadOptions?.overwrite ?? false,
-        ...(uploadOptions?.onProgress === undefined ? {} : { onProgress: uploadOptions.onProgress }),
-      });
+      const task = uploadFile(
+        workspace.projectId,
+        workspace.id,
+        { path, file },
+        {
+          machineId,
+          createDirs: uploadOptions?.createDirs ?? true,
+          overwrite: uploadOptions?.overwrite ?? false,
+          ...(uploadOptions?.onProgress === undefined ? {} : { onProgress: uploadOptions.onProgress }),
+        },
+      );
       const completed = task.promise.then(
         (result) => {
           publishMutation();
           return result;
         },
-        (error: unknown) => { throw publicUploadError(error); },
+        (error: unknown) => {
+          throw publicUploadError(error);
+        },
       );
-      return { path, completed, cancel: () => { task.cancel(); } };
+      return {
+        path,
+        completed,
+        cancel: () => {
+          task.cancel();
+        },
+      };
     },
   };
 }

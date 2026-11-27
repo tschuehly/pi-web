@@ -46,9 +46,13 @@ describe("plugin backend channel proxy coordinator", () => {
     const downstream = await createSocketPair();
     const stalledSockets = new Set<NetSocket>();
     let resolveAccepted: (() => void) | undefined;
-    const accepted = new Promise<void>((resolve) => { resolveAccepted = resolve; });
+    const accepted = new Promise<void>((resolve) => {
+      resolveAccepted = resolve;
+    });
     let resolveStalledClosed: (() => void) | undefined;
-    const stalledClosed = new Promise<void>((resolve) => { resolveStalledClosed = resolve; });
+    const stalledClosed = new Promise<void>((resolve) => {
+      resolveStalledClosed = resolve;
+    });
     const stalled = createServer((socket) => {
       stalledSockets.add(socket);
       resolveAccepted?.();
@@ -125,7 +129,9 @@ async function createSocketPair(): Promise<SocketPair> {
 
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolvePromise: (value: T) => void = () => undefined;
-  const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
   return { promise, resolve: resolvePromise };
 }
 
@@ -180,7 +186,9 @@ function close(server: NetServer): Promise<void> {
 
 function closeSocketServer(server: WebSocketServer): Promise<void> {
   return new Promise<void>((resolve) => {
-    server.close(() => { resolve(); });
+    server.close(() => {
+      resolve();
+    });
   });
 }
 
@@ -191,5 +199,7 @@ function serverUrl(server: WebSocketServer): string {
 }
 
 function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms); });
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
