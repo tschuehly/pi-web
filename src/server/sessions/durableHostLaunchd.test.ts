@@ -354,6 +354,56 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     }
   }, 60_000);
 
+  it("scans each byte once while parsing a multi-megabyte reply across small chunks", async () => {
+    const { root, hostsDir } = await fixture();
+    await mkdir(hostsDir, { mode: 0o700 });
+    const locator = new SessionRuntimeLocator(join(root, "data"));
+    const record = locator.create("/work/a");
+    const socket = durableHostSocketPath(hostsDir, record.storeId);
+    const ready = { protocol: DURABLE_HOST_PROTOCOL, storeId: record.storeId, ownerEpoch: 1, revision: root, pid: process.pid };
+    const payload = Array.from({ length: 3_000 }, (_, index) => ({ index, text: "x".repeat(1_000) }));
+    const bytes = Buffer.from(payload.map((message) => `${JSON.stringify(message)}\n`).join(""));
+    const server = createServer((connection) => {
+      connection.on("error", () => undefined);
+      connection.write(`${JSON.stringify({ ready })}\n`);
+      setTimeout(() => {
+        let offset = 0;
+        const sendChunk = () => {
+          if (offset === bytes.length) return;
+          const next = Math.min(offset + 8_191, bytes.length);
+          connection.write(bytes.subarray(offset, next));
+          offset = next;
+          setImmediate(sendChunk);
+        };
+        sendChunk();
+      }, 5);
+    });
+    const umask = process.umask(0o077);
+    await new Promise<void>((resolve) => server.listen(socket, resolve));
+    process.umask(umask);
+    const launch = launchdDurableHost({
+      entry: join(root, "host.mjs"), model: "faux", agentDir: root, labelPrefix: PREFIX, hostsDir, locator,
+      launchctl: () => Promise.resolve(),
+    });
+    try {
+      locator.setHost(record.id, { label: `${PREFIX}.${record.id}`, socket, revision: ready.revision, ownerEpoch: 1, pid: process.pid });
+      const host = launch(record, join(root, "store"), { attachOnly: true });
+      const messages: unknown[] = [];
+      host.on("error", () => undefined);
+      await new Promise<void>((resolve, reject) => {
+        host.on("message", (message) => {
+          messages.push(message);
+          if (messages.length === payload.length + 1) resolve();
+        });
+        host.on("exit", () => reject(new Error("host exited before the reply was fully parsed")));
+      });
+      host.detach?.();
+      expect(messages).toEqual([{ ready }, ...payload]);
+    } finally {
+      server.close();
+    }
+  }, 60_000);
+
   it("round 4 F3: a refused safe close, its connection then lost, leaves the family's job loaded; an accepted one unloads it", async () => {
     const { root, hostsDir } = await fixture();
     await mkdir(hostsDir, { mode: 0o700 });

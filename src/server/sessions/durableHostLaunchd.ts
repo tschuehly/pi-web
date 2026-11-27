@@ -344,17 +344,22 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     socket.on("close", () => {
       void this.#closed();
     });
+    let scanFrom = 0;
     socket.on("data", (chunk: string) => {
       buffer += chunk;
-      for (let end = buffer.indexOf("\n"); end !== -1; end = buffer.indexOf("\n")) {
+      let end = buffer.indexOf("\n", scanFrom);
+      while (end !== -1) {
         const line = parse(buffer.slice(0, end));
         buffer = buffer.slice(end + 1);
+        scanFrom = 0;
+        end = buffer.indexOf("\n", scanFrom);
         if (isRecord(line) && this.#conditionalClose !== undefined && line["id"] === this.#conditionalClose) {
           this.#conditionalClose = undefined;
           if (isRecord(line["result"]) && line["result"]["closed"] === true) this.#closing = true;
         }
         if (line !== undefined) this.emit("message", line);
       }
+      scanFrom = buffer.length;
     });
     if (record)
       this.context.locator.setHost(this.record.id, {
