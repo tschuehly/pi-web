@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -909,6 +909,71 @@ describe("Durable Chats", () => {
     setTimeout(() => { watching = false; }, 100);
     await expect(durable.stopIfUnwatched(ref, false)).resolves.toEqual({ stopped: true });
     expect(only(launched).requests.filter((request) => request.method === "close").map((request) => request.params)).toEqual([{ end: true }]);
+  });
+
+  it("tells a viewed-capable host when its first browser opens the Chat and its last one leaves, again after a reconnect", async () => {
+    const { durable, hub, launched } = await service((launch) => new FakeHost(DURABLE_HOST_PROTOCOL, launch === 2 ? [] : ["viewed"]));
+    const chat = await durable.start("/work/a");
+    const ref = { id: chat.id, cwd: chat.cwd };
+    await durable.status(ref);
+    const socket = () => Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined });
+    const viewed = (host: FakeHost) => host.requests.filter((request) => request.method === "setViewed").map((request) => request.params);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Ready with no browser: the host hears the current state once.
+    expect(viewed(only(launched))).toEqual([{ viewed: false }]);
+    const first = socket();
+    const second = socket();
+    hub.add(chat.id, first);
+    hub.add(chat.id, second);
+    await settle();
+    first.emit("close");
+    await settle();
+    expect(viewed(only(launched))).toEqual([{ viewed: false }, { viewed: true }]);
+    second.emit("close");
+    await settle();
+    expect(viewed(only(launched))).toEqual([{ viewed: false }, { viewed: true }, { viewed: false }]);
+
+    // A new host for a watched Chat hears it at its ready handshake; a host without the capability hears nothing.
+    hub.add(chat.id, socket());
+    await durable.stop(ref);
+    await durable.status(ref);
+    expect(viewed(only(launched.slice(1)))).toEqual([{ viewed: true }]);
+    await durable.stop(ref);
+    await durable.status(ref);
+    expect(viewed(only(launched.slice(2)))).toEqual([]);
+  });
+
+  it("retries a failed last-close setViewed(false) on the live connection without another change", async () => {
+    let failFalse = false;
+    const { durable, hub, launched } = await service((): FakeHost => {
+      const host = new FakeHost(DURABLE_HOST_PROTOCOL, ["viewed"]);
+      const answer = host.answer;
+      host.answer = (request) => {
+        if (request.method === "setViewed" && failFalse && request.params?.viewed === false) {
+          failFalse = false;
+          throw new Error("no");
+        }
+        return answer(request);
+      };
+      return host;
+    });
+    const chat = await durable.start("/work/a");
+    await durable.status({ id: chat.id, cwd: chat.cwd });
+    const viewed = () => only(launched).requests.filter((request) => request.method === "setViewed").map((request) => request.params);
+    const settle = () => new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+    const browser = Object.assign(new EventEmitter(), { OPEN: 1, readyState: 1, send: () => undefined, terminate: () => undefined });
+    hub.add(chat.id, browser);
+    await settle();
+    expect(viewed()).toEqual([{ viewed: false }, { viewed: true }]);
+
+    // The last browser leaves and that send fails; the Chat stays closed, yet the host hears false again by itself.
+    failFalse = true;
+    browser.emit("close");
+    await vi.waitFor(() => { expect(viewed()).toEqual([{ viewed: false }, { viewed: true }, { viewed: false }, { viewed: false }]); }, { timeout: 3000 });
+    // Taken: nothing more goes out.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(viewed()).toHaveLength(4);
   });
 
   it("the idle close ends a host that only serves Atelier Pages", async () => {
@@ -2039,7 +2104,8 @@ describe("the owner's run button", () => {
     expect(results.find((result) => result.status === "fulfilled")).toEqual({ status: "fulfilled", value: { status: "started" } });
     const [run, ...more] = runs(launched);
     expect(more).toEqual([]);
-    expect(run?.params).toEqual({ operationId: expect.stringMatching(/^owner-run:[0-9a-f]{32}$/), cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
+    expect(run?.params).toMatchObject({ cwd, command: `cd -P -- '${cwd}' && [ "$PWD" = '${cwd}' ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\npwd; exit 7\n` });
+    expect(run?.params?.operationId).toEqual(expect.stringMatching(/^owner-run:[0-9a-f]{32}$/));
     // The agent learns the result from the job's completion, not from a prompt of PI WEB's.
     expect(launched.flatMap((host) => host.requests.filter((request) => request.method === "prompt"))).toEqual([]);
   });

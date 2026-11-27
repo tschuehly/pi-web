@@ -66,6 +66,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Type checks run on native TypeScript 7; typed ESLint, the server emit and the build scripts' API use TypeScript 6.
+      - name: TypeScript versions
+        run: node node_modules/typescript-native/bin/tsc -v && node node_modules/typescript/bin/tsc -v
+
       - name: Verify
         run: pnpm run verify
 
