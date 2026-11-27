@@ -2382,6 +2382,12 @@ export class SessionController {
       this.streamWatermark = undefined;
       if (event.type === "session.tree.changed") this.invalidateSessionTree();
       else if (mark !== undefined || !replay) void this.refreshSelectedSession();
+      // The snapshot cannot restore these: replay them after it (or apply them now when no refresh follows).
+      if (isSnapshotIndependentEvent(event)) {
+        const refresh = this.refreshEventBuffer;
+        if (refresh !== undefined && this.isCurrentRefreshTarget(refresh.target)) refresh.events.push(event);
+        else this.applySnapshotIndependentEvent(event);
+      }
       return;
     }
     if (this.isStreamEventBelowWatermark(event)) return;
@@ -2443,6 +2449,13 @@ export class SessionController {
     } else if (event.type === "session.name") {
       this.applySessionName(event.sessionId, event.name, event.shortName);
     }
+  }
+
+  private applySnapshotIndependentEvent(event: SessionUiEvent): void {
+    this.flushPendingUpdates();
+    if (event.type === "session.error") this.onSessionError?.(event.message, event.seq);
+    else if (event.type === "session.name") this.applySessionName(event.sessionId, event.name, event.shortName);
+    else if (event.type === "command.output") this.setState({ messages: this.transcripts.applyLiveEvent(this.getState().messages, event) ?? this.getState().messages });
   }
 
   private queueTranscriptEvent(event: SessionUiEvent): void {
@@ -2625,8 +2638,7 @@ export class SessionController {
   private isStreamEventBelowWatermark(event: SessionUiEvent): boolean {
     // These effects are not part of the history/status/partial snapshot.
     // Tree invalidations also retire a separately loaded tree picker.
-    if (event.type === "session.name" || event.type === "session.error" || event.type === "command.output"
-      || event.type === "session.tree.changed") return false;
+    if (isSnapshotIndependentEvent(event) || event.type === "session.tree.changed") return false;
     const watermark = this.streamWatermark;
     if (watermark === undefined || watermark.generation !== event.generation) return false;
     return event.seq !== undefined && event.seq <= watermark.seq;
@@ -2782,6 +2794,11 @@ function sessionMessageCountPatch(state: AppState, sessionId: string, messageCou
     ...(sessions === undefined ? {} : { sessions }),
     ...(selectedSession !== state.selectedSession ? { selectedSession } : {}),
   };
+}
+
+/** Effects that no history/status/partial snapshot holds, so a refresh never restores them. */
+function isSnapshotIndependentEvent(event: SessionUiEvent): boolean {
+  return event.type === "session.name" || event.type === "session.error" || event.type === "command.output";
 }
 
 function isHighFrequencyTranscriptEvent(event: SessionUiEvent): boolean {

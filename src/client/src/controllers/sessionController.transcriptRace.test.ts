@@ -62,6 +62,29 @@ function partial(text: string): unknown {
 }
 
 describe("SessionController snapshot reconciliation", () => {
+  it("an event that exposes a gap keeps the effect no snapshot restores and does not apply a transcript change twice", async () => {
+    const h = harness();
+    try {
+      await h.controller.selectSession(oldSession, { updateUrl: false });
+      const cancelled = deferred<SessionTranscriptSnapshot>();
+      h.nextSnapshot(cancelled.promise);
+      h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
+      cancelled.resolve(snapshot({ seq: 13 }));
+      await vi.waitFor(() => expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }));
+      expect(h.state().messages).toHaveLength(3);
+
+      h.nextSnapshot(Promise.resolve(snapshot({ page: secondQuestionPage, seq: 15 })));
+      h.socket.emit(secondUserEvent(15));
+      await vi.waitFor(() => expect(h.transcriptSnapshot).toHaveBeenCalledTimes(3));
+      await vi.waitFor(() => expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2));
+      runPendingAnimationFrames();
+      expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
   it.each(["queued", "fetching"] as const)("preserves a new turn while a refresh is %s", async (phase) => {
     const h = harness();
     try {
