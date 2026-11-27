@@ -27,6 +27,7 @@ function ask(extra: Partial<PendingAskUser> = {}): PendingAskUser {
     revision: "r1",
     turnsSinceUpdate: 0,
     context: `Run this first:\n\n${block("pwd")}`,
+    contextFromAgent: true,
     questions: [{ id: "q1", question: "Done?", detail: `Then:\n\n${block("ls")}\n`, options: [{ value: "y", label: "Yes" }] }],
     ...extra,
   };
@@ -103,6 +104,13 @@ it("the context editor draws the agent's pi-run block with its Review button; an
   const supplied = await mount(ask({ contextEdited: true }));
   const field = supplied.renderRoot.querySelector<AskMarkdownField>(".context-editor");
   expect(await reviewButton(field?.querySelector<LitElement>(".lp-fence-block formatted-text") ?? null)).toBeNull();
+
+  // A set its host never marked as the agent's context (an older host's state) gets none either, until the agent posts it again.
+  document.body.replaceChildren();
+  const { contextFromAgent: _mark, ...legacy } = ask();
+  const unmarked = await mount(legacy);
+  const legacyField = unmarked.renderRoot.querySelector<AskMarkdownField>(".context-editor");
+  expect(await reviewButton(legacyField?.querySelector<LitElement>(".lp-fence-block formatted-text") ?? null)).toBeNull();
 });
 
 it("without this machine's Chat (another machine), pi-run blocks stay plain code", async () => {
@@ -125,7 +133,12 @@ it("a context fence indented as Markdown allows keeps its Review button and runs
   expect(dialog?.renderRoot.querySelector(".command")?.textContent).toBe("echo hi");
   dialog?.renderRoot.querySelector<HTMLButtonElement>(".run")?.click();
   await vi.waitFor(() => {
-    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1", revision: "r1", block: 0 }, { mode: "run", cwd: "/work/repo", command: "echo hi" }, "local");
+    expect(ownerRun).toHaveBeenCalledWith(
+      session.session,
+      { askId: "ask-1", revision: "r1", block: 0 },
+      { mode: "run", cwd: "/work/repo", command: "echo hi" },
+      "local",
+    );
   });
 });
 
@@ -164,7 +177,12 @@ it("a copy of the agent's block the user adds below it gets no Review button: on
   first?.click();
   await runFromDialog();
   await vi.waitFor(() => {
-    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1", revision: "r1", block: 0 }, { mode: "run", cwd: "/work/repo", command: "pwd" }, "local");
+    expect(ownerRun).toHaveBeenCalledWith(
+      session.session,
+      { askId: "ask-1", revision: "r1", block: 0 },
+      { mode: "run", cwd: "/work/repo", command: "pwd" },
+      "local",
+    );
   });
 });
 
@@ -179,7 +197,12 @@ it("a drawn context block follows the set: a new revision is the one it names, a
   button?.click();
   await runFromDialog();
   await vi.waitFor(() => {
-    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1", revision: "r2", block: 0 }, { mode: "run", cwd: "/work/repo", command: "pwd" }, "local");
+    expect(ownerRun).toHaveBeenCalledWith(
+      session.session,
+      { askId: "ask-1", revision: "r2", block: 0 },
+      { mode: "run", cwd: "/work/repo", command: "pwd" },
+      "local",
+    );
   });
   document.querySelector("owner-run-dialog")?.remove();
   card.ask = ask({ revision: "r3", contextEdited: true });

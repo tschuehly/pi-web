@@ -599,6 +599,8 @@ function parsePendingAskUser(value: unknown): PendingAskUser {
     ...optionalField("context", optionalBoundedNonEmptyString(record, "context", ASK_USER_CONTEXT_MAX_LENGTH)),
     // The user's edit supplied the context: its pi-run blocks are not the agent's and get no Review button.
     ...(record["contextEdited"] === true ? { contextEdited: true as const } : {}),
+    // Only a context its host marks as the agent's gets Review buttons.
+    ...(record["contextFromAgent"] === true ? { contextFromAgent: true as const } : {}),
     ...(record["approval"] === true ? { approval: true as const } : {}),
     questions,
   };

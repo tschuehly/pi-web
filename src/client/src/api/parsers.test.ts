@@ -1106,6 +1106,9 @@ describe("API parsers", () => {
     };
     expect(parseOpenAsks({ pendingAsks: [ask] }).pendingAsks[0]?.contextEdited).toBe(true);
     expect(parseOpenAsks({ pendingAsks: [{ ...ask, contextEdited: false }] }).pendingAsks[0]).not.toHaveProperty("contextEdited");
+    // The positive mark that the agent wrote the context is kept too; anything but true is no mark.
+    expect(parseOpenAsks({ pendingAsks: [{ ...ask, contextFromAgent: true }] }).pendingAsks[0]?.contextFromAgent).toBe(true);
+    expect(parseOpenAsks({ pendingAsks: [{ ...ask, contextFromAgent: "yes" }] }).pendingAsks[0]).not.toHaveProperty("contextFromAgent");
   });
 
   it("rejects malformed or unbounded active tool executions", () => {

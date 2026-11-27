@@ -59,6 +59,7 @@ describe("openAskOwnerRun", () => {
     revision: "r1",
     turnsSinceUpdate: 0,
     context: block("/x", "pwd"),
+    contextFromAgent: true,
     questions: [{ id: "q1", question: "Run?", detail: block("/x", "ls", " terminal"), options: [] }],
     ...extra,
   });
@@ -70,7 +71,12 @@ describe("openAskOwnerRun", () => {
   const posted = asked("c1", { context: block("/x", "pwd"), questions: [] });
 
   /** The set's context (no questionId) or question `q1`'s detail, at block 0 unless named, at revision r1. */
-  const at = (extra: { askId?: string; revision?: string; questionId?: string; block?: number } = {}) => ({ askId: "ask-1", revision: "r1", block: 0, ...extra });
+  const at = (extra: { askId?: string; revision?: string; questionId?: string; block?: number } = {}) => ({
+    askId: "ask-1",
+    revision: "r1",
+    block: 0,
+    ...extra,
+  });
   const q1 = at({ questionId: "q1" });
 
   it("returns a proposal the agent wrote in the open set's context or a question's detail", () => {
@@ -107,12 +113,20 @@ describe("openAskOwnerRun", () => {
     expect(() => openAskOwnerRun([edited], revised, at(), wanted, true)).toThrow("agent wrote");
     expect(openAskOwnerRun([ask()], revised, at(), { mode: "run", cwd: "/x", command: "pwd" }, true)).toEqual({ mode: "run", cwd: "/x", command: "pwd" });
     // The agent's own revision to that block makes it runnable; another set's call does not.
-    expect(openAskOwnerRun([edited], [...posted, ...asked("c4", { update: "ask-1", context: block("/x", "echo owner-edited", " terminal") })], at(), wanted, true)).toEqual(
-      wanted,
-    );
+    expect(
+      openAskOwnerRun([edited], [...posted, ...asked("c4", { update: "ask-1", context: block("/x", "echo owner-edited", " terminal") })], at(), wanted, true),
+    ).toEqual(wanted);
     expect(() =>
       openAskOwnerRun([edited], [...posted, ...asked("c5", { context: block("/x", "echo owner-edited", " terminal") }, "ask-9")], at(), wanted, true),
     ).toThrow("agent wrote");
+  });
+
+  it("a set whose context no host marked as the agent's (an older host's state) runs no context block, even with the agent's exact text", () => {
+    // An older host: a partial send changed the context, a second pasted the original back; no contextEdited, no mark.
+    const { contextFromAgent: _mark, ...legacy } = ask();
+    expect(() => openAskOwnerRun([legacy], posted, at(), { mode: "run", cwd: "/x", command: "pwd" }, true)).toThrow("agent wrote");
+    // Its question details still run: only the agent writes those.
+    expect(openAskOwnerRun([legacy], posted, q1, { mode: "terminal", cwd: "/x", command: "ls" }, true)).toEqual({ mode: "terminal", cwd: "/x", command: "ls" });
   });
 
   it("a copy of the agent's block the user added to the context runs from neither place: the context must be the agent's text whole", () => {

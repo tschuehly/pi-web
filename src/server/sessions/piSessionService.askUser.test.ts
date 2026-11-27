@@ -28,6 +28,7 @@ const openedAsk = (askId: string, overrides: Record<string, unknown> = {}) => ({
   revision: "r1",
   turnsSinceUpdate: 0,
   context,
+  contextFromAgent: true,
   questions,
   ...overrides,
 });

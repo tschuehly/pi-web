@@ -76,6 +76,7 @@ describe("PendingAskStore validation", () => {
       revision: "r1",
       turnsSinceUpdate: 0,
       context,
+      contextFromAgent: true,
       questions: [
         {
           id: "q1",
@@ -636,12 +637,17 @@ describe("PendingAskStore edited context", () => {
   it("tracks who supplied the context: an agent revision back to the user's text is the agent's, not the user's edit", () => {
     const store = testStore();
     const ask = openTwoQuestions(store);
+    // Positive provenance: only the agent's post or revision marks the context as its own.
+    expect(ask.contextFromAgent).toBe(true);
     const first = store.submit(sessionId, ask.askId, { revision: ask.revision, answers: [{ id: "q1", values: ["yes"] }], partial: true, context: "Mine" });
     expect(store.pendingAsks(sessionId)[0]?.contextEdited).toBe(true);
+    expect(store.pendingAsks(sessionId)[0]).not.toHaveProperty("contextFromAgent");
     expect(store.update({ sessionId, askId: ask.askId })?.contextEdited).toBe(true);
+    expect(store.update({ sessionId, askId: ask.askId })).not.toHaveProperty("contextFromAgent");
     store.update({ sessionId, askId: ask.askId, context: "Agent's revision" });
     const back = store.update({ sessionId, askId: ask.askId, context: "Mine" });
     expect(back).not.toHaveProperty("contextEdited");
+    expect(back?.contextFromAgent).toBe(true);
     const rest = store.submit(sessionId, ask.askId, { revision: back?.revision ?? "", answers: [{ id: "q2", values: ["no"] }] });
     if (first.status !== "closed" || rest.status !== "closed") throw new Error("expected closed");
     const whole = withEarlierAnswers(rest.outcome, [first.outcome], ["q1", "q2"], back?.contextEdited === true);

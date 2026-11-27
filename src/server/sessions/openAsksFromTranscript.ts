@@ -52,7 +52,10 @@ export function openAsksFromTranscript(branch: readonly unknown[], sessionId: st
         const rest: PendingAskUser = { ...ask, revision: outcome.revision, questions: ask.questions.filter((question) => !sent.has(question.id)) };
         if (outcome.editedContext === "") delete rest.context;
         else if (typeof outcome.editedContext === "string") rest.context = outcome.editedContext;
-        if (typeof outcome.editedContext === "string") rest.contextEdited = true;
+        if (typeof outcome.editedContext === "string") {
+          rest.contextEdited = true;
+          delete rest.contextFromAgent;
+        }
         open.set(ask.askId, rest);
         undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);
       } else if (open.delete(outcome.askId)) undelivered.set(deliveryKey(outcome.askId, outcome.partial, outcome.revision), outcome);

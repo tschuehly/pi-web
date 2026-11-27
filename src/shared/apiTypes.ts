@@ -973,6 +973,11 @@ export interface PendingAskUser {
   context?: string;
   /** The user's edit in a partial send supplied the current context (absent when cleared); an agent revision that sets context ends it. */
   contextEdited?: true;
+  /**
+   * The agent's post or revision supplied the current context, as a host that tracks who wrote it marks it; a user's edit
+   * ends it. Only a set with this mark runs its context's pi-run blocks: one an older host kept (no mark) may hold an edit.
+   */
+  contextFromAgent?: true;
   /** The agent asks the user to approve the context: the card adds an Approve button. */
   approval?: true;
   questions: AskUserQuestion[];

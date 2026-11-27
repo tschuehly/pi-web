@@ -280,7 +280,7 @@ export class AskUserCard extends LitElement {
     }
     return html`
       <div class="ask-context">
-        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .renderFences=${true} .ownerRun=${this.ownerRunTarget(ask)} .runnableText=${this.contextOwnerRuns && ask.contextEdited !== true ? context : undefined} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
+        <ask-markdown-field class="context-editor" .label=${"Context (editable)"} .maxLength=${ASK_USER_CONTEXT_MAX_LENGTH} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .renderFences=${true} .ownerRun=${this.ownerRunTarget(ask)} .runnableText=${this.contextOwnerRuns && ask.contextFromAgent === true && ask.contextEdited !== true ? context : undefined} .value=${text} @ask-field-input=${this.changeContext}></ask-markdown-field>
         ${
           this.editedContext === undefined
             ? null
@@ -503,7 +503,12 @@ export class AskUserCard extends LitElement {
       const { reconfirm: _ambiguous, ...rest } = answer ?? { values: [] };
       this.setAnswer(question, {
         ...rest,
-        values: question.multiple === true ? [...new Set([...rest.values, ...ambiguous.values])] : ambiguous.values.length > 0 ? ambiguous.values.slice(0, 1) : rest.values,
+        values:
+          question.multiple === true
+            ? [...new Set([...rest.values, ...ambiguous.values])]
+            : ambiguous.values.length > 0
+              ? ambiguous.values.slice(0, 1)
+              : rest.values,
         ...(ambiguous.value === undefined ? {} : { value: ambiguous.value }),
       });
     };

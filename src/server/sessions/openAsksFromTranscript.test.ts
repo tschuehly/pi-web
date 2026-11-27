@@ -149,6 +149,9 @@ describe("openAsksFromTranscript", () => {
 
     expect(openAsksFromTranscript(branch, SESSION).open).toEqual(live.pendingAsks(SESSION));
     expect(live.pendingAsks(SESSION)[0]).toMatchObject({ context: "Mine", contextEdited: true });
+    // The post carries the mark that the agent wrote the context; the user's edit ends it, rebuilt as live.
+    expect(openAsksFromTranscript([posted({ ask: set })], SESSION).open[0]).toMatchObject({ context: "Why", contextFromAgent: true });
+    expect(live.pendingAsks(SESSION)[0]).not.toHaveProperty("contextFromAgent");
   });
 
   it("rebuilds the rest of a set without the context its partial send cleared", () => {

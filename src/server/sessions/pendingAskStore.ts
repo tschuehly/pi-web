@@ -135,6 +135,7 @@ export class PendingAskStore {
       revision: this.createRevision(),
       turnsSinceUpdate: 0,
       context,
+      contextFromAgent: true,
       ...(approval === undefined ? {} : { approval }),
       questions,
     };
@@ -165,7 +166,10 @@ export class PendingAskStore {
       questions,
     };
     // The agent supplied this context, even when its text equals the user's earlier edit.
-    if (supplied !== undefined) delete updated.contextEdited;
+    if (supplied !== undefined) {
+      delete updated.contextEdited;
+      updated.contextFromAgent = true;
+    }
     // Given, approval replaces the set's; absent, it stays.
     if (input.approval !== undefined) {
       if (approval === undefined) delete updated.approval;
@@ -225,7 +229,10 @@ export class PendingAskStore {
         const updated: PendingAskUser = { ...ask, revision, questions: remaining };
         if (editedContext === "") delete updated.context;
         else if (editedContext !== undefined) updated.context = editedContext;
-        if (editedContext !== undefined) updated.contextEdited = true;
+        if (editedContext !== undefined) {
+          updated.contextEdited = true;
+          delete updated.contextFromAgent;
+        }
         this.setAsk(sessionId, updated);
         return { status: "closed", outcome, ask: cloneAsk(updated) };
       }

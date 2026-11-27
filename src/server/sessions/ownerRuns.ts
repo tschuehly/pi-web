@@ -42,9 +42,10 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
 /**
  * The proposal the browser names, as the agent wrote it at the field and block it names in the open question set
  * `askId`: a question's detail (only the agent writes those), or the context. The context runs only with proof it is the
- * agent's text whole: a host that tracks who supplied it (`contextProvenance`, the hosts with run buttons) does not mark
- * it as the user's edit, and it equals the context of the agent's last ask_user call for the set in the transcript. A
- * partial send can replace it with the user's edit, which an older host stores without `contextEdited`.
+ * agent's text whole: a host that tracks who supplied it (`contextProvenance`, the hosts with run buttons) marks it as
+ * the agent's (`contextFromAgent`) and not as the user's edit, and it equals the context of the agent's last ask_user call
+ * for the set in the transcript. A partial send can replace it with the user's edit, which an older host stores without
+ * `contextEdited`, even with the agent's text pasted back: a set without the mark waits for the agent to post its context again.
  */
 export function openAskOwnerRun(
   asks: readonly PendingAskUser[],
@@ -60,7 +61,14 @@ export function openAskOwnerRun(
   if (ask.revision !== revision) throw new Error("The question set changed since it was shown; review the command again");
   let text: string | undefined;
   if (questionId !== undefined) text = ask.questions.find((question) => question.id === questionId)?.detail;
-  else if (contextProvenance && ask.contextEdited !== true && ask.context !== undefined && ask.context === agentAskContext(messages, askId)) text = ask.context;
+  else if (
+    contextProvenance
+    && ask.contextFromAgent === true
+    && ask.contextEdited !== true
+    && ask.context !== undefined
+    && ask.context === agentAskContext(messages, askId)
+  )
+    text = ask.context;
   else throw new Error("The context's pi-run blocks run only while it is the text the agent wrote, on a host that records who wrote it");
   const found = text === undefined ? undefined : ownerRunProposals(text)[block];
   if (found === undefined || !sameOwnerRun(found, wanted)) throw new Error("That command is not a pi-run block the agent wrote in this question set");

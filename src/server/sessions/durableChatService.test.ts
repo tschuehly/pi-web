@@ -3074,7 +3074,7 @@ describe("the owner's run button", () => {
   const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
   /** Open set ask-1 showing `context` on every host, whose transcript records the agent posting it with `agentContext`. */
   const openAsk = (launched: FakeHost[], context: string, agentContext: string, revision = "r1", questions: unknown[] = []) => {
-    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision, turnsSinceUpdate: 0, context, questions }];
+    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision, turnsSinceUpdate: 0, context, contextFromAgent: true, questions }];
     const messages = [
       { entryId: "c", role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "ask_user", arguments: { context: agentContext } }] },
       { entryId: "r", role: "toolResult", toolCallId: "call-1", toolName: "ask_user", isError: false, content: [], details: { ask: { askId: "ask-1" } } },
@@ -3250,8 +3250,7 @@ describe("the owner's run button", () => {
       claimWrite.during = () => {
         claimWrite.during = undefined;
         for (const host of launched)
-          host.answer = (request) =>
-            request.method === "transcript" ? { messages: [], partial: null, status } : request.method === "status" ? status : null;
+          host.answer = (request) => (request.method === "transcript" ? { messages: [], partial: null, status } : request.method === "status" ? status : null);
       };
       await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal)).rejects.toThrow("No open question set");
       expect(runs(launched)).toEqual([]);
@@ -3272,8 +3271,7 @@ describe("the owner's run button", () => {
         // The host closes the set when it receives closeAsk.
         host.answer = (request) => {
           if (request.method !== "closeAsk") return previous(request);
-          host.answer = (next) =>
-            next.method === "transcript" ? { messages: [], partial: null, status } : next.method === "status" ? status : previous(next);
+          host.answer = (next) => (next.method === "transcript" ? { messages: [], partial: null, status } : next.method === "status" ? status : previous(next));
           return { result: "closed", outcome: request.params?.["outcome"] };
         };
       }
