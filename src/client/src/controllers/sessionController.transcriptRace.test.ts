@@ -16,7 +16,7 @@ const oldPage = {
 };
 
 function snapshot(overrides: Partial<SessionTranscriptSnapshot> = {}): SessionTranscriptSnapshot {
-  return { page: oldPage, status: status(oldSession.id), seq: 10, partial: null, ...overrides };
+  return { generation: "test-host", page: oldPage, status: status(oldSession.id), seq: 11, partial: null, ...overrides };
 }
 
 function harness() {
@@ -62,6 +62,46 @@ function partial(text: string): unknown {
 }
 
 describe("SessionController snapshot reconciliation", () => {
+  it("an event that exposes a gap keeps the effect no snapshot restores and does not apply a transcript change twice", async () => {
+    const h = harness();
+    try {
+      await h.controller.selectSession(oldSession, { updateUrl: false });
+      const cancelled = deferred<SessionTranscriptSnapshot>();
+      h.nextSnapshot(cancelled.promise);
+      h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
+      cancelled.resolve(snapshot({ seq: 13 }));
+      await vi.waitFor(() => expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }));
+      expect(h.state().messages).toHaveLength(3);
+
+      h.nextSnapshot(Promise.resolve(snapshot({ page: secondQuestionPage, seq: 15 })));
+      h.socket.emit(secondUserEvent(15));
+      await vi.waitFor(() => expect(h.transcriptSnapshot).toHaveBeenCalledTimes(3));
+      await vi.waitFor(() => expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2));
+      runPendingAnimationFrames();
+      expect(h.state().messages.filter((message) => message.role === "user")).toHaveLength(2);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
+  it("a gap effect from the replaced host shows once after the new host's snapshot, without refetching again", async () => {
+    const h = harness();
+    try {
+      await h.controller.selectSession(oldSession, { updateUrl: false });
+      const restarted = deferred<SessionTranscriptSnapshot>();
+      h.nextSnapshot(restarted.promise);
+      h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
+      restarted.resolve(snapshot({ generation: "new-host", seq: 14 }));
+      await vi.waitFor(() => expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2);
+      expect(h.state().messages.filter((message) => message.parts.some((part) => part.type === "text" && part.text === "Compaction cancelled."))).toHaveLength(1);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
   it.each(["queued", "fetching"] as const)("preserves a new turn while a refresh is %s", async (phase) => {
     const h = harness();
     try {
@@ -180,7 +220,7 @@ describe("SessionController snapshot reconciliation", () => {
     }
   });
 
-  it("keeps events received during a failed initial join and continues streaming", async () => {
+  it("does not stream into a transcript whose initial fetch failed", async () => {
     const h = harness();
     try {
       const response = deferred<SessionTranscriptSnapshot>();
@@ -192,7 +232,7 @@ describe("SessionController snapshot reconciliation", () => {
       await joining;
       h.socket.emit({ type: "assistant.delta", text: " answer", seq: 14 });
       runPendingAnimationFrames();
-      expect(h.state().messages.slice(-2)).toEqual(twoTurns.slice(-2));
+      expect(h.state().messages).toEqual([]);
       expect(Object.values(h.state().browserErrors).map((error) => error.message)).toContain("Error: join failed");
     } finally {
       h.controller.dispose();
@@ -288,8 +328,8 @@ describe("SessionController snapshot reconciliation", () => {
       const response = deferred<SessionTranscriptSnapshot>();
       h.nextSnapshot(response.promise);
       const refresh = h.controller.refreshSelectedSession();
-      if (openedDuringRefresh) h.socket.emit({ type: "dialog.opened", dialog, seq: 11 });
-      h.socket.emit({ type: "dialog.closed", dialogId: dialog.dialogId, reason: "answered", answer: true, seq: 12 });
+      if (openedDuringRefresh) h.socket.emit({ type: "dialog.opened", dialog, seq: 12 });
+      h.socket.emit({ type: "dialog.closed", dialogId: dialog.dialogId, reason: "answered", answer: true, seq: 13 });
       // The global channel can remove the open card before the response arrives.
       h.controller.applyGlobalEvent({ type: "status.update", status: status(oldSession.id) });
       runPendingAnimationFrames();
@@ -309,8 +349,8 @@ describe("SessionController snapshot reconciliation", () => {
       const response = deferred<SessionTranscriptSnapshot>();
       h.nextSnapshot(response.promise);
       const refresh = h.controller.refreshSelectedSession();
-      h.socket.emit({ type: "session.error", message: "prompt failed", seq: 11 });
-      h.socket.emit({ type: "session.name", sessionId: oldSession.id, name: "New name", seq: 12 });
+      h.socket.emit({ type: "session.error", message: "prompt failed", seq: 12 });
+      h.socket.emit({ type: "session.name", sessionId: oldSession.id, name: "New name", seq: 13 });
       response.resolve(snapshot({ status: streamingStatus, seq: 13 }));
       await refresh;
       expect(h.state().messages.at(-1)).toEqual({ role: "system", parts: [{ type: "text", text: "prompt failed" }], severity: "error" });

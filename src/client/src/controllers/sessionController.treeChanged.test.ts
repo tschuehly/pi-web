@@ -117,7 +117,7 @@ describe("SessionController factual tree invalidation", () => {
     const joining = controller.selectSession(oldSession, { updateUrl: false });
     await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledOnce(); });
     socket.emit({ type: "session.tree.changed", seq: 7 });
-    initial.resolve({ page: page("stale join"), status: status(oldSession.id), seq: 6, partial: null });
+    initial.resolve({ generation: "test-host", page: page("stale join"), status: status(oldSession.id), seq: 6, partial: null });
     await joining;
     expect(transcriptSnapshot).toHaveBeenCalledTimes(2);
     expect(removed).toEqual([sourceKey]);
@@ -145,7 +145,7 @@ describe("SessionController factual tree invalidation", () => {
     const reading = controller.refreshSelectedSession();
     await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledTimes(2); });
     saveDraft(sourceKey, "typed during delayed read");
-    snapshot.resolve({ page: page("history"), status: { ...status(oldSession.id), suggestedInput: "from read" }, seq: 5, partial: null });
+    snapshot.resolve({ generation: "test-host", page: page("history"), status: { ...status(oldSession.id), suggestedInput: "from read" }, seq: 5, partial: null });
     await reading;
     expect(state.status?.suggestedInput).toBe("from read");
     socket.emit({ type: "status.update", status: { ...status(oldSession.id), suggestedInput: "newer suggestion" }, seq: 6 });
@@ -183,7 +183,7 @@ describe("SessionController factual tree invalidation", () => {
     }
     const selected = destination === "machine" ? oldSession : replacementSession;
     const selection = controller.selectSession(selected, { updateUrl: false });
-    snapshot.resolve({ page: page("stale"), status: { ...status(oldSession.id), suggestedInput: "stale suggestion" }, seq: 2, partial: null });
+    snapshot.resolve({ generation: "test-host", page: page("stale"), status: { ...status(oldSession.id), suggestedInput: "stale suggestion" }, seq: 2, partial: null });
     await Promise.all([reading, selection]);
     expect(state.selectedSession?.id).toBe(selected.id);
     expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "destination" }]);
@@ -325,7 +325,7 @@ describe("SessionController go-back editor restoration", () => {
     expect(liveDraft).toBe("original prompt");
     liveDraft = "typed while history was loading";
     saveDraft(sourceKey, liveDraft);
-    refresh.resolve({ page: page("new branch"), status: arrival === "before response" ? suggestion : status(oldSession.id), seq: 2, partial: null });
+    refresh.resolve({ generation: "test-host", page: page("new branch"), status: arrival === "before response" ? suggestion : status(oldSession.id), seq: 2, partial: null });
     await acting;
     expect(state.pendingTreeActions).toEqual([]);
     expect(liveDraft).toBe("typed while history was loading");

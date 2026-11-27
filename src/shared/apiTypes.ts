@@ -1686,6 +1686,7 @@ export interface SessionStreamSnapshot {
 
 /** History, status, and partial captured at one event watermark for refresh/replay. */
 export interface SessionTranscriptSnapshot extends SessionStreamSnapshot {
+  generation?: string;
   page: MessagePage;
   status: SessionStatus;
 }
@@ -1702,7 +1703,7 @@ export type CommandResult =
  * Clients use it as a watermark against the join-time stream snapshot so buffered
  * live events are applied exactly once. Existing consumers may ignore it.
  */
-export type SessionUiEvent = SessionUiEventBody & { seq?: number };
+export type SessionUiEvent = SessionUiEventBody & { seq?: number; generation?: string };
 
 type SessionUiEventBody =
   | { type: "message.append"; message: unknown }

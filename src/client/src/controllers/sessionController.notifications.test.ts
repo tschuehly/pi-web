@@ -54,7 +54,7 @@ describe("SessionController notification event boundary", () => {
         notifications: bridge,
         api: {
           ...defaultApi,
-          transcriptSnapshot: vi.fn(() => Promise.resolve({ page: emptyPage, status: status(oldSession.id), seq: 0, partial: null })),
+          transcriptSnapshot: vi.fn(() => Promise.resolve({ generation: "test-host", page: emptyPage, status: status(oldSession.id), seq: 0, partial: null })),
         },
       },
     );
@@ -63,6 +63,7 @@ describe("SessionController notification event boundary", () => {
     expect(refreshSelectedSession).toHaveBeenCalledOnce();
 
     socket.open();
+    await vi.waitFor(() => { expect(refreshSelectedSession).toHaveBeenCalledTimes(2); });
     expect(refreshSelectedSession).toHaveBeenCalledTimes(2);
     expect(refreshSelectedSession).toHaveBeenLastCalledWith(oldSession, "local");
   });
@@ -81,7 +82,7 @@ describe("SessionController notification event boundary", () => {
         onSessionError,
         api: {
           ...defaultApi,
-          messages: vi.fn(() => Promise.resolve(emptyPage)),
+          transcriptSnapshot: vi.fn(() => Promise.resolve({ generation: "test-host", page: emptyPage, status: status(oldSession.id), seq: 8, partial: null })),
           status: vi.fn(() => Promise.resolve(status(oldSession.id))),
           streamSnapshot: vi.fn(() => Promise.resolve({ seq: 0, partial: null })),
         },
@@ -119,7 +120,7 @@ describe("SessionController notification event boundary", () => {
         onSelectedSessionReady: ready,
         api: {
           ...defaultApi,
-          transcriptSnapshot: vi.fn(() => Promise.resolve({ page, status: status(oldSession.id), seq: 0, partial: null })),
+          transcriptSnapshot: vi.fn(() => Promise.resolve({ generation: "test-host", page, status: status(oldSession.id), seq: 0, partial: null })),
           thinkingLevels: () => Promise.resolve({ levels: [] }),
         },
       },
@@ -144,6 +145,7 @@ describe("SessionController notification event boundary", () => {
     const socket = new EmitSocket();
     const notifications = deferred<undefined>();
     const snapshot = {
+      generation: "test-host",
       page: { messages: [{ role: "user", content: "hello" }], start: 0, total: 1 },
       status: { ...status(oldSession.id), isStreaming: true },
       seq: 1,
@@ -213,7 +215,7 @@ describe("SessionController notification event boundary", () => {
     };
     const api: typeof defaultApi = {
       ...defaultApi,
-      transcriptSnapshot: vi.fn(() => Promise.resolve({ page: emptyPage, status: status(oldSession.id), seq: 100, partial: null })),
+      transcriptSnapshot: vi.fn(() => Promise.resolve({ generation: "test-host", page: emptyPage, status: status(oldSession.id), seq: 100, partial: null })),
     };
     const controller = new SessionController(
       () => state,
@@ -228,7 +230,7 @@ describe("SessionController notification event boundary", () => {
 
     expect(applyInboxEvent).toHaveBeenCalledExactlyOnceWith("local", expect.objectContaining({ type: "notifications.inbox" }));
 
-    socket.emit({ type: "command.output", level: "info", message: "ordinary extension output", seq: 102 });
+    socket.emit({ type: "command.output", level: "info", message: "ordinary extension output", seq: 101 });
     expect(state.messages).toHaveLength(1);
     expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "ordinary extension output" }]);
   });

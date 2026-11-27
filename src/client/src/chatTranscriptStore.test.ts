@@ -42,18 +42,17 @@ describe("ChatTranscriptStore", () => {
     const store = new ChatTranscriptStore(cache);
     const current = page(1, 3, [{ role: "user", content: "new-a" }, { role: "assistant", content: "new-b" }]);
 
-    const view = store.mergeSnapshot("s1", current);
+    const view = store.replaceHistory("s1", current);
 
     expect(view.messagePageTotal).toBe(3);
     expect(store.rawHistoryPage("s1")).toEqual(current);
     expect(cache.read("s1")).toEqual(current);
-    expect(store.historyRevision("s1")).toBe(1);
   });
 
   it("tracks the raw page end separately from normalized display messages", () => {
     const store = new ChatTranscriptStore(new MemoryChatHistoryCache());
 
-    const view = store.mergeHistory("s1", page(0, 3, [
+    const view = store.replaceHistory("s1", page(0, 3, [
       { role: "user", content: "run the tool" },
       { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "src/app.ts" } }] },
       { role: "toolResult", toolCallId: "tool-1", toolName: "read", content: [{ type: "text", text: "ok" }] },
@@ -71,18 +70,17 @@ describe("ChatTranscriptStore", () => {
     const initial = page(0, 2, [{ role: "user", content: "hi" }, { role: "assistant", content: "hel" }]);
     const updated = page(1, 3, [{ role: "assistant", content: "hello" }, { role: "user", content: "next" }]);
 
-    let visible = store.mergeHistory("s1", initial).messages;
+    let visible = store.replaceHistory("s1", initial).messages;
     visible = store.applyLiveEvent(visible, { type: "assistant.delta", text: "lo" }) ?? visible;
 
     expect(visible.at(-1)).toEqual({ role: "assistant", parts: [{ type: "text", text: "hello" }] });
     expect(cache.read("s1")?.messages).toEqual(initial.messages);
-    expect(store.mergeHistory("s1", updated)).toEqual({
+    expect(store.replaceHistory("s1", updated)).toEqual({
       messages: [
-        { role: "user", parts: [{ type: "text", text: "hi" }] },
         { role: "assistant", parts: [{ type: "text", text: "hello" }] },
         { role: "user", parts: [{ type: "text", text: "next" }] },
       ],
-      messagePageStart: 0,
+      messagePageStart: 1,
       messagePageEnd: 3,
       messagePageTotal: 3,
     });

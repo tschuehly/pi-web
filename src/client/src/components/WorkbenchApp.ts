@@ -376,6 +376,8 @@ export class WorkbenchApp extends LitElement {
 
   private beginNavigation(): number { this.selectingChat = undefined; return ++this.navigationSequence; }
 
+  private readonly transcriptWindowSizes = new Map<string, number>();
+
   private createChatSession(context: AppState): WorkbenchChatSession {
     const chat: WorkbenchChatSession = new WorkbenchChatSession(context, (runtime, patch, previous) => {
       const session = runtime.state.selectedSession;
@@ -388,6 +390,7 @@ export class WorkbenchApp extends LitElement {
       if (runtime === this.launcher && this.focused.current === undefined) this.setApp(patch, false);
       this.requestUpdate();
     }, {
+      windowSizes: this.transcriptWindowSizes,
       draftStorage: () => this.windows.draftStorage,
       claimSession: (session, patch, focus) => this.claimChat(session, { selectedMachine: chat.state.selectedMachine, selectedWorkspace: chat.state.selectedWorkspace, ...patch }, focus !== false && this.focused.current === chat),
       replacePromptEditorText: (replacement) => this.replacePromptEditorText(replacement),
@@ -419,18 +422,14 @@ export class WorkbenchApp extends LitElement {
     return chat;
   }
 
-  private focusRuntime(chat: WorkbenchChatSession, refreshCatalog = false): void {
+  private focusRuntime(chat: WorkbenchChatSession, refocus = false, refreshCatalog = refocus): void {
     // Its next stream update must merge into the window's current aggregates, not its old background snapshot.
     chat.patch({ sessionStatuses: this.app.sessionStatuses, sessionActivities: this.app.sessionActivities }, false);
     const catalog = refreshCatalog && selectedMachineId(this.app) === selectedMachineId(chat.state) && this.app.selectedWorkspace?.id === chat.state.selectedWorkspace?.id ? this.app.sessions : chat.state.sessions;
     this.windowError = "";
-    const window = this.windows.window;
-    const previous = this.focused.current?.state.selectedSession?.id;
-    // A tile on the Grid page already on screen stays live; refocusing it reloads nothing.
-    const onScreen = window?.layout === "grid" && !window.maximized && previous !== undefined && gridTiles({ ...window, focused: previous }).some((tile) => tile.chat.sessionId === chat.state.selectedSession?.id);
     this.focused.focus(chat);
     // A retained Chat may have missed or queued frames while off screen: catch it up from one snapshot.
-    if (refreshCatalog && !onScreen) void chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true });
+    if (refocus) void chat.sessions.refreshSelectedSession(undefined, { recoverNetwork: true });
     this.setApp({ sessions: catalog }, false);
     if (this.realtimeMachineId !== selectedMachineId(this.app)) this.connectRealtime();
     this.desktopNotifications.activate(this.app);
@@ -511,7 +510,7 @@ export class WorkbenchApp extends LitElement {
       await this.updateWindow((store, id) => focusChat(store, id, session.id));
       if (generation !== this.loadSequence) return;
       if (!this.windows.holds(selectedMachineId(runtime.state), session.id)) return;
-      this.focusRuntime(runtime, warm && options?.onCommit === undefined);
+      this.focusRuntime(runtime, warm, warm && options?.onCommit === undefined);
       options?.onCommit?.();
       if (options?.updateUrl !== false) this.updateUrl();
       await this.updateComplete;
@@ -978,6 +977,7 @@ export class WorkbenchApp extends LitElement {
     const selected = this.app.selectedSession?.id;
     const leaving = selected !== undefined && sessionIds.includes(selected) ? selected : undefined;
     if (leaving !== undefined && !this.filesPaneCanClose()) return undefined;
+    const closing = this.windows.window?.chats.filter((row) => sessionIds.includes(row.sessionId)) ?? [];
     const drafts = [...this.shadowRoot?.querySelectorAll<WorkbenchChatPane>("workbench-chat-pane") ?? []].flatMap((pane) => {
       const state = pane.app;
       const sessionId = state?.selectedSession?.id;
@@ -991,6 +991,7 @@ export class WorkbenchApp extends LitElement {
       for (const id of sessionIds) this.retiringChats.delete(id);
       this.requestUpdate();
       const retained = this.windows.window?.chats ?? [];
+      if (stored) for (const row of closing) this.transcriptWindowSizes.delete(machineSessionKey(row.machineId, row.sessionId));
       for (const chat of this.chats) if (sessionIds.includes(chat.state.selectedSession?.id ?? "") && !retained.some((row) => row.sessionId === chat.state.selectedSession?.id)) {
         chat.dispose(); this.chats.delete(chat);
       }

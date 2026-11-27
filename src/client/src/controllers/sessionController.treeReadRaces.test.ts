@@ -1,179 +1,103 @@
 import { describe, expect, it, vi } from "vitest";
+import { pageMessagesAtSafeBoundary } from "../../../server/sessions/messagePaging";
 import { initialAppState } from "../appState";
-import { ChatTranscriptStore } from "../chatTranscriptStore";
-import { machineSessionKey } from "../machineKeys";
 import { SessionController } from "./sessionController";
-import {
-  defaultApi, deferred, EmitSocket, oldSession, status, transcriptSnapshotFixture, workspace,
-  type AppState, type MessagePage, type SessionTranscriptSnapshot,
-} from "./sessionController.testSupport";
+import { defaultApi, deferred, EmitSocket, oldSession, status, type MessagePage, type SessionTranscriptSnapshot } from "./sessionController.testSupport";
 
-const key = machineSessionKey("local", oldSession.id);
-const oldTail = page("old branch", 200, 300);
-const oldEarlier = page("old branch", 100, 300);
-const newTail = page("new branch", 150, 250);
+function branch(name: string, count: number) {
+  return Array.from({ length: count }, (_, i) => ({ role: "user", content: `${name} ${String(i)}` }));
+}
 
-function fixture(cache = new Map<string, MessagePage>()) {
-  let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
-  const transcripts = new ChatTranscriptStore({
-    read: (id) => cache.get(id), write: (id, value) => { cache.set(id, value); }, remove: (id) => { cache.delete(id); },
-  });
-  const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>()
-    .mockImplementationOnce(() => transcriptSnapshotFixture(oldTail, status(oldSession.id)))
-    .mockImplementation(() => transcriptSnapshotFixture(newTail, status(oldSession.id), { seq: 2, partial: null }));
-  const messages = vi.fn<typeof defaultApi.messages>(() => Promise.resolve(oldEarlier));
+function fixture(windowSizes = new Map<string, number>()) {
+  const host = { rows: branch("old", 800), seq: 0, generation: "test-host" };
+  const messages = vi.fn<typeof defaultApi.messages>((_, page) => Promise.resolve(pageMessagesAtSafeBoundary(host.rows, page)));
+  const transcriptSnapshot = vi.fn<typeof defaultApi.transcriptSnapshot>((_, page) => Promise.resolve({
+    page: pageMessagesAtSafeBoundary(host.rows, page), status: status(oldSession.id), partial: null, seq: host.seq, generation: host.generation,
+  }));
+  let state = initialAppState();
   const socket = new EmitSocket();
   const controller = new SessionController(() => state, (patch) => { state = { ...state, ...patch }; }, () => undefined, undefined, {
-    transcripts, socket,
-    api: { ...defaultApi, transcriptSnapshot, messages, navigateTree: () => Promise.resolve({ cancelled: false }), thinkingLevels: () => Promise.resolve({ levels: [] }) },
+    socket, windowSizes, api: { ...defaultApi, messages, transcriptSnapshot, thinkingLevels: () => Promise.resolve({ levels: [] }) },
   });
-  function changeBranch(trigger: "observer" | "explicit") {
-    if (trigger === "observer") {
-      socket.emit({ type: "session.tree.changed", seq: 1 });
-      return controller.refreshSelectedSession();
-    }
-    state = { ...state, treeDialog: { nodes: [{ id: "root", parentId: null, kind: "user", summary: "prompt" }], activeLeafId: "root", activePathIds: ["root"] } };
-    return controller.navigateTree("root", { mode: "none" });
-  }
-  function expectNewBranch(current = newTail) {
-    expect(state.selectedSession?.id).toBe(oldSession.id);
-    expect(state.messagePageStart).toBe(current.start);
-    expect(state.messagePageTotal).toBe(current.total);
-    expect(transcripts.rawHistoryPage(key)).toEqual(current);
-    expect(state.messages.every((message) => message.parts.some((part) => part.type === "text" && part.text.startsWith("new branch")))).toBe(true);
-  }
-  return { controller, cache, socket, transcripts, transcriptSnapshot, messages, changeBranch, expectNewBranch, state: () => state };
+  return { controller, socket, host, messages, transcriptSnapshot, state: () => state };
 }
 
-describe("SessionController branch read ownership", () => {
-  it.each(["reconnect", "reselect", "reload"] as const)("recovers a changed branch by reads after %s without receiving its invalidation", async (trigger) => {
+describe("selected transcript window", () => {
+  it("a missed branch change during Load earlier cannot stitch two branches together", async () => {
     const f = fixture();
-    let restored: ReturnType<typeof fixture> | undefined;
+    const cursor = deferred<MessagePage>();
     try {
-      await f.controller.selectSession(oldSession, { updateUrl: false });
-      await f.controller.loadEarlierMessages();
-      expect(f.state().messagePageStart).toBe(100);
-      // No session.tree.changed frame: the mutation happened while offline or
-      // while another conversation was selected. Cached history is not truth.
-      if (trigger === "reload") {
-        f.controller.dispose();
-        restored = fixture(f.cache);
-        restored.transcriptSnapshot.mockReset().mockImplementation(() => transcriptSnapshotFixture(newTail, status(oldSession.id), { seq: 2, partial: null }));
-        await restored.controller.selectSession(oldSession, { updateUrl: false });
-        restored.expectNewBranch();
-      } else {
-        if (trigger === "reconnect") {
-          f.socket.reconnect();
-          await f.controller.refreshSelectedSession();
-        } else {
-          await f.controller.selectSession(oldSession, { updateUrl: false });
-        }
-        f.expectNewBranch();
-      }
-    } finally {
-      restored?.controller.dispose();
-      f.controller.dispose();
-    }
+      await f.controller.selectSession(oldSession);
+      f.messages.mockReturnValueOnce(cursor.promise);
+      const loading = f.controller.loadEarlierMessages();
+      expect(f.messages).toHaveBeenCalledWith(oldSession, { before: 780, limit: 100 }, "local");
+      const stale = pageMessagesAtSafeBoundary(f.host.rows, { before: 780, limit: 100 });
+      f.host.rows = branch("new", 800); // Same length. Neither a cursor nor overlapping content identifies a branch.
+      cursor.resolve(stale);
+      await loading;
+      expect(f.transcriptSnapshot).toHaveBeenLastCalledWith(oldSession, { limit: 120 }, "local");
+      expect(f.state().messages.map((m) => m.parts)).toEqual(f.host.rows.slice(-120).map((m) => [{ type: "text", text: m.content }]));
+    } finally { f.controller.dispose(); }
   });
 
-  it.each([250, 300])("retires an earlier-page response when a snapshot discovers a missed tree change (total=%s)", async (total) => {
-    const f = fixture();
-    const current = page("new branch", total - 100, total);
-    const earlier = deferred<MessagePage>();
-    f.messages.mockReturnValueOnce(earlier.promise);
+  it("refocus retains all 141 raw messages including live appends, and the window can grow past 500", async () => {
+    const sizes = new Map<string, number>();
+    const f = fixture(sizes);
     try {
-      await f.controller.selectSession(oldSession, { updateUrl: false });
-      f.transcriptSnapshot.mockImplementation(() => transcriptSnapshotFixture(current, status(oldSession.id), { seq: 2, partial: null }));
-      const loading = f.controller.loadEarlierMessages();
-      await vi.waitFor(() => { expect(f.messages).toHaveBeenCalledOnce(); });
-      const revision = f.transcripts.historyRevision(key);
+      await f.controller.selectSession(oldSession);
+      expect(f.state().messages).toHaveLength(20);
+      await f.controller.loadEarlierMessages();
+      for (const message of branch("live", 21)) {
+        f.host.rows.push(message);
+        f.socket.emit({ type: "message.end", message, seq: ++f.host.seq });
+      }
+      const shown = f.state().messages;
+      expect(shown).toHaveLength(141);
+      // Off-page tabs release their controllers; the new one remembers only the size, not the old live tail.
+      const rejoined = fixture(sizes);
+      try {
+        Object.assign(rejoined.host, f.host);
+        await rejoined.controller.selectSession(oldSession);
+        expect(rejoined.state().messages).toEqual(shown);
+      } finally { rejoined.controller.dispose(); }
+      await f.controller.refreshSelectedSession();
+      expect(f.transcriptSnapshot).toHaveBeenLastCalledWith(oldSession, { limit: 141 }, "local");
+      expect(f.state().messages).toEqual(shown);
+      for (let i = 0; i < 4; i++) await f.controller.loadEarlierMessages();
       f.socket.reconnect();
       await f.controller.refreshSelectedSession();
-      f.expectNewBranch(current);
-      expect(f.transcripts.historyRevision(key)).toBeGreaterThan(revision);
-      earlier.resolve(oldEarlier);
-      await loading;
-      f.expectNewBranch(current);
-      expect(f.state().isLoadingEarlierMessages).toBe(false);
-    } finally {
-      earlier.resolve(oldEarlier);
-      f.controller.dispose();
-    }
+      expect(f.state().messages).toHaveLength(541);
+    } finally { f.controller.dispose(); }
   });
 
-  it("keeps earlier pages when same-branch pagination observes an append after a delayed snapshot's capture", async () => {
+  it("does not rewind an accepted sequence when a fetch returns an older snapshot of the same host", async () => {
     const f = fixture();
-    const snapshot = deferred<SessionTranscriptSnapshot>();
     try {
-      await f.controller.selectSession(oldSession, { updateUrl: false });
-      f.transcriptSnapshot.mockReturnValueOnce(snapshot.promise);
-      const polling = f.controller.refreshSelectedSession();
-      await vi.waitFor(() => { expect(f.transcriptSnapshot).toHaveBeenCalledTimes(2); });
-      f.messages.mockResolvedValueOnce({ ...oldEarlier, total: 301 });
-      await f.controller.loadEarlierMessages();
-      expect(f.state().messagePageStart).toBe(100);
-      expect(f.state().messagePageTotal).toBe(301);
-      const revision = f.transcripts.historyRevision(key);
-      snapshot.resolve({ page: oldTail, status: status(oldSession.id), seq: 0, partial: null });
-      await polling;
-      expect(f.state().messagePageStart).toBe(100);
-      expect(f.state().messagePageTotal).toBe(300);
-      expect(f.transcripts.rawHistoryPage(key)).toEqual({ start: 100, total: 300, messages: [...oldEarlier.messages, ...oldTail.messages] });
-      expect(f.transcripts.historyRevision(key)).toBe(revision);
-    } finally {
-      snapshot.resolve({ page: oldTail, status: status(oldSession.id), seq: 0, partial: null });
-      f.controller.dispose();
-    }
-  });
-
-  it.each(["observer", "explicit"] as const)("retires an earlier-page response across %s tree changes without changing selection", async (trigger) => {
-    const f = fixture();
-    const earlier = deferred<MessagePage>();
-    f.messages.mockReturnValueOnce(earlier.promise);
-    try {
-      await f.controller.selectSession(oldSession, { updateUrl: false });
-      const loading = f.controller.loadEarlierMessages();
-      await vi.waitFor(() => { expect(f.messages).toHaveBeenCalledOnce(); });
-      await f.changeBranch(trigger);
-      f.expectNewBranch();
-      earlier.resolve(oldEarlier);
-      await loading;
-      expect(f.state().isLoadingEarlierMessages).toBe(false);
-      f.expectNewBranch();
+      f.host.seq = 8;
+      await f.controller.selectSession(oldSession);
+      const stale = { generation: f.host.generation, seq: 7, partial: null, status: status(oldSession.id), page: { messages: [], start: 0, total: 0 } };
+      f.transcriptSnapshot.mockResolvedValueOnce(stale);
       await f.controller.refreshSelectedSession();
-      f.expectNewBranch();
-    } finally {
-      earlier.resolve(oldEarlier);
-      f.controller.dispose();
-    }
+      expect(f.transcriptSnapshot).toHaveBeenCalledTimes(3);
+      expect(f.state().messages).toHaveLength(20);
+    } finally { f.controller.dispose(); }
   });
 
-  it.each(["observer", "explicit"] as const)("retires an old snapshot rather than reseeding a discarded multi-page cache across %s tree changes", async (trigger) => {
+  it.each(["restart", "gap", "unstamped"])("refetches instead of appending a doubtful frame (%s)", async (cause) => {
     const f = fixture();
-    const oldSnapshot = deferred<SessionTranscriptSnapshot>();
     try {
-      await f.controller.selectSession(oldSession, { updateUrl: false });
-      await f.controller.loadEarlierMessages();
-      expect(f.state().messagePageStart).toBe(100);
-      f.transcriptSnapshot.mockReturnValueOnce(oldSnapshot.promise);
-      const polling = f.controller.refreshSelectedSession();
+      await f.controller.selectSession(oldSession);
+      const response = deferred<SessionTranscriptSnapshot>();
+      f.transcriptSnapshot.mockReturnValueOnce(response.promise);
+      const before = f.state().messages;
+      f.socket.emit({ type: "assistant.delta", text: "not for this transcript", streamId: "durable-1",
+        generation: cause === "restart" ? "next-host" : cause === "unstamped" ? "" : f.host.generation, seq: cause === "gap" ? 3 : 1 });
+      expect(f.state().messages).toBe(before);
       await vi.waitFor(() => { expect(f.transcriptSnapshot).toHaveBeenCalledTimes(2); });
-      const changing = f.changeBranch(trigger);
-      // An explicit response invalidates immediately; socket invalidations are
-      // buffered until the pending snapshot finishes and then retire its cache.
-      if (trigger === "explicit") await vi.waitFor(() => { expect(f.cache.has(key)).toBe(false); });
-      oldSnapshot.resolve({ page: oldTail, status: status(oldSession.id), seq: 0, partial: null });
-      await Promise.all([polling, changing]);
-      f.expectNewBranch();
-      await f.controller.refreshSelectedSession();
-      f.expectNewBranch();
-    } finally {
-      oldSnapshot.resolve({ page: oldTail, status: status(oldSession.id), seq: 0, partial: null });
-      f.controller.dispose();
-    }
+      response.resolve({ generation: "next-host", seq: 1, partial: null, status: status(oldSession.id), page: { messages: branch("fresh", 1), start: 0, total: 1 } });
+      await vi.waitFor(() => { expect(f.state().messages).toHaveLength(1); });
+      f.socket.emit({ type: "message.append", generation: "next-host", seq: 2, message: { role: "user", content: "verified" } });
+      expect(f.state().messages.at(-1)?.parts).toEqual([{ type: "text", text: "verified" }]);
+    } finally { f.controller.dispose(); }
   });
 });
-
-function page(branch: string, start: number, total: number): MessagePage {
-  return { start, total, messages: Array.from({ length: 100 }, (_, index) => ({ role: "user", content: `${branch} ${String(start + index)}`, timestamp: start + index })) };
-}

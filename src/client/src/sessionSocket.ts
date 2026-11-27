@@ -88,7 +88,6 @@ export class SessionSocket {
     if (event.type === "session.diagnostic") {
       // Diagnostics are live-only, outside transcript snapshot reconciliation.
       console.error("[PI WEB] Session diagnostic", { machineId: this.machineId, sessionId: session.id, cwd: session.cwd, message: event.message });
-      return;
     }
     if (event.type === "notifications.inbox" && (session.id !== event.summary.sessionId || session.cwd !== event.summary.cwd)) return;
     this.onEvent?.(event);
@@ -156,15 +155,20 @@ export class RealtimeSocket {
 }
 
 export function parseSessionSocketEvent(event: unknown): SessionUiEvent | undefined {
-  const type = eventType(event);
-  // Inbox, ask and extension-dialog frames have dedicated validators.
-  if (type === "notifications.inbox") return safelyParseValidatedEvent(() => parseSessionNotificationInboxEvent(event));
-  if (type === "ask.opened") return safelyParseValidatedEvent(() => parseSessionAskOpenedEvent(event));
-  if (type === "ask.closed") return safelyParseValidatedEvent(() => parseSessionAskClosedEvent(event));
-  if (type === "dialog.opened") return safelyParseValidatedEvent(() => parseSessionDialogOpenedEvent(event));
-  if (type === "dialog.closed") return safelyParseValidatedEvent(() => parseSessionDialogClosedEvent(event));
-  const parsed = safelyParseValidatedEvent(() => parseSessionStreamEvent(event));
-  return parsed === undefined ? undefined : withTransportSeq(parsed, event);
+  const parsed = safelyParseValidatedEvent((): SessionUiEvent => {
+    switch (eventType(event)) {
+      case "notifications.inbox": return parseSessionNotificationInboxEvent(event);
+      case "ask.opened": return parseSessionAskOpenedEvent(event);
+      case "ask.closed": return parseSessionAskClosedEvent(event);
+      case "dialog.opened": return parseSessionDialogOpenedEvent(event);
+      case "dialog.closed": return parseSessionDialogClosedEvent(event);
+      default: return parseSessionStreamEvent(event);
+    }
+  });
+  if (parsed === undefined || typeof event !== "object" || event === null) return undefined;
+  if ("seq" in event && typeof event.seq === "number" && Number.isSafeInteger(event.seq) && event.seq >= 0) parsed.seq = event.seq;
+  if ("generation" in event && typeof event.generation === "string") parsed.generation = event.generation;
+  return parsed;
 }
 
 export function parseRealtimeSocketEvent(event: unknown): BrowserRealtimeEvent | undefined {
@@ -174,17 +178,6 @@ export function parseRealtimeSocketEvent(event: unknown): BrowserRealtimeEvent |
   if (type === "notices.updated") return safelyParseValidatedEvent((): ServerNoticeEvent => parseServerNoticeEvent(event));
   if (type === "session.startup") return safelyParseValidatedEvent(() => parseSessionStartupProgressEvent(event));
   return safelyParseValidatedEvent(() => parseRealtimeStreamEvent(event));
-}
-
-// The hub stamps every per-session frame with a monotonic seq that the
-// join-time exactly-once filter compares against the stream snapshot watermark.
-// Validation rebuilds the event object, so the stamp must be carried over
-// explicitly; a frame without a numeric stamp still flows, because the
-// watermark filter fails open for unstamped events.
-function withTransportSeq(event: SessionUiEvent, raw: unknown): SessionUiEvent {
-  if (typeof raw !== "object" || raw === null || !("seq" in raw)) return event;
-  const seq = raw.seq;
-  return typeof seq === "number" ? { ...event, seq } : event;
 }
 
 function safelyParseValidatedEvent<T>(parse: () => T): T | undefined {

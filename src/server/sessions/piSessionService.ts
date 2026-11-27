@@ -2970,6 +2970,7 @@ export class PiSessionService implements SessionRouteService {
       page: { ...messagePage, messages: messagePage.messages.map((message) => this.browserTranscriptMessage(session, message)) },
       status: this.statusFromSession(session, transcriptMessageCount(branch) + echoes.length),
       seq: this.events.currentSeq(session.sessionId),
+      generation: this.events.generation(session.sessionId),
       partial: this.publishedAssistantPartials.get(session) ?? null,
     };
   }
@@ -5246,6 +5247,7 @@ export class PiSessionService implements SessionRouteService {
         if (sessionId !== session.sessionId) this.clearCompactionPromptQueue(sessionId);
       }
     }
+    this.events.startGeneration(session.sessionId);
     this.restoreSubsessionReceipts(session);
     this.reconcileRuntimeMessageCount(session);
     let queuedPublications = 0;

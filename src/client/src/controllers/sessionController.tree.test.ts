@@ -333,7 +333,7 @@ describe("SessionController session tree navigation", () => {
     expect(state.treeDialog).toBeUndefined();
   });
 
-  it("keeps live socket events flowing when a selected-session join refresh fails", async () => {
+  it("does not append live events when a selected-session join refresh fails", async () => {
     const socket = new EmitSocket();
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, selectedSession: oldSession, sessions: [oldSession] };
     const api: typeof defaultApi = {
@@ -352,7 +352,8 @@ describe("SessionController session tree navigation", () => {
     await controller.selectSession(oldSession, { updateUrl: false });
     socket.emit({ type: "message.append", message: { role: "assistant", content: "live after failed refresh" }, seq: 1 });
 
-    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("history refresh failed");    expect(state.messages).toEqual([{ role: "assistant", parts: [{ type: "text", text: "live after failed refresh" }] }]);
+    expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("history refresh failed");
+    expect(state.messages).toEqual([]);
   });
 
   it("does not reopen a disposed controller when navigation settles late", async () => {

@@ -51,7 +51,7 @@ beforeEach(() => {
   // Session selection loads one transcript snapshot; compose it from the per-test messages/status/stream mocks.
   vi.spyOn(api, "transcriptSnapshot").mockImplementation(async (selected, options, machineId) => {
     const [page, status, stream] = await Promise.all([api.messages(selected, options, machineId), api.status(selected, machineId), api.streamSnapshot(selected, machineId)]);
-    return { page, status, ...stream };
+    return { page, status, generation: "test-host", ...stream };
   });
   vi.spyOn(api, "notificationInbox").mockImplementation((selected) => Promise.resolve({
     daemonInstanceId: "daemon",
@@ -1664,14 +1664,14 @@ describe("Workbench request waterfalls", () => {
     let answer: (value: Awaited<ReturnType<typeof api.transcriptSnapshot>>) => void = () => undefined;
     snapshot.mockReturnValueOnce(new Promise((resolve) => { answer = resolve; }));
     const lines = Array.from({ length: 50 }, (_, index) => ({ role: "assistant", content: `step ${String(index + 1)}` }));
-    const frame = (index: number) => { sessionSockets[0]?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "message.append", message: lines[index], seq: index + 1 }) })); };
+    const frame = (index: number) => { sessionSockets[0]?.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "message.append", message: lines[index], generation: "test-host", seq: index + 1 }) })); };
 
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new Event("focus"));
     await vi.waitFor(() => { expect(snapshot).toHaveBeenCalledTimes(reads + 1); });
     // Frames the suspended window queued arrive around and after the catch-up snapshot that already covers them.
     for (let index = 0; index < 25; index += 1) frame(index);
-    answer({ page: { messages: lines, start: 0, total: lines.length }, status: idleStatus(chat.id), seq: lines.length, partial: null });
+    answer({ generation: "test-host", page: { messages: lines, start: 0, total: lines.length }, status: idleStatus(chat.id), seq: lines.length, partial: null });
     await vi.waitFor(() => { expect(getState(app).messages).toHaveLength(50); });
     for (let index = 25; index < 50; index += 1) frame(index);
     await new Promise((resolve) => { setTimeout(resolve, 20); });
@@ -2397,6 +2397,27 @@ describe("window tabs", () => {
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
     workstreamTab(app, "Release").dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+  });
+
+  // An open socket does not prove the view current (a reply before subscribe, a failed tree-change refresh, a host restart reusing ids): refocus always reads a snapshot.
+  it("refocusing a retained Chat whose socket stayed open still reads one snapshot", async () => {
+    const sessionSockets = new Map<string, SilentWebSocket>();
+    vi.stubGlobal("WebSocket", class extends SilentWebSocket { constructor(url: string) { super(); const id = /sessions\/([^/?]+)/.exec(url)?.[1]; if (id !== undefined && !url.endsWith("/api/machines/local/events")) sessionSockets.set(id, this); } });
+    const app = await mountWithWorkstreamChats();
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); expect(sessionSockets.has("a2")).toBe(true); });
+    await settled(app);
+    for (const id of ["a2", "b1"]) { const socket = sessionSockets.get(id); if (socket === undefined) throw new Error(`no socket for ${id}`); socket.readyState = SilentWebSocket.OPEN; socket.onopen?.(); }
+    await settled(app);
+    const snapshot = vi.mocked(api.transcriptSnapshot);
+    snapshot.mockClear();
+
+    workstreamTab(app, "Docs").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("b1"); });
+    snapshot.mockClear();
+    workstreamTab(app, "Release").click();
+    await vi.waitFor(() => { expect(getState(app).selectedSession?.id).toBe("a2"); });
+    await vi.waitFor(() => { expect(snapshot.mock.calls.map(([row]) => row.id)).toEqual(["a2"]); });
   });
 
   it("counts each Chat's open questions on its tab, live from this window and from status another window caused", async () => {

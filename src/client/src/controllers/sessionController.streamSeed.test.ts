@@ -93,7 +93,7 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     const selecting = controller.selectSession(oldSession, { updateUrl: false });
     // Events arriving during the join fetch are buffered by selectSession.
     socket.emit({ type: "assistant.delta", text: "STALE", seq: 2 });
-    socket.emit({ type: "assistant.delta", text: " live", seq: 6 });
+    socket.emit({ type: "assistant.delta", text: " live", seq: 5 });
 
     page.resolve({ messages: [{ role: "user", content: "question" }], start: 0, total: 1 });
     statusResult.resolve({ ...status(oldSession.id), isStreaming: true });
@@ -174,14 +174,9 @@ describe("SessionController stream seed + watermark reconciliation", () => {
     expect(Object.values(state.browserErrors).map((error) => error.message).join("\n")).toContain("Not Found");
     expect(state.messages).toEqual([]);
 
-    // The failed join still leaves the socket live (selectSession's recovery
-    // path), and with no watermark nothing is filtered.
-    socket.emit({ type: "assistant.delta", text: "live answer", seq: 1 });
+    socket.emit({ type: "assistant.delta", text: "unverified", seq: 1 });
     runPendingAnimationFrames();
-
-    expect(state.messages).toEqual([
-      { role: "assistant", parts: [{ type: "text", text: "live answer" }] },
-    ]);
+    expect(state.messages).toEqual([]);
   });
 
   it("does not seed a partial and does not filter events for an idle join", async () => {

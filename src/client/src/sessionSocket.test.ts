@@ -376,7 +376,7 @@ describe("socket instance isolation", () => {
     vi.unstubAllGlobals();
   });
 
-  it("logs diagnostics with session context without forwarding them to chat state", async () => {
+  it("logs diagnostics with session context and preserves their sequence", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const socket = new SessionSocket();
     try {
@@ -391,7 +391,7 @@ describe("socket instance isolation", () => {
       expect(error).toHaveBeenCalledExactlyOnceWith("[PI WEB] Session diagnostic", {
         machineId: "machine-a", sessionId: target.id, cwd: target.cwd, message: "Compaction failed: HTTP 400",
       });
-      expect(onEvent).not.toHaveBeenCalled();
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "session.diagnostic", seq: 1 }));
 
       // A frame queued on the old socket must not be logged for its replacement.
       connection.onmessage?.({ data: JSON.stringify({ type: "session.diagnostic", message: "Stale failure" }) });

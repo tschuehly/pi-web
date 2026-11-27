@@ -119,6 +119,7 @@ interface HostEvents {
   /** Notification inbox summaries (the daemon's shared notification catalog). */
   publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
   publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string; shortName?: string } | SessionAttentionEvent): void;
+  startGeneration(sessionId: string): string;
   currentSeq(sessionId: string): number;
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
   hasSessionSubscribers?(sessionId: string): boolean;
@@ -130,6 +131,8 @@ interface HostTranscript {
   messages: unknown[];
   partial: unknown;
   status: Omit<ClientSessionStatus, "sessionId">;
+  /** A paged read's page (a host that pages): its start, the whole transcript's total, and every turn's usage. */
+  page?: { start: number; total: number; usage: unknown[] };
 }
 
 export class DurableChatUnavailable extends Error {
@@ -171,13 +174,14 @@ class DurableHostConnection {
   #markExited!: () => void;
   static #opened = 0;
   /** Which host life this is, counted up as the daemon opens hosts: a later host's Working Mode beats an earlier one's. */
-  readonly generation = ++DurableHostConnection.#opened;
+  readonly hostLife = ++DurableHostConnection.#opened;
   #next = 1;
   #exited: Error | undefined;
   readonly #pending = new Map<number, { resolve: (reply: { result: unknown; seq: number }) => void; reject: (error: Error) => void }>();
 
   constructor(
     private readonly process: DurableHostProcess,
+    readonly generation: string,
     onEvent: (event: SessionUiEvent | HostEvent) => void,
     watermark: () => number,
     onExit: (error: Error) => void,
@@ -418,7 +422,7 @@ export class DurableChatService {
   /** Chats whose host last reported a running turn, for send_chat_message's list. */
   readonly #streaming = new Set<string>();
   /** Per Chat, the order key of the last Working Mode the daemon observed (this daemon's life; see `#withWorkingMode`). */
-  readonly #modeSample = new Map<string, { generation: number; sample: number }>();
+  readonly #modeSample = new Map<string, { hostLife: number; sample: number }>();
   /** Live review: each paired main Chat's work since its last digest; in memory, so a daemon restart drops a partial digest. */
   readonly #liveReviews = new Map<string, LiveReviewCollector>();
   /** Reviewer Chats working on a digest (delivered, its turn not ended yet), so the next digest waits and merges. */
@@ -552,8 +556,15 @@ export class DurableChatService {
   async messages(ref: SessionRouteRef, page?: { before?: number; limit?: number }): Promise<ClientMessagePage> {
     const record = this.#record(ref);
     const cold = this.#connections.has(record.id) || record.host !== undefined || record.upgrade !== undefined ? undefined : await this.#readCold(record);
-    const messages = cold ?? hostTranscript((await (await this.#connection(record)).request("transcript")).result).messages;
-    return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, messages).map(displayPromptMessage), page);
+    const transcript = cold !== undefined ? { messages: cold } : hostTranscript((await (await this.#connection(record)).request("transcript", hostPageArgs(page))).result);
+    return this.#page(ref, transcript, page);
+  }
+
+  /** The host's page, else (a reader, or an older host that sends the whole transcript) the whole transcript paged here. */
+  #page(ref: SessionRouteRef, transcript: Pick<HostTranscript, "messages" | "page">, page?: { before?: number; limit?: number }): ClientMessagePage {
+    const hosted = transcript.page;
+    if (hosted === undefined) return pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), page);
+    return { messages: this.#withCacheMissNotices(ref, transcript.messages, hosted.usage).map(displayPromptMessage), start: hosted.start, total: hosted.total };
   }
 
   /** The reader's messages, or undefined when it failed; a host start waits for a read of its store (`#connection`). */
@@ -605,25 +616,29 @@ export class DurableChatService {
   }
 
   async streamSnapshot(ref: SessionRouteRef): Promise<SessionStreamSnapshot> {
-    const { result, seq } = await (await this.#for(ref)).request("transcript");
+    // Only the partial is read, so a host that pages sends one message.
+    const { result, seq } = await (await this.#for(ref)).request("transcript", { limit: 1 });
     return { seq, partial: hostTranscript(result).partial };
   }
 
   async transcriptSnapshot(ref: SessionRouteRef, page?: { limit?: number }): Promise<SessionTranscriptSnapshot> {
     const connection = await this.#for(ref);
-    const { result, seq } = await connection.request("transcript");
+    const { result, seq } = await connection.request("transcript", hostPageArgs({ limit: page?.limit ?? 20 }));
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: pageMessagesAtSafeBoundary(this.#withCacheMissNotices(ref, transcript.messages).map(displayPromptMessage), { limit: page?.limit ?? 100 }), status: { ...this.#withWorkingMode(ref.id, browserStatus(transcript.status, connection), connection), sessionId: ref.id } };
+    return { seq, generation: connection.generation, partial: transcript.partial, page: this.#page(ref, transcript, { limit: page?.limit ?? 20 }), status: { ...this.#withWorkingMode(ref.id, browserStatus(transcript.status, connection), connection), sessionId: ref.id } };
   }
 
-  /** History with Pi's cache-miss notices re-derived onto the assistant turns that paid for them (legacy `historyWithCacheMissNotices`). */
-  #withCacheMissNotices(ref: SessionRouteRef, messages: unknown[]): unknown[] {
+  /**
+   * Messages with Pi's cache-miss notices re-derived onto the assistant turns that paid for them (legacy
+   * `historyWithCacheMissNotices`), from the whole `history`: the messages, or a host page's usage-only turns.
+   */
+  #withCacheMissNotices(ref: SessionRouteRef, messages: unknown[], history = messages): unknown[] {
     const notices = this.deps.cacheMissNotices;
     if (notices === undefined) return messages;
     // Every event before this reply is published, so later message.end events extend exactly this history.
-    this.#cacheScan.set(ref.id, cacheScanEntries(messages, "usage"));
+    this.#cacheScan.set(ref.id, cacheScanEntries(history, "usage"));
     if (!notices.enabled(ref.cwd)) return messages;
-    const byEntryId = cacheMissNoticesByEntryId(cacheScanEntries(messages), notices.models);
+    const byEntryId = cacheMissNoticesByEntryId(cacheScanEntries(history), notices.models);
     if (byEntryId.size === 0) return messages;
     return messages.map((message) => {
       const cacheMissNotice = isRecord(message) && typeof message["entryId"] === "string" ? byEntryId.get(message["entryId"]) : undefined;
@@ -1075,8 +1090,8 @@ export class DurableChatService {
     const raw: unknown = Reflect.get(status, "workingModeSample");
     const sample = typeof raw === "number" && Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
     const last = this.#modeSample.get(id);
-    if (last === undefined || connection.generation > last.generation || (connection.generation === last.generation && sample > last.sample)) {
-      this.#modeSample.set(id, { generation: connection.generation, sample });
+    if (last === undefined || connection.hostLife > last.hostLife || (connection.hostLife === last.hostLife && sample > last.sample)) {
+      this.#modeSample.set(id, { hostLife: connection.hostLife, sample });
       const mode = sample === 0 ? undefined : observed;
       if (mode !== record.sampledWorkingMode) this.deps.locator.update(id, { sampledWorkingMode: mode, workingModeVersion: (record.workingModeVersion ?? 0) + 1 });
     }
@@ -1570,6 +1585,7 @@ export class DurableChatService {
     this.#lastActive.set(record.id, this.#now());
     const connection = new DurableHostConnection(
       host,
+      this.deps.events.startGeneration(record.id),
       (event) => { this.#onEvent(record.id, event, connection); },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
@@ -1980,7 +1996,8 @@ export class DurableChatService {
       if (Object.keys(change).length > 0) this.deps.locator.update(sessionId, change);
       return;
     }
-    this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event, scope);
+    const frame = event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event;
+    this.deps.events.publish(sessionId, { ...frame, generation: connection.generation }, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
       // The host emits these after the committed run start and end; a reopened store replays neither.
@@ -2237,5 +2254,17 @@ function hostStatus(value: unknown): HostTranscript["status"] {
 
 function hostTranscript(value: unknown): HostTranscript {
   if (!isRecord(value) || !Array.isArray(value["messages"]) || !("partial" in value)) throw new Error("Durable host sent a malformed transcript");
-  return { messages: value["messages"], partial: value["partial"], status: hostStatus(value["status"]) };
+  const { start, total, usage } = value;
+  // An older host ignores page args and sends the whole transcript without these.
+  const page = typeof start === "number" && typeof total === "number" && Array.isArray(usage) ? { page: { start, total, usage } } : {};
+  return { messages: value["messages"], partial: value["partial"], status: hostStatus(value["status"]), ...page };
+}
+
+/** Page args as the host takes them (non-negative integers); none asks for the whole transcript. */
+function hostPageArgs(page?: { before?: number; limit?: number }): { before?: number; limit?: number } | undefined {
+  const clean = (value?: number) => (value !== undefined && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : undefined);
+  const before = clean(page?.before);
+  const limit = clean(page?.limit);
+  if (before === undefined && limit === undefined) return undefined;
+  return { ...(before === undefined ? {} : { before }), ...(limit === undefined ? {} : { limit }) };
 }

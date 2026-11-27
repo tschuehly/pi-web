@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { GlobalSessionEvent, RealtimeEvent, SessionNotificationSummaryEvent, SessionUiEvent } from "../../shared/apiTypes.js";
 import { projectBrowserSessionEvent } from "../browserMessageProjection.js";
 import { SESSION_MEDIA_MODE } from "../../shared/sessionMedia.js";
@@ -14,6 +15,18 @@ export interface RealtimeSocket {
 export class SessionEventHub {
   private readonly socketsBySession = new Map<string, { inline: Set<RealtimeSocket>; reference: Set<RealtimeSocket> }>();
   private readonly globalSockets = new Set<RealtimeSocket>();
+  private readonly generations = new Map<string, string>();
+
+  startGeneration(sessionId: string): string {
+    const generation = randomUUID();
+    this.generations.set(sessionId, generation);
+    return generation;
+  }
+
+  generation(sessionId: string): string {
+    return this.generations.get(sessionId) ?? this.startGeneration(sessionId);
+  }
+
   private readonly seqBySession = new Map<string, number>();
   private readonly globalUpdates = new Map<string, { sent: string | undefined; sentAt: number; pending: string | undefined; timer: ReturnType<typeof setTimeout> | undefined }>();
   private globalJoinFrame: (() => RealtimeEvent) | undefined;
@@ -80,9 +93,10 @@ export class SessionEventHub {
     // Index even without subscribers: live tool output may not be persisted yet
     // when the browser joins or requests a previously published media id.
     const referenceEvent = projectBrowserSessionEvent(event, (image) => this.mediaIndex.reference(mediaScope, image));
+    const generation = event.generation ?? this.generation(sessionId);
     const sockets = this.socketsBySession.get(sessionId);
-    if (sockets !== undefined && sockets.inline.size > 0) this.sendToSockets(sockets.inline, JSON.stringify({ ...projectBrowserSessionEvent(event), seq }));
-    if (sockets !== undefined && sockets.reference.size > 0) this.sendToSockets(sockets.reference, JSON.stringify({ ...referenceEvent, seq }));
+    if (sockets !== undefined && sockets.inline.size > 0) this.sendToSockets(sockets.inline, JSON.stringify({ ...projectBrowserSessionEvent(event), seq, generation }));
+    if (sockets !== undefined && sockets.reference.size > 0) this.sendToSockets(sockets.reference, JSON.stringify({ ...referenceEvent, seq, generation }));
   }
 
   /**
