@@ -79,26 +79,31 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
   const kept = Object.entries(answers).flatMap(([id, answer]): [string, AskDraftAnswer][] => {
     const question = current.get(id);
     if (question === undefined || answer.asked === undefined || answer.asked !== askedFingerprint(question)) return [];
-    // An older panel saved its preselection with the user's picks; one left as preselected was never the user's choice.
-    if (legacy && isLegacyPreset(question, answer)) return [];
+    // An older panel saved its preselection with the user's picks; a preset value may never have been the user's choice.
+    const own = legacy ? withoutLegacyPreset(question, answer) : answer;
+    if (own.values.length === 0 && own.otherText === undefined && own.value === undefined) return [];
     // A selection of an option the question no longer offers (a draft from an older panel) would be refused on send.
     const offered = new Set(question.options.map((option) => option.value));
-    return [[id, { ...answer, values: answer.values.filter((value) => offered.has(value)) }]];
+    return [[id, { ...own, values: own.values.filter((value) => offered.has(value)) }]];
   });
   return Object.fromEntries(kept);
 }
 
 /**
- * Whether a draft saved under the old key holds just what that panel preselected: the recommended options (the first if
- * single choice), a typed question's default, or a switch's off.
+ * A draft saved under the old key without what that panel preselected: the recommended options (the first if single
+ * choice), a typed question's default, or a switch's start. Such a value is ambiguous even beside the user's own input
+ * (a Custom answer, another pick), so it goes; the custom text and the other picks stay.
  */
-function isLegacyPreset(question: AskUserQuestion, answer: AskDraftAnswer): boolean {
-  if (answer.otherText !== undefined) return false;
-  if ((question.kind ?? "choice") !== "choice")
-    return answer.value === (question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default));
+function withoutLegacyPreset(question: AskUserQuestion, answer: AskDraftAnswer): AskDraftAnswer {
+  if ((question.kind ?? "choice") !== "choice") {
+    const preset = question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default);
+    if (answer.value !== preset) return answer;
+    const { value: _preset, ...rest } = answer;
+    return rest;
+  }
   const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
-  const preset = question.multiple === true ? recommended : recommended.slice(0, 1);
-  return preset.length > 0 && answer.values.length === preset.length && preset.every((value) => answer.values.includes(value));
+  const preset = new Set(question.multiple === true ? recommended : recommended.slice(0, 1));
+  return { ...answer, values: answer.values.filter((value) => !preset.has(value)) };
 }
 
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {

@@ -127,17 +127,41 @@ describe("ask draft storage", () => {
     expect(fresh).toEqual({});
     expect(answeredCount([single, multi], fresh)).toBe(0);
 
-    // The old key held the preselection with the user's own picks: q1 left as preselected, q2 changed by the user.
+    // The old key held the preselection with the user's own picks: q1 left as preselected, q2 with one preselected
+    // option unticked. A preselected value still ticked may never have been picked, so neither comes back.
     storage.setItem(
       "pi-web:ask-draft:local:s1:ask-1",
       JSON.stringify({ q1: { values: ["pg"], asked: askedFingerprint(single) }, q2: { values: ["metrics"], asked: askedFingerprint(multi) } }),
     );
-    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])).toEqual({ q2: { values: ["metrics"], asked: askedFingerprint(multi) } });
+    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])).toEqual({});
 
     // A pick of the recommended option saved now is the user's own and stays.
     saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"], asked: askedFingerprint(single) } }, storage);
     expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).toBeNull();
     expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q1"]?.values).toEqual(["pg"]);
+  });
+
+  it("strips an older panel's preset from a draft that also holds the user's own input, keeping custom text and other picks", () => {
+    const storage = new MemoryStorage();
+    const yes: AskUserQuestion = { id: "yes", question: "Ship?", options: [], kind: "boolean", default: true };
+    const multi: AskUserQuestion = { ...multiSelect, options: multiSelect.options.map((option) => ({ ...option, recommended: option.value === "metrics" })) };
+    const single: AskUserQuestion = { ...singleSelect, options: singleSelect.options.map((option) => ({ ...option, recommended: option.value === "pg" })) };
+    const asked = [yes, multi, single];
+    storage.setItem(
+      "pi-web:ask-draft:local:s1:ask-1",
+      JSON.stringify({
+        // The untouched Yes default with "Answer in words" opened but left empty.
+        yes: { values: [], value: true, otherText: "", asked: askedFingerprint(yes) },
+        // The old preselected recommendation plus one pick of the user's.
+        q2: { values: ["metrics", "tracing"], asked: askedFingerprint(multi) },
+        // The old preselection plus a Custom answer.
+        q1: { values: ["pg"], otherText: "MySQL", asked: askedFingerprint(single) },
+      }),
+    );
+    expect(toSubmission(asked, loadAskDraft("local:s1", "ask-1", storage, asked)).answers).toEqual([
+      { id: "q2", values: ["tracing"] },
+      { id: "q1", values: [], otherText: "MySQL" },
+    ]);
   });
 
   it("drops a drafted selection of an option value the question does not offer", () => {
