@@ -444,20 +444,11 @@ function questionLines(askId: string, record: AskUserQuestionRecord): string[] {
         : question.kind === "text"
           ? JSON.stringify(value)
           : String(value);
-    // A typed field starts on its default (a boolean on false); say when the user left it so.
-    return [header, `  Answered: ${shown}${value === (question.default ?? (question.kind === "boolean" ? false : undefined)) ? " (default, unchanged)" : ""}`];
+    return [header, `  Answered: ${shown}`];
   }
   const parts = [...record.values.map((value) => `selected ${value}`)];
   if (record.otherText !== undefined) parts.push(`custom: ${JSON.stringify(record.otherText)}`);
-  // The card preselects the recommended options (the first one for single choice); say when the user left them as they were.
-  const recommended = record.question.options.filter((option) => option.recommended === true).map((option) => option.value);
-  const preselected = record.question.multiple === true ? recommended : recommended.slice(0, 1);
-  const unchanged =
-    preselected.length > 0
-    && record.otherText === undefined
-    && record.values.length === preselected.length
-    && preselected.every((value) => record.values.includes(value));
-  return [header, `  Answered: ${parts.join("; ")}${unchanged ? " (recommended, unchanged)" : ""}`];
+  return [header, `  Answered: ${parts.join("; ")}`];
 }
 
 function askUserOutcome(

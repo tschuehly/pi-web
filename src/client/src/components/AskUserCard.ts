@@ -408,19 +408,22 @@ export class AskUserCard extends LitElement {
     const id = this.otherInputId(index);
     if (question.kind === "boolean") {
       const on = answer?.value === true;
+      // Nothing is preselected: an untouched switch reads as unanswered, not as its off label.
+      const unset = typeof answer?.value !== "boolean";
       // Words, once opened, ride along with the switch; non-blank they replace its value, as a choice's Custom answer does.
       const words = answer?.otherText;
       const keep = (): AskDraftAnswer => ({ values: [], ...(answer?.value === undefined ? {} : { value: answer.value }) });
       return html`
         <div class="boolean-field">
           <label class=${`typed-field switch${(words ?? "").trim() === "" ? "" : " overridden"}`}>
-            <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} @change=${(event: Event) => {
+            <input id=${id} type="checkbox" role="switch" aria-label=${question.question} .checked=${on} .indeterminate=${unset} @change=${(event: Event) => {
               if (event.currentTarget instanceof HTMLInputElement)
                 this.setAnswer(question, { values: [], value: event.currentTarget.checked, ...(words === undefined ? {} : { otherText: words }) });
             }} />
             <span class="switch-track" aria-hidden="true"></span>
-            <span class="switch-state" aria-hidden="true">${askBooleanLabel(question, on)}</span>
+            <span class="switch-state" aria-hidden="true">${unset ? "Not answered" : askBooleanLabel(question, on)}</span>
           </label>
+          ${this.renderSuggestion(question)}
           ${
             words === undefined
               ? html`<button class="answer-in-words" type="button" @click=${() => {
@@ -475,8 +478,16 @@ export class AskUserCard extends LitElement {
       <div class="typed-field">
         ${question.kind === "text" ? this.renderWithImages({ kind: "question", id: question.id }, "this answer", field) : field}
         ${errorId === undefined ? null : html`<p class="field-error" id=${errorId}>${error?.replace(/^m/u, "M")}</p>`}
+        ${this.renderSuggestion(question)}
       </div>
     `;
+  }
+
+  /** The agent's `default` is a suggestion shown beside the field, never a prefilled answer. */
+  private renderSuggestion(question: AskUserQuestion): TemplateResult | null {
+    const suggested = question.default;
+    if (suggested === undefined) return null;
+    return html`<p class="field-suggestion">Suggested: ${typeof suggested === "boolean" ? askBooleanLabel(question, suggested) : String(suggested)}</p>`;
   }
 
   /** What a question's field answers: Undo never crosses into another ask or another wording of the question. */
@@ -1382,6 +1393,8 @@ export class AskUserCard extends LitElement {
     .switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--pi-surface); transition: transform 0.15s; }
     .switch input:checked + .switch-track { background: var(--pi-accent); }
     .switch input:checked + .switch-track::after { transform: translateX(16px); }
+    .switch input:indeterminate + .switch-track::after { transform: translateX(8px); }
+    .field-suggestion { margin: 2px 0 0; color: var(--pi-muted); font-size: 12px; }
     .switch input:focus-visible + .switch-track { outline: 2px solid var(--pi-accent); outline-offset: 2px; }
     .boolean-field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 4px; }
     .boolean-field > .switch { margin-top: 0; }

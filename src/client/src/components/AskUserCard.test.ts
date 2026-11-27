@@ -94,7 +94,7 @@ describe("ask-user-card live form", () => {
     });
   });
 
-  it("starts on the recommended options, counted as answered, and keeps them cleared once the user unticks them", async () => {
+  it("marks recommended options but never preselects them, so an untouched question stays unanswered", async () => {
     const ask = openAsk([
       question(
         "platforms",
@@ -109,15 +109,16 @@ describe("ask-user-card live form", () => {
     const card = await mountOpenAsk(ask);
     const root = renderRoot(card);
 
-    expect(inputWithValue(root, "web").checked && inputWithValue(root, "desktop").checked).toBe(true);
-    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 1 answered");
+    expect(root.querySelectorAll(".recommended")).toHaveLength(2);
+    expect(inputWithValue(root, "web").checked || inputWithValue(root, "desktop").checked).toBe(false);
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
     inputWithValue(root, "web").click();
-    inputWithValue(root, "desktop").click();
+    await card.updateComplete;
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 1 answered");
     card.remove();
 
     const reloaded = renderRoot(await mountOpenAsk(ask));
-    expect(inputWithValue(reloaded, "web").checked || inputWithValue(reloaded, "desktop").checked).toBe(false);
-    expect(reloaded.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
+    expect([inputWithValue(reloaded, "web").checked, inputWithValue(reloaded, "desktop").checked]).toEqual([true, false]);
   });
 
   it("always offers and focuses a labelled custom field while preserving multi-select options", async () => {
@@ -160,7 +161,9 @@ describe("ask-user-card live form", () => {
     const labels = [...root.querySelectorAll(".option-label")].map((label) => label.textContent.trim());
 
     expect(labels).toEqual(["Merge it", "Correct it (custom) Recommended", "Custom"]);
-    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("1 of 1 answered");
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 1 answered");
+    inputWithValue(root, "correct").click();
+    await card.updateComplete;
     buttonWithText(root, "Send answers").click();
     await Promise.resolve();
 
@@ -244,6 +247,9 @@ describe("ask-user-card live form", () => {
       onSubmit,
     );
     const root = renderRoot(card);
+    inputWithValue(root, "friday").click();
+    inputWithValue(root, "docs").click();
+    await card.updateComplete;
     requiredElement(root.querySelector<HTMLButtonElement>("button[aria-label='Edit this answer']"), "edit Deploy Friday").click();
     await card.updateComplete;
     typeInto(markdownField(root, ".inline-edit ask-markdown-field"), "Deploy Monday");
@@ -270,7 +276,7 @@ describe("ask-user-card live form", () => {
     const textarea = markdownField(root, ".inline-edit ask-markdown-field");
     typeInto(textarea, "VS Code, but lighter");
     // The draft holds the edit as the Custom answer, as before.
-    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1:answers") ?? "{}")).toMatchObject({
       editor: { values: [], otherText: "VS Code, but lighter" },
     });
 
@@ -283,7 +289,7 @@ describe("ask-user-card live form", () => {
     expect(inputWithValue(root, "vim").checked).toBe(true);
     expect(inputWithValue(root, "code").checked).toBe(false);
     expect(root.querySelector("#ask-user-other-0")).toBeNull();
-    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ editor: { values: ["vim"] } });
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1:answers") ?? "{}")).toMatchObject({ editor: { values: ["vim"] } });
 
     // Without an earlier answer, Revert leaves the question unanswered.
     const fresh = await mountOpenAsk(openAsk([question("db", "Which database?", [option("pg", "Postgres")])]));
@@ -361,13 +367,21 @@ describe("ask-user-card live form", () => {
   it("labels a boolean switch with the agent's labels and flips between them", async () => {
     const card = await mountOpenAsk(openAsk([{ id: "ship", question: "Ship?", options: [], kind: "boolean", default: true, labels: ["Ship it", "Hold"] }]));
     const root = renderRoot(card);
+    // The default is a suggestion beside the switch, not its state.
+    expect(root.querySelector(".switch-state")?.textContent).toBe("Not answered");
+    expect(root.querySelector(".field-suggestion")?.textContent).toBe("Suggested: Ship it");
+    const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
+    expect(toggle.indeterminate).toBe(true);
+    toggle.click();
+    await card.updateComplete;
     expect(root.querySelector(".switch-state")?.textContent).toBe("Ship it");
-    requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch").click();
+    toggle.click();
     await card.updateComplete;
     expect(root.querySelector(".switch-state")?.textContent).toBe("Hold");
+    expect(toggle.indeterminate).toBe(false);
   });
 
-  it("renders typed questions as a switch, text, number and date fields on their defaults, shows a field's error, and sends values", async () => {
+  it("renders typed questions as a switch, text, number and date fields unanswered with their defaults as suggestions, shows a field's error, and sends values", async () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(
       openAsk([
@@ -382,20 +396,21 @@ describe("ask-user-card live form", () => {
     const toggle = requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch");
     expect(toggle.checked).toBe(false);
     expect(toggle.getAttribute("aria-label")).toBe("Enable backup?");
-    expect(root.querySelector(".switch-state")?.textContent).toBe("No");
+    expect(root.querySelector(".switch-state")?.textContent).toBe("Not answered");
     expect(root.querySelector(".questions ask-markdown-field")).toBeNull();
-    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("2 of 3 answered");
+    expect(root.querySelector("[aria-live='polite']")?.textContent).toContain("0 of 3 answered");
 
     toggle.click();
     await card.updateComplete;
-    // The multi-line field starts on its default, and what the user types there is the draft and the answer.
+    // The multi-line field starts empty with its default as a suggestion; what the user types there is the draft and the answer.
     const folder = markdownField(root, "#ask-user-other-1");
-    expect(folder.value).toBe("~/b");
+    expect(folder.value).toBe("");
+    expect(folder.closest(".typed-field")?.querySelector(".field-suggestion")?.textContent).toBe("Suggested: ~/b");
     typeInto(folder, "~/b/archive");
     await card.updateComplete;
-    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({ folder: { value: "~/b/archive" } });
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1:answers") ?? "{}")).toMatchObject({ folder: { value: "~/b/archive" } });
     const copies = requiredElement(root.querySelector<HTMLInputElement>("input[type='number']"), "number input");
-    expect([copies.value, copies.max, copies.step]).toEqual(["2", "5", "1"]);
+    expect([copies.value, copies.max, copies.step]).toEqual(["", "5", "1"]);
     copies.value = "9";
     copies.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     await card.updateComplete;
@@ -533,6 +548,10 @@ describe("ask-user-card dependent questions", () => {
       toggled,
     );
     requiredElement(renderRoot(typed).querySelector<HTMLInputElement>("input[role='switch']"), "switch").click();
+    await typed.updateComplete;
+    const folder = requiredElement(renderRoot(typed).querySelector<HTMLInputElement>("#ask-user-other-1"), "folder");
+    folder.value = "~/b";
+    folder.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     await typed.updateComplete;
     [...renderRoot(typed).querySelectorAll<HTMLButtonElement>(".send-one")][1]?.click();
     await Promise.resolve();
@@ -748,7 +767,7 @@ describe("ask-user-card single-answer send", () => {
     expect(remaining.value).toBe("");
   });
 
-  it("drops a field's undo history when its question is reworded, even when the new default equals the typed text", async () => {
+  it("drops a field's undo history when its question is reworded, and does not prefill its new default", async () => {
     const notes: AskUserQuestion = { id: "notes", question: "Notes?", options: [], kind: "text", multiline: true };
     const card = await mountOpenAsk(openAsk([notes]));
     const field = markdownField(renderRoot(card), "ask-markdown-field#ask-user-other-0");
@@ -757,10 +776,10 @@ describe("ask-user-card single-answer send", () => {
 
     card.ask = { ...openAsk([{ ...notes, detail: "Reworded.", default: "Draft." }]), revision: "r2" };
     await card.updateComplete;
-    expect([field.isConnected, field.value]).toEqual([true, "Draft."]);
+    expect([field.isConnected, field.value]).toEqual([true, ""]);
     undo(editorView(field));
 
-    expect(field.value).toBe("Draft.");
+    expect(field.value).toBe("");
   });
 
   it("keeps the other questions' drafts when a partial send returns the ask under a new revision", async () => {
@@ -981,6 +1000,8 @@ describe("ask-user-card context", () => {
     const onSubmit = vi.fn<AskUserSubmitCallback>();
     const card = await mountOpenAsk(openAsk([{ id: "ship", question: "Ship?", options: [], kind: "boolean", default: true }]), onSubmit);
     const root = renderRoot(card);
+    requiredElement(root.querySelector<HTMLInputElement>("input[role='switch']"), "switch").click();
+    await card.updateComplete;
     buttonWithText(root, "Answer in words").click();
     await card.updateComplete;
     const words = requiredElement(root.querySelector<HTMLInputElement>("input.boolean-words"), "words field");
@@ -988,7 +1009,7 @@ describe("ask-user-card context", () => {
     words.value = "Only after review";
     words.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     await card.updateComplete;
-    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1") ?? "{}")).toMatchObject({
+    expect(JSON.parse(localStorage.getItem("pi-web:ask-draft:local:session-1:ask-1:answers") ?? "{}")).toMatchObject({
       ship: { value: true, otherText: "Only after review" },
     });
     buttonWithText(root, "Send answers").click();

@@ -154,7 +154,8 @@ describe("WorkbenchQuestionChips", () => {
     expect(first?.shadowRoot?.querySelector(".ask-context ask-markdown-field.context-editor")).not.toBeNull();
     expect(text(first)).toContain("abc.db");
     expect(text(first)).toContain("Postgres Recommended");
-    expect(first?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.checked).toBe(true);
+    // Marked, never preselected.
+    expect(first?.shadowRoot?.querySelector<HTMLInputElement>('input[value="pg"]')?.checked).toBe(false);
     expect(text(first)).toContain("Custom");
     expect(text(first)).toContain("updated 5 min ago");
     expect(text(second)).toContain("may be stale");

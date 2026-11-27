@@ -95,7 +95,7 @@ describe("ask draft storage", () => {
 
     saveAskDraft("local:s1", "ask-1", answers, storage);
 
-    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).not.toBeNull();
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1:answers")).not.toBeNull();
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual(answers);
     // Another ask of the same session, and the same ask of another session, are
     // separate drafts.
@@ -109,11 +109,11 @@ describe("ask draft storage", () => {
 
     saveAskDraft("local:s1", "ask-1", { q1: { values: [], otherText: "" } }, storage);
 
-    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).toBeNull();
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1:answers")).toBeNull();
     expect(loadAskDraft("local:s1", "ask-1", storage)).toEqual({});
   });
 
-  it("starts an undrafted question on its recommended options but keeps a draft the user cleared", () => {
+  it("never preselects a recommended option, and an older panel's untouched preselection does not come back", () => {
     const storage = new MemoryStorage();
     const single: AskUserQuestion = {
       ...singleSelect,
@@ -123,14 +123,21 @@ describe("ask draft storage", () => {
       ],
     };
     const multi: AskUserQuestion = { ...multiSelect, options: multiSelect.options.map((option) => ({ ...option, recommended: true })) };
-    const preselected = loadAskDraft("local:s1", "ask-1", storage, [single, multi]);
-    expect(preselected["q1"]?.values).toEqual(["pg"]);
-    expect(preselected["q2"]?.values).toEqual(["metrics", "tracing"]);
-    expect(answeredCount([single, multi], preselected)).toBe(2);
+    const fresh = loadAskDraft("local:s1", "ask-1", storage, [single, multi]);
+    expect(fresh).toEqual({});
+    expect(answeredCount([single, multi], fresh)).toBe(0);
 
-    saveAskDraft("local:s1", "ask-1", { ...preselected, q2: { values: [], asked: askedFingerprint(multi) } }, storage);
+    // The old key held the preselection with the user's own picks: q1 left as preselected, q2 changed by the user.
+    storage.setItem(
+      "pi-web:ask-draft:local:s1:ask-1",
+      JSON.stringify({ q1: { values: ["pg"], asked: askedFingerprint(single) }, q2: { values: ["metrics"], asked: askedFingerprint(multi) } }),
+    );
+    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])).toEqual({ q2: { values: ["metrics"], asked: askedFingerprint(multi) } });
 
-    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q2"]?.values).toEqual([]);
+    // A pick of the recommended option saved now is the user's own and stays.
+    saveAskDraft("local:s1", "ask-1", { q1: { values: ["pg"], asked: askedFingerprint(single) } }, storage);
+    expect(storage.getItem("pi-web:ask-draft:local:s1:ask-1")).toBeNull();
+    expect(loadAskDraft("local:s1", "ask-1", storage, [single, multi])["q1"]?.values).toEqual(["pg"]);
   });
 
   it("drops a drafted selection of an option value the question does not offer", () => {
@@ -143,16 +150,25 @@ describe("ask draft storage", () => {
   it("keys answers by own question ids, so ids like constructor and __proto__ work", () => {
     const storage = new MemoryStorage();
     const untouched: AskUserQuestion = { ...singleSelect, id: "constructor" };
-    const preset: AskUserQuestion = { ...singleSelect, id: "__proto__", options: [{ value: "pg", label: "Postgres", recommended: true }] };
-    const asked = [untouched, preset];
+    const picked: AskUserQuestion = { ...singleSelect, id: "__proto__", options: [{ value: "pg", label: "Postgres", recommended: true }] };
+    const asked = [untouched, picked];
 
     const draft = loadAskDraft("local:s1", "ask-1", storage, asked);
-    expect(answeredCount(asked, draft)).toBe(1);
-    expect(unansweredQuestions(asked, draft)).toEqual([untouched]);
-    expect(toSubmission(asked, draft)).toEqual({ answers: [{ id: "__proto__", values: ["pg"] }] });
+    expect(answeredCount(asked, draft)).toBe(0);
+    expect(unansweredQuestions(asked, draft)).toEqual(asked);
 
-    saveAskDraft("local:s1", "ask-1", { ...draft, constructor: { values: ["sqlite"], asked: askedFingerprint(untouched) } }, storage);
-    expect(toSubmission(asked, loadAskDraft("local:s1", "ask-1", storage, asked))).toEqual({
+    saveAskDraft(
+      "local:s1",
+      "ask-1",
+      Object.fromEntries([
+        ["constructor", { values: ["sqlite"], asked: askedFingerprint(untouched) }],
+        ["__proto__", { values: ["pg"], asked: askedFingerprint(picked) }],
+      ]),
+      storage,
+    );
+    const loaded = loadAskDraft("local:s1", "ask-1", storage, asked);
+    expect(unansweredQuestions(asked, loaded)).toEqual([]);
+    expect(toSubmission(asked, loaded)).toEqual({
       answers: [
         { id: "constructor", values: ["sqlite"] },
         { id: "__proto__", values: ["pg"] },
@@ -160,7 +176,7 @@ describe("ask draft storage", () => {
     });
   });
 
-  it("starts typed questions on their defaults, a switch on off, and keeps a field the user cleared", () => {
+  it("leaves typed questions and switches unanswered despite a default, and keeps what the user typed", () => {
     const storage = new MemoryStorage();
     const typed = (id: string, extra: Partial<AskUserQuestion>): AskUserQuestion => ({ id, question: `${id}?`, options: [], ...extra });
     const questions = [
@@ -171,16 +187,22 @@ describe("ask draft storage", () => {
       typed("empty", { kind: "text" }),
       typed("child", { kind: "text", showIf: { question: "on", values: ["true"] } }),
     ];
-    const [, text, number] = questions;
-    if (text === undefined || number === undefined) throw new Error("expected the typed questions");
+    const [on, text, number] = questions;
+    if (on === undefined || text === undefined || number === undefined) throw new Error("expected the typed questions");
     const preset = loadAskDraft("local:s1", "ask-1", storage, questions);
-    expect(toSubmission(questions, preset).answers).toEqual([
-      { id: "on", values: [], value: false },
-      { id: "t", values: [], value: "hi" },
-      { id: "n", values: [], value: 7 },
-      { id: "d", values: [], value: "2026-12-01" },
-    ]);
-    expect(answeredCount(questions, preset)).toBe(4);
+    expect(toSubmission(questions, preset).answers).toEqual([]);
+    expect(answeredCount(questions, preset)).toBe(0);
+    // An older panel's draft that only held the defaults (and the switch's off) does not come back; a changed field does.
+    storage.setItem(
+      "pi-web:ask-draft:local:s1:ask-1",
+      JSON.stringify({
+        on: { values: [], value: false, asked: askedFingerprint(on) },
+        t: { values: [], value: "hi", asked: askedFingerprint(text) },
+        n: { values: [], value: "8", asked: askedFingerprint(number) },
+      }),
+    );
+    expect(toSubmission(questions, loadAskDraft("local:s1", "ask-1", storage, questions)).answers).toEqual([{ id: "n", values: [], value: 8 }]);
+    storage.removeItem("pi-web:ask-draft:local:s1:ask-1");
     // A yes/no answered in words sends them as its Custom answer; blank words leave the switch's value.
     expect(toSubmission(questions, { ...preset, on: { values: [], value: true, otherText: " Later " } }).answers[0]).toEqual({
       id: "on",
@@ -195,9 +217,10 @@ describe("ask draft storage", () => {
     expect(typedDraftValue(number, { values: [], value: "11" })).toEqual({ value: 11, error: "must be at most 10" });
     expect(toSubmission(questions, { ...preset, n: { values: [], value: "11" } }).answers.map((answer) => answer.id)).not.toContain("n");
 
-    // Text goes as typed: a padded Markdown default fits its minimum and sends unchanged; blank sends nothing.
+    // Text goes as typed: padded Markdown fits its minimum and sends unchanged; blank sends nothing.
     const padded = typed("code", { kind: "text", multiline: true, minLength: 6, default: "  code" });
-    expect(typedDraftValue(padded, loadAskDraft("local:s1", "ask-2", storage, [padded])["code"])).toEqual({ value: "  code" });
+    expect(loadAskDraft("local:s1", "ask-2", storage, [padded])["code"]).toBeUndefined();
+    expect(typedDraftValue(padded, { values: [], value: "  code" })).toEqual({ value: "  code" });
     expect(typedDraftValue(padded, { values: [], value: "   " })).toBeUndefined();
     // A one-line field cannot show a line break, so it does not send one; a multiline field does.
     expect(typedDraftValue(typed("line", { kind: "text" }), { values: [], value: "first\nsecond" })).toEqual({
@@ -206,8 +229,8 @@ describe("ask draft storage", () => {
     });
     expect(typedDraftValue(padded, { values: [], value: "first\nsecond" })).toEqual({ value: "first\nsecond" });
 
-    saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "", asked: askedFingerprint(text) } }, storage);
-    expect(loadAskDraft("local:s1", "ask-1", storage, questions)["t"]?.value).toBe("");
+    saveAskDraft("local:s1", "ask-1", { ...preset, t: { values: [], value: "yo", asked: askedFingerprint(text) } }, storage);
+    expect(loadAskDraft("local:s1", "ask-1", storage, questions)["t"]?.value).toBe("yo");
   });
 
   it("clears a draft once its ask is closed", () => {

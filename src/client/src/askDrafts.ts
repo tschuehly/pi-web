@@ -42,6 +42,11 @@ function draftStorageKey(sessionId: string, askId: string): string {
   return `${draftStoragePrefix}${sessionId}:${askId}`;
 }
 
+/** Answers hold only the user's own picks; the key without `:answers` is an older panel's, which saved its preselection too. */
+function answersStorageKey(sessionId: string, askId: string): string {
+  return `${draftStorageKey(sessionId, askId)}:answers`;
+}
+
 function browserStorage(): Storage | undefined {
   try {
     return typeof localStorage === "undefined" ? undefined : localStorage;
@@ -58,8 +63,13 @@ function browserStorage(): Storage | undefined {
  */
 export function loadAskDraft(sessionId: string, askId: string, storage = browserStorage(), questions?: readonly AskUserQuestion[]): AskDraftAnswers {
   let answers: AskDraftAnswers;
+  let legacy = false;
   try {
-    const stored = storage?.getItem(draftStorageKey(sessionId, askId));
+    let stored = storage?.getItem(answersStorageKey(sessionId, askId));
+    if (stored === null || stored === undefined) {
+      stored = storage?.getItem(draftStorageKey(sessionId, askId));
+      legacy = stored !== null && stored !== undefined;
+    }
     answers = stored === null || stored === undefined ? {} : draftAnswersFromJson(stored);
   } catch {
     answers = {};
@@ -69,41 +79,34 @@ export function loadAskDraft(sessionId: string, askId: string, storage = browser
   const kept = Object.entries(answers).flatMap(([id, answer]): [string, AskDraftAnswer][] => {
     const question = current.get(id);
     if (question === undefined || answer.asked === undefined || answer.asked !== askedFingerprint(question)) return [];
+    // An older panel saved its preselection with the user's picks; one left as preselected was never the user's choice.
+    if (legacy && isLegacyPreset(question, answer)) return [];
     // A selection of an option the question no longer offers (a draft from an older panel) would be refused on send.
     const offered = new Set(question.options.map((option) => option.value));
     return [[id, { ...answer, values: answer.values.filter((value) => offered.has(value)) }]];
   });
-  return { ...presetAnswers(questions), ...Object.fromEntries(kept) };
+  return Object.fromEntries(kept);
 }
 
 /**
- * A question with no draft starts with its recommended options selected (the first one if single choice), a typed one
- * on its default (a switch without one on off); any draft, even a cleared one, wins.
+ * Whether a draft saved under the old key holds just what that panel preselected: the recommended options (the first if
+ * single choice), a typed question's default, or a switch's off.
  */
-function presetAnswers(questions: readonly AskUserQuestion[]): AskDraftAnswers {
-  // Built with fromEntries: assigning `answers["__proto__"]` would set the prototype instead of an entry.
-  const answers: [string, AskDraftAnswer][] = [];
-  for (const question of questions) {
-    if ((question.kind ?? "choice") !== "choice") {
-      const preset = question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default);
-      if (preset !== undefined) answers.push([question.id, { values: [], value: preset, asked: askedFingerprint(question) }]);
-      continue;
-    }
-    const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
-    if (recommended.length > 0)
-      answers.push([question.id, { values: question.multiple === true ? recommended : recommended.slice(0, 1), asked: askedFingerprint(question) }]);
-  }
-  return Object.fromEntries(answers);
+function isLegacyPreset(question: AskUserQuestion, answer: AskDraftAnswer): boolean {
+  if (answer.otherText !== undefined) return false;
+  if ((question.kind ?? "choice") !== "choice")
+    return answer.value === (question.kind === "boolean" ? question.default === true : question.default === undefined ? undefined : String(question.default));
+  const recommended = question.options.filter((option) => option.recommended === true).map((option) => option.value);
+  const preset = question.multiple === true ? recommended : recommended.slice(0, 1);
+  return preset.length > 0 && answer.values.length === preset.length && preset.every((value) => answer.values.includes(value));
 }
 
 export function saveAskDraft(sessionId: string, askId: string, answers: AskDraftAnswers, storage = browserStorage()): void {
   try {
-    // An answer the user cleared keeps its entry (it has `asked`), so recommendations do not come back over it.
-    const entries = Object.entries(answers).filter(
-      ([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined || answer.asked !== undefined,
-    );
-    if (entries.length === 0) storage?.removeItem(draftStorageKey(sessionId, askId));
-    else storage?.setItem(draftStorageKey(sessionId, askId), JSON.stringify(Object.fromEntries(entries)));
+    const entries = Object.entries(answers).filter(([, answer]) => answer.values.length > 0 || (answer.otherText ?? "") !== "" || answer.value !== undefined);
+    storage?.removeItem(draftStorageKey(sessionId, askId));
+    if (entries.length === 0) storage?.removeItem(answersStorageKey(sessionId, askId));
+    else storage?.setItem(answersStorageKey(sessionId, askId), JSON.stringify(Object.fromEntries(entries)));
   } catch {
     // Ignore localStorage quota/privacy errors.
   }
@@ -167,6 +170,7 @@ export function rebaseAskContext(sessionId: string, askId: string, sent: string,
 export function clearAskDraft(sessionId: string, askId: string, storage = browserStorage()): void {
   try {
     storage?.removeItem(draftStorageKey(sessionId, askId));
+    storage?.removeItem(answersStorageKey(sessionId, askId));
     storage?.removeItem(`${draftStorageKey(sessionId, askId)}:note`);
     storage?.removeItem(`${draftStorageKey(sessionId, askId)}:context`);
   } catch {

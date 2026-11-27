@@ -858,7 +858,7 @@ describe("ask outcome rendering", () => {
     );
   });
 
-  it("tells the model when the user left the recommended options as they were", () => {
+  it("reports a pick of the recommended options as a plain answer: nothing was preselected", () => {
     const store = testStore();
     const recommended = {
       options: [
@@ -879,11 +879,12 @@ describe("ask outcome rendering", () => {
     if (result.status !== "closed") throw new Error("expected the ask to close");
 
     const text = renderAskUserAnswersText(result.outcome);
-    expect(text).toContain("  Answered: selected a; selected b (recommended, unchanged)\n");
+    expect(text).toContain("  Answered: selected a; selected b\n");
     expect(text).toContain("  Answered: selected a\n");
+    expect(text).not.toContain("unchanged");
   });
 
-  it("records typed answers as values, marks a default left unchanged, and rejects values that do not fit", () => {
+  it("records typed answers as values, reports an answer equal to the default as plain, and rejects values that do not fit", () => {
     const store = testStore();
     const typed = (id: string, kind: NonNullable<AskUserQuestion["kind"]>, extra: Partial<AskUserQuestion> = {}) =>
       question(id, { options: [], kind, ...extra });
@@ -926,11 +927,11 @@ describe("ask outcome rendering", () => {
       [false, undefined],
     ]);
     const text = renderAskUserAnswersText(result.outcome);
-    expect(text).toContain("- ask.on: Question on?\n  Answered: no (default, unchanged)\n");
+    expect(text).toContain("- ask.on: Question on?\n  Answered: no\n");
     expect(text).toContain("- ask.off: Question off?\n  Answered: no\n");
-    expect(text).toContain("  Answered: 7 (default, unchanged)\n");
+    expect(text).toContain("  Answered: 7\n");
     expect(text).toContain('  Answered: "  hi "\n');
-    expect(text).toContain("  Answered: 2026-12-01 (default, unchanged)\n");
+    expect(text).toContain("  Answered: 2026-12-01\n");
   });
 
   it("answers a boolean question with the agent's labels, quoted, or plain yes and no", () => {
@@ -955,9 +956,9 @@ describe("ask outcome rendering", () => {
     });
     if (result.status !== "closed") throw new Error("expected the ask to close");
     const text = renderAskUserAnswersText(result.outcome);
-    expect(text).toContain('- ask.ship: Question ship?\n  Answered: "Ship it" (default, unchanged)\n');
-    expect(text).toContain('- ask.hold: Question hold?\n  Answered: "Hold" (default, unchanged)\n');
-    expect(text).toContain("- ask.plain: Question plain?\n  Answered: yes (default, unchanged)\n");
+    expect(text).toContain('- ask.ship: Question ship?\n  Answered: "Ship it"\n');
+    expect(text).toContain('- ask.hold: Question hold?\n  Answered: "Hold"\n');
+    expect(text).toContain("- ask.plain: Question plain?\n  Answered: yes\n");
   });
 
   it("takes a yes/no answered in words as its Custom answer, checked like a choice's, and the switch when the words are blank", () => {
@@ -991,7 +992,7 @@ describe("ask outcome rendering", () => {
     expect(text).toContain("- ask.blank: Question blank?\n  Answered: yes\n");
   });
 
-  it("keeps typed text verbatim, so a padded Markdown default opens, passes its minimum and reads as unchanged; blank is no answer and no default", () => {
+  it("keeps typed text verbatim, so a padded Markdown default opens, passes its minimum and reads as typed; blank is no answer and no default", () => {
     const store = testStore();
     const ask = store.open({
       sessionId,
@@ -1010,7 +1011,7 @@ describe("ask outcome rendering", () => {
     const result = store.submit(sessionId, again.askId, { revision: again.revision, answers: [{ id: "code", values: [], value: "  code" }] });
     if (result.status !== "closed") throw new Error("expected closed");
     expect(result.outcome.questions[0]?.value).toBe("  code");
-    expect(renderAskUserAnswersText(result.outcome)).toContain('  Answered: "  code" (default, unchanged)\n');
+    expect(renderAskUserAnswersText(result.outcome)).toContain('  Answered: "  code"\n');
     expect(() => store.open({ sessionId, context, questions: [question("t", { options: [], kind: "text", default: "  " })] })).toThrow(
       "default of question t must not be blank",
     );
