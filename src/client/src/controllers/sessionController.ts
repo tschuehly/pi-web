@@ -2466,7 +2466,7 @@ export class SessionController {
   }
 
   private queueStatusUpdate(status: SessionStatus): void {
-    this.pendingStatusBySession.set(status.sessionId, status);
+    this.pendingStatusBySession.set(status.sessionId, withNewerWorkingMode(this.pendingStatusBySession.get(status.sessionId), status));
     this.schedulePendingFlush();
   }
 
@@ -2603,8 +2603,8 @@ export class SessionController {
   // Apply buffered transcript deltas, activity, and status in one task. Activity
   // is applied before status to mirror the server's publish order, so an idle
   // status can clear the now-stale active activity it supersedes. Status and
-  // activity are last-write-wins per session, so iterating the maps applies only
-  // the latest buffered value per session. These writes run in a single task, so
+  // activity are last-write-wins per session (except an older Working Mode, see
+  // `queueStatusUpdate`), so iterating the maps applies only the latest buffered value per session. These writes run in a single task, so
   // Lit batches them into one render.
   flushPendingUpdates(): void {
     if (this.pendingTranscriptEvents.length > 0) {
