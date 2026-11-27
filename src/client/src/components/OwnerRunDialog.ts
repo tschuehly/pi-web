@@ -38,7 +38,7 @@ export class OwnerRunDialog extends LitElement {
           ${this.error === "" ? null : html`<p class="dialog-error" role="status">${this.error}</p>`}
         </div>
         <footer>
-          <button class="cancel" @click=${() => { this.close(); }}>Cancel</button>
+          <button class="cancel" ?disabled=${this.sending} @click=${() => { this.close(); }}>Cancel</button>
           <button class="danger run" ?disabled=${this.sending} @click=${() => { void this.run(); }}>${terminal ? "Open in Terminal" : "Run once"}</button>
         </footer>
       </modal-surface>
@@ -73,7 +73,7 @@ export class OwnerRunDialog extends LitElement {
     h1, p { margin: 0; }
     h1 { font-size: 16px; line-height: 1.2; }
     .meta { color: var(--pi-muted); overflow-wrap: anywhere; }
-    .meta code { color: var(--pi-text); }
+    .meta code { color: var(--pi-text); white-space: pre-wrap; }
     code, .command { font-family: var(--pi-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace); }
     .command { margin: 0; max-height: 40vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--pi-border); border-radius: 10px; background: var(--pi-bg); padding: 8px 12px; }
     .warning, .dialog-error { border: 1px solid var(--pi-border); border-radius: 10px; padding: 8px 12px; }
