@@ -18,7 +18,8 @@ const INFO = /^pi-run(?: (terminal))? cwd="([^"\\]*)"$/u;
 // U+2060…), line/paragraph separators, and lone UTF-16 surrogates (UTF-8 runs them as U+FFFD): anything that makes the
 // shown text differ from what runs.
 const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}\p{Default_Ignorable_Code_Point}]/u;
-const unsafe = (text: string) => UNSAFE.test(text.replace(/[\t\n]/gu, ""));
+// Surrogates first, on the text as given: removing a tab or newline could pair two lone halves.
+const unsafe = (text: string) => /\p{Cs}/u.test(text) || UNSAFE.test(text.replace(/[\t\n]/gu, ""));
 
 /** Whether a code block's info string asks for a run button at all (valid or not). */
 export function isOwnerRunInfo(info: string | undefined): boolean {

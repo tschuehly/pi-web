@@ -46,4 +46,10 @@ describe("ownerRunProposals", () => {
     expect(ownerRunProposals('```pi-run cwd="/x"\necho \ud800\n```\n')).toEqual([]);
     expect(ownerRunProposal('pi-run cwd="/x"', "echo \ud83d\ude00")).toEqual({ mode: "run", cwd: "/x", command: "echo \ud83d\ude00" });
   });
+
+  it("refuses lone surrogates a tab or newline separates, which would pair up once those are set aside", () => {
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo \ud83d\t\ude00")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo \ud83d\n\ude00")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x\ud83d\t\ude00"', "echo")).toHaveProperty("error");
+  });
 });
