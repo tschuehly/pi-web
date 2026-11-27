@@ -75,7 +75,7 @@ export class InstallLatestDialog extends LitElement {
 
   private async install(): Promise<void> {
     const preview = this.preview;
-    if (preview === undefined || preview.upToDate || this.phase !== "review") return;
+    if (preview === undefined || preview.upToDate || preview.blocked !== undefined || this.phase !== "review") return;
     this.phase = "sending";
     this.message = "";
     try {
