@@ -39,11 +39,13 @@ function markdownRenderer(codeBlocks: CodeBlockPolicy, runnable?: readonly Owner
  */
 function ownerRunBlock(info: string, text: string, runnable: readonly OwnerRunProposal[]): string {
   const proposal = ownerRunProposal(info, text);
+  // Its place among the text's runnable blocks, which a question set's run names (OwnerRunAskSource.block).
+  const block = "error" in proposal ? -1 : runnable.findIndex((candidate) => sameOwnerRun(candidate, proposal));
   const control =
     "error" in proposal
       ? `<span class="owner-run-invalid">Not runnable: ${escapeHtml(proposal.error)}</span>`
-      : runnable.some((candidate) => sameOwnerRun(candidate, proposal))
-        ? `<button type="button" class="owner-run-button ui-button ui-button--compact" data-owner-run="${escapeHtml(JSON.stringify(proposal)).replaceAll('"', "&quot;")}">${proposal.mode === "terminal" ? "Review for Terminal…" : "Review command…"}</button>`
+      : block >= 0
+        ? `<button type="button" class="owner-run-button ui-button ui-button--compact" data-owner-run="${escapeHtml(JSON.stringify(proposal)).replaceAll('"', "&quot;")}" data-owner-run-block="${String(block)}">${proposal.mode === "terminal" ? "Review for Terminal…" : "Review command…"}</button>`
         : '<span class="owner-run-invalid">Not runnable: only a closed top-level block runs</span>';
   const label = `<span class="code-block-label">${"mode" in proposal && proposal.mode === "terminal" ? "pi-run terminal" : "pi-run"}</span>`;
   return `<div class="code-block-wrapper code-block-frame owner-run-block"><div class="code-block-header" role="group" aria-label="Proposed command">${label}${control}</div><pre><code>${escapeHtml(text)}\n</code></pre></div>\n`;

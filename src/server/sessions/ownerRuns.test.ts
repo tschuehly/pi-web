@@ -69,41 +69,31 @@ describe("openAskOwnerRun", () => {
   ];
   const posted = asked("c1", { context: block("/x", "pwd"), questions: [] });
 
+  /** The set's context (no questionId) or question `q1`'s detail, at block 0 unless named, at revision r1. */
+  const at = (extra: { askId?: string; revision?: string; questionId?: string; block?: number } = {}) => ({ askId: "ask-1", revision: "r1", block: 0, ...extra });
+  const q1 = at({ questionId: "q1" });
+
   it("returns a proposal the agent wrote in the open set's context or a question's detail", () => {
-    expect(openAskOwnerRun([ask()], posted, { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/x", command: "pwd" })).toEqual({
-      mode: "run",
-      cwd: "/x",
-      command: "pwd",
-    });
-    expect(openAskOwnerRun([ask()], [], { askId: "ask-1", revision: "r1" }, { mode: "terminal", cwd: "/x", command: "ls" })).toEqual({
-      mode: "terminal",
-      cwd: "/x",
-      command: "ls",
-    });
+    expect(openAskOwnerRun([ask()], posted, at(), { mode: "run", cwd: "/x", command: "pwd" }, true)).toEqual({ mode: "run", cwd: "/x", command: "pwd" });
+    expect(openAskOwnerRun([ask()], [], q1, { mode: "terminal", cwd: "/x", command: "ls" }, true)).toEqual({ mode: "terminal", cwd: "/x", command: "ls" });
   });
 
   it("refuses another command, another set, and a context the user's edit supplied", () => {
-    expect(() => openAskOwnerRun([ask()], posted, { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/x", command: "rm -rf ~" })).toThrow(
-      "not a pi-run block the agent wrote",
+    expect(() => openAskOwnerRun([ask()], posted, at(), { mode: "run", cwd: "/x", command: "rm -rf ~" }, true)).toThrow("not a pi-run block the agent wrote");
+    expect(() => openAskOwnerRun([ask()], posted, at({ askId: "ask-2" }), { mode: "run", cwd: "/x", command: "pwd" }, true)).toThrow("No open question set");
+    expect(() => openAskOwnerRun([ask()], posted, at({ revision: "r0", questionId: "q1" }), { mode: "terminal", cwd: "/x", command: "ls" }, true)).toThrow(
+      "changed since",
     );
-    expect(() => openAskOwnerRun([ask()], posted, { askId: "ask-2", revision: "r1" }, { mode: "run", cwd: "/x", command: "pwd" })).toThrow(
-      "No open question set",
-    );
-    expect(() => openAskOwnerRun([ask()], posted, { askId: "ask-1", revision: "r0" }, { mode: "terminal", cwd: "/x", command: "ls" })).toThrow("changed since");
-    expect(() =>
-      openAskOwnerRun([ask({ contextEdited: true })], posted, { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/x", command: "pwd" }),
-    ).toThrow("not a pi-run block");
+    expect(() => openAskOwnerRun([ask({ contextEdited: true })], posted, at(), { mode: "run", cwd: "/x", command: "pwd" }, true)).toThrow("agent wrote");
   });
 
   it("runs a context block only when the host's transcript shows the agent wrote it: an older host's unflagged edit or a missing record fails closed", () => {
     const edited = ask({ context: block("/x", "echo owner-edited", " terminal") });
     const wanted = { mode: "terminal", cwd: "/x", command: "echo owner-edited" };
     // An older host saved the partial send's edit as the context without contextEdited.
-    expect(() => openAskOwnerRun([edited], posted, { askId: "ask-1", revision: "r1" }, wanted)).toThrow("not a pi-run block the agent wrote");
+    expect(() => openAskOwnerRun([edited], posted, at(), wanted, true)).toThrow("agent wrote");
     // A set persisted without its posting call in the transcript (no provenance) does not run its context.
-    expect(() => openAskOwnerRun([ask()], [], { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/x", command: "pwd" })).toThrow(
-      "not a pi-run block the agent wrote",
-    );
+    expect(() => openAskOwnerRun([ask()], [], at(), { mode: "run", cwd: "/x", command: "pwd" }, true)).toThrow("agent wrote");
     // A revision that only confirms the set (no context) leaves the agent's last context in force; a failed call counts for nothing.
     const revised = [
       ...posted,
@@ -114,29 +104,42 @@ describe("openAskOwnerRun", () => {
       },
       { role: "toolResult", toolCallId: "c3", toolName: "ask_user", isError: true, content: [] },
     ];
-    expect(() => openAskOwnerRun([edited], revised, { askId: "ask-1", revision: "r1" }, wanted)).toThrow("not a pi-run block the agent wrote");
-    expect(openAskOwnerRun([ask()], revised, { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/x", command: "pwd" })).toEqual({
-      mode: "run",
-      cwd: "/x",
-      command: "pwd",
-    });
+    expect(() => openAskOwnerRun([edited], revised, at(), wanted, true)).toThrow("agent wrote");
+    expect(openAskOwnerRun([ask()], revised, at(), { mode: "run", cwd: "/x", command: "pwd" }, true)).toEqual({ mode: "run", cwd: "/x", command: "pwd" });
     // The agent's own revision to that block makes it runnable; another set's call does not.
-    expect(
-      openAskOwnerRun(
-        [edited],
-        [...posted, ...asked("c4", { update: "ask-1", context: block("/x", "echo owner-edited", " terminal") })],
-        { askId: "ask-1", revision: "r1" },
-        wanted,
-      ),
-    ).toEqual(wanted);
+    expect(openAskOwnerRun([edited], [...posted, ...asked("c4", { update: "ask-1", context: block("/x", "echo owner-edited", " terminal") })], at(), wanted, true)).toEqual(
+      wanted,
+    );
     expect(() =>
-      openAskOwnerRun(
-        [edited],
-        [...posted, ...asked("c5", { context: block("/x", "echo owner-edited", " terminal") }, "ask-9")],
-        { askId: "ask-1", revision: "r1" },
-        wanted,
-      ),
-    ).toThrow("not a pi-run block");
+      openAskOwnerRun([edited], [...posted, ...asked("c5", { context: block("/x", "echo owner-edited", " terminal") }, "ask-9")], at(), wanted, true),
+    ).toThrow("agent wrote");
+  });
+
+  it("a copy of the agent's block the user added to the context runs from neither place: the context must be the agent's text whole", () => {
+    // An older host stored the partial send's edit: the agent's block, then the user's copy of it.
+    const copied = ask({ context: `${block("/x", "pwd")}\n${block("/x", "pwd")}` });
+    const wanted = { mode: "run", cwd: "/x", command: "pwd" };
+    expect(() => openAskOwnerRun([copied], posted, at({ block: 1 }), wanted, true)).toThrow("agent wrote");
+    expect(() => openAskOwnerRun([copied], posted, at(), wanted, true)).toThrow("agent wrote");
+  });
+
+  it("binds the request to the field and block it names: a matching detail never authorizes a context run, nor another block", () => {
+    const command = { mode: "terminal", cwd: "/x", command: "ls" };
+    // The user's unflagged edit copied the detail's command into the context.
+    const edited = ask({ context: block("/x", "ls", " terminal") });
+    expect(() => openAskOwnerRun([edited], posted, at(), command, true)).toThrow("agent wrote");
+    expect(openAskOwnerRun([edited], posted, q1, command, true)).toEqual(command);
+    // Block 1 of q1's detail does not exist; another question does not exist.
+    expect(() => openAskOwnerRun([ask()], [], at({ questionId: "q1", block: 1 }), command, true)).toThrow("not a pi-run block the agent wrote");
+    expect(() => openAskOwnerRun([ask()], [], at({ questionId: "q2" }), command, true)).toThrow("not a pi-run block the agent wrote");
+    const two = ask({ questions: [{ id: "q1", question: "Run?", detail: `${block("/x", "pwd")}\n${block("/x", "ls", " terminal")}`, options: [] }] });
+    expect(() => openAskOwnerRun([two], [], q1, command, true)).toThrow("not a pi-run block the agent wrote");
+    expect(openAskOwnerRun([two], [], at({ questionId: "q1", block: 1 }), command, true)).toEqual(command);
+  });
+
+  it("without a host that records who wrote the context, its blocks never run; question details still do", () => {
+    expect(() => openAskOwnerRun([ask()], posted, at(), { mode: "run", cwd: "/x", command: "pwd" }, false)).toThrow("agent wrote");
+    expect(openAskOwnerRun([ask()], posted, q1, { mode: "terminal", cwd: "/x", command: "ls" }, false)).toEqual({ mode: "terminal", cwd: "/x", command: "ls" });
   });
 });
 

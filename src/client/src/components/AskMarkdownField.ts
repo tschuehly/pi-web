@@ -9,7 +9,7 @@ import { foldMediaMarkup, revealFoldedMedia } from "../formatting/foldedMedia";
 import { FormattedText, openChatFileLink } from "./FormattedText";
 import type { OwnerRunTarget } from "./OwnerRunDialog";
 import { ownerRunProposals, sameOwnerRun } from "../../../shared/ownerRun";
-import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages, resetEditHistory } from "./workbenchFilesEditor";
+import { editHistory, filesHighlighting, livePreview, markdownWithCodeLanguages, refreshFences, resetEditHistory } from "./workbenchFilesEditor";
 
 /**
  * A multi-line answer of the ask card in the Files pane's Markdown editor (live preview, highlighting, undo).
@@ -40,10 +40,32 @@ export class AskMarkdownField extends ElementBase {
   renderFences = false;
   /** The Chat's content renderers (Mermaid) for those blocks. */
   contentRendering: ChatContentRendering | undefined;
-  /** With `renderFences`, a ```pi-run block also draws as the Chat does, its Review button only for a block of `runnableText`; read when the field connects. */
-  ownerRun: OwnerRunTarget | undefined;
-  /** The agent's own text: a pi-run block runs only as the agent wrote it there, so an edited command shows no button. */
-  runnableText: string | undefined;
+  #ownerRun: OwnerRunTarget | undefined;
+  #runnableText: string | undefined;
+
+  /**
+   * With `renderFences`, a ```pi-run block also draws as the Chat does (whether it does is read when the field connects),
+   * its Review button only for the block at the same place in `runnableText`. A change redraws the blocks, so a button
+   * never names an older revision of the set.
+   */
+  get ownerRun(): OwnerRunTarget | undefined {
+    return this.#ownerRun;
+  }
+  set ownerRun(target: OwnerRunTarget | undefined) {
+    if (JSON.stringify(target) === JSON.stringify(this.#ownerRun)) return;
+    this.#ownerRun = target;
+    this.#view?.dispatch({ effects: refreshFences.of(null) });
+  }
+
+  /** The agent's own text, or undefined when none may run: a block runs only as and where the agent wrote it, so an edited or copied one shows no button. */
+  get runnableText(): string | undefined {
+    return this.#runnableText;
+  }
+  set runnableText(text: string | undefined) {
+    if (text === this.#runnableText) return;
+    this.#runnableText = text;
+    this.#view?.dispatch({ effects: refreshFences.of(null) });
+  }
 
   get value(): string {
     return this.#view?.state.doc.toString() ?? this.#value;
@@ -130,7 +152,11 @@ export class AskMarkdownField extends ElementBase {
             if (context === undefined || !openChatFileLink(this, context, anchor)) window.open(anchor.href, "_blank", "noopener");
           },
           this.renderFences
-            ? { languages: this.ownerRun === undefined ? RENDERED_FENCE : RENDERED_OR_RUN_FENCE, render: (source) => this.#renderFence(source) }
+            ? {
+                languages: this.ownerRun === undefined ? RENDERED_FENCE : RENDERED_OR_RUN_FENCE,
+                render: (source, before) => this.#renderFence(source, before),
+                key: (source, before) => JSON.stringify(this.#fenceRun(source, before) ?? null),
+              }
             : undefined,
         ),
         // The textarea's maxlength: an edit that would pass the limit is refused.
@@ -175,16 +201,25 @@ export class AskMarkdownField extends ElementBase {
     view.dispatch({ selection: { anchor: view.state.doc.length } });
   }
 
-  #renderFence(source: string): HTMLElement {
+  #renderFence(source: string, before: string): HTMLElement {
     const view = new FormattedText();
     view.foldMedia = true;
     view.diffViews = true;
     view.contentRendering = this.contentRendering;
     view.workspaceContext = this.workspaceContext;
-    const [proposal] = ownerRunProposals(source);
-    if (proposal !== undefined && ownerRunProposals(this.runnableText ?? "").some((agent) => sameOwnerRun(agent, proposal))) view.ownerRun = this.ownerRun;
+    view.ownerRun = this.#fenceRun(source, before);
     view.text = source;
     return view;
+  }
+
+  /** The run of a drawn pi-run block: the agent's block at its place (the runnable blocks `before` it), or none. */
+  #fenceRun(source: string, before: string): OwnerRunTarget | undefined {
+    const target = this.#ownerRun;
+    const [proposal] = ownerRunProposals(source);
+    if (target === undefined || "entryId" in target || proposal === undefined || this.#runnableText === undefined) return undefined;
+    const block = ownerRunProposals(before).length;
+    const agent = ownerRunProposals(this.#runnableText)[block];
+    return agent !== undefined && sameOwnerRun(agent, proposal) ? { ...target, block } : undefined;
   }
 
   #foldSummary(event: Event): HTMLDetailsElement | undefined {

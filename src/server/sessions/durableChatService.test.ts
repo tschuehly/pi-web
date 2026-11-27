@@ -15,11 +15,27 @@ import {
   forkDurableHost,
 } from "./durableChatService.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
+import { openOwnerCommandInTerminal, OwnerRunNotStartedError } from "./ownerRuns.js";
 import { SessionNotificationStore } from "./sessionNotificationStore.js";
 import { WorkstreamLaunchStore } from "./workstreamLaunchStore.js";
 import { SESSION_TITLE_SYSTEM_PROMPT } from "./sessionNameGenerator.js";
 import type { DurableChatResourceSet, DurableContributedResources } from "./durableChatResources.js";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
+
+/** Runs while the owner-run claim file is written: after the owner's Allow, before the launch. */
+const claimWrite = vi.hoisted(() => {
+  const hook: { during?: (() => void) | undefined } = {};
+  return hook;
+});
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  const writeFile: typeof actual.writeFile = async (...args) => {
+    const [file] = args;
+    if (typeof file === "string" && file.includes("owner-runs")) claimWrite.during?.();
+    return actual.writeFile(...args);
+  };
+  return { ...actual, writeFile };
+});
 
 // The Terminal run button opens Terminal.app; these tests only see what happens after it opened.
 vi.mock("./ownerRuns.js", async (importOriginal) => ({
@@ -3057,8 +3073,8 @@ describe("the owner's run button", () => {
   }
   const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
   /** Open set ask-1 showing `context` on every host, whose transcript records the agent posting it with `agentContext`. */
-  const openAsk = (launched: FakeHost[], context: string, agentContext: string, revision = "r1") => {
-    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision, turnsSinceUpdate: 0, context, questions: [] }];
+  const openAsk = (launched: FakeHost[], context: string, agentContext: string, revision = "r1", questions: unknown[] = []) => {
+    const pendingAsks = [{ askId: "ask-1", askedAt: "", updatedAt: "", revision, turnsSinceUpdate: 0, context, questions }];
     const messages = [
       { entryId: "c", role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "ask_user", arguments: { context: agentContext } }] },
       { entryId: "r", role: "toolResult", toolCallId: "call-1", toolName: "ask_user", isError: false, content: [], details: { ask: { askId: "ask-1" } } },
@@ -3125,8 +3141,8 @@ describe("the owner's run button", () => {
     });
     const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
     openAsk(launched, context, context);
-    await expect(durable.ownerRun(ref, { askId: "ask-2", revision: "r1" }, proposal)).rejects.toThrow("No open question set");
-    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1" }, proposal)).resolves.toEqual({ status: "started" });
+    await expect(durable.ownerRun(ref, { askId: "ask-2", revision: "r1", block: 0 }, proposal)).rejects.toThrow("No open question set");
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal)).resolves.toEqual({ status: "started" });
     expect(asked).toHaveLength(1);
     expect(runs(launched)).toHaveLength(1);
   });
@@ -3143,8 +3159,8 @@ describe("the owner's run button", () => {
     const agent = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
     const edited = `\`\`\`pi-run terminal cwd="${cwd}"\necho owner-edited\n\`\`\`\n`;
     openAsk(launched, edited, agent);
-    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1" }, { mode: "terminal", cwd, command: "echo owner-edited" })).rejects.toThrow(
-      "not a pi-run block the agent wrote",
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, { mode: "terminal", cwd, command: "echo owner-edited" })).rejects.toThrow(
+      "agent wrote",
     );
     expect(asked).toEqual([]);
   });
@@ -3163,7 +3179,7 @@ describe("the owner's run button", () => {
       const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
       openAsk(launched, context, context);
       // The browser showed r0; the host is already at r1: refused before any dialog.
-      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r0" }, proposal)).rejects.toThrow("changed since");
+      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r0", block: 0 }, proposal)).rejects.toThrow("changed since");
       expect(asked).toEqual([]);
       hook.during = () => {
         if (change === "withdrawn") {
@@ -3172,7 +3188,7 @@ describe("the owner's run button", () => {
               request.method === "transcript" ? { messages: [], partial: null, status } : request.method === "status" ? status : null;
         } else openAsk(launched, context, context, "r2");
       };
-      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1" }, proposal)).rejects.toThrow(
+      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal)).rejects.toThrow(
         change === "withdrawn" ? "No open question set" : "changed since",
       );
       expect(asked).toHaveLength(1);
@@ -3201,19 +3217,89 @@ describe("the owner's run button", () => {
     expect(runs(launched)).toEqual([]);
   });
 
-  it("a launch the host refused can be confirmed again, under the same operation", async () => {
-    let refuse = true;
-    const { durable, launched, ref, proposal } = await proposing("true", {
+  it("a launch whose outcome is unknown (an error reply, a lost reply) keeps the run-once claim, across a restart too", async () => {
+    const { durable, launched, ref, proposal, restart } = await proposing("true", {
       launch: () => {
-        if (refuse) throw new Error("Working directory does not exist");
-        return { jobId: "job-1" };
+        throw new Error("Durable host exited (SIGKILL)");
       },
     });
-    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("Working directory does not exist");
-    refuse = false;
-    await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: "started" });
-    const [first, second] = runs(launched);
-    expect(second?.params?.["operationId"]).toBe(first?.params?.["operationId"]);
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("Durable host exited");
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("already ran");
+    await expect(restart().ownerRun(ref, "a1", proposal)).rejects.toThrow("already ran");
+    expect(runs(launched)).toHaveLength(1);
+  });
+
+  it("a Terminal launch keeps its claim unless the error proves nothing opened", async () => {
+    const opened = vi.mocked(openOwnerCommandInTerminal);
+    const { durable, ref, proposal } = await proposing("sudo true", { mode: "terminal" });
+    opened.mockRejectedValueOnce(new OwnerRunNotStartedError(new Error("spawn /usr/bin/open ENOENT")));
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("ENOENT");
+    // Nothing opened: it can be confirmed again. `open` failing after it started may have opened Terminal: kept.
+    opened.mockRejectedValueOnce(new Error("open exited with 1"));
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("open exited with 1");
+    await expect(durable.ownerRun(ref, "a1", proposal)).rejects.toThrow("already ran");
+  });
+
+  for (const mode of ["run", "terminal"] as const) {
+    it(`a set the agent withdraws while the ${mode} run's claim is written runs nothing: the set is read again just before the launch`, async () => {
+      const opened = vi.mocked(openOwnerCommandInTerminal);
+      opened.mockClear();
+      const { durable, launched, ref, proposal, cwd } = await proposing("pwd", { mode });
+      const context = `\`\`\`pi-run${mode === "terminal" ? " terminal" : ""} cwd="${cwd}"\npwd\n\`\`\`\n`;
+      openAsk(launched, context, context);
+      claimWrite.during = () => {
+        claimWrite.during = undefined;
+        for (const host of launched)
+          host.answer = (request) =>
+            request.method === "transcript" ? { messages: [], partial: null, status } : request.method === "status" ? status : null;
+      };
+      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal)).rejects.toThrow("No open question set");
+      expect(runs(launched)).toEqual([]);
+      expect(opened).not.toHaveBeenCalled();
+    });
+  }
+
+  it("the owner's own close of the set during the claim write is ordered against the launch: never a launch after the close", async () => {
+    const { durable, launched, ref, proposal, cwd } = await proposing("pwd");
+    const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
+    openAsk(launched, context, context);
+    let closing: Promise<unknown> | undefined;
+    claimWrite.during = () => {
+      claimWrite.during = undefined;
+      closing = durable.cancelAsk(ref, "ask-1", "op-cancel");
+      for (const host of launched) {
+        const previous = host.answer;
+        // The host closes the set when it receives closeAsk.
+        host.answer = (request) => {
+          if (request.method !== "closeAsk") return previous(request);
+          host.answer = (next) =>
+            next.method === "transcript" ? { messages: [], partial: null, status } : next.method === "status" ? status : previous(next);
+          return { result: "closed", outcome: request.params?.["outcome"] };
+        };
+      }
+    };
+    const result = await durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, proposal).catch((error: unknown) => error);
+    await closing;
+    const order = launched.flatMap((host) => host.requests.map((request) => request.method)).filter((method) => method === "ownerRun" || method === "closeAsk");
+    expect(order[0]).toBe(result instanceof Error ? "closeAsk" : "ownerRun");
+    expect(order).not.toEqual(["closeAsk", "ownerRun"]);
+  });
+
+  it("on a host that does not record who wrote the context, a context block never runs, even for Terminal; a question detail's does", async () => {
+    const asked: string[] = [];
+    const { durable, launched, ref, cwd } = await proposing("pwd", {
+      capabilities: [],
+      confirm: (text) => {
+        asked.push(text);
+        return Promise.resolve(true);
+      },
+    });
+    const agent = `\`\`\`pi-run terminal cwd="${cwd}"\nls\n\`\`\`\n`;
+    openAsk(launched, agent, agent, "r1", [{ id: "q1", question: "Run?", detail: agent, options: [] }]);
+    const wanted = { mode: "terminal", cwd, command: "ls" };
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", block: 0 }, wanted)).rejects.toThrow("agent wrote");
+    expect(asked).toEqual([]);
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1", questionId: "q1", block: 0 }, wanted)).resolves.toEqual({ status: "terminal opened" });
   });
 
   it("starts only after the owner allows a native dialog naming the exact folder and command", async () => {

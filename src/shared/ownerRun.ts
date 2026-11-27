@@ -11,6 +11,17 @@ export interface OwnerRunProposal {
   command: string;
 }
 
+/**
+ * A pi-run block the agent wrote in an open question set: the `block`-th runnable block ({@link ownerRunProposals}) of
+ * its context, or of question `questionId`'s detail, at the revision the browser showed.
+ */
+export interface OwnerRunAskSource {
+  askId: string;
+  revision: string;
+  questionId?: string;
+  block: number;
+}
+
 export const OWNER_RUN_MAX_COMMAND_BYTES = 8 * 1024;
 // Markdown unescapes backslashes in an info string, so the folder is quoted literally: no quote or backslash inside.
 const INFO = /^pi-run(?: (terminal))? cwd="([^"\\]*)"$/u;

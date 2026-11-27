@@ -96,6 +96,7 @@ import {
   committedOwnerRun,
   openOwnerCommandInTerminal,
   OwnerRunNotConfirmedError,
+  OwnerRunNotStartedError,
   openAskOwnerRun,
   ownerRunConfirmText,
   ownerRunFolder,
@@ -470,6 +471,8 @@ export class DurableChatService {
    */
   readonly #ownerRuns = new Set<string>();
   readonly #ownerRunCancels = new Map<string, Set<AbortController>>();
+  /** Per Chat, the tail of its ask closes and owner-run launches (`#serializeAsk`). */
+  readonly #askChanges = new Map<string, Promise<void>>();
 
   constructor(
     private readonly deps: {
@@ -941,7 +944,10 @@ export class DurableChatService {
     // Read from one host snapshot: the transcript and the open sets of the same moment.
     const read = async () => {
       const { messages, status } = hostTranscript((await connection.request("transcript")).result);
-      return typeof source === "string" ? committedOwnerRun(messages, source, proposal) : openAskOwnerRun(status.pendingAsks ?? [], messages, source, proposal);
+      return typeof source === "string"
+        ? committedOwnerRun(messages, source, proposal)
+        : // A host with run buttons records who supplied a set's context (`contextEdited`); without it, no context block runs.
+          openAskOwnerRun(status.pendingAsks ?? [], messages, source, proposal, connection.capabilities.includes("owner-run"));
     };
     const run = await read();
     const entryId = typeof source === "string" ? source : `ask:${source.askId}`;
@@ -966,8 +972,6 @@ export class DurableChatService {
         : new OwnerRunNotConfirmedError(403, "not confirmed: the macOS dialog was not answered with Allow");
     }
     try {
-      // A set withdrawn or revised while the dialog was open fails closed: the Allow was for the set as it was shown.
-      if (typeof source !== "string") await read();
       // Claimed on disk before the launch, in both modes and apart from any branch: a restart never runs it again.
       await mkdir(dirname(claim), { recursive: true, mode: 0o700 });
       await writeFile(claim, `${key}\n`, { flag: "wx", mode: 0o600 }).catch((error: unknown) => {
@@ -977,58 +981,77 @@ export class DurableChatService {
       this.#ownerRuns.delete(key);
       throw error;
     }
+    // Only a failure that proves nothing started frees the claim; an unknown outcome (a lost reply) keeps it run.
     const unclaim = async () => {
       this.#ownerRuns.delete(key);
       await rm(claim, { force: true });
     };
-    if (run.mode === "run") {
-      // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.
-      const operationId = `owner-run:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
-      try {
+    // Admitted in order with this Chat's ask closes: no close of the owner's lands between the last check and the launch.
+    return this.#serializeAsk(ref.id, async () => {
+      // A set withdrawn, revised or closed since it was shown (the dialog, the claim) fails closed: Allow was for the set as shown.
+      // shortcut: an agent's revision on the host can still land in the one host round trip between this read and the launch; closing that needs the host to check the revision as it admits ownerRun.
+      if (typeof source !== "string")
+        await read().catch(async (error: unknown) => {
+          await unclaim();
+          throw error;
+        });
+      if (run.mode === "run") {
+        // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.
+        const operationId = `owner-run:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
         await connection.request("ownerRun", { operationId, command: ownerRunScript(run), cwd: run.cwd });
+        return { status: "started" as const };
+      }
+      // Stopping the Chat drops the Terminal notice, so a late one never reopens an ended Chat (its jobs end with the host).
+      const cancel = new AbortController();
+      const running = this.#ownerRunCancels.get(ref.id) ?? new Set<AbortController>();
+      this.#ownerRunCancels.set(ref.id, running.add(cancel));
+      // Each run its own result: a run allowed again after a daemon restart is a new input, not a replay of the first.
+      const operationId = `owner-run:${randomUUID()}`;
+      const deliver = async (result: OwnerRunResult) => {
+        running.delete(cancel);
+        if (cancel.signal.aborted) return;
+        const host = await this.#for(ref);
+        // Through the host's redactor, as `!` output is; output it cannot redact is withheld.
+        const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(
+          ({ result: text }) => (typeof text === "string" ? text : undefined),
+          () => undefined,
+        );
+        const text =
+          redacted
+          ?? ownerRunResultText(run, {
+            status: result.status,
+            ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+            error: "output withheld: the host could not redact it",
+          });
+        // shortcut: a result the host refuses is only logged (the command does not run again); keep it for a retry if that happens.
+        // `machine`: not the owner's message, so it leaves an open attention request open (an older host ignores it and clears it).
+        await host.request("prompt", { operationId, text, mode: "followUp", machine: true });
+      };
+      const failed = (error: unknown) => {
+        this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered");
+      };
+      try {
+        void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
       } catch (error) {
-        await unclaim();
+        running.delete(cancel);
+        if (error instanceof OwnerRunNotStartedError) await unclaim();
         throw error;
       }
-      return { status: "started" };
-    }
-    // Stopping the Chat drops the Terminal notice, so a late one never reopens an ended Chat (its jobs end with the host).
-    const cancel = new AbortController();
-    const running = this.#ownerRunCancels.get(ref.id) ?? new Set<AbortController>();
-    this.#ownerRunCancels.set(ref.id, running.add(cancel));
-    // Each run its own result: a run allowed again after a daemon restart is a new input, not a replay of the first.
-    const operationId = `owner-run:${randomUUID()}`;
-    const deliver = async (result: OwnerRunResult) => {
-      running.delete(cancel);
-      if (cancel.signal.aborted) return;
-      const host = await this.#for(ref);
-      // Through the host's redactor, as `!` output is; output it cannot redact is withheld.
-      const redacted = await host.request("redact", { text: ownerRunResultText(run, result) }).then(
-        ({ result: text }) => (typeof text === "string" ? text : undefined),
+      return { status: "terminal opened" as const };
+    });
+  }
+
+  /** Run `change` after this Chat's earlier ask closes and owner-run launches, so a launch's last check and its launch never straddle a close. */
+  #serializeAsk<T>(sessionId: string, change: () => Promise<T>): Promise<T> {
+    const run = (this.#askChanges.get(sessionId) ?? Promise.resolve()).then(change);
+    this.#askChanges.set(
+      sessionId,
+      run.then(
         () => undefined,
-      );
-      const text =
-        redacted
-        ?? ownerRunResultText(run, {
-          status: result.status,
-          ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
-          error: "output withheld: the host could not redact it",
-        });
-      // shortcut: a result the host refuses is only logged (the command does not run again); keep it for a retry if that happens.
-      // `machine`: not the owner's message, so it leaves an open attention request open (an older host ignores it and clears it).
-      await host.request("prompt", { operationId, text, mode: "followUp", machine: true });
-    };
-    const failed = (error: unknown) => {
-      this.deps.logger?.warn({ sessionId: ref.id, err: error }, "Owner run result was not delivered");
-    };
-    try {
-      void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
-    } catch (error) {
-      running.delete(cancel);
-      await unclaim();
-      throw error;
-    }
-    return { status: "terminal opened" };
+        () => undefined,
+      ),
+    );
+    return run;
   }
 
   async availableThinkingLevels(ref: SessionRouteRef): Promise<ClientThinkingLevel[]> {
@@ -1473,22 +1496,26 @@ export class DurableChatService {
         true,
       )
     ).map((entry) => entry.image);
-    const asks = (await this.status(ref)).pendingAsks ?? [];
-    const store = new PendingAskStore();
-    store.restore(ref.id, asks);
-    const closed = close(store, ref.id);
-    // A set the host no longer has open may be this operation's own earlier close: the host answers that retry.
-    const outcome = closed.status === "closed" ? closed.outcome : undefined;
-    // The store's sets after this close, as a legacy Chat reminds: a partial send leaves its set open with the rest.
-    const content = outcome === undefined ? "" : renderAskUserFollowUp(outcome, store.pendingAsks(ref.id));
-    const { result } = await connection.request("closeAsk", {
-      askId,
-      operationId: operationId ?? randomUUID(),
-      content,
-      ...(outcome === undefined || images.length === 0 ? {} : { images }),
-      outcome: outcome ?? { askId, reason: "stale" },
-      ...(revision === undefined ? {} : { revision }),
-      ...(outcome === undefined ? { revision: "stale" } : {}),
+    // In order with this Chat's owner-run launches, which check the set just before they launch.
+    const { asks, result } = await this.#serializeAsk(ref.id, async () => {
+      const asks = (await this.status(ref)).pendingAsks ?? [];
+      const store = new PendingAskStore();
+      store.restore(ref.id, asks);
+      const closed = close(store, ref.id);
+      // A set the host no longer has open may be this operation's own earlier close: the host answers that retry.
+      const outcome = closed.status === "closed" ? closed.outcome : undefined;
+      // The store's sets after this close, as a legacy Chat reminds: a partial send leaves its set open with the rest.
+      const content = outcome === undefined ? "" : renderAskUserFollowUp(outcome, store.pendingAsks(ref.id));
+      const { result } = await connection.request("closeAsk", {
+        askId,
+        operationId: operationId ?? randomUUID(),
+        content,
+        ...(outcome === undefined || images.length === 0 ? {} : { images }),
+        outcome: outcome ?? { askId, reason: "stale" },
+        ...(revision === undefined ? {} : { revision }),
+        ...(outcome === undefined ? { revision: "stale" } : {}),
+      });
+      return { asks, result };
     });
     const sessionStatus = await this.status(ref);
     // The host's earlier partial-send records of the set (`earlier`, oldest first) make the browser's record whole.

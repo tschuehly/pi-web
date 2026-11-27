@@ -42,6 +42,7 @@ import type { SessionRouteRef, SessionRouteService } from "./sessionService.js";
 import { normalizeSessionCleanupRequest } from "./sessionCleanup.js";
 import { OperationReceipts } from "./operationReceipts.js";
 import { OwnerRunNotConfirmedError } from "./ownerRuns.js";
+import type { OwnerRunAskSource } from "../../shared/ownerRun.js";
 
 interface SessionQuery {
   cwd?: string;
@@ -672,15 +673,17 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
   );
 
   // The owner confirmed a pi-run block in the browser; the body names it, the Chat's transcript supplies what runs.
-  app.post<{ Params: { sessionId: string }; Body: { cwd?: unknown; entryId?: unknown; askId?: unknown; revision?: unknown; proposal?: unknown } | undefined }>(
+  app.post<{
+    Params: { sessionId: string };
+    Body: { cwd?: unknown; entryId?: unknown; askId?: unknown; revision?: unknown; questionId?: unknown; block?: unknown; proposal?: unknown } | undefined;
+  }>(
     `${prefix}/sessions/:sessionId/owner-runs`,
     async (request, reply) => {
       try {
         const body = optionalRecord(request.body);
         if (sessions.ownerRun === undefined) throw new Error("The run button works in Durable Chats only");
-        // A block of an assistant message (entryId) or of the agent's text in an open question set (askId).
-        const source =
-          body["askId"] === undefined ? requireString(body, "entryId") : { askId: requireString(body, "askId"), revision: requireString(body, "revision") };
+        // A block of an assistant message (entryId), or the `block`-th one of an open set's context or question `questionId`'s detail (askId).
+        const source = body["askId"] === undefined ? requireString(body, "entryId") : ownerRunAskSource(body);
         return await sessions.ownerRun(sessionRefFromBody(request.params.sessionId, body), source, body["proposal"]);
       } catch (error) {
         return reply.code(error instanceof OwnerRunNotConfirmedError ? error.statusCode : mutationErrorStatus(error)).send({ error: errorMessage(error) });
@@ -1059,6 +1062,17 @@ function requireString(record: Record<string, unknown>, field: string): string {
   const value = record[field];
   if (typeof value !== "string") throw new Error(`${field} field must be a string`);
   return value;
+}
+
+function ownerRunAskSource(body: Record<string, unknown>): OwnerRunAskSource {
+  const block = body["block"];
+  if (typeof block !== "number" || !Number.isSafeInteger(block) || block < 0) throw new Error("block field must be a non-negative integer");
+  return {
+    askId: requireString(body, "askId"),
+    revision: requireString(body, "revision"),
+    ...(body["questionId"] === undefined ? {} : { questionId: requireString(body, "questionId") }),
+    block,
+  };
 }
 
 function requireBoolean(record: Record<string, unknown>, field: string): boolean {

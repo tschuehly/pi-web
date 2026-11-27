@@ -34,6 +34,18 @@ const chips = new WorkbenchQuestionChips();
 chips.asks = [ask];
 chips.draftSessionId = "ask-fixture";
 chips.ownerRunSession = { session: { id: "fixture", cwd: "/work" }, machineId: "local" };
+// A host that records who wrote the context (owner-run), so the agent's context block gets its Review button.
+chips.status = {
+  sessionId: "fixture",
+  isStreaming: false,
+  isCompacting: false,
+  isBashRunning: false,
+  pendingMessageCount: 0,
+  queuedMessages: [],
+  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  cost: 0,
+  capabilities: ["owner-run"],
+};
 pane.append(chips);
 document.body.append(pane);
 await chips.updateComplete;

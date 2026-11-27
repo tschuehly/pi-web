@@ -2,11 +2,14 @@ import { stylesheetIntegrationCapability } from "../plugins/styles";
 import { LitElement, css, html, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { sessionsApi, type SessionRef } from "../api";
-import type { OwnerRunProposal } from "../../../shared/ownerRun";
+import type { OwnerRunAskSource, OwnerRunProposal } from "../../../shared/ownerRun";
 import "./ModalSurface";
 
-/** The committed assistant message a pi-run block belongs to, or the open question set whose agent-written text holds it. */
-export type OwnerRunTarget = { session: SessionRef; machineId: string } & ({ entryId: string } | { askId: string; revision: string });
+/**
+ * The committed assistant message a pi-run block belongs to, or the field of the open question set that holds it (its
+ * `block`, when not given, is the clicked block's place in the text the button's formatted text draws).
+ */
+export type OwnerRunTarget = { session: SessionRef; machineId: string } & ({ entryId: string } | (Omit<OwnerRunAskSource, "block"> & { block?: number }));
 
 /**
  * Confirms one pi-run proposal before it runs outside the write fence: the folder, the whole literal command and where
@@ -58,12 +61,8 @@ export class OwnerRunDialog extends LitElement {
     this.sending = true;
     this.error = "";
     try {
-      await sessionsApi.ownerRun(
-        target.session,
-        "entryId" in target ? target.entryId : { askId: target.askId, revision: target.revision },
-        proposal,
-        target.machineId,
-      );
+      const { session, machineId, ...source } = target;
+      await sessionsApi.ownerRun(session, "entryId" in source ? source.entryId : { ...source, block: source.block ?? 0 }, proposal, machineId);
       this.close();
     } catch (error) {
       this.sending = false;

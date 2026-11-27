@@ -312,7 +312,10 @@ export class FormattedText extends LitElement {
     if (ownerRun !== null && this.ownerRun !== undefined) {
       const data: unknown = JSON.parse(ownerRun.dataset["ownerRun"] ?? "null");
       const proposal = ownerRunFromJson(data);
-      if (!("error" in proposal)) openOwnerRunDialog(this.ownerRun, proposal);
+      const target = this.ownerRun;
+      // A question set's run names the block; a target that does not (a question's detail) takes its place in this text.
+      if (!("error" in proposal))
+        openOwnerRunDialog("askId" in target && target.block === undefined ? { ...target, block: Number(ownerRun.dataset["ownerRunBlock"]) } : target, proposal);
       return;
     }
     const reveal = event.target.closest(".file-reveal-button");

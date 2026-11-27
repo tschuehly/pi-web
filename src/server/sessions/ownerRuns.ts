@@ -3,7 +3,7 @@ import { mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PendingAskUser } from "../../shared/apiTypes.js";
-import { ownerRunFromJson, ownerRunProposals, sameOwnerRun, type OwnerRunProposal } from "../../shared/ownerRun.js";
+import { ownerRunFromJson, ownerRunProposals, sameOwnerRun, type OwnerRunAskSource, type OwnerRunProposal } from "../../shared/ownerRun.js";
 
 /**
  * The owner's run button: a pi-run block of a committed assistant message runs outside the write fence as the owner,
@@ -40,26 +40,31 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
 }
 
 /**
- * The proposal the browser names, as the agent wrote it in the open question set `askId`: a question's detail, or its
- * context when the host's transcript shows the agent wrote that block there. The context alone is not proof: a partial
- * send can replace it with the user's edit, which an older host stores without `contextEdited`.
+ * The proposal the browser names, as the agent wrote it at the field and block it names in the open question set
+ * `askId`: a question's detail (only the agent writes those), or the context. The context runs only with proof it is the
+ * agent's text whole: a host that tracks who supplied it (`contextProvenance`, the hosts with run buttons) does not mark
+ * it as the user's edit, and it equals the context of the agent's last ask_user call for the set in the transcript. A
+ * partial send can replace it with the user's edit, which an older host stores without `contextEdited`.
  */
 export function openAskOwnerRun(
   asks: readonly PendingAskUser[],
   messages: readonly unknown[],
-  { askId, revision }: { askId: string; revision: string },
+  { askId, revision, questionId, block }: OwnerRunAskSource,
   requested: unknown,
+  contextProvenance: boolean,
 ): OwnerRunProposal {
   const wanted = requestedProposal(requested);
   const ask = asks.find((candidate) => candidate.askId === askId);
   if (ask === undefined) throw new Error("No open question set with that id in this Chat");
   // The owner reviews the set as shown: a revision since (or during the dialog) may have changed what the block means.
   if (ask.revision !== revision) throw new Error("The question set changed since it was shown; review the command again");
-  const agentContext = ask.context === undefined || ask.contextEdited === true ? undefined : agentAskContext(messages, askId);
-  const inContext = (text: string | undefined) => text !== undefined && ownerRunProposals(text).some((proposal) => sameOwnerRun(proposal, wanted));
-  const found = (inContext(ask.context) && inContext(agentContext)) || ask.questions.some((question) => inContext(question.detail));
-  if (!found) throw new Error("That command is not a pi-run block the agent wrote in this question set");
-  return wanted;
+  let text: string | undefined;
+  if (questionId !== undefined) text = ask.questions.find((question) => question.id === questionId)?.detail;
+  else if (contextProvenance && ask.contextEdited !== true && ask.context !== undefined && ask.context === agentAskContext(messages, askId)) text = ask.context;
+  else throw new Error("The context's pi-run blocks run only while it is the text the agent wrote, on a host that records who wrote it");
+  const found = text === undefined ? undefined : ownerRunProposals(text)[block];
+  if (found === undefined || !sameOwnerRun(found, wanted)) throw new Error("That command is not a pi-run block the agent wrote in this question set");
+  return found;
 }
 
 /** The context the agent last gave set `askId` in a successful ask_user call (post or revision), from the transcript. */
@@ -97,6 +102,13 @@ export class OwnerRunNotConfirmedError extends Error {
   }
 }
 
+/** A launch that failed before anything could start (no Terminal opened): the only failure that frees its run-once claim. */
+export class OwnerRunNotStartedError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  }
+}
+
 export const MAX_OWNER_RUN_COMMAND_CHARS = 1500;
 
 /** The native dialog's question shows the complete folder and command without altering newlines. */
@@ -129,12 +141,19 @@ export function ownerRunScript(proposal: OwnerRunProposal): string {
   return `cd -P -- ${dir} && [ "$PWD" = ${dir} ] || { echo "pi-run: the folder changed after it was checked" >&2; exit 125; }\n${proposal.command}\n`;
 }
 
-/** A private single-use .command file opened in Terminal.app; it deletes itself first. Output and exit are not observed. */
+/**
+ * A private single-use .command file opened in Terminal.app; it deletes itself first. Output and exit are not observed.
+ * Fails with {@link OwnerRunNotStartedError} only when Terminal cannot have opened it (no file, `open` never started).
+ */
 export async function openOwnerCommandInTerminal(proposal: OwnerRunProposal, open: (file: string) => Promise<void> = openInTerminal): Promise<OwnerRunResult> {
-  const dir = await mkdtemp(join(tmpdir(), "pi-web-owner-run-"));
+  const dir = await mkdtemp(join(tmpdir(), "pi-web-owner-run-")).catch((error: unknown) => {
+    throw new OwnerRunNotStartedError(error);
+  });
   const file = join(dir, "run.command");
   try {
-    await writeFile(file, `#!/bin/bash\nrm -rf -- ${shellQuote(dir)}\n${ownerRunScript(proposal)}`, { mode: 0o700 });
+    await writeFile(file, `#!/bin/bash\nrm -rf -- ${shellQuote(dir)}\n${ownerRunScript(proposal)}`, { mode: 0o700 }).catch((error: unknown) => {
+      throw new OwnerRunNotStartedError(error);
+    });
     await open(file);
   } catch (error) {
     await rm(dir, { recursive: true, force: true });
@@ -146,7 +165,14 @@ export async function openOwnerCommandInTerminal(proposal: OwnerRunProposal, ope
 function openInTerminal(file: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn("/usr/bin/open", ["-b", "com.apple.Terminal", file], { stdio: "ignore" });
-    child.once("error", reject);
+    let started = false;
+    child.once("spawn", () => {
+      started = true;
+    });
+    // Before "spawn", `open` never ran; after it, a failure cannot prove Terminal did not open the file.
+    child.once("error", (error) => {
+      reject(started ? error : new OwnerRunNotStartedError(error));
+    });
     child.once("close", (code) => {
       if (code === 0) resolve();
       else reject(new Error(`open exited with ${String(code)}`));

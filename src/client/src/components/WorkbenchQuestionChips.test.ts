@@ -598,4 +598,15 @@ describe("WorkbenchQuestionChips", () => {
     await chips.updateComplete;
     expect(cards(chips)[0]?.imagesEnabled).toBe(true);
   });
+
+  it("lets the agent's context blocks run only on a host that reports owner-run, which records who wrote the context; a legacy Chat's never do", async () => {
+    const { chips } = await mount([ask("abc-1")], (each) => {
+      each.status = running;
+    });
+    await openWith(chips);
+    expect(cards(chips)[0]?.contextOwnerRuns).toBe(false);
+    chips.status = { ...running, capabilities: ["owner-run"] };
+    await chips.updateComplete;
+    expect(cards(chips)[0]?.contextOwnerRuns).toBe(true);
+  });
 });

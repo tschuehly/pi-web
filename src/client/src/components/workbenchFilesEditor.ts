@@ -146,19 +146,21 @@ const rendered = (kind: "tbl" | "img", source: string, render: (markdown: string
 class FenceWidget extends WidgetType {
   constructor(
     readonly source: string,
-    readonly renderFence: (source: string) => HTMLElement,
+    readonly before: string,
+    readonly renderFence: RenderFence,
+    readonly key = renderFence.key?.(source, before) ?? "",
   ) {
     super();
   }
   override eq(other: FenceWidget): boolean {
-    return other.source === this.source;
+    return other.source === this.source && other.key === this.key;
   }
   override ignoreEvent(): boolean {
     return true;
   }
   toDOM(view: EditorView): HTMLElement {
     const box = el("div", "lp-fence-block");
-    box.append(this.renderFence(this.source));
+    box.append(this.renderFence.render(this.source, this.before));
     box.addEventListener("mousedown", (event) => {
       if (event.composedPath().some((node) => node instanceof Element && node.matches("summary, a, button, input"))) return;
       event.preventDefault();
@@ -234,7 +236,7 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
             // lose, so the drawn block reads the command as the Chat and the server do.
             const line = doc.lineAt(from);
             const start = doc.sliceString(line.from, from).trim() === "" ? line.from : from;
-            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(start, to), renderFence.render), block: true }).range(start, to));
+            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(start, to), doc.sliceString(0, start), renderFence), block: true }).range(start, to));
             return false;
           }
           lines(from, to, "lp-code");
@@ -322,8 +324,14 @@ export const filesHighlighting = syntaxHighlighting(
 /** Fenced blocks whose opening line matches `languages` show as `render` draws them while the cursor is outside. */
 export interface RenderFence {
   languages: RegExp;
-  render: (source: string) => HTMLElement;
+  /** `before`: the document up to the block's line. */
+  render: (source: string, before: string) => HTMLElement;
+  /** What the drawing depends on besides its source; a block redraws when it changes, or on {@link refreshFences}. */
+  key?: (source: string, before: string) => string;
 }
+
+/** Recomputes the drawn blocks' keys: what they depend on outside the document changed. */
+export const refreshFences = StateEffect.define();
 
 /**
  * Obsidian-style live preview: markup hides unless the cursor is inside its element.
@@ -333,7 +341,12 @@ export function livePreview(render: (markdown: string) => string, open: (anchor:
   const field = StateField.define<DecorationSet>({
     create: (state) => buildPreview(state, render, renderFence),
     update: (value, tr) =>
-      tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) ? buildPreview(tr.state, render, renderFence) : value,
+      tr.docChanged
+      || tr.selection !== undefined
+      || syntaxTree(tr.state) !== syntaxTree(tr.startState)
+      || tr.effects.some((effect) => effect.is(refreshFences))
+        ? buildPreview(tr.state, render, renderFence)
+        : value,
     provide: (f) => EditorView.decorations.from(f),
   });
   const links = EditorView.domEventHandlers({

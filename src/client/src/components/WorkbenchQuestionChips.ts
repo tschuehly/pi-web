@@ -131,7 +131,7 @@ export class WorkbenchQuestionChips extends LitElement {
               this.asks,
               (ask) => ask.askId,
               (ask) =>
-                html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .ownerRunSession=${this.ownerRunSession} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`,
+                html`<ask-user-card flat data-ask=${ask.askId} .ask=${ask} .draftSessionId=${this.draftSessionId} .ownerRunSession=${this.ownerRunSession} .contextOwnerRuns=${this.status?.capabilities?.includes("owner-run") === true} .workspaceContext=${this.workspaceContext} .contentRendering=${this.contentRendering} .imagesEnabled=${this.status?.capabilities?.includes("ask-images") === true} .onSubmit=${this.onSubmit === undefined ? undefined : this.submit}>${single ? html`<span slot="title">${title}</span>${closeButton}` : nothing}</ask-user-card>`,
             )}
             ${repeat(
               this.sent,

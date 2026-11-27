@@ -41,6 +41,7 @@ import type {
   SessionTranscriptSnapshot,
 } from "../types.js";
 import type { NormalizedSessionCleanupRequest } from "./sessionCleanup.js";
+import type { OwnerRunAskSource } from "../../shared/ownerRun.js";
 import type { SessionMedia } from "./sessionMediaIndex.js";
 
 /** A Chat's `working-mode` status with its version: a reader keeps the value with the highest. */
@@ -49,8 +50,8 @@ export interface SessionWorkingMode {
   workingModeVersion: number;
 }
 
-/** Where a pi-run block was written: the assistant message's entryId, or the agent's text of an open question set at the revision the browser showed. */
-export type OwnerRunSource = string | { askId: string; revision: string };
+/** Where a pi-run block was written: the assistant message's entryId, or the field and block of an open question set at the revision the browser showed. */
+export type OwnerRunSource = string | OwnerRunAskSource;
 
 export type SessionRouteRef = ClientSessionRef;
 
