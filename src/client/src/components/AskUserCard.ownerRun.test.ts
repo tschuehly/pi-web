@@ -61,7 +61,7 @@ it("a question detail's pi-run block runs through the Chat's Review dialog, name
   expect(dialog?.renderRoot.querySelector(".command")?.textContent).toBe("ls");
   dialog?.renderRoot.querySelector<HTMLButtonElement>(".run")?.click();
   await vi.waitFor(() => {
-    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1" }, { mode: "run", cwd: "/work/repo", command: "ls" }, "local");
+    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/work/repo", command: "ls" }, "local");
   });
 });
 
@@ -118,6 +118,6 @@ it("a context fence indented as Markdown allows keeps its Review button and runs
   expect(dialog?.renderRoot.querySelector(".command")?.textContent).toBe("echo hi");
   dialog?.renderRoot.querySelector<HTMLButtonElement>(".run")?.click();
   await vi.waitFor(() => {
-    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1" }, { mode: "run", cwd: "/work/repo", command: "echo hi" }, "local");
+    expect(ownerRun).toHaveBeenCalledWith(session.session, { askId: "ask-1", revision: "r1" }, { mode: "run", cwd: "/work/repo", command: "echo hi" }, "local");
   });
 });

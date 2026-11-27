@@ -6,7 +6,7 @@ import type { OwnerRunProposal } from "../../../shared/ownerRun";
 import "./ModalSurface";
 
 /** The committed assistant message a pi-run block belongs to, or the open question set whose agent-written text holds it. */
-export type OwnerRunTarget = { session: SessionRef; machineId: string } & ({ entryId: string } | { askId: string });
+export type OwnerRunTarget = { session: SessionRef; machineId: string } & ({ entryId: string } | { askId: string; revision: string });
 
 /**
  * Confirms one pi-run proposal before it runs outside the write fence: the folder, the whole literal command and where
@@ -58,7 +58,12 @@ export class OwnerRunDialog extends LitElement {
     this.sending = true;
     this.error = "";
     try {
-      await sessionsApi.ownerRun(target.session, "entryId" in target ? target.entryId : { askId: target.askId }, proposal, target.machineId);
+      await sessionsApi.ownerRun(
+        target.session,
+        "entryId" in target ? target.entryId : { askId: target.askId, revision: target.revision },
+        proposal,
+        target.machineId,
+      );
       this.close();
     } catch (error) {
       this.sending = false;

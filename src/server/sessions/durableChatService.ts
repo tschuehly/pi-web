@@ -935,9 +935,12 @@ export class DurableChatService {
    */
   async ownerRun(ref: SessionRouteRef, source: OwnerRunSource, proposal: unknown): Promise<{ status: "started" | "terminal opened" }> {
     const connection = await this.#for(ref);
-    const { messages, status } = hostTranscript((await connection.request("transcript")).result);
-    const run =
-      typeof source === "string" ? committedOwnerRun(messages, source, proposal) : openAskOwnerRun(status.pendingAsks ?? [], messages, source.askId, proposal);
+    // Read from one host snapshot: the transcript and the open sets of the same moment.
+    const read = async () => {
+      const { messages, status } = hostTranscript((await connection.request("transcript")).result);
+      return typeof source === "string" ? committedOwnerRun(messages, source, proposal) : openAskOwnerRun(status.pendingAsks ?? [], messages, source, proposal);
+    };
+    const run = await read();
     const entryId = typeof source === "string" ? source : `ask:${source.askId}`;
     if (run.mode === "run") this.#require(connection, "owner-run");
     const confirmationText = ownerRunConfirmText(run);
@@ -953,6 +956,15 @@ export class DurableChatService {
       throw allowed === undefined
         ? new OwnerRunNotConfirmedError(501, "Run buttons need a macOS confirmation dialog, which this platform lacks")
         : new OwnerRunNotConfirmedError(403, "not confirmed: the macOS dialog was not answered with Allow");
+    }
+    // A set withdrawn or revised while the dialog was open fails closed: the Allow was for the set as it was shown.
+    if (typeof source !== "string") {
+      try {
+        await read();
+      } catch (error) {
+        this.#ownerRuns.delete(key);
+        throw error;
+      }
     }
     if (run.mode === "run") {
       // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.

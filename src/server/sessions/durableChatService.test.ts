@@ -3115,8 +3115,8 @@ describe("the owner's run button", () => {
     });
     const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
     openAsk(launched, context, context);
-    await expect(durable.ownerRun(ref, { askId: "ask-2" }, proposal)).rejects.toThrow("No open question set");
-    await expect(durable.ownerRun(ref, { askId: "ask-1" }, proposal)).resolves.toEqual({ status: "started" });
+    await expect(durable.ownerRun(ref, { askId: "ask-2", revision: "r1" }, proposal)).rejects.toThrow("No open question set");
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1" }, proposal)).resolves.toEqual({ status: "started" });
     expect(asked).toHaveLength(1);
     expect(runs(launched)).toHaveLength(1);
   });
@@ -3133,11 +3133,42 @@ describe("the owner's run button", () => {
     const agent = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
     const edited = `\`\`\`pi-run terminal cwd="${cwd}"\necho owner-edited\n\`\`\`\n`;
     openAsk(launched, edited, agent);
-    await expect(durable.ownerRun(ref, { askId: "ask-1" }, { mode: "terminal", cwd, command: "echo owner-edited" })).rejects.toThrow(
+    await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1" }, { mode: "terminal", cwd, command: "echo owner-edited" })).rejects.toThrow(
       "not a pi-run block the agent wrote",
     );
     expect(asked).toEqual([]);
   });
+
+  for (const change of ["withdrawn", "revised"] as const) {
+    it(`a set ${change} while the native dialog is open runs nothing after Allow, and a dialog for an older revision fails closed`, async () => {
+      const hook: { during?: () => void } = {};
+      const asked: string[] = [];
+      const { durable, launched, ref, proposal, cwd } = await proposing("pwd", {
+        confirm: (text) => {
+          asked.push(text);
+          hook.during?.();
+          return Promise.resolve(true);
+        },
+      });
+      const context = `\`\`\`pi-run cwd="${cwd}"\npwd\n\`\`\`\n`;
+      openAsk(launched, context, context);
+      // The browser showed r0; the host is already at r1: refused before any dialog.
+      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r0" }, proposal)).rejects.toThrow("changed since");
+      expect(asked).toEqual([]);
+      hook.during = () => {
+        if (change === "withdrawn") {
+          for (const host of launched)
+            host.answer = (request) =>
+              request.method === "transcript" ? { messages: [], partial: null, status } : request.method === "status" ? status : null;
+        } else openAsk(launched, context, context, "r2");
+      };
+      await expect(durable.ownerRun(ref, { askId: "ask-1", revision: "r1" }, proposal)).rejects.toThrow(
+        change === "withdrawn" ? "No open question set" : "changed since",
+      );
+      expect(asked).toHaveLength(1);
+      expect(runs(launched)).toEqual([]);
+    });
+  }
 
   it("refuses a host without run buttons before anything starts", async () => {
     const { durable, launched, ref, proposal } = await proposing("true", { capabilities: [] });

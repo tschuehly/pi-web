@@ -44,10 +44,17 @@ export function committedOwnerRun(messages: readonly unknown[], entryId: string,
  * context when the host's transcript shows the agent wrote that block there. The context alone is not proof: a partial
  * send can replace it with the user's edit, which an older host stores without `contextEdited`.
  */
-export function openAskOwnerRun(asks: readonly PendingAskUser[], messages: readonly unknown[], askId: string, requested: unknown): OwnerRunProposal {
+export function openAskOwnerRun(
+  asks: readonly PendingAskUser[],
+  messages: readonly unknown[],
+  { askId, revision }: { askId: string; revision: string },
+  requested: unknown,
+): OwnerRunProposal {
   const wanted = requestedProposal(requested);
   const ask = asks.find((candidate) => candidate.askId === askId);
   if (ask === undefined) throw new Error("No open question set with that id in this Chat");
+  // The owner reviews the set as shown: a revision since (or during the dialog) may have changed what the block means.
+  if (ask.revision !== revision) throw new Error("The question set changed since it was shown; review the command again");
   const agentContext = ask.context === undefined || ask.contextEdited === true ? undefined : agentAskContext(messages, askId);
   const inContext = (text: string | undefined) => text !== undefined && ownerRunProposals(text).some((proposal) => sameOwnerRun(proposal, wanted));
   const found = (inContext(ask.context) && inContext(agentContext)) || ask.questions.some((question) => inContext(question.detail));

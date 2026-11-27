@@ -535,9 +535,9 @@ export class AskUserCard extends LitElement {
       : html`<formatted-text class="question-detail" id=${ifDefined(id)} fold-media diff-views .contentRendering=${this.contentRendering} .workspaceContext=${this.workspaceContext} .ownerRun=${ownerRun} .text=${detail}></formatted-text>`;
   }
 
-  /** Pi-run blocks the agent wrote in this open set run through the Chat's Review dialog and route, named by the set. */
+  /** Pi-run blocks the agent wrote in this open set run through the Chat's Review dialog and route, named by the set at the revision shown. */
   private ownerRunTarget(ask: PendingAskUser): OwnerRunTarget | undefined {
-    return this.ownerRunSession === undefined ? undefined : { ...this.ownerRunSession, askId: ask.askId };
+    return this.ownerRunSession === undefined ? undefined : { ...this.ownerRunSession, askId: ask.askId, revision: ask.revision };
   }
 
   private renderPartialSubmitConfirmation(ask: PendingAskUser, unanswered: AskUserQuestion[]): TemplateResult {
