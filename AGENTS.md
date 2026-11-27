@@ -47,7 +47,7 @@ Project-specific testing rules live in `.agents/skills/testing-guide/SKILL.md`.
 
 Use that skill whenever writing, modifying, reviewing, or planning tests, closing coverage gaps, triaging test failures, or creating test helpers/harnesses. Keep detailed testing conventions there rather than growing this top-level orientation file.
 
-Default to focused tests while iterating, then scoped ESLint and `npm run typecheck:cached` for a completed TypeScript code change. Run completion checks once against the final changes; rerun affected checks if relevant files change afterward, not merely because you are committing. Pre-commit only runs `git diff --cached --check`; agents own scoped local verification, and CI owns the full gate. Escalate according to [development and delivery checks](docs/development-checks.md). Ordinary app changes do not require package-install smoke tests locally.
+While editing, run only `pnpm exec vitest related <changed files>` or the matching test file; run the full suite only before merging. See [development and delivery checks](docs/development-checks.md) for exact commands. For completed TypeScript changes, run scoped ESLint and `npm run typecheck:cached`. Run completion checks once against the final changes; rerun affected checks if relevant files change afterward, not merely because you are committing. Pre-commit only runs `git diff --cached --check`; agents own scoped local verification, and CI owns the full gate. Escalate according to [development and delivery checks](docs/development-checks.md). Ordinary app changes do not require package-install smoke tests locally.
 
 ## Verification reporting
 
