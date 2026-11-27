@@ -451,13 +451,32 @@ describe("WorkbenchQuestionChips", () => {
     expect(drawer(chips)).toBeNull();
   });
 
-  it("keeps the last sent set open as its record with context and detail until dismissed, below newer open sets", async () => {
-    const question = { id: "db", question: "Which database?", detail: "Postgres scales further.", options: [{ value: "pg", label: "Postgres" }] };
-    const detailed = ask("abc-1", { questions: [question] });
-    const { chips, onSubmit } = await mount([detailed]);
-    // The daemon's status drops the set before the send resolves with its closed record.
+  it("closes the drawer once the last open set is sent", async () => {
+    const { chips, onSubmit } = await mount([ask("abc-1")]);
     onSubmit.mockImplementation(async (askId) => {
       chips.asks = [];
+      await chips.updateComplete;
+      return { askId, reason: "submitted", askedAt: "", closedAt: "", questions: [], answeredCount: 1, unansweredIds: [], summary: "Answered 1 of 1" };
+    });
+    await openWith(chips);
+    cards(chips)[0]?.shadowRoot?.querySelector<HTMLInputElement>('input[type="radio"]')?.click();
+    await cards(chips)[0]?.updateComplete;
+    cards(chips)[0]?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+
+    await vi.waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledOnce();
+      expect(drawer(chips)).toBeNull();
+    });
+    expect(chips.open).toBe(false);
+  });
+
+  it("keeps a sent set as its record with context and detail below the sets still open, until dismissed", async () => {
+    const question = { id: "db", question: "Which database?", detail: "Postgres scales further.", options: [{ value: "pg", label: "Postgres" }] };
+    const detailed = ask("abc-1", { questions: [question] });
+    const { chips, onSubmit } = await mount([detailed, ask("def-2")]);
+    // The daemon's status drops the set before the send resolves with its closed record.
+    onSubmit.mockImplementation(async (askId) => {
+      chips.asks = [ask("def-2")];
       await chips.updateComplete;
       return {
         askId,
@@ -477,15 +496,11 @@ describe("WorkbenchQuestionChips", () => {
     cards(chips)[0]?.shadowRoot?.querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
 
     await vi.waitFor(() => {
-      expect(text(cards(chips)[0])).toContain("Answers sent");
+      expect(text(cards(chips)[1])).toContain("Answers sent");
     });
     expect(drawer(chips)).not.toBeNull();
-    const shown = [...(cards(chips)[0]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
+    const shown = [...(cards(chips)[1]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
     expect(shown).toEqual([detailed.context, "Postgres scales further."]);
-    expect(bar(chips)?.textContent.trim()).toBe("No open questions");
-
-    chips.asks = [ask("def-2")];
-    await chips.updateComplete;
     expect(cards(chips).map((card) => card.ask?.askId ?? `record:${card.outcome?.askId ?? ""}`)).toEqual(["def-2", "record:abc-1"]);
     expect(bar(chips)?.textContent.trim()).toBe("1 open question");
 
@@ -497,7 +512,9 @@ describe("WorkbenchQuestionChips", () => {
   it("keeps the whole-set record the daemon returns for a set sent one question at a time, earlier sends from another device included", async () => {
     const questions = ["db", "cache", "queue"].map((id) => ({ id, question: `Which ${id}?`, options: [{ value: `${id}-a`, label: `${id} A` }] }));
     const three = ask("abc-1", { questions });
-    const { chips, onSubmit } = await mount([three]);
+    // A second open set keeps the drawer open after the last send, so the record stays readable.
+    const other = ask("zzz-9");
+    const { chips, onSubmit } = await mount([three, other]);
     let revision = 1;
     // Each send closes its questions; the daemon's status drops them before the send resolves with its record.
     // Its last send returns the whole set's record (pendingAskStore's withEarlierAnswers), "cache" sent from another device included.
@@ -505,7 +522,7 @@ describe("WorkbenchQuestionChips", () => {
       const sent = new Set(submission.answers.map((answer) => answer.id));
       const open = (chips.asks[0]?.questions ?? []).filter((question) => !sent.has(question.id));
       revision += 1;
-      chips.asks = open.length === 0 ? [] : [{ ...three, questions: open, revision: `r${String(revision)}` }];
+      chips.asks = open.length === 0 ? [other] : [{ ...three, questions: open, revision: `r${String(revision)}` }, other];
       await chips.updateComplete;
       const records = questions
         .filter((question) => open.length === 0 || sent.has(question.id))
@@ -525,7 +542,7 @@ describe("WorkbenchQuestionChips", () => {
     });
     await openWith(chips);
     // "cache" went from another device: this drawer only sees the set without it.
-    chips.asks = [{ ...three, questions: questions.filter((question) => question.id !== "cache"), revision: "r2" }];
+    chips.asks = [{ ...three, questions: questions.filter((question) => question.id !== "cache"), revision: "r2" }, other];
     revision = 2;
     await chips.updateComplete;
     for (const id of ["db", "queue"]) {
@@ -546,17 +563,17 @@ describe("WorkbenchQuestionChips", () => {
     }
 
     await vi.waitFor(() => {
-      expect(text(cards(chips)[0])).toContain("Answers sent");
+      expect(text(cards(chips)[1])).toContain("Answers sent");
     });
-    const record = cards(chips)[0]?.outcome;
+    const record = cards(chips)[1]?.outcome;
     expect(record?.questions.map((each) => [each.question.id, each.values])).toEqual([
       ["db", ["db-a"]],
       ["cache", ["cache-a"]],
       ["queue", ["queue-a"]],
     ]);
     expect(record?.summary).toBe("Answered 3 of 3; none left unanswered");
-    expect(text(cards(chips)[0])).toContain("cache A");
-    const shown = [...(cards(chips)[0]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
+    expect(text(cards(chips)[1])).toContain("cache A");
+    const shown = [...(cards(chips)[1]?.shadowRoot?.querySelectorAll<HTMLElement & { text: string }>("formatted-text") ?? [])].map((each) => each.text);
     expect(shown).toContain(three.context);
   });
 

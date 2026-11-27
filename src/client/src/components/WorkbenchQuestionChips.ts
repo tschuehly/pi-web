@@ -36,7 +36,8 @@ export const openQuestionCount = (asks: readonly PendingAskUser[] | undefined, d
  * oldest first, each its context above its questions; while open (announced by `question-drawer-toggle`) the Chat gives
  * the drawer the transcript's whole area. Sent questions and answered sets drop out because the daemon stops reporting
  * them, leaving their record in the transcript; a set sent from the open drawer stays in it as that read-only record
- * (context and the answers its earlier one-by-one sends gave included) until the owner dismisses it or closes the drawer.
+ * (context and the answers its earlier one-by-one sends gave included) while other sets are still open, until the owner
+ * dismisses it or closes the drawer; once no set is open and no send is under way, the drawer closes by itself.
  */
 @customElement("workbench-question-chips")
 export class WorkbenchQuestionChips extends LitElement {
@@ -62,8 +63,9 @@ export class WorkbenchQuestionChips extends LitElement {
   private sending = 0;
 
   protected override willUpdate(): void {
+    // The last open set answered: close, as the drawer did before it kept records (Thomas, 27 Nov 2026).
+    if (this.asks.length === 0 && this.sending === 0) this.open = false;
     if (!this.open) this.sent = [];
-    if (this.asks.length === 0 && this.sent.length === 0 && this.sending === 0) this.open = false;
   }
 
   /** Forwards a card's send and, when it closed the set while the drawer is open, keeps the closed record the daemon returned (the whole set's, earlier partial sends included). */
