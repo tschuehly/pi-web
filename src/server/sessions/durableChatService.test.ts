@@ -1187,7 +1187,7 @@ describe("Durable Chats: spawn_session (P064)", () => {
     const spawnedHost = only(launched.slice(1));
     expect(spawnedHost.requests.map((request) => request.method).filter((method) => ["setModel", "setThinkingLevel", "prompt"].includes(method))).toEqual(["setModel", "setThinkingLevel", "prompt"]);
     expect(spawnedHost.requests.find((request) => request.method === "setModel")?.params).toEqual({ provider: "anthropic", modelId: "claude-x" });
-    expect(spawnedHost.requests.find((request) => request.method === "prompt")?.params).toMatchObject({ text: "Fix the build" });
+    expect(spawnedHost.requests.find((request) => request.method === "prompt")?.params).toMatchObject({ text: "Fix the build", machine: true });
     expect(host.requests.find((request) => request.method === "spawned")?.params).toEqual({ requestId: "req-1", result: { sessionId: child.id, cwd: "/work/b", model: "anthropic/claude-x" } });
     expect(global.find((event) => event["type"] === "session.created")).toMatchObject({ session: { id: child.id, cwd: "/work/b" } });
     // The same request again (a retried event) starts nothing new.
