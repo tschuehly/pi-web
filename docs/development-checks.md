@@ -36,11 +36,27 @@ npm run typecheck:cached
 git diff --check
 ```
 
+For a whole-project lint in seconds, run `npm run lint:fast` (oxlint, type-aware). It is a first pass, not a replacement: `npm run lint` runs it and then ESLint.
+
 The first cached typecheck still pays for a full check; subsequent runs reuse `node_modules/.cache/pi-web/typecheck.tsbuildinfo`.
 
 Type checks (`typecheck`, `typecheck:cached`, the plugin check in `build:plugins` and `dev:web`) and the plugin API declaration emit run on native TypeScript 7 (`typescript-native`, an alias of `typescript@7`), about four times faster than TypeScript 6. TypeScript 6 stays the `typescript` package: typed ESLint requires it, the build scripts import its compiler API, and `build` emits the server with it because TypeScript 7 writes different source maps. Both packages ship a `tsc` binary, so scripts call each by path (`node node_modules/typescript-native/bin/tsc`, `node node_modules/typescript/bin/tsc`) instead of the ambiguous `tsc`. Scoped ESLint is type-aware and still loads the TypeScript project, so it belongs at a meaningful checkpoint rather than after every keystroke. Focused tests/watch mode are the innermost loop.
 
 Documentation/comment-only changes need link/path review, relevant documentation or asset tests, and `git diff --check`; they do not need a local typecheck or whole-project lint. Use the [testing guide](../.agents/skills/testing-guide/SKILL.md#decide-whether-a-test-adds-protection) to choose the smallest boundary that proves the behavior.
+
+## oxlint and ESLint parity
+
+`.oxlintrc.json` enables only the oxlint equivalents of the rules ESLint enables (`js.configs.recommended`, `strictTypeChecked`, `stylisticTypeChecked`, plus the overrides in `eslint.config.js`), with the same options. On the tree it was mapped against, both reported the same 5 findings; oxlint took about 5 s, ESLint about 50 s. Before mapping, oxlint defaults reported 73 unrelated warnings; the first mapped run reported 275, mostly from the cases below.
+
+| Coverage | Rules |
+| --- | --- |
+| oxlint and ESLint | 138 of ESLint's 141 enabled rules. The `@typescript-eslint` extension rules `no-array-constructor`, `no-empty-function`, `no-unused-expressions`, `no-unused-vars`, `no-useless-constructor` map to oxlint's core versions, which understand TypeScript. |
+| ESLint only: no oxlint rule | `no-octal` (TypeScript and ES modules already reject legacy octal literals). |
+| ESLint only: oxlint false positives | `@typescript-eslint/prefer-optional-chain` (flags `typeof x !== "undefined" && x.y` guards); `@typescript-eslint/no-deprecated` (flags object-literal properties that implement a deprecated member, e.g. `rollupOptions` in Vite configs). |
+| ESLint only: type-aware rules in `pi-packages/captains-log` | oxlint type-checks each file with its nearest `tsconfig.json`; that package's own config cannot resolve its uninstalled dependencies, so everything is `any`. Its 49 type-aware rules are off there; its syntactic rules stay on. ESLint uses the root `tsconfig.json`. |
+| Suppressed once | `typescript/no-misused-promises` on `.finally(async …)` in `piSessionService.ts`: `finally()` awaits the returned promise, which ESLint accepts. |
+
+To drop ESLint: oxlint must fix the two false positives above, `pi-packages/captains-log` must type-check under its own config (install its dependencies or add the root `paths`), and both linters should agree on CI for a while. Until then CI keeps both.
 
 ## Browser surface contracts
 
