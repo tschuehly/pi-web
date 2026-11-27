@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { EditorView } from "@codemirror/view";
 import type { LitElement } from "lit";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PendingAskUser } from "../../../shared/apiTypes";
@@ -183,6 +184,36 @@ it("a copy of the agent's block the user adds below it gets no Review button: on
       { mode: "run", cwd: "/work/repo", command: "pwd" },
       "local",
     );
+  });
+});
+
+it("a copy pasted above the agent's block gets no Review button: the original keeps it, tracked through the edit", async () => {
+  const ownerRun = vi.spyOn(sessionsApi, "ownerRun").mockResolvedValue({ status: "started" });
+  const card = await mount(ask());
+  const view = EditorView.findFromDOM(contextEditor(card).querySelector<HTMLElement>(".cm-editor") ?? document.body);
+  if (view === null) throw new Error("expected the context editor's view");
+  // Thomas pastes a copy of the block just above it: the copy now comes first.
+  const at = view.state.doc.toString().indexOf("```pi-run");
+  view.dispatch({ changes: { from: at, insert: `${block("pwd")}\n\n` } });
+  // The redrawn blocks render their Markdown over a few tasks.
+  await vi.waitFor(async () => {
+    expect((await contextButtons(card)).map((button) => button?.textContent ?? null)).toEqual([null, "Review command…"]);
+  });
+  const [, original] = await contextButtons(card);
+  original?.click();
+  await runFromDialog();
+  await vi.waitFor(() => {
+    expect(ownerRun).toHaveBeenCalledWith(
+      session.session,
+      { askId: "ask-1", revision: "r1", block: 0 },
+      { mode: "run", cwd: "/work/repo", command: "pwd" },
+      "local",
+    );
+  });
+  // Undoing the paste by hand (the text is the agent's again) keeps the one button on the one block.
+  view.dispatch({ changes: { from: at, to: at + block("pwd").length + 2 } });
+  await vi.waitFor(async () => {
+    expect((await contextButtons(card)).map((button) => button?.textContent)).toEqual(["Review command…"]);
   });
 });
 

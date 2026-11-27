@@ -146,9 +146,10 @@ const rendered = (kind: "tbl" | "img", source: string, render: (markdown: string
 class FenceWidget extends WidgetType {
   constructor(
     readonly source: string,
-    readonly before: string,
+    readonly from: number,
+    readonly state: EditorState,
     readonly renderFence: RenderFence,
-    readonly key = renderFence.key?.(source, before) ?? "",
+    readonly key = renderFence.key?.(source, from, state) ?? "",
   ) {
     super();
   }
@@ -160,7 +161,7 @@ class FenceWidget extends WidgetType {
   }
   toDOM(view: EditorView): HTMLElement {
     const box = el("div", "lp-fence-block");
-    box.append(this.renderFence.render(this.source, this.before));
+    box.append(this.renderFence.render(this.source, this.from, this.state));
     box.addEventListener("mousedown", (event) => {
       if (event.composedPath().some((node) => node instanceof Element && node.matches("summary, a, button, input"))) return;
       event.preventDefault();
@@ -236,7 +237,7 @@ function buildPreview(state: EditorState, render: (markdown: string) => string, 
             // lose, so the drawn block reads the command as the Chat and the server do.
             const line = doc.lineAt(from);
             const start = doc.sliceString(line.from, from).trim() === "" ? line.from : from;
-            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(start, to), doc.sliceString(0, start), renderFence), block: true }).range(start, to));
+            deco.push(Decoration.replace({ widget: new FenceWidget(doc.sliceString(start, to), start, state, renderFence), block: true }).range(start, to));
             return false;
           }
           lines(from, to, "lp-code");
@@ -324,10 +325,10 @@ export const filesHighlighting = syntaxHighlighting(
 /** Fenced blocks whose opening line matches `languages` show as `render` draws them while the cursor is outside. */
 export interface RenderFence {
   languages: RegExp;
-  /** `before`: the document up to the block's line. */
-  render: (source: string, before: string) => HTMLElement;
+  /** `from`: where the block starts in `state`, the editor state it is drawn for. */
+  render: (source: string, from: number, state: EditorState) => HTMLElement;
   /** What the drawing depends on besides its source; a block redraws when it changes, or on {@link refreshFences}. */
-  key?: (source: string, before: string) => string;
+  key?: (source: string, from: number, state: EditorState) => string;
 }
 
 /** Recomputes the drawn blocks' keys: what they depend on outside the document changed. */
@@ -341,10 +342,7 @@ export function livePreview(render: (markdown: string) => string, open: (anchor:
   const field = StateField.define<DecorationSet>({
     create: (state) => buildPreview(state, render, renderFence),
     update: (value, tr) =>
-      tr.docChanged
-      || tr.selection !== undefined
-      || syntaxTree(tr.state) !== syntaxTree(tr.startState)
-      || tr.effects.some((effect) => effect.is(refreshFences))
+      tr.docChanged || tr.selection !== undefined || syntaxTree(tr.state) !== syntaxTree(tr.startState) || tr.effects.some((effect) => effect.is(refreshFences))
         ? buildPreview(tr.state, render, renderFence)
         : value,
     provide: (f) => EditorView.decorations.from(f),

@@ -1,5 +1,5 @@
 import { defaultKeymap, historyKeymap } from "@codemirror/commands";
-import { Compartment, EditorState } from "@codemirror/state";
+import { ChangeSet, Compartment, EditorState, StateField, type Text } from "@codemirror/state";
 import { EditorView, drawSelection, keymap, placeholder } from "@codemirror/view";
 import { ASK_USER_OTHER_TEXT_MAX_LENGTH } from "../../../shared/apiTypes";
 import { toSafeMarkdownHtml } from "../formatting/markdown";
@@ -42,6 +42,21 @@ export class AskMarkdownField extends ElementBase {
   contentRendering: ChatContentRendering | undefined;
   #ownerRun: OwnerRunTarget | undefined;
   #runnableText: string | undefined;
+  /**
+   * The agent's text as this editor held it (`runnableText`) and the edits since, so a drawn block maps back to where the
+   * agent wrote it; none while the editor never held that text (a draft from before).
+   */
+  readonly #agentEdits = StateField.define<{ agent: Text; since: ChangeSet } | undefined>({
+    create: (state) => this.#agentBaseline(state, state.doc),
+    update: (value, tr) => {
+      if (!tr.docChanged && !tr.effects.some((effect) => effect.is(refreshFences))) return value;
+      const baseline = this.#agentBaseline(tr.startState, tr.newDoc);
+      if (baseline !== undefined) return baseline;
+      const text = this.#runnableText;
+      if (value === undefined || text === undefined || !value.agent.eq(tr.startState.toText(text))) return undefined;
+      return tr.docChanged ? { agent: value.agent, since: value.since.compose(tr.changes) } : value;
+    },
+  });
 
   /**
    * With `renderFences`, a ```pi-run block also draws as the Chat does (whether it does is read when the field connects),
@@ -78,7 +93,14 @@ export class AskMarkdownField extends ElementBase {
     if (view === undefined || view.state.toText(text).eq(view.state.doc)) return;
     this.#replacing = true;
     try {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+      // Only the part that differs, so the agent's blocks outside it keep their place (`#agentEdits`).
+      const current = view.state.doc.toString();
+      const next = view.state.toText(text).toString();
+      let start = 0;
+      while (start < current.length && start < next.length && current[start] === next[start]) start += 1;
+      let end = 0;
+      while (end < current.length - start && end < next.length - start && current[current.length - 1 - end] === next[next.length - 1 - end]) end += 1;
+      view.dispatch({ changes: { from: start, to: current.length - end, insert: next.slice(start, next.length - end) } });
       // The draft changed underneath (a revision, another question's text): Undo must not bring the old text back.
       resetEditHistory(view);
     } finally {
@@ -154,8 +176,8 @@ export class AskMarkdownField extends ElementBase {
           this.renderFences
             ? {
                 languages: this.ownerRun === undefined ? RENDERED_FENCE : RENDERED_OR_RUN_FENCE,
-                render: (source, before) => this.#renderFence(source, before),
-                key: (source, before) => JSON.stringify(this.#fenceRun(source, before) ?? null),
+                render: (source, from, state) => this.#renderFence(source, from, state),
+                key: (source, from, state) => JSON.stringify(this.#fenceRun(source, from, state) ?? null),
               }
             : undefined,
         ),
@@ -163,6 +185,7 @@ export class AskMarkdownField extends ElementBase {
         EditorState.transactionFilter.of((tr) => (tr.docChanged && tr.newDoc.length > this.maxLength && tr.newDoc.length > tr.startState.doc.length ? [] : tr)),
         this.placeholderText === "" ? [] : placeholder(this.placeholderText),
         this.#attributes.of(this.#contentAttributes()),
+        this.#agentEdits,
         EditorView.updateListener.of((update) => {
           if (!update.docChanged || this.#replacing) return;
           this.#value = update.state.doc.toString();
@@ -201,25 +224,41 @@ export class AskMarkdownField extends ElementBase {
     view.dispatch({ selection: { anchor: view.state.doc.length } });
   }
 
-  #renderFence(source: string, before: string): HTMLElement {
+  #renderFence(source: string, from: number, state: EditorState): HTMLElement {
     const view = new FormattedText();
     view.foldMedia = true;
     view.diffViews = true;
     view.contentRendering = this.contentRendering;
     view.workspaceContext = this.workspaceContext;
-    view.ownerRun = this.#fenceRun(source, before);
+    view.ownerRun = this.#fenceRun(source, from, state);
     view.text = source;
     return view;
   }
 
-  /** The run of a drawn pi-run block: the agent's block at its place (the runnable blocks `before` it), or none. */
-  #fenceRun(source: string, before: string): OwnerRunTarget | undefined {
+  /**
+   * The run of the pi-run block drawn at `from`: the agent's block it is, followed back through the user's edits to its
+   * place in the agent's text (the runnable blocks before it there), or none. A copy the user added maps back to nothing
+   * there, wherever he put it, and an edited block to other text.
+   */
+  #fenceRun(source: string, from: number, state: EditorState): OwnerRunTarget | undefined {
     const target = this.#ownerRun;
     const [proposal] = ownerRunProposals(source);
-    if (target === undefined || "entryId" in target || proposal === undefined || this.#runnableText === undefined) return undefined;
-    const block = ownerRunProposals(before).length;
-    const agent = ownerRunProposals(this.#runnableText)[block];
+    const edits = state.field(this.#agentEdits, false);
+    if (target === undefined || "entryId" in target || proposal === undefined || edits === undefined) return undefined;
+    const to = from + source.length;
+    const back = edits.since.invert(edits.agent);
+    const start = back.mapPos(from, 1);
+    const end = back.mapPos(to, -1);
+    if (edits.since.mapPos(start, 1) !== from || edits.since.mapPos(end, -1) !== to || edits.agent.sliceString(start, end) !== source) return undefined;
+    const block = ownerRunProposals(edits.agent.sliceString(0, start)).length;
+    const agent = ownerRunProposals(edits.agent.toString())[block];
     return agent !== undefined && sameOwnerRun(agent, proposal) ? { ...target, block } : undefined;
+  }
+
+  /** The agent's text with no edits yet, when `doc` is it. */
+  #agentBaseline(state: EditorState, doc: Text): { agent: Text; since: ChangeSet } | undefined {
+    const text = this.#runnableText;
+    return text !== undefined && doc.eq(state.toText(text)) ? { agent: doc, since: ChangeSet.empty(doc.length) } : undefined;
   }
 
   #foldSummary(event: Event): HTMLDetailsElement | undefined {
