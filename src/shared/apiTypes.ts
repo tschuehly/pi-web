@@ -677,6 +677,7 @@ export const CHAT_CAPABILITY_LABELS = {
   liveReview: "Live review",
   "ask-images": "Images in answers",
   "owner-run": "Run buttons",
+  viewed: "Viewed state",
 } as const;
 export type ChatCapability = keyof typeof CHAT_CAPABILITY_LABELS;
 

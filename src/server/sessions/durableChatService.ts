@@ -43,6 +43,8 @@ export const DURABLE_HOST_PROTOCOL = 2;
 const QUEUE_MOVED = /^Queued messages changed|is no longer queued; it cannot be edited$/;
 export const IDLE_HOST_CLOSE_MS = 2 * 60 * 60 * 1000;
 const IDLE_HOST_SWEEP_MS = 10 * 60 * 1000;
+/** First resend delay after a failed `setViewed`; doubles per failure. */
+const VIEWED_RETRY_MS = 500;
 
 /** How the owner resolves an interrupted unsafe tool call that may have run. */
 export type DurableEffectResolution = "done" | "not-done" | "retry";
@@ -139,6 +141,8 @@ interface HostEvents {
   currentSeq(sessionId: string): number;
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
   hasSessionSubscribers?(sessionId: string): boolean;
+  /** First browser subscriber joined (true) or last one left (false); drives the host's `setViewed`. */
+  onSessionSubscribersChange?(listener: (sessionId: string, watched: boolean) => void): () => void;
 }
 
 interface HostTranscript {
@@ -181,6 +185,10 @@ class DurableHostConnection {
   fullAccess = false;
   /** The nonce this host was launched with for an upgrade restart's `/full-access`; its first resume repeats it. */
   fullAccessNonce: string | undefined;
+  /** The `viewed` state last sent to this host (`setViewed`); undefined until the first send. */
+  viewedSent: boolean | undefined;
+  /** The pending resend of a failed `setViewed` (see `#sendViewed`). */
+  viewedRetry: NodeJS.Timeout | undefined;
   /** Resolves when the host process has exited, so its store lock is released. */
   readonly exited: Promise<void>;
   #markExited!: () => void;
@@ -366,9 +374,35 @@ export class DurableChatService {
   }) {
     this.#idleSweep = setInterval(() => { void this.closeIdleHosts().then(() => this.upgradePendingHosts()); }, IDLE_HOST_SWEEP_MS);
     this.#idleSweep.unref();
+    this.#unsubscribeViewed = deps.events.onSessionSubscribersChange?.((sessionId) => { void this.#connections.get(sessionId)?.then((connection) => this.#sendViewed(sessionId, connection), () => undefined); });
+  }
+
+  /**
+   * Tell a host with the `viewed` capability whether a browser has its Chat open; only a change is sent. A failed
+   * send of the latest state is retried on the same connection (backoff capped at 30 s) while it stays the Chat's.
+   */
+  async #sendViewed(sessionId: string, connection: DurableHostConnection, attempt = 0): Promise<void> {
+    if (!connection.capabilities.includes("viewed")) return;
+    clearTimeout(connection.viewedRetry);
+    connection.viewedRetry = undefined;
+    const viewed = this.deps.events.hasSessionSubscribers?.(sessionId) === true;
+    if (connection.viewedSent === viewed) return;
+    connection.viewedSent = viewed;
+    await connection.request("setViewed", { viewed }).catch((error: unknown) => {
+      this.deps.logger?.warn({ sessionId, err: error }, "Durable Chat host did not take setViewed");
+      // A newer send owns the state (and its own retry).
+      if (connection.viewedSent !== viewed) return;
+      connection.viewedSent = undefined;
+      connection.viewedRetry = setTimeout(() => {
+        connection.viewedRetry = undefined;
+        void this.#connections.get(sessionId)?.then((live) => live === connection ? this.#sendViewed(sessionId, connection, attempt + 1) : undefined, () => undefined);
+      }, Math.min(VIEWED_RETRY_MS * 2 ** attempt, 30_000));
+      connection.viewedRetry.unref();
+    });
   }
 
   readonly #idleSweep: NodeJS.Timeout;
+  readonly #unsubscribeViewed: (() => void) | undefined;
   /** Ordered restarts in progress, by Chat (see `#upgradeOnce`). */
   readonly #upgrades = new Map<string, Promise<string | undefined>>();
   /** Chats an automatic upgrade is checking or restarting. */
@@ -1494,6 +1528,7 @@ export class DurableChatService {
    */
   async dispose(): Promise<void> {
     clearInterval(this.#idleSweep);
+    this.#unsubscribeViewed?.();
     const connections = [...this.#connections.values()];
     this.#connections.clear();
     await Promise.all(connections.map(async (pending) => {
@@ -1565,6 +1600,7 @@ export class DurableChatService {
         this.#templates.set(record.id, loaded.promptList ?? []);
         await connection.request("configure", { resources: loaded.resources, compaction: loaded.compaction, spawnSessions: this.deps.spawnTargets !== undefined, chatMessages: true });
       }
+      await this.#sendViewed(record.id, connection);
       return connection;
     });
     this.#connections.set(record.id, opened);
