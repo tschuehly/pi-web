@@ -2379,6 +2379,11 @@ export class SessionController {
     const mark = this.streamWatermark;
     const seq = event.seq;
     if (mark === undefined || event.generation !== mark.generation || seq === undefined || seq > mark.seq + 1) {
+      // A replayed effect no snapshot holds (e.g. from the host the new snapshot replaced) applies once; refetching again would loop.
+      if (replay && isSnapshotIndependentEvent(event)) {
+        this.applySnapshotIndependentEvent(event);
+        return;
+      }
       this.streamWatermark = undefined;
       if (event.type === "session.tree.changed") this.invalidateSessionTree();
       else if (mark !== undefined || !replay) void this.refreshSelectedSession();

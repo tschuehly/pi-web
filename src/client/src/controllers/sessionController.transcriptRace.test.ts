@@ -85,6 +85,23 @@ describe("SessionController snapshot reconciliation", () => {
     }
   });
 
+  it("a gap effect from the replaced host shows once after the new host's snapshot, without refetching again", async () => {
+    const h = harness();
+    try {
+      await h.controller.selectSession(oldSession, { updateUrl: false });
+      const restarted = deferred<SessionTranscriptSnapshot>();
+      h.nextSnapshot(restarted.promise);
+      h.socket.emit({ type: "command.output", level: "info", message: "Compaction cancelled.", seq: 13 });
+      restarted.resolve(snapshot({ generation: "new-host", seq: 14 }));
+      await vi.waitFor(() => expect(h.state().messages.at(-1)).toMatchObject({ parts: [{ type: "text", text: "Compaction cancelled." }] }));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(h.transcriptSnapshot).toHaveBeenCalledTimes(2);
+      expect(h.state().messages.filter((message) => message.parts.some((part) => part.type === "text" && part.text === "Compaction cancelled."))).toHaveLength(1);
+    } finally {
+      h.controller.dispose();
+    }
+  });
+
   it.each(["queued", "fetching"] as const)("preserves a new turn while a refresh is %s", async (phase) => {
     const h = harness();
     try {
