@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownerRunProposal, ownerRunProposals } from "./ownerRun";
+import { ownerRunFromJson, ownerRunProposal, ownerRunProposals } from "./ownerRun";
 
 describe("ownerRunProposals", () => {
   it("finds closed top-level pi-run blocks with their mode, folder and literal command", () => {
@@ -36,5 +36,14 @@ describe("ownerRunProposals", () => {
     expect(ownerRunProposal('pi-run cwd="/x\\"y"', "echo")).toHaveProperty("error");
     expect(ownerRunProposal('pi-run cwd="/x"', "x".repeat(8 * 1024 + 1))).toHaveProperty("error");
     expect(ownerRunProposal('pi-run cwd="/x"', "echo a\n\techo b")).toEqual({ mode: "run", cwd: "/x", command: "echo a\n\techo b" });
+  });
+
+  it("refuses lone UTF-16 surrogates, which UTF-8 would run as U+FFFD, and keeps paired ones", () => {
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo \ud800")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo \udc00x")).toHaveProperty("error");
+    expect(ownerRunProposal('pi-run cwd="/x\ud800"', "echo")).toHaveProperty("error");
+    expect(ownerRunFromJson({ mode: "run", cwd: "/x", command: "echo \ud83d" })).toHaveProperty("error");
+    expect(ownerRunProposals('```pi-run cwd="/x"\necho \ud800\n```\n')).toEqual([]);
+    expect(ownerRunProposal('pi-run cwd="/x"', "echo \ud83d\ude00")).toEqual({ mode: "run", cwd: "/x", command: "echo \ud83d\ude00" });
   });
 });

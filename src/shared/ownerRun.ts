@@ -15,8 +15,9 @@ export const OWNER_RUN_MAX_COMMAND_BYTES = 8 * 1024;
 // Markdown unescapes backslashes in an info string, so the folder is quoted literally: no quote or backslash inside.
 const INFO = /^pi-run(?: (terminal))? cwd="([^"\\]*)"$/u;
 // Controls (tab and newline are checked apart), format and default-ignorable characters (bidi marks, zero-width joiners,
-// U+2060…), and line/paragraph separators: anything that makes the shown text differ from what runs.
-const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+// U+2060…), line/paragraph separators, and lone UTF-16 surrogates (UTF-8 runs them as U+FFFD): anything that makes the
+// shown text differ from what runs.
+const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}\p{Default_Ignorable_Code_Point}]/u;
 const unsafe = (text: string) => UNSAFE.test(text.replace(/[\t\n]/gu, ""));
 
 /** Whether a code block's info string asks for a run button at all (valid or not). */
