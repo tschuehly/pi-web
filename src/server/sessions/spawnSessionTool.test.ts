@@ -68,8 +68,10 @@ describe("createSpawnSessionToolDefinition", () => {
 
     expect(tool.parameters).toMatchObject({
       properties: {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- stringMatching yields `any` against the loosely typed tool schema.
-        model: { description: expect.stringMatching(/provider\/model-id.*only when instructed.*specific model.*choose an appropriate one.*omit it to inherit.*unknown value is rejected/si) },
+        model: {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- stringMatching yields `any` against the loosely typed tool schema.
+          description: expect.stringMatching(/provider\/model-id.*only when instructed.*specific model.*choose an appropriate one.*omit it to inherit.*unknown value is rejected/si),
+        },
       },
     });
     expect(JSON.stringify(tool.parameters)).not.toContain("anthropic/claude-sonnet-4-5");

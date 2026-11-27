@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 160,
+  "experimentalOperatorPosition": "start",
+  "embeddedLanguageFormatting": "off",
+  "sortPackageJson": false,
+  "ignorePatterns": ["**/*.md", "pi-packages/relays/vendor/**"]
+}

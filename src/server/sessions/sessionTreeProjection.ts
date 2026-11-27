@@ -219,10 +219,12 @@ function optionalPlainText(value: unknown, maxLength: number): string | undefine
   return normalized === "" ? undefined : truncate(normalized, maxLength);
 }
 
+// Browser previews should not retain non-whitespace C0/C1 controls.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/gu;
+
 function plainText(value: string): string {
-  // Browser previews should not retain non-whitespace C0/C1 controls.
-  // eslint-disable-next-line no-control-regex
-  return value.replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").replace(/\s+/gu, " ").trim();
+  return value.replace(CONTROL_CHARACTERS, " ").replace(/\s+/gu, " ").trim();
 }
 
 function truncate(value: string, maxLength: number): string {

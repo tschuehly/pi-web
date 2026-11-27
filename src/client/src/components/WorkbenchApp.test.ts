@@ -67,6 +67,11 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
+/** The window heartbeat record as stored, for tests that add or drop a window. */
+function storedHeartbeats(): object {
+  return JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+}
+
 /** Plain-http origins lack crypto.randomUUID; ids then come from getRandomValues, filled here with `byte`. */
 function plainHttpRandomKey(byte: number): string {
   vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => { throw new TypeError("crypto.randomUUID is not a function"); });
@@ -2428,7 +2433,10 @@ describe("window tabs", () => {
     const other = selected === "a1" ? "a2" : "a1";
     const ask = (askId: string, questions: number) => ({ askId, askedAt: "2026-10-19T10:00:00.000Z", updatedAt: "2026-10-19T10:00:00.000Z", revision: "r1", turnsSinceUpdate: 0, questions: Array.from({ length: questions }, (_, index) => ({ id: `q${String(index)}`, question: `Question ${String(index)}?`, options: [] })) });
     const count = (sessionId: string) => tabsRoot(app).querySelector(`.chat-tab[data-session="${sessionId}"] .questions`)?.textContent ?? null;
-    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const receive = (event: unknown) => {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- private handler
+      Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
+    };
 
     receive({ type: "status.update", status: { ...idleStatus(other), pendingAsks: [ask("abc-1", 2), ask("def-2", 1)] } });
     await vi.waitFor(async () => { await app.updateComplete; expect(count(other)).toBe("3"); });
@@ -2661,7 +2669,10 @@ describe("window tabs", () => {
     const app = await mountWithWorkstreamChats();
     const acknowledge = vi.spyOn(api, "acknowledgeAttention").mockResolvedValue(undefined);
     const focused = vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const receive = (event: unknown) => { Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]); }; // eslint-disable-line @typescript-eslint/consistent-type-assertions -- private handler
+    const receive = (event: unknown) => {
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions -- private handler
+      Reflect.apply(Reflect.get(app, "handleRealtimeEvent") as (event: unknown) => void, app, [event]);
+    };
 
     receive({ type: "status.update", status: { ...idleStatus("b1"), attentionRequest: { id: "attention-1", reason: "Review the release PR" } } });
     await vi.waitFor(() => { expect(getState(app).status?.attentionRequest?.id).toBe("attention-1"); });
@@ -2769,7 +2780,7 @@ describe("window tabs", () => {
     if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
     const a1 = windows.window?.chats.find((chat) => chat.sessionId === "a1");
     if (a1 === undefined) throw new Error("a1 missing");
-    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, w2: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...storedHeartbeats(), w2: Date.now() }));
     await windows.update((store) => ({ ...store, w2: { ...emptyWindow("Window 2"), chats: [a1] } }));
     closeButton(app, "Plan the release").click();
     await vi.waitFor(() => { expect(chatTabs(app)).toEqual(["Release notes"]); });
@@ -2865,7 +2876,7 @@ describe("window tabs", () => {
     if (!(windows instanceof WorkbenchWindowController)) throw new Error("Window controller unavailable");
     const a1 = windows.window?.chats.find((chat) => chat.sessionId === "a1");
     if (a1 === undefined) throw new Error("a1 missing");
-    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, w2: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...storedHeartbeats(), w2: Date.now() }));
     await windows.update((store) => ({ ...store, w2: { ...emptyWindow("Window 2"), chats: [a1] } }));
 
     await expect(closeWindow()).resolves.toBe(false);
@@ -2961,7 +2972,7 @@ describe("window tabs", () => {
   it("keeps a Durable Chat's host running when another live window took it while the close waited for the store", async () => {
     const stop = vi.spyOn(api, "stopIfUnwatched").mockResolvedValue({ stopped: true });
     const app = await mountWithWorkstreamChats(["b1"]);
-    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, w2: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+    localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...storedHeartbeats(), w2: Date.now() }));
     const release = locks.hold(WINDOW_STORE_LOCK);
     // Window w2's transfer of b1 is queued ahead of this window's close.
     const transfer = locks.request(WINDOW_STORE_LOCK, {}, () => {
@@ -3227,7 +3238,8 @@ describe("window tabs", () => {
     await moveToNewWindow(workstreamTab(app, "Release"));
 
     expect(opened).not.toHaveBeenCalled();
-    expect(parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId).sort()).toEqual(["a1", "a2", "b1"]);
+    const movedChats = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY))["w1"]?.chats.map((chat) => chat.sessionId);
+    expect(movedChats?.sort()).toEqual(["a1", "a2", "b1"]);
     expect(app.shadowRoot?.querySelector(".stage > .error")?.textContent).toContain("Plan the release");
     clearStagedAttachments(machineSessionKey("local", "a1"));
   });
@@ -3305,7 +3317,7 @@ describe("window tabs", () => {
       target.ask("w1", { kind: "move", sessionIds: ["b1"] });
       await new Promise((resolve) => { setTimeout(resolve, 50); });
       // The asking window closes while the move waits for the store.
-      localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object).filter(([id]) => id !== "w9")))); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+      localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify(Object.fromEntries(Object.entries(storedHeartbeats()).filter(([id]) => id !== "w9"))));
       release();
       await vi.waitFor(() => { expect(target.answers).toEqual([false]); });
       const stored = parseWindowStore(localStorage.getItem(WINDOW_STORE_KEY));
@@ -3974,7 +3986,7 @@ function otherWindow(windowId: string, answer: (request: OtherWindowRequest, fro
     ask: (to: string, request: OtherWindowRequest, timeoutMs = 60_000) => {
       asked += 1;
       // As the controller does: asking beats first.
-      localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...JSON.parse(localStorage.getItem(WINDOW_HEARTBEAT_KEY) ?? "{}") as object, [windowId]: Date.now() })); // eslint-disable-line @typescript-eslint/consistent-type-assertions -- test heartbeat record
+      localStorage.setItem(WINDOW_HEARTBEAT_KEY, JSON.stringify({ ...storedHeartbeats(), [windowId]: Date.now() }));
       channel.postMessage({ id: `${windowId}:${String(asked)}`, to, from: windowId, request, expires: Date.now() + timeoutMs });
     },
     close: () => { channel.close(); },

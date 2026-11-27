@@ -4,13 +4,14 @@ import type { StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
 const SESSION_NAME_TIMEOUT_MS = 10_000;
 const SESSION_NAME_MAX_INPUT_CHARS = 4_000;
 const SESSION_NAME_MAX_LENGTH = 60;
+// eslint-disable-next-line no-control-regex -- explicit names must not contain control characters.
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u;
 const FALLBACK_SESSION_NAME_MAX_WORDS = 6;
 
 /** Explicit extension names are validated, not silently rewritten. */
 export function requireInitialSessionName(value: unknown): string {
   if (typeof value !== "string" || value.trim() === "" || value !== value.trim()
-    // eslint-disable-next-line no-control-regex -- explicit names must not contain control characters.
-    || value.length > SESSION_NAME_MAX_LENGTH || /[\u0000-\u001f\u007f]/u.test(value)) {
+    || value.length > SESSION_NAME_MAX_LENGTH || CONTROL_CHARACTER.test(value)) {
     throw new Error("Initial session name must be trimmed, non-empty, at most 60 characters, and contain no control characters");
   }
   return value;
