@@ -5,7 +5,7 @@ import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, realp
 import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
-import { DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
+import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, fullAccessDigestArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
 import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCode, storeCodeRefusal } from "./sessionRuntimeLocator.js";
 
 /** Runs `launchctl` with these arguments; rejects with its output on failure. Tests may pass their own. */
@@ -54,7 +54,7 @@ export function launchdDurableHost(options: DurableHostOptions & {
   const context: LaunchContext = { ...options, entry, launchctl: options.launchctl ?? launchctl, startTimeoutMs: options.startTimeoutMs ?? 60_000 };
   return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir)
     : launch?.readTranscript === true ? readTranscript(context, record, storeDir)
-    : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true);
+    : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true, launch?.fullAccessDigest);
 }
 
 /**
@@ -73,7 +73,7 @@ function familyEntry(context: LaunchContext, record: DurableChatRecord): string 
 
 /** The daemon's environment, as a forked host inherited it, less secret-named variables (a plist is a file on disk). */
 function hostEnvironment(context: LaunchContext) {
-  return Object.fromEntries(Object.entries({ ...process.env, PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
+  return Object.fromEntries(Object.entries({ ...process.env, ...daemonPathEnvironment(process.env, context.webPort), PI_CODING_AGENT_DIR: context.agentDir }).filter(([name]) => !SECRET_NAME.test(name)));
 }
 
 /** Unload the family's job (bootout returns once its process is gone), remove its plist and forget the host. */
@@ -149,7 +149,7 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   /** The entry this object launched its host from; a reattached host's is the locator's. */
   #entry: string | undefined;
 
-  constructor(private readonly context: LaunchContext, private readonly record: DurableChatRecord, private readonly storeDir: string, attachOnly: boolean) {
+  constructor(private readonly context: LaunchContext, private readonly record: DurableChatRecord, private readonly storeDir: string, attachOnly: boolean, private readonly fullAccessDigest?: string) {
     super();
     this.#label = `${context.labelPrefix}.${record.storeId}`;
     void this.#open(attachOnly).catch((error: unknown) => {
@@ -188,9 +188,10 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
     this.#entry = entry;
-    writeFileSync(plist, launchdPlist({
+    const programArguments = [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket, ...fullAccessDigestArgs(this.fullAccessDigest, entry)];
+    const job = launchdPlist({
       Label: this.#label,
-      ProgramArguments: [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket],
+      ProgramArguments: programArguments,
       EnvironmentVariables: hostEnvironment(this.context),
       WorkingDirectory: this.storeDir,
       StandardOutPath: join(this.storeDir, "host.log"),
@@ -202,7 +203,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       AbandonProcessGroup: true,
       ExitTimeOut: 10,
       MaterializeDatalessFiles: true,
-    }), { mode: 0o600 });
+    });
+    writeFileSync(plist, job, { mode: 0o600 });
     await this.context.launchctl(["bootstrap", this.#domain, plist]);
     const deadline = Date.now() + this.context.startTimeoutMs;
     for (;;) {

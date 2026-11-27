@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
+import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessDigestArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
+import { effectivePiWebConfig } from "../../config.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 
 // Daemon orchestration of the seamless host upgrades (idle close, Upgrade now, automatic upgrade) against host doubles:
@@ -23,14 +25,18 @@ afterEach(() => { if (ROOT !== "") rmSync(ROOT, { recursive: true, force: true }
 
 const SCHEMA = { documents: { "workbench.delegation": 1 }, tasks: { "workbench.child-reporter": 1 } };
 
-/** A revision folder whose host entry runs Pi Durable `version` and writes the store `schema` (null: no store-schema.json). */
-function revision(name: string, version: string, schema: object | null = SCHEMA): string {
+/**
+ * A revision folder whose host entry runs Pi Durable `version` and writes the store `schema` (null: no store-schema.json);
+ * `accepts` lists the optional launch arguments in its host-args.json (none: code older than the file).
+ */
+function revision(name: string, version: string, schema: object | null = SCHEMA, accepts?: string[]): string {
   const entry = join(ROOT, name, "main.mjs");
   const manifest = join(ROOT, name, "node_modules", "@earendil-works", "pi-durable");
   mkdirSync(manifest, { recursive: true });
   writeFileSync(entry, "");
   writeFileSync(join(manifest, "package.json"), JSON.stringify({ version }));
   if (schema !== null) writeFileSync(join(ROOT, name, "store-schema.json"), JSON.stringify(schema));
+  if (accepts !== undefined) writeFileSync(join(ROOT, name, "host-args.json"), JSON.stringify({ accepts }));
   return entry;
 }
 
@@ -47,6 +53,12 @@ class Fake extends EventEmitter implements DurableHostProcess {
   /** Answers resume, or B's conditional close, with an error; or never answers that close ("hang"). */
   resumeError = false;
   closeError: boolean | "hang" = false;
+  /** The owner's `/full-access` is on: an upgrade close answers so, as the Workbench host does. */
+  fullAccess = false;
+  /** The public verifier the service launched this host with, if any. */
+  fullAccessDigest: string | undefined;
+  /** The verifier argument a real launcher would put in this host's arguments (only code that accepts it gets one). */
+  digestArgs: string[] = [];
   kills = 0;
 
   constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
@@ -83,7 +95,8 @@ class Fake extends EventEmitter implements DurableHostProcess {
         return;
       }
       // As the Workbench host: B's close is accepted affirmatively.
-      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : request.params?.["ifRestartSafe"] === true ? { closed: true } : null);
+      const closed = request.params?.["ifRestartSafe"] === true ? { closed: true } : null;
+      this.reply(request, request.method === "status" ? { ...status, isStreaming: this.streaming } : request.method === "close" && this.fullAccess && request.params?.["reason"] === "upgrade" ? { ...closed, fullAccess: true } : closed);
       if (request.method === "close") {
         this.exitHook();
         this.emit("exit", 0, null);
@@ -110,7 +123,7 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
   const storesDir = join(ROOT, "stores");
   const hosts: Fake[] = [];
   let now = 0;
-  const launch: DurableHostLauncher = (chat: DurableChatRecord, storeDir: string) => {
+  const launch: DurableHostLauncher = (chat: DurableChatRecord, storeDir: string, launched) => {
     const entry = locator.durable(chat.id)?.hostEntry ?? current;
     mkdirSync(storeDir, { recursive: true });
     // Every host that opens the store leaves its Pi Durable version there (a newer one migrates it).
@@ -121,6 +134,8 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     const host = new Fake({ entry, current }, () => { locator.setHost(chat.id, undefined); }, fail);
     if (!fail) locator.setHostEntry(chat.id, entry);
     host.resumeError = entry === current && options.failResume === true;
+    host.fullAccessDigest = launched?.fullAccessDigest;
+    host.digestArgs = fullAccessDigestArgs(launched?.fullAccessDigest, entry);
     hosts.push(host);
     return host;
   };
@@ -403,6 +418,62 @@ describe("seamless upgrade orchestration", () => {
     await s.durable.dispose();
   });
 
+  it("an upgrade restart, automatic or Upgrade now, hands the old host's full access to the new host's resume, and only then", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-sha256"])];
+    const checkGrant = (host: Fake | undefined) => {
+      const resumes = host?.requests.filter((request) => request.method === "resume");
+      expect(resumes).toHaveLength(1);
+      const nonce = resumes?.[0]?.params?.["fullAccess"];
+      if (typeof nonce !== "string") throw new Error("resume did not carry a nonce");
+      expect(nonce).toMatch(/^[a-f0-9]{32}$/);
+      expect(host?.digestArgs).toEqual(["--full-access-sha256", createHash("sha256").update(nonce).digest("hex")]);
+    };
+    const auto = setup(a, b, { autoUpgrade: true });
+    await auto.durable.status(auto.ref);
+    for (const host of auto.hosts) host.fullAccess = true;
+    await auto.durable.upgradePendingHosts();
+    expect(auto.hosts).toHaveLength(2);
+    // Only the resume carries the preimage of the verifier.
+    expect(auto.hosts[0]?.fullAccessDigest).toBeUndefined();
+    checkGrant(auto.hosts[1]);
+    await auto.durable.dispose();
+    rmSync(ROOT, { recursive: true, force: true });
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const now = setup(revision("rev-c", "1.5.2"), revision("rev-d", "1.5.2", SCHEMA, ["--full-access-sha256"]));
+    await now.durable.status(now.ref);
+    for (const host of now.hosts) host.fullAccess = true;
+    await now.durable.upgradeHost(now.ref, "now");
+    expect(now.hosts[1]?.fullAccessDigest).not.toBe(auto.hosts[1]?.fullAccessDigest);
+    checkGrant(now.hosts[1]);
+    await now.durable.dispose();
+  });
+
+  it("a rollback to host code without --full-access-sha256 starts it without the argument: full access off, the Chat back on its pin and resumed", async () => {
+    ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-sha256"])];
+    const s = setup(a, b, { failCurrent: true });
+    await s.durable.status(s.ref);
+    for (const host of s.hosts) host.fullAccess = true;
+    await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/This Chat is back on its old host code \(rev-a\)\.$/);
+    expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, a]);
+    // The new code would have got a verifier; the old pin, whose strict parser refuses it, starts without.
+    expect(s.hosts[1]?.digestArgs).toEqual(["--full-access-sha256", s.hosts[1]?.fullAccessDigest]);
+    expect(s.hosts[2]?.digestArgs).toEqual([]);
+    expect(s.hosts[2]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart" }]);
+    expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
+    await s.durable.dispose();
+  });
+
+  it("hosts get the resolved web port even after the daemon scrubs PORT", () => {
+    const parsed = effectivePiWebConfig({ env: { PORT: "9.321e3", PI_WEB_CONFIG: join(tmpdir(), "unused-durable-port-test.json") } });
+    expect(daemonPathEnvironment({}, parsed.config.port)).toEqual({ PI_WEB_PORT: "9321" });
+  });
+
+  it("hosts get PI WEB's folder and socket overrides absolute, resolved against the daemon's folder", () => {
+    expect(daemonPathEnvironment({ PI_WEB_DATA_DIR: "data", PI_WEB_DURABLE_HOST_DIR: "/abs/hosts", PI_WEB_SESSIOND_SOCKET: "", PI_WEB_PORT: "1" })).toEqual({ PI_WEB_DATA_DIR: join(process.cwd(), "data"), PI_WEB_DURABLE_HOST_DIR: "/abs/hosts" });
+  });
+
   it("finding 4: an automatic upgrade never closes a host that admitted input after the quiet check", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
     const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
@@ -541,7 +612,7 @@ describe("seamless upgrade orchestration", () => {
 
   it("finding 5: a daemon that dies before the new host's resume leaves the obligation on disk; the next daemon resumes it", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-sha256"])];
     const locator = new SessionRuntimeLocator(ROOT);
     const record = locator.create("/work", "chat");
     locator.setHostEntry(record.id, a);
@@ -554,6 +625,7 @@ describe("seamless upgrade orchestration", () => {
       hosts.push(host);
       locator.setHostEntry(chat.id, entry);
       locator.setHost(chat.id, { label: "test.fake", socket: "fake.sock", revision: dirname(entry), ownerEpoch: hosts.length, pid: hosts.length });
+      host.fullAccess = entry === a;
       if (entry === b) { host.holdResume = true; host.beforeResume = resumeSent; }
       return host;
     };
@@ -562,6 +634,7 @@ describe("seamless upgrade orchestration", () => {
     await durable.status(ref);
     void durable.upgradeHost(ref, "now").catch(() => undefined);
     await waiting;
+    expect(hosts[1]?.requests.find((request) => request.method === "resume")?.params?.["fullAccess"]).toMatch(/^[a-f0-9]{32}$/);
     await durable.dispose();
 
     const disk = new SessionRuntimeLocator(ROOT);
@@ -573,7 +646,7 @@ describe("seamless upgrade orchestration", () => {
     });
     await restarted.reattach();
     expect(attached).toHaveLength(1);
-    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart" }]);
+    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart", discardFullAccess: true }]);
     expect(disk.durable(record.id)?.hostEntry).toBe(b);
     expect(disk.durable(record.id)?.upgrade).toBeUndefined();
     expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toBeUndefined();

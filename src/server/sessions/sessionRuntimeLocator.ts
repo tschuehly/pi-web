@@ -312,6 +312,22 @@ export function storeSchema(entry: string): StoreSchema | null | undefined {
   }
 }
 
+/**
+ * Whether a host entry's code accepts the optional launch argument `arg`: listed in the Workbench host's
+ * `host-args.json` beside that `node_modules`. False when the file is missing or unreadable (older code, whose strict
+ * argument parser would refuse the argument and never start).
+ */
+export function hostAcceptsArg(entry: string, arg: string): boolean {
+  const folder = durableFolder(entry);
+  if (folder === undefined) return false;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(join(folder, "host-args.json"), "utf8"));
+    return isRecord(parsed) && Array.isArray(parsed["accepts"]) && parsed["accepts"].includes(arg);
+  } catch {
+    return false;
+  }
+}
+
 function isVersions(value: unknown): value is Record<string, number> {
   return isRecord(value) && Object.values(value).every((version) => typeof version === "number");
 }
