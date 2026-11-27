@@ -1,6 +1,7 @@
 import { execFile, fork } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -463,8 +464,10 @@ export class DurableChatService {
   /** History reads of Chats with no host (`#readCold`), by Chat ID, chained one after another. */
   readonly #coldReads = new Map<string, Promise<unknown[] | undefined>>();
   #coldQueue: Promise<void> = Promise.resolve();
-  /** Owner-run proposals already started, by Chat, entry and proposal: each runs once. */
-  // shortcut: in memory, so after a daemon restart a proposal can run again (after a second confirmation); persist it if that matters.
+  /**
+   * Owner-run proposals being confirmed or started, by Chat, entry and proposal: each runs once. A started one is also
+   * claimed on disk (`#claimOwnerRun`), so it stays run across a daemon restart.
+   */
   readonly #ownerRuns = new Set<string>();
   readonly #ownerRunCancels = new Map<string, Set<AbortController>>();
 
@@ -949,6 +952,11 @@ export class DurableChatService {
     const key = JSON.stringify([ref.id, entryId, run.mode, run.cwd, run.command]);
     if (this.#ownerRuns.has(key)) throw new Error("This command already ran");
     this.#ownerRuns.add(key);
+    const claim = join(this.deps.storesDir, "owner-runs", createHash("sha256").update(key).digest("hex"));
+    if (existsSync(claim)) {
+      this.#ownerRuns.delete(key);
+      throw new Error("This command already ran");
+    }
     const { confirm } = this.deps;
     const allowed = confirm === undefined ? undefined : await confirm(confirmationText).catch(() => false);
     if (allowed !== true) {
@@ -957,22 +965,29 @@ export class DurableChatService {
         ? new OwnerRunNotConfirmedError(501, "Run buttons need a macOS confirmation dialog, which this platform lacks")
         : new OwnerRunNotConfirmedError(403, "not confirmed: the macOS dialog was not answered with Allow");
     }
-    // A set withdrawn or revised while the dialog was open fails closed: the Allow was for the set as it was shown.
-    if (typeof source !== "string") {
-      try {
-        await read();
-      } catch (error) {
-        this.#ownerRuns.delete(key);
-        throw error;
-      }
+    try {
+      // A set withdrawn or revised while the dialog was open fails closed: the Allow was for the set as it was shown.
+      if (typeof source !== "string") await read();
+      // Claimed on disk before the launch, in both modes and apart from any branch: a restart never runs it again.
+      await mkdir(dirname(claim), { recursive: true, mode: 0o700 });
+      await writeFile(claim, `${key}\n`, { flag: "wx", mode: 0o600 }).catch((error: unknown) => {
+        throw isRecord(error) && error["code"] === "EEXIST" ? new Error("This command already ran") : error;
+      });
+    } catch (error) {
+      this.#ownerRuns.delete(key);
+      throw error;
     }
+    const unclaim = async () => {
+      this.#ownerRuns.delete(key);
+      await rm(claim, { force: true });
+    };
     if (run.mode === "run") {
       // Named by the proposal, so the host launches it once even when this request is retried or the daemon restarted.
       const operationId = `owner-run:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
       try {
         await connection.request("ownerRun", { operationId, command: ownerRunScript(run), cwd: run.cwd });
       } catch (error) {
-        this.#ownerRuns.delete(key);
+        await unclaim();
         throw error;
       }
       return { status: "started" };
@@ -1010,7 +1025,7 @@ export class DurableChatService {
       void deliver(await openOwnerCommandInTerminal(run)).catch(failed);
     } catch (error) {
       running.delete(cancel);
-      this.#ownerRuns.delete(key);
+      await unclaim();
       throw error;
     }
     return { status: "terminal opened" };

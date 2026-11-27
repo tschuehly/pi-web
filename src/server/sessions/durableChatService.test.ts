@@ -3033,17 +3033,27 @@ describe("the owner's run button", () => {
           : request.method === "status"
             ? status
             : null;
-    const made = await service(
-      () => {
-        const host = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities);
-        host.answer = answer;
-        return host;
-      },
-      undefined,
-      confirm === null ? {} : { confirm },
-    );
+    const makeHost = () => {
+      const host = new FakeHost(DURABLE_HOST_PROTOCOL, capabilities);
+      host.answer = answer;
+      return host;
+    };
+    const made = await service(makeHost, undefined, confirm === null ? {} : { confirm });
     const chat = await made.durable.start(cwd);
-    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode, cwd, command } };
+    /** The daemon restarted: a new service on the same data directory, its hosts launched afresh. */
+    const restart = (again: ((text: string) => Promise<boolean>) | undefined = confirm ?? undefined) =>
+      new DurableChatService({
+        locator: new SessionRuntimeLocator(made.root),
+        events: made.hub,
+        launch: () => {
+          const host = makeHost();
+          made.launched.push(host);
+          return host;
+        },
+        storesDir: join(made.root, "durable"),
+        ...(again === undefined ? {} : { confirm: again }),
+      });
+    return { ...made, ref: { id: chat.id, cwd: chat.cwd }, cwd, proposal: { mode, cwd, command }, restart };
   }
   const runs = (launched: FakeHost[]) => launched.flatMap((host) => host.requests.filter((request) => request.method === "ownerRun"));
   /** Open set ask-1 showing `context` on every host, whose transcript records the agent posting it with `agentContext`. */
@@ -3167,6 +3177,21 @@ describe("the owner's run button", () => {
       );
       expect(asked).toHaveLength(1);
       expect(runs(launched)).toEqual([]);
+    });
+  }
+
+  for (const mode of ["run", "terminal"] as const) {
+    it(`a ${mode} pi-run runs once across a daemon restart: the claim is kept on disk before the launch`, async () => {
+      const { durable, launched, ref, proposal, restart } = await proposing("echo once", { mode });
+      await expect(durable.ownerRun(ref, "a1", proposal)).resolves.toEqual({ status: mode === "run" ? "started" : "terminal opened" });
+      const asked: string[] = [];
+      const again = restart((text) => {
+        asked.push(text);
+        return Promise.resolve(true);
+      });
+      await expect(again.ownerRun(ref, "a1", proposal)).rejects.toThrow("already ran");
+      expect(asked).toEqual([]);
+      expect(runs(launched)).toHaveLength(mode === "run" ? 1 : 0);
     });
   }
 
