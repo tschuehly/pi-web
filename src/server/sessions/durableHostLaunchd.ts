@@ -344,22 +344,25 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     socket.on("close", () => {
       void this.#closed();
     });
-    let scanFrom = 0;
+    // Scan only the new chunk and join an unfinished line's pieces once: `buffer += chunk` plus indexOf flattens the
+    // whole rope per chunk, O(n^2) for a multi-megabyte reply.
+    let parts: string[] = [];
     socket.on("data", (chunk: string) => {
-      buffer += chunk;
-      let end = buffer.indexOf("\n", scanFrom);
+      let start = 0;
+      let end = chunk.indexOf("\n");
       while (end !== -1) {
-        const line = parse(buffer.slice(0, end));
-        buffer = buffer.slice(end + 1);
-        scanFrom = 0;
-        end = buffer.indexOf("\n", scanFrom);
+        parts.push(chunk.slice(start, end));
+        const line = parse(parts.join(""));
+        parts = [];
+        start = end + 1;
+        end = chunk.indexOf("\n", start);
         if (isRecord(line) && this.#conditionalClose !== undefined && line["id"] === this.#conditionalClose) {
           this.#conditionalClose = undefined;
           if (isRecord(line["result"]) && line["result"]["closed"] === true) this.#closing = true;
         }
         if (line !== undefined) this.emit("message", line);
       }
-      scanFrom = buffer.length;
+      if (start < chunk.length) parts.push(chunk.slice(start));
     });
     if (record)
       this.context.locator.setHost(this.record.id, {
@@ -371,7 +374,7 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       } satisfies DurableHostAttachment);
     this.emit("message", message);
     // Lines that arrived with the handshake, then the rest.
-    socket.emit("data", "");
+    socket.emit("data", buffer);
     socket.resume();
     return true;
   }

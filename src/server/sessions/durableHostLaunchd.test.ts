@@ -361,7 +361,8 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
     const record = locator.create("/work/a");
     const socket = durableHostSocketPath(hostsDir, record.storeId);
     const ready = { protocol: DURABLE_HOST_PROTOCOL, storeId: record.storeId, ownerEpoch: 1, revision: root, pid: process.pid };
-    const payload = Array.from({ length: 3_000 }, (_, index) => ({ index, text: "x".repeat(1_000) }));
+    // One 15 MB line: the old `buffer += chunk; indexOf` reader took ~2.6 s for it in 8 KB chunks, linear takes ~0.05 s.
+    const payload = [{ index: -1, text: "x".repeat(15_000_000) }, ...Array.from({ length: 3_000 }, (_, index) => ({ index, text: "x".repeat(1_000) }))];
     const bytes = Buffer.from(payload.map((message) => `${JSON.stringify(message)}\n`).join(""));
     const server = createServer((connection) => {
       connection.on("error", () => undefined);
@@ -389,6 +390,7 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
       locator.setHost(record.id, { label: `${PREFIX}.${record.id}`, socket, revision: ready.revision, ownerEpoch: 1, pid: process.pid });
       const host = launch(record, join(root, "store"), { attachOnly: true });
       const messages: unknown[] = [];
+      const started = performance.now();
       host.on("error", () => undefined);
       await new Promise<void>((resolve, reject) => {
         host.on("message", (message) => {
@@ -397,8 +399,10 @@ describe.skipIf(process.platform !== "darwin")("Durable hosts as launchd jobs (P
         });
         host.on("exit", () => reject(new Error("host exited before the reply was fully parsed")));
       });
+      const elapsed = performance.now() - started;
       host.detach?.();
       expect(messages).toEqual([{ ready }, ...payload]);
+      expect(elapsed).toBeLessThan(1_500);
     } finally {
       server.close();
     }
