@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessNonceArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
+import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, DurableChatService, type DurableHostLauncher, type DurableHostProcess, fullAccessDigestArgs, IDLE_HOST_CLOSE_MS } from "./durableChatService.js";
 import type { DurableChatRecord } from "./sessionRuntimeLocator.js";
 import { effectivePiWebConfig } from "../../config.js";
 import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
@@ -54,10 +55,10 @@ class Fake extends EventEmitter implements DurableHostProcess {
   closeError: boolean | "hang" = false;
   /** The owner's `/full-access` is on: an upgrade close answers so, as the Workbench host does. */
   fullAccess = false;
-  /** The `/full-access` nonce the service launched this host with (an upgrade restart's), if any. */
-  fullAccessNonce: string | undefined;
-  /** The nonce argument a real launcher would put in this host's arguments (only code that accepts it gets one). */
-  nonceArgs: string[] = [];
+  /** The public verifier the service launched this host with, if any. */
+  fullAccessDigest: string | undefined;
+  /** The verifier argument a real launcher would put in this host's arguments (only code that accepts it gets one). */
+  digestArgs: string[] = [];
   kills = 0;
 
   constructor(readonly code: { entry: string; current: string }, readonly exitHook: () => void, fail: boolean | "hang" = false) {
@@ -133,8 +134,8 @@ function setup(pin: string, current: string, options: { failCurrent?: boolean; f
     const host = new Fake({ entry, current }, () => { locator.setHost(chat.id, undefined); }, fail);
     if (!fail) locator.setHostEntry(chat.id, entry);
     host.resumeError = entry === current && options.failResume === true;
-    host.fullAccessNonce = launched?.fullAccessNonce;
-    host.nonceArgs = fullAccessNonceArgs(launched?.fullAccessNonce, entry);
+    host.fullAccessDigest = launched?.fullAccessDigest;
+    host.digestArgs = fullAccessDigestArgs(launched?.fullAccessDigest, entry);
     hosts.push(host);
     return host;
   };
@@ -419,41 +420,47 @@ describe("seamless upgrade orchestration", () => {
 
   it("an upgrade restart, automatic or Upgrade now, hands the old host's full access to the new host's resume, and only then", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [a, b, c, d] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2"), revision("rev-c", "1.5.2"), revision("rev-d", "1.5.2")];
-    const resumes = (host: Fake | undefined) => host?.requests.filter((request) => request.method === "resume").map((request) => request.params);
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-sha256"])];
+    const checkGrant = (host: Fake | undefined) => {
+      const resumes = host?.requests.filter((request) => request.method === "resume");
+      expect(resumes).toHaveLength(1);
+      const nonce = resumes?.[0]?.params?.["fullAccess"];
+      if (typeof nonce !== "string") throw new Error("resume did not carry a nonce");
+      expect(nonce).toMatch(/^[a-f0-9]{32}$/);
+      expect(host?.digestArgs).toEqual(["--full-access-sha256", createHash("sha256").update(nonce).digest("hex")]);
+    };
     const auto = setup(a, b, { autoUpgrade: true });
     await auto.durable.status(auto.ref);
     for (const host of auto.hosts) host.fullAccess = true;
     await auto.durable.upgradePendingHosts();
     expect(auto.hosts).toHaveLength(2);
-    // The resume repeats the random nonce the new host was launched with; only that host knows it.
-    expect(auto.hosts[0]?.fullAccessNonce).toBeUndefined();
-    expect(auto.hosts[1]?.fullAccessNonce).toMatch(/^[0-9a-f]{32}$/);
-    expect(resumes(auto.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: auto.hosts[1]?.fullAccessNonce }]);
+    // Only the resume carries the preimage of the verifier.
+    expect(auto.hosts[0]?.fullAccessDigest).toBeUndefined();
+    checkGrant(auto.hosts[1]);
     await auto.durable.dispose();
+    rmSync(ROOT, { recursive: true, force: true });
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const now = setup(c, d);
+    const now = setup(revision("rev-c", "1.5.2"), revision("rev-d", "1.5.2", SCHEMA, ["--full-access-sha256"]));
     await now.durable.status(now.ref);
     for (const host of now.hosts) host.fullAccess = true;
     await now.durable.upgradeHost(now.ref, "now");
-    expect(now.hosts[1]?.fullAccessNonce).toMatch(/^[0-9a-f]{32}$/);
-    expect(now.hosts[1]?.fullAccessNonce).not.toBe(auto.hosts[1]?.fullAccessNonce);
-    expect(resumes(now.hosts[1])).toEqual([{ reason: "upgrade-restart", fullAccess: now.hosts[1]?.fullAccessNonce }]);
+    expect(now.hosts[1]?.fullAccessDigest).not.toBe(auto.hosts[1]?.fullAccessDigest);
+    checkGrant(now.hosts[1]);
     await now.durable.dispose();
   });
 
-  it("a rollback to host code without --full-access-nonce starts it without the argument: full access off, the Chat back on its pin and resumed", async () => {
+  it("a rollback to host code without --full-access-sha256 starts it without the argument: full access off, the Chat back on its pin and resumed", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-nonce"])];
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-sha256"])];
     const s = setup(a, b, { failCurrent: true });
     await s.durable.status(s.ref);
     for (const host of s.hosts) host.fullAccess = true;
     await expect(s.durable.upgradeHost(s.ref, "now")).rejects.toThrow(/This Chat is back on its old host code \(rev-a\)\.$/);
     expect(s.hosts.map((host) => host.code.entry)).toEqual([a, b, a]);
-    // The new code would have got the nonce; the old pin, whose strict parser refuses it, starts without.
-    expect(s.hosts[1]?.nonceArgs).toEqual(["--full-access-nonce", s.hosts[1]?.fullAccessNonce]);
-    expect(s.hosts[2]?.nonceArgs).toEqual([]);
-    expect(s.hosts[2]?.requests.filter((request) => request.method === "resume")).toHaveLength(1);
+    // The new code would have got a verifier; the old pin, whose strict parser refuses it, starts without.
+    expect(s.hosts[1]?.digestArgs).toEqual(["--full-access-sha256", s.hosts[1]?.fullAccessDigest]);
+    expect(s.hosts[2]?.digestArgs).toEqual([]);
+    expect(s.hosts[2]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart" }]);
     expect(s.locator.durable(s.ref.id)?.upgrade).toBeUndefined();
     await s.durable.dispose();
   });
@@ -605,7 +612,7 @@ describe("seamless upgrade orchestration", () => {
 
   it("finding 5: a daemon that dies before the new host's resume leaves the obligation on disk; the next daemon resumes it", async () => {
     ROOT = mkdtempSync(join(tmpdir(), "durable-upgrade-"));
-    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2")];
+    const [a, b] = [revision("rev-a", "1.5.2"), revision("rev-b", "1.5.2", SCHEMA, ["--full-access-sha256"])];
     const locator = new SessionRuntimeLocator(ROOT);
     const record = locator.create("/work", "chat");
     locator.setHostEntry(record.id, a);
@@ -618,6 +625,7 @@ describe("seamless upgrade orchestration", () => {
       hosts.push(host);
       locator.setHostEntry(chat.id, entry);
       locator.setHost(chat.id, { label: "test.fake", socket: "fake.sock", revision: dirname(entry), ownerEpoch: hosts.length, pid: hosts.length });
+      host.fullAccess = entry === a;
       if (entry === b) { host.holdResume = true; host.beforeResume = resumeSent; }
       return host;
     };
@@ -626,6 +634,7 @@ describe("seamless upgrade orchestration", () => {
     await durable.status(ref);
     void durable.upgradeHost(ref, "now").catch(() => undefined);
     await waiting;
+    expect(hosts[1]?.requests.find((request) => request.method === "resume")?.params?.["fullAccess"]).toMatch(/^[a-f0-9]{32}$/);
     await durable.dispose();
 
     const disk = new SessionRuntimeLocator(ROOT);
@@ -637,7 +646,7 @@ describe("seamless upgrade orchestration", () => {
     });
     await restarted.reattach();
     expect(attached).toHaveLength(1);
-    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart" }]);
+    expect(attached[0]?.requests.filter((request) => request.method === "resume").map((request) => request.params)).toEqual([{ reason: "upgrade-restart", discardFullAccess: true }]);
     expect(disk.durable(record.id)?.hostEntry).toBe(b);
     expect(disk.durable(record.id)?.upgrade).toBeUndefined();
     expect(new SessionRuntimeLocator(ROOT).durable(record.id)?.upgrade).toBeUndefined();

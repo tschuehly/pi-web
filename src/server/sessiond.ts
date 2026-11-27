@@ -590,7 +590,7 @@ async function listenSessionDaemon({ shutdown, projects, workspaceProviders, ses
     await app.listen({ port, host });
     // A port-zero trial: hosts started after bind must fence the allocated port, not zero.
     const address = app.server.address();
-    if (port === 0 && address && typeof address !== "string") process.env["PI_WEB_SESSIOND_PORT"] = String(address.port);
+    if (port === 0 && address !== null && typeof address !== "string") process.env["PI_WEB_SESSIOND_PORT"] = String(address.port);
   } else {
     const path = sessiondSocketPath(daemonEnvironment);
     await claimSessiondSocketPath(path);

@@ -70,13 +70,10 @@ export interface DurableHostProcess {
  * its store and exits, 0 once they are cancelled. `readTranscript`: a one-off process (`--read-transcript`) that opens the
  * store paused with no packages, sends `{ transcript: { messages } }` and exits 0; no host starts.
  */
-export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean; readTranscript?: boolean; fullAccessNonce?: string }) => DurableHostProcess;
+export type DurableHostLauncher = (record: DurableChatRecord, storeDir: string, options?: { attachOnly?: boolean; endJobs?: boolean; readTranscript?: boolean; fullAccessDigest?: string }) => DurableHostProcess;
 
-/**
- * The host argument that lets its first resume carry the owner's `/full-access` (an upgrade restart's random nonce), for
- * host code at `entry` that accepts it. Older code (a rollback to its pin) starts without it: full access off.
- */
-export const fullAccessNonceArgs = (nonce: string | undefined, entry: string): string[] => (nonce === undefined || !hostAcceptsArg(entry, "--full-access-nonce") ? [] : ["--full-access-nonce", nonce]);
+/** Recheck the actual launch entry (a pruned pin can fall back). launchd may expose argv: only a verifier goes there. */
+export const fullAccessDigestArgs = (digest: string | undefined, entry: string): string[] => digest !== undefined && hostAcceptsArg(entry, "--full-access-sha256") ? ["--full-access-sha256", digest] : [];
 
 /**
  * PI WEB's folder and socket overrides, absolute as this daemon resolves them (against its own folder, config.ts and
@@ -120,7 +117,7 @@ export function forkDurableHost(options: DurableHostOptions): DurableHostLaunche
     const log = openSync(join(storeDir, "host.log"), "a", 0o600);
     try {
       // No inherited loader flags (tsx): the host is plain Node with type stripping and its own pinned dependencies.
-      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessNonceArgs(launch?.fullAccessNonce, options.entry)], {
+      return fork(options.entry, [...durableHostLaunchArgs(options, record, storeDir), ...(launch?.endJobs === true ? ["--end-jobs"] : []), ...(launch?.readTranscript === true ? ["--read-transcript"] : []), ...fullAccessDigestArgs(launch?.fullAccessDigest, options.entry)], {
         execArgv: [],
         stdio: ["ignore", log, log, "ipc"],
         env: { ...process.env, ...daemonPathEnvironment(process.env, options.webPort), PI_CODING_AGENT_DIR: options.agentDir },
@@ -183,7 +180,7 @@ class DurableHostConnection {
   closeIfRestartSafe = false;
   /** The host's upgrade close answered that the owner's `/full-access` was on: `#upgradeRestart` hands it to the next host. */
   fullAccess = false;
-  /** The nonce this host was launched with for an upgrade restart's `/full-access`; its first resume repeats it. */
+  /** The first resume sends this nonce over the host connection; the launch arguments carry only its hash. */
   fullAccessNonce: string | undefined;
   /** The `viewed` state last sent to this host (`setViewed`); undefined until the first send. */
   viewedSent: boolean | undefined;
@@ -1361,23 +1358,23 @@ export class DurableChatService {
         () => { if (this.#connections.get(id) === held) this.#connections.delete(id); },
       );
     };
+    let carryFullAccess = false;
     // A host on `entry`, while the handover stays the family's entry: nobody else starts one meanwhile.
     const open = (entry: string | undefined): Promise<DurableHostConnection> => {
       this.#connections.delete(id);
+      const nonce = carryFullAccess && entry !== undefined && hostAcceptsArg(entry, "--full-access-sha256") ? randomBytes(16).toString("hex") : undefined;
       const started = this.#start(record, entry, nonce);
       this.#connections.set(id, held);
       return started;
     };
     this.#connections.set(id, held);
-    let nonce: string | undefined;
     try {
       this.deps.locator.setUpgradeState(id, "upgrade", pinned === undefined || noFallback ? {} : { from: pinned });
       const params = close === "plain" ? undefined : { reason: "upgrade" as const, ...(close === "ifRestartSafe" ? { ifRestartSafe: true as const } : {}) };
       const closing = await old.catch(() => undefined);
       const busy = await closing?.close(this.deps.closeGraceMs ?? 5000, params);
       // Only from the old host's own close answer over its owner-only socket, never from a file a command could write.
-      // The new host gets a random nonce in its launch arguments; its first resume repeats it, which no other client knows.
-      nonce = busy === undefined && closing?.fullAccess === true ? randomBytes(16).toString("hex") : undefined;
+      carryFullAccess = busy === undefined && closing?.fullAccess === true;
       if (busy !== undefined) {
         this.#upgradeDone(id);
         this.deps.logger?.info?.({ sessionId: id, busy }, "upgrade-restart: the host refused to close; the family stays on its host");
@@ -1430,8 +1427,13 @@ export class DurableChatService {
   }
 
   /** Resume the family's new host; only its acknowledgement ends the upgrade (a failure leaves the resume owed). */
-  async #finishUpgrade(sessionId: string, connection: DurableHostConnection): Promise<void> {
-    await this.#resume(connection);
+  async #finishUpgrade(sessionId: string, connection: DurableHostConnection, recovering = false): Promise<void> {
+    const nonce = connection.fullAccessNonce;
+    connection.fullAccessNonce = undefined;
+    await connection.request("resume", { reason: "upgrade-restart", ...(recovering ? { discardFullAccess: true } : nonce === undefined ? {} : { fullAccess: nonce }) }).catch((error: unknown) => {
+      if (!(error instanceof Error && error.message === "Unknown method resume")) throw error;
+      this.deps.logger?.warn({}, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
+    });
     this.#upgradeDone(sessionId);
   }
 
@@ -1458,7 +1460,7 @@ export class DurableChatService {
     this.deps.logger?.info?.({ sessionId: record.id }, "upgrade-restart: finishing an upgrade an earlier daemon left");
     const connection = await this.#connection(record).catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
     if (!(connection instanceof Error)) {
-      await this.#finishUpgrade(record.id, connection).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; a later daemon or the next message resumes"); });
+      await this.#finishUpgrade(record.id, connection, true).catch((error: unknown) => { this.deps.logger?.warn({ sessionId: record.id, err: error }, "upgrade-restart: the resume failed; a later daemon or the next message resumes"); });
       return;
     }
     if (upgrade.from === undefined || this.deps.locator.durable(record.id)?.hostEntry === upgrade.from) {
@@ -1474,18 +1476,6 @@ export class DurableChatService {
   #declined(sessionId: string, code: DurableHostProcess["code"]): boolean {
     const declined = this.deps.locator.durable(sessionId)?.upgradeDeclined;
     return declined !== undefined && declined === code?.current;
-  }
-
-  /**
-   * Resume a host Upgrade now started, with the old host's full access when it was launched to carry it (its nonce); a
-   * host without `resume` (older code) stays paused until the next message.
-   */
-  async #resume(connection: DurableHostConnection): Promise<void> {
-    const nonce = connection.fullAccessNonce;
-    await connection.request("resume", { reason: "upgrade-restart", ...(nonce === undefined ? {} : { fullAccess: nonce }) }).catch((error: unknown) => {
-      if (!(error instanceof Error && error.message === "Unknown method resume")) throw error;
-      this.deps.logger?.warn({}, "upgrade-restart: this host code cannot resume by itself; it waits for the next message");
-    });
   }
 
   /**
@@ -1566,7 +1556,7 @@ export class DurableChatService {
       this.#notificationGenerations.set(record.id, notifications.generation);
       this.#publishNotifications(notifications.mutations);
     }
-    const host = attachOnly ? this.deps.launch(record, storeDir, { attachOnly }) : this.deps.launch(record, storeDir, fullAccessNonce === undefined ? undefined : { fullAccessNonce });
+    const host = attachOnly ? this.deps.launch(record, storeDir, { attachOnly }) : this.deps.launch(record, storeDir, fullAccessNonce === undefined ? undefined : { fullAccessDigest: createHash("sha256").update(fullAccessNonce).digest("hex") });
     this.#lastActive.set(record.id, this.#now());
     const connection = new DurableHostConnection(
       host,

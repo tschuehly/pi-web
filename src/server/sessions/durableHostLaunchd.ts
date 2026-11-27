@@ -5,7 +5,7 @@ import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, realp
 import { connect, type Socket } from "node:net";
 import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
-import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, fullAccessNonceArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
+import { daemonPathEnvironment, DURABLE_HOST_PROTOCOL, durableHostLaunchArgs, fullAccessDigestArgs, type DurableHostLauncher, type DurableHostOptions, type DurableHostProcess } from "./durableChatService.js";
 import { type DurableChatRecord, type DurableHostAttachment, type SessionRuntimeLocator, storeCode, storeCodeRefusal } from "./sessionRuntimeLocator.js";
 
 /** Runs `launchctl` with these arguments; rejects with its output on failure. Tests may pass their own. */
@@ -54,7 +54,7 @@ export function launchdDurableHost(options: DurableHostOptions & {
   const context: LaunchContext = { ...options, entry, launchctl: options.launchctl ?? launchctl, startTimeoutMs: options.startTimeoutMs ?? 60_000 };
   return (record, storeDir, launch) => launch?.endJobs === true ? endJobs(context, record, storeDir)
     : launch?.readTranscript === true ? readTranscript(context, record, storeDir)
-    : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true, launch?.fullAccessNonce);
+    : new LaunchdHost(context, record, storeDir, launch?.attachOnly === true, launch?.fullAccessDigest);
 }
 
 /**
@@ -149,7 +149,7 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
   /** The entry this object launched its host from; a reattached host's is the locator's. */
   #entry: string | undefined;
 
-  constructor(private readonly context: LaunchContext, private readonly record: DurableChatRecord, private readonly storeDir: string, attachOnly: boolean, private readonly fullAccessNonce?: string) {
+  constructor(private readonly context: LaunchContext, private readonly record: DurableChatRecord, private readonly storeDir: string, attachOnly: boolean, private readonly fullAccessDigest?: string) {
     super();
     this.#label = `${context.labelPrefix}.${record.storeId}`;
     void this.#open(attachOnly).catch((error: unknown) => {
@@ -188,11 +188,10 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
     rmSync(socket, { force: true });
     const plist = join(hostsDir, `${this.#label}.plist`);
     this.#entry = entry;
-    const programArguments = [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket];
-    const nonce = fullAccessNonceArgs(this.fullAccessNonce, entry);
-    const job = (args: string[]) => launchdPlist({
+    const programArguments = [process.execPath, entry, ...durableHostLaunchArgs(this.context, this.record, this.storeDir), "--socket", socket, ...fullAccessDigestArgs(this.fullAccessDigest, entry)];
+    const job = launchdPlist({
       Label: this.#label,
-      ProgramArguments: args,
+      ProgramArguments: programArguments,
       EnvironmentVariables: hostEnvironment(this.context),
       WorkingDirectory: this.storeDir,
       StandardOutPath: join(this.storeDir, "host.log"),
@@ -205,10 +204,8 @@ class LaunchdHost extends EventEmitter implements DurableHostProcess {
       ExitTimeOut: 10,
       MaterializeDatalessFiles: true,
     });
-    writeFileSync(plist, job([...programArguments, ...nonce]), { mode: 0o600 });
+    writeFileSync(plist, job, { mode: 0o600 });
     await this.context.launchctl(["bootstrap", this.#domain, plist]);
-    // launchd read the job at bootstrap: the one-shot nonce leaves the file at once (it stays in the host's arguments).
-    if (nonce.length > 0) writeFileSync(plist, job(programArguments), { mode: 0o600 });
     const deadline = Date.now() + this.context.startTimeoutMs;
     for (;;) {
       try {
