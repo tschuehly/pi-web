@@ -48,7 +48,7 @@ function selectedState(patch: Partial<AppState> = {}): AppState {
 function selectableApi(sessionStatus: SessionStatus): typeof defaultApi {
   return {
     ...defaultApi,
-    transcriptSnapshot: () => Promise.resolve({ page: emptyPage, status: sessionStatus, seq: 0, partial: null }),
+    transcriptSnapshot: () => Promise.resolve({ generation: "test-host", page: emptyPage, status: sessionStatus, seq: 0, partial: null }),
     status: () => Promise.resolve(sessionStatus),
     thinkingLevels: () => Promise.resolve({ levels: [] }),
   };

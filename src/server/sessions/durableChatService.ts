@@ -119,6 +119,7 @@ interface HostEvents {
   /** Notification inbox summaries (the daemon's shared notification catalog). */
   publishNotificationSummary?(event: SessionNotificationSummaryEvent): void;
   publishGlobal(event: { type: "session.created"; session: ClientSession } | { type: "status.update"; status: SessionStatus } | { type: "activity.update"; activity: { sessionId: string; phase: "active" | "idle" | "error"; label: string; at: string } } | { type: "session.name"; sessionId: string; name?: string; shortName?: string } | SessionAttentionEvent): void;
+  startGeneration(sessionId: string): string;
   currentSeq(sessionId: string): number;
   /** Whether a browser watches the Chat: its host is never idle (legacy idle unload). */
   hasSessionSubscribers?(sessionId: string): boolean;
@@ -177,6 +178,7 @@ class DurableHostConnection {
 
   constructor(
     private readonly process: DurableHostProcess,
+    readonly generation: string,
     onEvent: (event: SessionUiEvent | HostEvent) => void,
     watermark: () => number,
     onExit: (error: Error) => void,
@@ -618,7 +620,7 @@ export class DurableChatService {
     const connection = await this.#for(ref);
     const { result, seq } = await connection.request("transcript", hostPageArgs({ limit: page?.limit ?? 20 }));
     const transcript = hostTranscript(result);
-    return { seq, partial: transcript.partial, page: this.#page(ref, transcript, { limit: page?.limit ?? 20 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
+    return { seq, generation: connection.generation, partial: transcript.partial, page: this.#page(ref, transcript, { limit: page?.limit ?? 20 }), status: { ...browserStatus(transcript.status, connection), sessionId: ref.id } };
   }
 
   /**
@@ -1550,6 +1552,7 @@ export class DurableChatService {
     this.#lastActive.set(record.id, this.#now());
     const connection = new DurableHostConnection(
       host,
+      this.deps.events.startGeneration(record.id),
       (event) => { this.#onEvent(record.id, event, connection); },
       () => this.deps.events.currentSeq(record.id),
       (error) => {
@@ -1961,7 +1964,8 @@ export class DurableChatService {
       }
       return;
     }
-    this.deps.events.publish(sessionId, event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event, scope);
+    const frame = event.type === "message.end" ? { ...event, message: displayPromptMessage(this.#liveCacheMissNotice(sessionId, record.cwd, event.message)) } : event;
+    this.deps.events.publish(sessionId, { ...frame, generation: connection.generation }, scope);
     if (event.type === "agent.start" || event.type === "agent.end") {
       const active = event.type === "agent.start";
       // The host emits these after the committed run start and end; a reopened store replays neither.

@@ -11,7 +11,7 @@ import { SessionRuntimeLocator } from "./sessionRuntimeLocator.js";
 // which code each host starts from, what the store holds after a failed start, and what survives a daemon restart.
 
 const status = { persisted: true, isStreaming: false, isCompacting: false, isBashRunning: false, pendingMessageCount: 0, queuedMessages: [], messageCount: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }, cost: 0 };
-const events = { publish: () => undefined, publishGlobal: () => undefined, currentSeq: () => 0, hasSessionSubscribers: () => true };
+const events = { startGeneration: () => "test", publish: () => undefined, publishGlobal: () => undefined, currentSeq: () => 0, hasSessionSubscribers: () => true };
 interface Request { id: number; method: string; params?: Record<string, unknown> }
 
 function isRequest(value: unknown): value is Request {

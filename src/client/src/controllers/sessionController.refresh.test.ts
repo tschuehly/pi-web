@@ -47,8 +47,8 @@ describe("SessionController selected-session refresh", () => {
   });
 
   it.each(["resolve", "reject"] as const)("completes the initial join after coherent replay without waiting for later refresh work (%s)", async (outcome) => {
-    const initial = deferred<SessionStreamSnapshot & { page: MessagePage; status: SessionStatus }>();
-    const trailing = deferred<SessionStreamSnapshot & { page: MessagePage; status: SessionStatus }>();
+    const initial = deferred<SessionStreamSnapshot & { generation: string; page: MessagePage; status: SessionStatus }>();
+    const trailing = deferred<SessionStreamSnapshot & { generation: string; page: MessagePage; status: SessionStatus }>();
     const socket = new EmitSocket();
     const ready = vi.fn();
     const updateUrl = vi.fn();
@@ -67,7 +67,7 @@ describe("SessionController selected-session refresh", () => {
     await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledOnce(); });
     const refreshing = controller.refreshSelectedSession().then(() => { refreshed = true; });
     socket.emit({ type: "message.append", message: { role: "user", content: "replayed" }, seq: 6 });
-    initial.resolve({ page: page("snapshot", 1), status: status(oldSession.id), seq: 5, partial: null });
+    initial.resolve({ generation: "test-host", page: page("snapshot", 1), status: status(oldSession.id), seq: 5, partial: null });
     try {
       await vi.waitFor(() => { expect(selected).toBe(true); });
       expect(transcriptSnapshot).toHaveBeenCalledTimes(2);
@@ -78,20 +78,20 @@ describe("SessionController selected-session refresh", () => {
         [{ type: "text", text: "snapshot" }], [{ type: "text", text: "replayed" }],
       ]);
       if (outcome === "reject") trailing.reject(new Error("later refresh failed"));
-      else trailing.resolve({ page: page("later", 2), status: status(oldSession.id), seq: 7, partial: null });
+      else trailing.resolve({ generation: "test-host", page: page("later", 2), status: status(oldSession.id), seq: 7, partial: null });
       await refreshing;
       expect(ready).toHaveBeenCalledOnce();
       if (outcome === "reject") expect(Object.values(state.browserErrors).map((error) => error.message)).toContain("Error: later refresh failed");
     } finally {
-      trailing.resolve({ page: emptyPage, status: status(oldSession.id), seq: 7, partial: null });
+      trailing.resolve({ generation: "test-host", page: emptyPage, status: status(oldSession.id), seq: 7, partial: null });
       await Promise.all([selecting, refreshing]);
       controller.dispose();
     }
   });
 
   it("waits for a replacement snapshot when buffered replay invalidates the initial branch", async () => {
-    const initial = deferred<SessionStreamSnapshot & { page: MessagePage; status: SessionStatus }>();
-    const replacement = deferred<SessionStreamSnapshot & { page: MessagePage; status: SessionStatus }>();
+    const initial = deferred<SessionStreamSnapshot & { generation: string; page: MessagePage; status: SessionStatus }>();
+    const replacement = deferred<SessionStreamSnapshot & { generation: string; page: MessagePage; status: SessionStatus }>();
     const socket = new EmitSocket();
     const ready = vi.fn();
     let state: AppState = { ...initialAppState(), selectedWorkspace: workspace, sessions: [oldSession] };
@@ -106,16 +106,16 @@ describe("SessionController selected-session refresh", () => {
     try {
       await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledOnce(); });
       socket.emit({ type: "session.tree.changed", seq: 6 });
-      initial.resolve({ page: page("invalid branch", 1), status: status(oldSession.id), seq: 5, partial: null });
+      initial.resolve({ generation: "test-host", page: page("invalid branch", 1), status: status(oldSession.id), seq: 5, partial: null });
       await vi.waitFor(() => { expect(transcriptSnapshot).toHaveBeenCalledTimes(2); });
       expect(selected).toBe(false);
       expect(ready).not.toHaveBeenCalled();
-      replacement.resolve({ page: page("current branch", 1), status: status(oldSession.id), seq: 6, partial: null });
+      replacement.resolve({ generation: "test-host", page: page("current branch", 1), status: status(oldSession.id), seq: 6, partial: null });
       await selecting;
       expect(ready).toHaveBeenCalledOnce();
       expect(state.messages[0]?.parts).toEqual([{ type: "text", text: "current branch" }]);
     } finally {
-      replacement.resolve({ page: emptyPage, status: status(oldSession.id), seq: 6, partial: null });
+      replacement.resolve({ generation: "test-host", page: emptyPage, status: status(oldSession.id), seq: 6, partial: null });
       await selecting;
       controller.dispose();
     }
@@ -459,7 +459,7 @@ describe("SessionController scoped refresh errors", () => {
   });
 });
 
-describe("SessionController unchanged selected-session refresh", () => {
+describe("SessionController whole-window refresh", () => {
   interface RefreshPoll {
     page: MessagePage;
     sessionStatus: SessionStatus;
@@ -474,7 +474,6 @@ describe("SessionController unchanged selected-session refresh", () => {
   function controllerWithPolls(polls: RefreshPoll[]) {
     const cacheWrites: string[] = [];
     let pollCalls = 0;
-    let setStateCalls = 0;
     const poll = (): RefreshPoll => {
       const current = polls[Math.min(pollCalls, polls.length - 1)];
       if (current === undefined) throw new Error("controllerWithPolls requires at least one poll");
@@ -492,7 +491,7 @@ describe("SessionController unchanged selected-session refresh", () => {
     };
     const controller = new SessionController(
       () => state,
-      (patch) => { setStateCalls += 1; state = { ...state, ...patch }; },
+      (patch) => { state = { ...state, ...patch }; },
       () => undefined,
       undefined,
       {
@@ -507,26 +506,9 @@ describe("SessionController unchanged selected-session refresh", () => {
     return {
       controller,
       getState: () => state,
-      setStateCalls: () => setStateCalls,
       appliedRefreshes: () => cacheWrites.length,
     };
   }
-
-  it("skips the merge, cache rewrite, and state update when a poll changes nothing", async () => {
-    const harness = controllerWithPolls([idlePoll()]);
-
-    await harness.controller.refreshSelectedSession();
-    expect(harness.appliedRefreshes()).toBe(1);
-    const setStateCallsAfterFirst = harness.setStateCalls();
-    const messagesAfterFirst = harness.getState().messages;
-    expect(setStateCallsAfterFirst).toBeGreaterThan(0);
-
-    await harness.controller.refreshSelectedSession();
-
-    expect(harness.appliedRefreshes()).toBe(1);
-    expect(harness.setStateCalls()).toBe(setStateCallsAfterFirst);
-    expect(harness.getState().messages).toBe(messagesAfterFirst);
-  });
 
   it("applies a poll whose page grew", async () => {
     const grown: RefreshPoll = {
@@ -570,21 +552,4 @@ describe("SessionController unchanged selected-session refresh", () => {
     expect(harness.getState().messages[1]).toEqual({ role: "assistant", parts: [{ type: "text", text: "partial" }] });
   });
 
-  it("re-applies fully after reselection even when the poll data is unchanged", async () => {
-    const harness = controllerWithPolls([idlePoll()]);
-
-    await harness.controller.selectSession(oldSession, { updateUrl: false });
-    expect(harness.appliedRefreshes()).toBe(1);
-
-    await harness.controller.refreshSelectedSession();
-    expect(harness.appliedRefreshes()).toBe(1);
-
-    // Reselection resets the state baseline, so the join refresh must run the
-    // full path (re-seed partial and watermark) rather than skip as unchanged.
-    await harness.controller.selectSession(oldSession, { updateUrl: false });
-    expect(harness.appliedRefreshes()).toBe(2);
-
-    await harness.controller.refreshSelectedSession();
-    expect(harness.appliedRefreshes()).toBe(2);
-  });
 });

@@ -54,6 +54,7 @@ export class FakeSocket implements SessionEventSocket {
 
 export class EmitSocket implements SessionEventSocket {
   readonly connectedSessionIds: string[] = [];
+  private seq = 0;
   private handler: ((event: SessionUiEvent) => void) | undefined;
   private onInitialOpen: (() => void) | undefined;
   private onReconnect: (() => void) | undefined;
@@ -76,7 +77,8 @@ export class EmitSocket implements SessionEventSocket {
   }
 
   emit(event: SessionUiEvent): void {
-    this.handler?.(event);
+    this.seq = event.seq ?? this.seq + 1;
+    this.handler?.({ generation: "test-host", ...event, seq: this.seq });
   }
 
   open(): void {
@@ -139,7 +141,7 @@ export async function transcriptSnapshotFixture(
   stream: SessionStreamSnapshot | Promise<SessionStreamSnapshot> = { seq: 0, partial: null },
 ): Promise<SessionTranscriptSnapshot> {
   const [resolvedPage, resolvedStatus, resolvedStream] = await Promise.all([page, sessionStatus, stream]);
-  return { page: resolvedPage, status: resolvedStatus, ...resolvedStream };
+  return { generation: "test-host", page: resolvedPage, status: resolvedStatus, ...resolvedStream };
 }
 
 export interface Deferred<T> {

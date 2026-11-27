@@ -57,7 +57,7 @@ describe("SessionEventHub", () => {
 
     hub.publish("s1", { type: "assistant.delta", text: "hello" });
 
-    expect(sessionSocket.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "hello", seq: 1 }));
+    expect(sessionSocket.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "hello", seq: 1, generation: hub.generation("s1") }));
     expect(otherSocket.send).not.toHaveBeenCalled();
   });
 
@@ -86,7 +86,7 @@ describe("SessionEventHub", () => {
       summary,
       dismissThrough: { order: 1, overflowWatermark: 0 },
       delta: { kind: "added", notification },
-      seq: 1,
+      seq: 1, generation: hub.generation("s1"),
     }));
     expect(otherSocket.send).not.toHaveBeenCalled();
   });
@@ -103,7 +103,7 @@ describe("SessionEventHub", () => {
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({
       type: "message.end",
       message: { role: "assistant", content: [{ type: "thinking", thinking: "private chain", redacted: true }, { type: "text", text: "visible answer" }] },
-      seq: 1,
+      seq: 1, generation: hub.generation("s1"),
     }));
     expect(thinkingBlock.thinkingSignature).toBe("opaque-provider-payload");
   });
@@ -119,12 +119,12 @@ describe("SessionEventHub", () => {
     const source = { role: "assistant", content: [thinking, image] };
     const imageReference = hub.mediaIndex.reference(mediaScope, image);
     hub.publish("s1", { type: "message.end", message: source }, mediaScope);
-    expect(JSON.parse(String(inline.send.mock.calls[0]?.[0]))).toEqual({ type: "message.end", message: { ...source, content: [{ type: "thinking", thinking: "working" }, image] }, seq: 1 });
-    expect(JSON.parse(String(reference.send.mock.calls[0]?.[0]))).toEqual({ type: "message.end", message: { ...source, content: [{ type: "thinking", thinking: "working" }, imageReference] }, seq: 1 });
+    expect(JSON.parse(String(inline.send.mock.calls[0]?.[0]))).toEqual({ type: "message.end", message: { ...source, content: [{ type: "thinking", thinking: "working" }, image] }, seq: 1, generation: hub.generation("s1") });
+    expect(JSON.parse(String(reference.send.mock.calls[0]?.[0]))).toEqual({ type: "message.end", message: { ...source, content: [{ type: "thinking", thinking: "working" }, imageReference] }, seq: 1, generation: hub.generation("s1") });
     const tool = { type: "tool.update" as const, toolName: "read", toolCallId: "call", text: "[image]", content: [image] };
     hub.publish("s1", tool, mediaScope);
-    expect(inline.send).toHaveBeenLastCalledWith(JSON.stringify({ ...tool, seq: 2 }));
-    expect(reference.send).toHaveBeenLastCalledWith(JSON.stringify({ ...tool, content: [imageReference], seq: 2 }));
+    expect(inline.send).toHaveBeenLastCalledWith(JSON.stringify({ ...tool, seq: 2, generation: hub.generation("s1") }));
+    expect(reference.send).toHaveBeenLastCalledWith(JSON.stringify({ ...tool, content: [imageReference], seq: 2, generation: hub.generation("s1") }));
     reference.emit("close");
     hub.publish("s1", { ...tool, type: "tool.end", isError: false }, mediaScope);
     expect(reference.send).toHaveBeenCalledTimes(2);
@@ -177,7 +177,7 @@ describe("SessionEventHub", () => {
 
     expect(failed.send).toHaveBeenCalledOnce();
     expect(failed.terminate).toHaveBeenCalledOnce();
-    expect(healthy.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "hello", seq: 1 }));
+    expect(healthy.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "hello", seq: 1, generation: hub.generation("s1") }));
     expect(hub.currentSeq("s1")).toBe(1);
 
     failed.send.mockClear();
@@ -185,7 +185,7 @@ describe("SessionEventHub", () => {
 
     expect(failed.send).not.toHaveBeenCalled();
     expect(failed.terminate).toHaveBeenCalledOnce();
-    expect(healthy.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "assistant.delta", text: "again", seq: 2 }));
+    expect(healthy.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "assistant.delta", text: "again", seq: 2, generation: hub.generation("s1") }));
     expect(hub.currentSeq("s1")).toBe(2);
   });
 
@@ -302,9 +302,9 @@ describe("SessionEventHub", () => {
     hub.publish("s1", { type: "assistant.delta", text: "b" });
     hub.publish("s1", { type: "assistant.delta", text: "c" });
 
-    expect(socket.send).toHaveBeenNthCalledWith(1, JSON.stringify({ type: "assistant.delta", text: "a", seq: 1 }));
-    expect(socket.send).toHaveBeenNthCalledWith(2, JSON.stringify({ type: "assistant.delta", text: "b", seq: 2 }));
-    expect(socket.send).toHaveBeenNthCalledWith(3, JSON.stringify({ type: "assistant.delta", text: "c", seq: 3 }));
+    expect(socket.send).toHaveBeenNthCalledWith(1, JSON.stringify({ type: "assistant.delta", text: "a", seq: 1, generation: hub.generation("s1") }));
+    expect(socket.send).toHaveBeenNthCalledWith(2, JSON.stringify({ type: "assistant.delta", text: "b", seq: 2, generation: hub.generation("s1") }));
+    expect(socket.send).toHaveBeenNthCalledWith(3, JSON.stringify({ type: "assistant.delta", text: "c", seq: 3, generation: hub.generation("s1") }));
   });
 
   it("advances seq even when no sockets are attached so the watermark stays accurate", () => {
@@ -319,7 +319,7 @@ describe("SessionEventHub", () => {
     hub.add("s1", socket);
     hub.publish("s1", { type: "assistant.delta", text: "c" });
 
-    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "c", seq: 3 }));
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "c", seq: 3, generation: hub.generation("s1") }));
   });
 
   it("tracks seq independently per session", () => {
@@ -335,8 +335,8 @@ describe("SessionEventHub", () => {
 
     expect(hub.currentSeq("s1")).toBe(2);
     expect(hub.currentSeq("s2")).toBe(1);
-    expect(s1.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "assistant.delta", text: "b", seq: 2 }));
-    expect(s2.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "x", seq: 1 }));
+    expect(s1.send).toHaveBeenLastCalledWith(JSON.stringify({ type: "assistant.delta", text: "b", seq: 2, generation: hub.generation("s1") }));
+    expect(s2.send).toHaveBeenCalledWith(JSON.stringify({ type: "assistant.delta", text: "x", seq: 1, generation: hub.generation("s2") }));
   });
 
   it("hands the join frame to each global subscriber as it joins, and to no one else", () => {

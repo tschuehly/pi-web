@@ -125,10 +125,14 @@ describe("Durable Chats", () => {
     host.push({ type: "agent.start" });
     const snapshot = await durable.transcriptSnapshot(ref);
     // agent.start, its activity.update, and the delta.
+    expect(snapshot.generation).toBe(hub.generation(chat.id));
     expect(snapshot.seq).toBe(hub.currentSeq(chat.id));
     expect(snapshot.seq).toBe(3);
     expect(snapshot.page).toEqual({ messages: [{ role: "user", content: "hi", entryId: "8" }], start: 0, total: 1 });
     expect(snapshot.status.sessionId).toBe(chat.id);
+    host.kill();
+    await durable.status(ref);
+    expect(hub.generation(chat.id)).not.toBe(snapshot.generation);
   });
 
   it("asks the host for the page only, and pages here when an older host sends the whole transcript", async () => {

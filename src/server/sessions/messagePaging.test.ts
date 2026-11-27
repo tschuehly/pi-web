@@ -26,7 +26,7 @@ describe("message paging", () => {
         const { start } = pageMessagesAtSafeBoundary<unknown>(messages, { before, limit });
         let first = start;
         while (roles[first] === "custom") first += 1;
-        // Session controller's Load earlier relies on this: it normalizes only the earlier page.
+        // Every cursor is a safe end for the next earlier page.
         if (first < before) expect(roles[first]).not.toBe("toolResult");
         before = start;
       }

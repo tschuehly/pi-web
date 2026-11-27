@@ -220,7 +220,7 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     if (ref === undefined) return reply;
     try {
       const page = { ...optionalField("before", optionalNumber(request.query.before)), ...optionalField("limit", optionalNumber(request.query.limit)) };
-      const messages = await sessions.messages(ref, page);
+      const messages = await sessions.messages(ref, Object.keys(page).length === 0 ? undefined : page);
       return projectBrowserMessageResponse(messages, imageProjector(request.query, eventHub, ref));
     } catch (error) {
       return reply.code(404).send({ error: errorMessage(error) });
@@ -287,7 +287,8 @@ export function registerSessionRoutes(app: FastifyInstance, sessions: SessionRou
     const ref = sessionRefFromQueryOr400(request.params.sessionId, request.query, reply);
     if (ref === undefined) return reply;
     try {
-      const snapshot = await sessions.transcriptSnapshot(ref, { ...optionalField("limit", optionalNumber(request.query.limit)) });
+      const limit = optionalNumber(request.query.limit);
+      const snapshot = await sessions.transcriptSnapshot(ref, limit === undefined ? undefined : { limit });
       return projectBrowserTranscriptSnapshot(snapshot, imageProjector(request.query, eventHub, ref));
     } catch (error) {
       return reply.code(404).send({ error: errorMessage(error) });

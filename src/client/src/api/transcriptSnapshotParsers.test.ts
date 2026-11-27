@@ -14,6 +14,7 @@ function snapshot() {
       cost: 0,
     },
     seq: 7,
+    generation: "host-1",
     partial: null,
   };
 }
@@ -43,6 +44,7 @@ describe("parseSessionTranscriptSnapshot", () => {
 
   it.each([
     { page: [] },
+    { page: { messages: ["outside"], start: 2, total: 2 } },
     { page: { messages: null, start: 0, total: 0 } },
     { page: { messages: [], start: "0", total: 0 } },
     { page: { messages: [], start: 0, total: "0" } },

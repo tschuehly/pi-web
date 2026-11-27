@@ -72,7 +72,11 @@ function arrayOfString(value: unknown, key: string): string[] {
 
 export function parseMessagePage(value: unknown): MessagePage {
   const record = requireRecord(value);
-  return { messages: parseTranscriptMessages(record["messages"]), start: requireNumber(record, "start"), total: requireNumber(record, "total") };
+  const messages = parseTranscriptMessages(record["messages"]);
+  const start = requireNonNegativeSafeInteger(record, "start");
+  const total = requireNonNegativeSafeInteger(record, "total");
+  if (messages.length > total - start) throw new Error("Transcript page exceeds its raw range");
+  return { messages, start, total };
 }
 
 export function parseMachinesResponse(value: unknown): Machine[] {
@@ -775,6 +779,7 @@ export function parseSessionTranscriptSnapshot(value: unknown): SessionTranscrip
   if (record["partial"] === undefined) throw new Error("Expected field: partial");
   return {
     page: parseMessagePage(record["page"]),
+    ...optionalField("generation", optionalString(record, "generation")),
     status: parseSessionStatus(record["status"]),
     seq: requireNonNegativeSafeInteger(record, "seq"),
     partial: record["partial"],
