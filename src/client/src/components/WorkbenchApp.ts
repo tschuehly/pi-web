@@ -45,6 +45,7 @@ import { hasUnacknowledgedSend, type PromptEditor } from "./PromptEditor";
 import type { WorkbenchFilesPane } from "./WorkbenchFilesPane";
 import "./AllSessions";
 import "./ProjectDialog";
+import { openInstallLatestDialog } from "./InstallLatestDialog";
 import "./WorkstreamChooser";
 import "./WorkbenchMenuButton";
 import type { WorkbenchSettingsPanel } from "./WorkbenchSettingsPanel";
@@ -2371,6 +2372,7 @@ export class WorkbenchApp extends LitElement {
         <button type="button" class="menu-item" @click=${() => { void this.runtimeFor(session.id, selectedMachineId(state))?.sessions.runCommand("/tree"); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>Session tree</button>
         <button type="button" class="menu-item" data-keep-open title=${sessionInfoText(session, state.status)} @click=${() => { void this.copySessionInfo(session, state.status); }}>${this.sessionInfoCopied ? html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>Copied session info` : html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>Copy session info`}</button>
         <button type="button" class="menu-item" aria-haspopup="dialog" @click=${(event: MouseEvent) => { this.openSettings(event); }}>${renderBuiltinTabIcon("settings")}Workbench settings</button>
+        <button type="button" class="menu-item install-latest" aria-haspopup="dialog" @click=${() => { openInstallLatestDialog(); }}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>Install latest</button>
         ${this.desktopNotifications.canRequestPermission() ? html`<button type="button" class="menu-item" @click=${() => { void this.desktopNotifications.requestPermission(); }}>${renderBuiltinTabIcon("bell")}Enable desktop notifications</button>` : nothing}
         ${this.windows.window?.layout !== "grid" ? nothing : html`
           <hr>
