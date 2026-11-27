@@ -54,8 +54,7 @@ test("a proposed pi-run block runs only after Run once, in its folder, and its e
 
   await review.click();
   await dialog.getByRole("button", { name: "Run once" }).click();
-  await expect(dialog.getByText(/^Started/)).toBeVisible();
-  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toHaveCount(0);
 
   // The idle Chat wakes with the host's background-job completion: exit code 7 and the folder it ran in (`pwd`).
   const answer = chat(page).locator(".msg.assistant").filter({ hasText: "ok: [Owner run result]" });

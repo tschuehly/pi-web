@@ -46,7 +46,7 @@ it("text without a run target (user messages, tool output) shows pi-run blocks a
   expect(view.renderRoot.textContent).toContain("pwd; exit 7");
 });
 
-it("Review opens the confirmation with folder and literal command; Cancel sends nothing and Run once sends the named proposal", async () => {
+it("Review opens the confirmation with folder and literal command; Cancel sends nothing and Run once sends the named proposal and closes", async () => {
   const ownerRun = vi.spyOn(sessionsApi, "ownerRun").mockResolvedValue({ status: "started" });
   const view = await mount(proposalText);
   view.renderRoot.querySelector<HTMLButtonElement>(".owner-run-button")?.click();
@@ -62,6 +62,6 @@ it("Review opens the confirmation with folder and literal command; Cancel sends 
   dialog = document.querySelector<OwnerRunDialog>("owner-run-dialog");
   await dialog?.updateComplete;
   dialog?.renderRoot.querySelector<HTMLButtonElement>(".run")?.click();
-  await vi.waitFor(() => { expect(dialog?.renderRoot.querySelector(".result")?.textContent).toContain("Started"); });
+  await vi.waitFor(() => { expect(document.querySelector("owner-run-dialog")).toBeNull(); });
   expect(ownerRun).toHaveBeenCalledWith(target.session, "a1", { mode: "run", cwd: "/work/repo", command: "pwd; exit 7" }, "local");
 });
